@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # npm ecosystem also reads the pnpm lockfile.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 7
+    ignore:
+      # NOTE: these move together with the Expo SDK via `pnpm expo install --fix` during an SDK
+      # upgrade; Dependabot bumps would break SDK compatibility.
+      - dependency-name: 'expo'
+      - dependency-name: 'expo-*'
+      - dependency-name: '@expo/*'
+      - dependency-name: 'react'
+      - dependency-name: 'react-dom'
+      - dependency-name: 'react-native'
+      - dependency-name: 'react-native-*'
+      - dependency-name: '@react-native/*'
+      - dependency-name: 'jest-expo'
+      - dependency-name: '@shopify/flash-list'
+      - dependency-name: 'typescript'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
