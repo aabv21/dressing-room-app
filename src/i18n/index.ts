@@ -47,7 +47,14 @@ export function formatWearCount(count: number, locale: Locale): string {
   if (count === 0) {
     return translate(locale, 'wear.never');
   }
-  const key = new Intl.PluralRules(locale).select(count) === 'one' ? 'wear.one' : 'wear.other';
+  // NOTE: not `Intl.PluralRules` — Hermes (React Native's JS engine) ships `Intl.Collator`,
+  // `Intl.DateTimeFormat` and `Intl.NumberFormat` but not `Intl.PluralRules`, so
+  // `new Intl.PluralRules(locale)` throws "undefined is not a constructor" on-device even though
+  // it works under Jest's Node environment. English and Spanish cardinal plural rules agree for
+  // all non-negative integers (singular only at exactly 1), so a direct comparison covers both
+  // supported locales without a polyfill. Upgrade path: pull in `@formatjs/intl-pluralrules`
+  // (force-polyfill variant for Hermes) if a locale with a richer plural system is ever added.
+  const key = count === 1 ? 'wear.one' : 'wear.other';
   return translate(locale, key, { count });
 }
 
