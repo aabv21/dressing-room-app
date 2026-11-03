@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# generated performance fixtures (scripts/perf-fixtures.ts)
+.perf-fixtures/
