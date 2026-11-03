@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react-native';
 
-import Index from '../app/index';
+import TodayScreen from '../app/(tabs)/index';
 
-test('renders the app name', async () => {
-  await render(<Index />);
-  expect(screen.getByText('Dressing Room')).toBeOnTheScreen();
+test('renders the Today screen', async () => {
+  await render(<TodayScreen />);
+  expect(screen.getByText('TODAY')).toBeOnTheScreen();
 });

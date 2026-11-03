@@ -14,7 +14,7 @@ export const en = {
 
   'screen.today': 'TODAY',
   'screen.closet': 'YOUR CLOSET',
-  'screen.build': 'BUILD',
+  'screen.build': 'BUILD AN OUTFIT',
   'screen.forYou': 'FOR YOU',
   'screen.profile': 'PROFILE',
 

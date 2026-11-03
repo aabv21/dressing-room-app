@@ -16,7 +16,7 @@ export const es: Record<MessageKey, string> = {
 
   'screen.today': 'HOY',
   'screen.closet': 'TU CLÓSET',
-  'screen.build': 'ARMAR',
+  'screen.build': 'ARMAR OUTFIT',
   'screen.forYou': 'PARA TI',
   'screen.profile': 'PERFIL',
 

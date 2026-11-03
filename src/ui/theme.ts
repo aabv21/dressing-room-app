@@ -27,3 +27,10 @@ export const spacing = {
   lg: 24,
   xl: 32,
 } as const;
+
+export const layout = {
+  tabBarHeight: 56,
+  tabBarGap: 12,
+  ctaGap: 10,
+  ctaHeight: 48,
+} as const;
