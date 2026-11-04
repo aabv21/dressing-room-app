@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 
 import { en } from './en';
 import { es } from './es';
+import { preferenceToLocale, useLocalePreference } from './I18nProvider';
 
 export type Locale = 'en' | 'es';
 export type MessageKey = keyof typeof en;
@@ -76,7 +77,12 @@ export function useI18n(): {
   // NOTE: reads device languages once per mount; it does not react to an OS language
   // change while the app is running. Upgrade path: swap to expo-localization's
   // `useLocales()` if live-updating locale is ever needed.
-  const locale = useMemo(() => resolveLocale(getLocales().map((entry) => entry.languageTag)), []);
+  const deviceLocale = useMemo(() => resolveLocale(getLocales().map((entry) => entry.languageTag)), []);
+
+  // Outside an `I18nProvider` (e.g. a component test rendered in isolation) this defaults to
+  // `'system'`, so `locale` falls back to `deviceLocale` and existing callers see no change.
+  const { preference } = useLocalePreference();
+  const locale = useMemo(() => preferenceToLocale(preference, deviceLocale), [preference, deviceLocale]);
 
   const t = useMemo(
     () =>
