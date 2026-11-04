@@ -13,6 +13,7 @@ A digital closet and AI outfit rater, built with Expo and Supabase.
 - English and Spanish UI, picked from the device language (anything else falls back to English).
 - A Closet tab with a virtualized three-column grid (FlashList + expo-image). With no garments yet it shows an empty state.
 - Fixture mode for performance testing: with `EXPO_PUBLIC_PERF_FIXTURES_URL` set, the Closet grid shows 500 generated thumbnails served from your computer, a disabled upload CTA, and a frame-stats HUD (frames, dropped frames, p95 and median frame time, inferred refresh rate). Tap the HUD to reset it; long-press it to also clear the image caches for a cold pass.
+- Performance gate: [`docs/performance-gate.md`](./docs/performance-gate.md) — protocol for the on-device scroll-performance go/no-go call. Status: pending.
 
 ## Quick start
 
