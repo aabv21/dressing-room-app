@@ -5,7 +5,17 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   {
-    ignores: ['.expo/**', 'ios/**', 'android/**', 'dist/**', '.perf-fixtures/**'],
+    // NOTE: database.types.ts is generated (`pnpm db:types`) and trips a lint rule on its own
+    // CompositeTypes helper; ceiling: lives until Supabase's generator output changes shape,
+    // upgrade path: re-check this exclusion after any `pnpm db:types` regeneration.
+    ignores: [
+      '.expo/**',
+      'ios/**',
+      'android/**',
+      'dist/**',
+      '.perf-fixtures/**',
+      'src/lib/database.types.ts',
+    ],
   },
   tseslint.configs.strictTypeChecked,
   security.configs.recommended,

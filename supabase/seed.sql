@@ -1,0 +1,5 @@
+-- Intentionally empty. This app has no reference/lookup data to seed: enums
+-- carry the fixed vocabularies, and `public.profiles` rows are created by the
+-- `handle_new_user()` trigger on signup, not by seeding. Kept present (and
+-- wired in supabase/config.toml's `db.seed.sql_paths`) so `pnpm db:reset`
+-- has a seed step ready for whenever a future task needs one.
