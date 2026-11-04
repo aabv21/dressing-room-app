@@ -29,6 +29,11 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - `pnpm perf:serve [port=8787]` — serve `.perf-fixtures/` over HTTP and print every LAN URL, labeled by network interface.
 - Fixture mode: start the app with `EXPO_PUBLIC_PERF_FIXTURES_URL=<url printed by perf:serve>` (e.g. `EXPO_PUBLIC_PERF_FIXTURES_URL=http://127.0.0.1:8787 pnpm expo run:ios`). The Closet tab then shows 500 fixture thumbnails, a disabled upload CTA, and the frame-stats HUD (tap: reset; long-press: also clear expo-image's memory and disk caches). Unset or empty, the Closet shows its empty state. The value is inlined at bundle time, so restart Metro after changing it.
 - `pnpm check:expo` / `pnpm expo install --fix` — run during Expo SDK upgrades, after the 3-day `minimumReleaseAge` allows the new versions; informational, not a CI gate (see Supply-chain hardening).
+- `pnpm db:start` / `pnpm db:stop` — start/stop the local Supabase stack (Docker, via OrbStack).
+- `pnpm db:reset` — reset the local database to the committed migrations and seed.
+- `pnpm db:test` — run pgTAP database tests (`supabase test db`).
+- `pnpm db:types` — regenerate `src/lib/database.types.ts` from the local schema.
+- `pnpm env:local` — write `.env.local` from the running local stack's `supabase status -o env`.
 
 Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 
@@ -86,6 +91,20 @@ Package management is pnpm, pinned in `package.json`'s `packageManager` to an ex
 **`pnpm check:expo` (`expo install --check`) is informational, not a CI gate.** It compares every installed package against the single latest version on the npm registry, with no awareness of `minimumReleaseAge` — so it will always flag a package whose newer release exists but is still too young to install under this repo's hardening. Run it (or `pnpm expo install --fix`) during a deliberate Expo SDK upgrade, after the candidate versions have cleared the 3-day age gate, not as part of the regular `typecheck`/`lint`/`test` gate.
 
 **Updating a dependency:** edit `package.json`, run `pnpm install` (not `--frozen-lockfile`) to update `pnpm-lock.yaml`, run the gate below, and commit both files together. `minimumReleaseAge` will refuse a version published too recently — wait it out or pin an older compatible version instead.
+
+## Local backend
+
+The local backend is Supabase running in Docker (via OrbStack), driven only through the `supabase` npm devDependency (`pnpm exec supabase …` / the `db:*` scripts) — never a global or Homebrew install.
+
+- `pnpm db:start` — starts the local stack (Postgres, Auth, Storage, Studio, Mailpit). First run pulls Docker images and can take several minutes.
+- `pnpm db:reset` — drops and recreates the local database from `supabase/migrations/` and `supabase/seed.sql`.
+- `pnpm db:test` — runs the pgTAP suite under `supabase/tests/`.
+- `pnpm db:types` — regenerates `src/lib/database.types.ts` from the local schema; commit the result alongside the migration that changed it.
+- `pnpm db:stop` — stops the stack. Always leave it stopped when you're done.
+- `pnpm env:local` — writes `.env.local` (gitignored) from `supabase status -o env`: the app gets `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`; `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_DB_URL` are for scripts and integration tests only.
+- Local email (signup confirmations, password-reset codes) is caught by Mailpit at http://127.0.0.1:54424 instead of being sent.
+- Password reset uses a 6-digit code (`{{ .Token }}` in `supabase/templates/recovery.html`), not a link.
+- **The service-role key never goes in `src/`.** It bypasses Row Level Security; it belongs only in scripts, CI secrets, and test setup, read from `supabase status -o env` or `.env.local`, never bundled into the app.
 
 ## Definition of done
 
