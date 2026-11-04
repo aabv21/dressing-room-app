@@ -350,6 +350,13 @@ client_id = ""
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
 redirect_uri = ""
 url = ""
+# NOTE: the integration session must set this to `true` (local and hosted). `signInWithGoogle` in
+# src/auth/socialAuth.ts deliberately sends no nonce to `signInWithIdToken`, because
+# @react-native-google-signin/google-signin v17's free `signIn()` sends none on Android and the iOS
+# SDK injects its own hidden nonce this library doesn't expose — so a custom nonce here would never
+# match what's actually in the ID token, and GoTrue's OIDC check (token_oidc.go) rejects a sign-in
+# where only one side carries a nonce. Skipping the check is what makes Google sign-in work at all
+# with this library version.
 skip_nonce_check = false
 
 # Allow Solana wallet holders to sign in to your project via the Sign in with Solana (SIWS, EIP-4361) standard.

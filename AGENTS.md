@@ -24,7 +24,8 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - `pnpm ios` / `pnpm android` — start the dev server targeting a platform.
 - `pnpm typecheck` — `tsc --noEmit`.
 - `pnpm lint` — `eslint .`.
-- `pnpm test` — `jest`.
+- `pnpm test` — `jest --selectProjects app scripts` (unit tests only; no Docker needed).
+- `pnpm test:int` — `jest --selectProjects integration --runInBand`: `src/auth`'s email/password and session flows and the cross-user RLS boundary, against a running local Supabase (`pnpm db:start && pnpm db:reset && pnpm env:local` first). Not part of `pnpm test` or CI; run it manually when touching auth or RLS.
 - `pnpm perf:generate [count=500]` — write the performance fixture thumbnails (WebP) to `.perf-fixtures/` (gitignored).
 - `pnpm perf:serve [port=8787]` — serve `.perf-fixtures/` over HTTP and print every LAN URL, labeled by network interface.
 - Fixture mode: start the app with `EXPO_PUBLIC_PERF_FIXTURES_URL=<url printed by perf:serve>` (e.g. `EXPO_PUBLIC_PERF_FIXTURES_URL=http://127.0.0.1:8787 pnpm expo run:ios`). The Closet tab then shows 500 fixture thumbnails, a disabled upload CTA, and the frame-stats HUD (tap: reset; long-press: also clear expo-image's memory and disk caches). Unset or empty, the Closet shows its empty state. The value is inlined at bundle time, so restart Metro after changing it.
@@ -43,10 +44,13 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 - `src/ui/` — shared UI components not tied to a single route.
 - `src/i18n/` — translation tables; `en` is the source of truth, `es` is the only non-English file in the repo (see Conventions).
 - `src/closet/` — closet domain logic (items, outfits, wear counts).
+- `src/auth/` — the auth service (`authService.ts`, a barrel over `emailAuth.ts` and `socialAuth.ts`) and session state (`AuthProvider`/`useAuth`). `emailAuth.ts`/`socialAuth.ts` default their `client` parameter to `src/lib/supabase.ts`'s real `supabase` singleton, the same pattern `src/profile/profileRepository.ts` uses; `integration/`'s Jest project maps that import to a stub instead (see `jest.config.ts` and `integration/lib-supabase.stub.ts`).
+- `src/profile/` — `profileRepository.ts`'s profile reads (`onboarding_completed_at` for `AuthProvider`); Task 6 extends this with the onboarding writes.
 - `src/perf/` — the on-device frame-stats harness (UI-thread frame callback, stats, HUD).
 - `src/test/` — shared Jest helpers (e.g. the FlashList mock); never imported by app code.
 - `.perf-fixtures/` — generated fixture thumbnails (gitignored; see `pnpm perf:generate`).
 - `scripts/` — repo tooling (TypeScript, run with Node's native type stripping — no `.js`/`.mjs` sources).
+- `integration/` — `*.int.test.ts` Jest suites that run against a live local Supabase (plain Node, no Expo/React Native — see `pnpm test:int` above and `helpers.ts`'s module doc for why `src/auth/emailAuth.ts` is imported directly rather than through `authService.ts`'s barrel). `lib-supabase.stub.ts` is mapped over `src/lib/supabase.ts` by `jest.config.ts`'s `integration` project, so the default-client path in `emailAuth.ts`/`socialAuth.ts` throws loudly instead of touching native modules if a test ever omits its client.
 
 ## Conventions
 
@@ -101,10 +105,16 @@ The local backend is Supabase running in Docker (via OrbStack), driven only thro
 - `pnpm db:test` — runs the pgTAP suite under `supabase/tests/`.
 - `pnpm db:types` — regenerates `src/lib/database.types.ts` from the local schema; commit the result alongside the migration that changed it.
 - `pnpm db:stop` — stops the stack. Always leave it stopped when you're done.
-- `pnpm env:local` — writes `.env.local` (gitignored) from `supabase status -o env`: the app gets `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`; `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_DB_URL` are for scripts and integration tests only.
+- `pnpm env:local` — writes `.env.local` (gitignored) from `supabase status -o env`: the app gets `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`; `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_DB_URL` are for scripts and integration tests only. It merges rather than clobbers: it only ever writes those four keys (in that fixed order), and keeps every other line already in `.env.local` as-is — so a hand-set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`/`EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` (see "Social sign-in" below) survives a re-run.
 - Local email (signup confirmations, password-reset codes) is caught by Mailpit at http://127.0.0.1:54424 instead of being sent.
 - Password reset uses a 6-digit code (`{{ .Token }}` in `supabase/templates/recovery.html`), not a link.
 - **The service-role key never goes in `src/`.** It bypasses Row Level Security; it belongs only in scripts, CI secrets, and test setup, read from `supabase status -o env` or `.env.local`, never bundled into the app.
+
+## Social sign-in
+
+- NOTE: `app.json`'s `@react-native-google-signin/google-signin` plugin config has a placeholder `iosUrlScheme` (`com.googleusercontent.apps.REPLACE_IN_INTEGRATION_SESSION`). The live owner session that sets up the real Google OAuth client replaces it with the project's actual reversed iOS client ID from Google Cloud Console — Sign in with Google on iOS will not work until then.
+- Two more `EXPO_PUBLIC_*` vars are allowed in the app bundle (ruling P2-R4): `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`. OAuth client IDs are not secrets — they identify the app to Google the way a bundle id does — so this doesn't widen the "no secrets in `EXPO_PUBLIC_*`" rule above. `src/auth/socialAuth.ts`'s `signInWithGoogle` reads both (literal `process.env.EXPO_PUBLIC_*` member expressions, same inlining constraint as the Supabase URL/key) and calls `GoogleSignin.configure({ webClientId, iosClientId })` lazily on first use; if either is missing it resolves `{ ok: false, error: 'auth.error.unknown' }` and logs a dev-only `console.warn` rather than attempting to sign in. The integration session fills both into `.env.local`/`.env.example` with the project's real Google OAuth client IDs.
+- `@react-native-google-signin/google-signin` v17's free `signIn()` does not send a custom nonce — see `src/auth/socialAuth.ts`'s module doc (summary: no nonce on Android, a hidden one on iOS that this library doesn't expose; sending one anyway made every sign-in fail against GoTrue's OIDC check). `signInWithIdToken` is therefore called with no `nonce` for Google (Apple's flow is unaffected and still uses one). NOTE: the integration session must set `[auth.external.google].skip_nonce_check = true` in `supabase/config.toml` (and the hosted project's equivalent setting) for Google sign-in to succeed — see the NOTE above that config key. Google sign-in has no nonce replay protection from this client today. Upgrade path: a library version that exposes iOS's nonce, or Universal Sign In (this package's paid tier).
 
 ## Definition of done
 

@@ -10,6 +10,7 @@
     "ios": {
       "bundleIdentifier": "com.aabv21.dressingroom",
       "icon": "./assets/expo.icon",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocalNetworkUsageDescription": "Loads test images from your computer during development."
       }
@@ -35,7 +36,14 @@
         }
       ],
       "expo-localization",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_IN_INTEGRATION_SESSION"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

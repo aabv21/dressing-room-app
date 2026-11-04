@@ -44,6 +44,26 @@ const config: Config = {
       extensionsToTreatAsEsm: ['.ts'],
       transform: {},
     },
+    {
+      // Exercises authService and RLS against a running local Supabase stack. Same reasoning as
+      // the `scripts` project above (plain Node, native TS stripping, no jest-expo preset); kept
+      // out of the default `pnpm test` project selection (see the `test:int` script) since it
+      // needs Docker and `.env.local`, not just `node_modules`.
+      displayName: 'integration',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/integration/**/*.int.test.ts'],
+      extensionsToTreatAsEsm: ['.ts'],
+      transform: {},
+      moduleNameMapper: {
+        // `emailAuth.ts`/`socialAuth.ts` default their `client` parameter to the real
+        // `src/lib/supabase.ts` singleton, which imports `react-native` and
+        // `expo-sqlite/localStorage/install` — native modules that cannot load under plain Node.
+        // Every integration test passes an explicit client (see `helpers.ts`), so this default
+        // path is never meant to run here; map it to a stub that throws if it ever is. Matches the
+        // relative specifier as written in `src/auth/{emailAuth,socialAuth}.ts` (`../lib/supabase`).
+        '^(\\.\\./)+lib/supabase$': '<rootDir>/integration/lib-supabase.stub.ts',
+      },
+    },
   ],
 };
 

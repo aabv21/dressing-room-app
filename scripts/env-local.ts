@@ -8,7 +8,7 @@
 //   node scripts/env-local.ts
 
 import { execFile } from 'node:child_process';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -16,11 +16,25 @@ const execFileAsync = promisify(execFile);
 
 const ENV_FILE_PATH = fileURLToPath(new URL('../.env.local', import.meta.url));
 
+/** The keys this script owns; every other line in an existing `.env.local` is left untouched. */
+const OWNED_KEYS: ReadonlySet<string> = new Set([
+  'EXPO_PUBLIC_SUPABASE_URL',
+  'EXPO_PUBLIC_SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'SUPABASE_DB_URL',
+]);
+
 /**
- * Maps `supabase status -o env` output to the app and test variables, in a fixed order.
- * Throws if `API_URL` or `ANON_KEY` is missing — the two keys the app cannot run without.
+ * Maps `supabase status -o env` output to the app and test variables, in a fixed order. Throws if
+ * `API_URL` or `ANON_KEY` is missing — the two keys the app cannot run without.
+ *
+ * When `existing` (an already-read `.env.local`) is given, this merges rather than clobbers: the
+ * four Supabase keys are (re)written in their fixed order first, and every other line from
+ * `existing` — e.g. `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, set by hand or by the integration session —
+ * is kept, in its original order, after them. Without `existing`, the result is just the four keys,
+ * matching the previous (pre-merge) behavior.
  */
-export function toEnvFile(statusEnv: Readonly<Record<string, string>>): string {
+export function toEnvFile(statusEnv: Readonly<Record<string, string>>, existing?: string): string {
   const apiUrl = statusEnv['API_URL'];
   if (apiUrl === undefined) {
     throw new Error('supabase status -o env did not include API_URL');
@@ -39,6 +53,20 @@ export function toEnvFile(statusEnv: Readonly<Record<string, string>>): string {
   const dbUrl = statusEnv['DB_URL'];
   if (dbUrl !== undefined) {
     lines.push(`SUPABASE_DB_URL=${dbUrl}`);
+  }
+
+  if (existing !== undefined) {
+    for (const line of existing.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed === '') {
+        continue;
+      }
+      const separatorIndex = trimmed.indexOf('=');
+      const key = separatorIndex === -1 ? trimmed : trimmed.slice(0, separatorIndex);
+      if (!OWNED_KEYS.has(key)) {
+        lines.push(line);
+      }
+    }
   }
 
   return `${lines.join('\n')}\n`;
@@ -66,10 +94,25 @@ function parseStatusEnv(output: string): Record<string, string> {
   return env;
 }
 
+/** Reads the current `.env.local`, or `undefined` if it doesn't exist yet (a first run). */
+async function readExistingEnvFile(): Promise<string | undefined> {
+  try {
+    return await readFile(ENV_FILE_PATH, 'utf8');
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
 async function main(): Promise<void> {
-  const { stdout } = await execFileAsync('pnpm', ['exec', 'supabase', 'status', '-o', 'env']);
+  const [{ stdout }, existing] = await Promise.all([
+    execFileAsync('pnpm', ['exec', 'supabase', 'status', '-o', 'env']),
+    readExistingEnvFile(),
+  ]);
   const statusEnv = parseStatusEnv(stdout);
-  const contents = toEnvFile(statusEnv);
+  const contents = toEnvFile(statusEnv, existing);
   await writeFile(ENV_FILE_PATH, contents, 'utf8');
   console.log(`Wrote ${ENV_FILE_PATH}`);
 }
