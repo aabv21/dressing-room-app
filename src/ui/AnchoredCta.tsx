@@ -75,9 +75,12 @@ export function AnchoredCta(props: { primary: CtaAction; secondary?: CtaAction }
   return (
     <View style={[styles.zone, { bottom: ctaBottom }]} pointerEvents="box-none">
       {/* NOTE: 'rgba(235,227,255,0)', not the `transparent` keyword — `transparent` is
-          transparent BLACK, which would make this interpolate through visible grey. */}
+          transparent BLACK, which would make this interpolate through visible grey. Solid from
+          45% down, as in the mockups' `linear-gradient(to top, #ebe3ff 55%, transparent)`, so
+          content scrolling under the buttons doesn't show through them. */}
       <LinearGradient
         colors={['rgba(235,227,255,0)', '#ebe3ff']}
+        locations={[0, 0.45]}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />

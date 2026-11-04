@@ -1,69 +1,86 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFrameCallback, useSharedValue, type FrameInfo } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import { scheduleOnRN, scheduleOnUI } from 'react-native-worklets';
 
-import { summarizeFrameDeltas, type FrameStats } from './frameStats';
+import { appendFrameDeltas, EMPTY_FRAME_STATS, summarizeFrameDeltas, type FrameStats } from './frameStats';
 
-const MAX_BUFFERED_FRAMES = 6000;
 const PUBLISH_INTERVAL_MS = 500;
 
-const EMPTY_STATS: FrameStats = { frames: 0, dropped: 0, droppedRatio: 0, p95Ms: 0 };
-
 /**
- * Tracks per-frame deltas on the UI thread while `active`, publishing summarized drop-rate and
- * p95 stats back to JS every 500 ms. The buffer is capped at 6,000 entries (~50 s at 120 Hz) so a
- * long scroll session can't grow it unbounded.
+ * Records per-frame deltas on the UI thread while `active` and summarizes them on the JS thread.
  *
- * NOTE: shared values are read/written via `.get()`/`.set()`, not `.value` — the React Compiler
- * integration in eslint-plugin-react-hooks v7 doesn't know `useSharedValue`'s `.value` is an
- * intentionally mutable escape hatch and flags direct assignment as an immutability violation.
- * `.get()`/`.set()` are Reanimated's compiler-compliant alternative API for the same shared value.
+ * The UI thread only appends to a small chunk in place and, every 500 ms, hands that chunk (not
+ * the whole history) to JS and starts a new one, so the work it adds to each frame stays constant.
+ * JS accumulates the chunks, applies the 6,000-frame cap and recomputes the stats. When `active`
+ * turns false, the last partial chunk is flushed too, so the slowdown at the end of a fling is
+ * counted.
+ *
+ * NOTE: shared values are read/written via `.get()`/`.set()`/`.modify()`, not `.value` — the React
+ * Compiler integration in eslint-plugin-react-hooks v7 flags direct `.value` assignment as an
+ * immutability violation; these are Reanimated's compiler-compliant equivalents.
  */
 export function useFrameStats(active: boolean): { stats: FrameStats; reset: () => void } {
-  const [stats, setStats] = useState<FrameStats>(EMPTY_STATS);
-  const buffer = useSharedValue<number[]>([]);
-  const lastPublishedAt = useSharedValue(0);
+  const [stats, setStats] = useState<FrameStats>(EMPTY_FRAME_STATS);
+  const chunk = useSharedValue<number[]>([]);
+  const lastFlushedAt = useSharedValue(0);
+  const deltas = useRef<number[]>([]);
 
-  const publish = useCallback((deltas: number[]) => {
-    setStats(summarizeFrameDeltas(deltas));
+  const receive = useCallback((received: number[]) => {
+    deltas.current = appendFrameDeltas(deltas.current, received);
+    setStats(summarizeFrameDeltas(deltas.current));
   }, []);
 
-  // `useFrameCallback` re-registers its worklet on the UI thread whenever this callback's
-  // identity changes (it re-runs its own internal `useEffect` on `[callback, autostart]`). An
-  // inline arrow function here would be a fresh closure every render, so while stats are
-  // publishing (~every 500ms) the frame callback would unregister/register on the UI thread in
-  // lockstep. `buffer` and `lastPublishedAt` are `useSharedValue`'s stable ref-backed objects and
-  // `publish` is itself `useCallback`-stable, so this callback's identity only changes if those
-  // identities ever would — in practice, never across this hook's lifetime.
+  const flush = useCallback(() => {
+    'worklet';
+    const pending = chunk.get();
+    if (pending.length === 0) {
+      return;
+    }
+    chunk.set([]);
+    scheduleOnRN(receive, pending);
+  }, [chunk, receive]);
+
+  // `useFrameCallback` re-registers its worklet whenever this callback's identity changes, so it
+  // only depends on stable values (shared values and `useCallback`s with stable deps).
   const onFrame = useCallback(
     (frameInfo: FrameInfo) => {
       'worklet';
       const delta = frameInfo.timeSincePreviousFrame;
       if (delta !== null) {
-        const current = buffer.get();
-        buffer.set(current.length >= MAX_BUFFERED_FRAMES ? [...current.slice(1), delta] : [...current, delta]);
+        chunk.modify((pending) => {
+          'worklet';
+          pending.push(delta);
+          return pending;
+        });
       }
 
-      if (frameInfo.timestamp - lastPublishedAt.get() >= PUBLISH_INTERVAL_MS) {
-        lastPublishedAt.set(frameInfo.timestamp);
-        scheduleOnRN(publish, buffer.get());
+      if (frameInfo.timestamp - lastFlushedAt.get() >= PUBLISH_INTERVAL_MS) {
+        lastFlushedAt.set(frameInfo.timestamp);
+        flush();
       }
     },
-    [buffer, lastPublishedAt, publish],
+    [chunk, lastFlushedAt, flush],
   );
 
-  const frameCallback = useFrameCallback(onFrame, false);
+  const { setActive } = useFrameCallback(onFrame, false);
 
-  const { setActive } = frameCallback;
   useEffect(() => {
     setActive(active);
-  }, [active, setActive]);
+    if (!active) {
+      // Queued after the deactivation above, so it runs once the last frame has been appended.
+      scheduleOnUI(flush);
+    }
+  }, [active, setActive, flush]);
 
   const reset = useCallback(() => {
-    buffer.set([]);
-    lastPublishedAt.set(0);
-    setStats(EMPTY_STATS);
-  }, [buffer, lastPublishedAt]);
+    scheduleOnUI(() => {
+      'worklet';
+      chunk.set([]);
+      lastFlushedAt.set(0);
+    });
+    deltas.current = [];
+    setStats(EMPTY_FRAME_STATS);
+  }, [chunk, lastFlushedAt]);
 
   return { stats, reset };
 }

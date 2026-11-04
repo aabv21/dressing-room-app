@@ -4,7 +4,7 @@ Guidance for anyone — human or AI — working in this repository.
 
 ## Purpose
 
-Dressing Room is a digital-closet and AI outfit rater app (Expo + Supabase), built as a portfolio demo. This plan (Plan 1) lays the foundation: Expo Router scaffold, strict TypeScript, lint, tests, and the perf gate that later plans build on.
+Dressing Room is a digital-closet and AI outfit rater app (Expo + Supabase), built as a portfolio demo. The current foundation: the Expo Router app shell (five tabs, glass tab bar, en/es), strict TypeScript, lint, tests, and a closet-grid scroll-performance harness that later work builds on.
 
 ## Expo has changed — do not trust your training data
 
@@ -25,6 +25,9 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - `pnpm typecheck` — `tsc --noEmit`.
 - `pnpm lint` — `eslint .`.
 - `pnpm test` — `jest`.
+- `pnpm perf:generate [count=500]` — write the performance fixture thumbnails (WebP) to `.perf-fixtures/` (gitignored).
+- `pnpm perf:serve [port=8787]` — serve `.perf-fixtures/` over HTTP and print every LAN URL, labeled by network interface.
+- Fixture mode: start the app with `EXPO_PUBLIC_PERF_FIXTURES_URL=<url printed by perf:serve>` (e.g. `EXPO_PUBLIC_PERF_FIXTURES_URL=http://127.0.0.1:8787 pnpm expo run:ios`). The Closet tab then shows 500 fixture thumbnails, a disabled upload CTA, and the frame-stats HUD (tap: reset; long-press: also clear expo-image's memory and disk caches). Unset or empty, the Closet shows its empty state. The value is inlined at bundle time, so restart Metro after changing it.
 - `pnpm check:expo` / `pnpm expo install --fix` — run during Expo SDK upgrades, after the 3-day `minimumReleaseAge` allows the new versions; informational, not a CI gate (see Supply-chain hardening).
 
 Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
@@ -35,7 +38,9 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 - `src/ui/` — shared UI components not tied to a single route.
 - `src/i18n/` — translation tables; `en` is the source of truth, `es` is the only non-English file in the repo (see Conventions).
 - `src/closet/` — closet domain logic (items, outfits, wear counts).
-- `src/perf/` — performance fixtures and the on-device perf gate harness.
+- `src/perf/` — the on-device frame-stats harness (UI-thread frame callback, stats, HUD).
+- `src/test/` — shared Jest helpers (e.g. the FlashList mock); never imported by app code.
+- `.perf-fixtures/` — generated fixture thumbnails (gitignored; see `pnpm perf:generate`).
 - `scripts/` — repo tooling (TypeScript, run with Node's native type stripping — no `.js`/`.mjs` sources).
 
 ## Conventions
@@ -49,7 +54,7 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 - Light-only appearance (`userInterfaceStyle: "light"`) — v1 has no dark palette.
 - Wear counts are always spelled out ("never worn" / "1 wear" / "N wears"; es: "sin usar" / "1 uso" / "N usos"), never "N×".
 - CTAs are anchored pill buttons, 48pt tall minimum, 44pt hit targets everywhere.
-- No secrets in this plan. Never put keys in `EXPO_PUBLIC_*`.
+- No secrets in the app yet. Never put keys in `EXPO_PUBLIC_*`: they are inlined into the bundle.
 
 ## Navigation & routing
 
@@ -76,7 +81,7 @@ Package management is pnpm, pinned in `package.json`'s `packageManager` to an ex
 - `engineStrict: true` — a dependency whose `engines` range excludes this repo's Node fails the install instead of warning.
 - `allowBuilds` lists only packages a real `pnpm install` proved need their build script, each with a one-line reason: `@parcel/watcher` (`jest-haste-map`'s file watcher; links a platform binary) and `unrs-resolver` (`jest-resolve`'s native resolver; same).
 
-**`eslint-config-expo` is deliberately not used.** It pulls in `eslint-import-resolver-typescript`, whose only SDK-58-compatible version at the time had a trust-evidence regression this repo's `trustPolicy` correctly caught, with no newer or older in-range version to fall back on and no scoped exception the owner had reviewed. Step 6 instead composes `typescript-eslint`'s `strictTypeChecked`, `eslint-plugin-security`'s `recommended`, and `eslint-plugin-react-hooks`' flat `recommended-latest` directly in `eslint.config.ts` — no Expo-specific lint rules are lost that matter for a TypeScript-strict, React-Native-only (no web target) app at this stage.
+**`eslint-config-expo` is deliberately not used.** It pulls in `eslint-import-resolver-typescript`, whose only SDK-58-compatible version at the time had a trust-evidence regression this repo's `trustPolicy` correctly caught, with no newer or older in-range version to fall back on and no scoped exception the owner had reviewed. This repo instead composes `typescript-eslint`'s `strictTypeChecked`, `eslint-plugin-security`'s `recommended`, and `eslint-plugin-react-hooks`' flat `recommended-latest` directly in `eslint.config.ts` — no Expo-specific lint rules are lost that matter for a TypeScript-strict, React-Native-only (no web target) app at this stage.
 
 **`pnpm check:expo` (`expo install --check`) is informational, not a CI gate.** It compares every installed package against the single latest version on the npm registry, with no awareness of `minimumReleaseAge` — so it will always flag a package whose newer release exists but is still too young to install under this repo's hardening. Run it (or `pnpm expo install --fix`) during a deliberate Expo SDK upgrade, after the candidate versions have cleared the 3-day age gate, not as part of the regular `typecheck`/`lint`/`test` gate.
 

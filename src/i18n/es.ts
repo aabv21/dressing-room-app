@@ -14,6 +14,9 @@ export const es: Record<MessageKey, string> = {
   'grid.empty': 'Agrega tus {count} favoritas para empezar.',
   'grid.loadError': 'No se pudo cargar la foto',
 
+  'closet.gallery': 'Galería',
+  'closet.burstMode': 'Modo ráfaga',
+
   'screen.today': 'HOY',
   'screen.closet': 'TU CLÓSET',
   'screen.build': 'ARMAR OUTFIT',
@@ -22,5 +25,7 @@ export const es: Record<MessageKey, string> = {
 
   comingSoon: 'Llega en la próxima etapa.',
 
-  'perf.hud': '{frames} frames · {dropped} dropped ({ratio}%) · p95 {p95} ms',
+  'perf.hud': '{frames} frames · {dropped} dropped ({ratio}%)\np95 {p95} ms · median {median} ms ≈ {hz} Hz',
+  'perf.cacheCleared': 'Caché de imágenes vaciada · estadísticas reiniciadas',
+  'perf.cacheClearFailed': 'No se pudo vaciar la caché de imágenes',
 };

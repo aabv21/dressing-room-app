@@ -18,8 +18,8 @@ export const radii = {
 } as const;
 
 // NOTE: no spacing scale is pinned in the spec yet; this 4pt-based scale covers the
-// mockups seen so far. Upgrade path: replace with spec-pinned values once Task 4's
-// mockup pass defines them.
+// mockups seen so far. Upgrade path: replace with spec-pinned values once the spec
+// defines them.
 export const spacing = {
   xs: 4,
   sm: 8,

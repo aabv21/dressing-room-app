@@ -14,7 +14,7 @@ function fixtureFileName(index: number): string {
 /**
  * Builds `count` synthetic closet items whose thumbnails point at the local perf fixture server
  * (`scripts/perf-fixtures.ts`). Used only when `EXPO_PUBLIC_PERF_FIXTURES_URL` is set for the
- * on-device performance gate build; see Task 6's `NOTE:` in `src/app/(tabs)/closet.tsx`.
+ * on-device performance gate build; see the `NOTE:` in `src/app/(tabs)/closet.tsx`.
  */
 export function perfFixtureItems(baseUrl: string, count: number = DEFAULT_COUNT): GridItem[] {
   return Array.from({ length: count }, (_, zeroBasedIndex) => {

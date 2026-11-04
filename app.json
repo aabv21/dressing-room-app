@@ -9,7 +9,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.aabv21.dressingroom",
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "Loads test images from your computer during development."
+      }
     },
     "android": {
       "package": "com.aabv21.dressingroom",

@@ -2,22 +2,31 @@ import type { BottomTabBarProps } from 'expo-router/tabs';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useI18n } from '../i18n';
 import { TABS, useBottomChrome } from './layout';
+
+// NOTE: expo-blur only blurs on iOS out of the box; Android needs the blurred content wrapped in a
+// BlurTargetView, which isn't wired yet. Until then Android gets a near-opaque frosted fill.
+// Upgrade path: wrap the tab navigator's scenes in BlurTargetView and pass it as `blurTarget`.
+const blurAvailable = Platform.OS === 'ios';
 
 function Material(): React.JSX.Element {
   if (isLiquidGlassAvailable()) {
     return <GlassView glassEffectStyle="regular" style={StyleSheet.absoluteFill} />;
   }
 
-  return (
-    <View style={StyleSheet.absoluteFill}>
-      <BlurView tint="light" intensity={40} style={StyleSheet.absoluteFill} />
-      <View style={[StyleSheet.absoluteFill, styles.blurOverlay]} />
-    </View>
-  );
+  if (blurAvailable) {
+    return (
+      <View style={StyleSheet.absoluteFill}>
+        <BlurView tint="light" intensity={40} style={StyleSheet.absoluteFill} />
+        <View style={[StyleSheet.absoluteFill, styles.blurOverlay]} />
+      </View>
+    );
+  }
+
+  return <View style={[StyleSheet.absoluteFill, styles.opaqueFallback]} />;
 }
 
 export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
@@ -26,20 +35,19 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
   const { tabBarBottom } = useBottomChrome();
 
   return (
-    // NOTE: the shadow lives on this separate, non-clipping, fully opaque layer rather than on
-    // `capsule` itself — a view can't both clip its content (`overflow: 'hidden'`, needed so the
-    // glass/blur fill respects the capsule's rounded corners) and calculate its own drop shadow
-    // efficiently (RN/UIKit has to rasterize the shadow from the view's alpha channel, which
-    // `overflow: 'hidden'` plus a translucent fill defeats). Same shape, same position, sitting
-    // behind the glass capsule.
-    <View style={[styles.shadowLayer, { bottom: tabBarBottom }]}>
+    // The drop shadow lives on this transparent, non-clipping wrapper: `capsule` must clip
+    // (`overflow: 'hidden'`) to round the glass, which would also clip its own shadow. `boxShadow`
+    // has CSS outset semantics (drawn only outside the box), so the wrapper needs no fill and the
+    // content behind the capsule stays visible through the glass.
+    <View style={[styles.shadowFrame, { bottom: tabBarBottom }]} pointerEvents="box-none">
       <View style={styles.capsule}>
         <Material />
         {/* NOTE: the end color is white at 0 alpha, not the `transparent` keyword — that keyword
             is transparent BLACK, which would make the gradient interpolate through visible grey.
-            start/end are CSS `linear-gradient(115deg, ...)` converted to expo-linear-gradient's
-            fractional points via start = (0.5 - sin(115deg)/2, 0.5 + cos(115deg)/2), end = the
-            mirror of that, matching mockup 01's `.tabs::before` sheen angle exactly. */}
+            start/end approximate mockup 01's `.tabs::before` `linear-gradient(115deg, ...)`: they
+            are (0.5 - sin(115deg)/2, 0.5 + cos(115deg)/2) and its mirror, but expo-linear-gradient
+            applies those fractions per axis, so on a non-square capsule the rendered angle differs
+            from 115deg. */}
         <LinearGradient
           colors={['rgba(255,255,255,0.65)', 'rgba(255,255,255,0)']}
           start={{ x: 0.047, y: 0.289 }}
@@ -78,9 +86,6 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
                 onPress={onPress}
                 style={styles.tab}
               >
-                {/* Same reasoning as the capsule's `shadowLayer`: a separate opaque layer behind
-                    the translucent lens carries the shadow so it can be rasterized efficiently. */}
-                {selected ? <View style={styles.tabActiveShadowLayer} /> : null}
                 <View style={[styles.tabContent, selected ? styles.tabActive : null]}>
                   <Icon size={18} color={selected ? '#6d28d9' : '#5f5b6b'} />
                   <Text
@@ -101,19 +106,13 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  // Opaque, non-clipping layer that carries the capsule's drop shadow (see the NOTE above JSX).
-  shadowLayer: {
+  shadowFrame: {
     position: 'absolute',
     left: 10,
     right: 10,
     height: 56,
     borderRadius: 30,
-    backgroundColor: '#ffffff',
-    shadowColor: 'rgba(50,20,110,0.18)',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 1,
-    shadowRadius: 28,
-    elevation: 12,
+    boxShadow: '0px 12px 28px rgba(50,20,110,0.18)',
   },
   capsule: {
     flex: 1,
@@ -121,10 +120,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.8)',
-    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   blurOverlay: {
     backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  opaqueFallback: {
+    backgroundColor: 'rgba(255,255,255,0.85)',
   },
   row: {
     flex: 1,
@@ -139,22 +140,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  // Opaque, non-clipping layer behind the active tab's translucent lens, carrying its shadow —
-  // same reasoning as `shadowLayer` above.
-  tabActiveShadowLayer: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderRadius: 23,
-    backgroundColor: '#ffffff',
-    shadowColor: 'rgba(80,40,160,0.16)',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
   tabContent: {
     width: '100%',
     height: '100%',
@@ -163,8 +148,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
   },
+  // The lens doesn't clip, so its outset shadow can sit on the view itself without an opaque fill.
   tabActive: {
     backgroundColor: 'rgba(255,255,255,0.9)',
+    boxShadow: '0px 2px 8px rgba(80,40,160,0.16), inset 0px 1px 0px #ffffff',
   },
   label: {
     fontSize: 10,

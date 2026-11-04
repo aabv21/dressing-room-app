@@ -25,6 +25,17 @@ export function resolveLocale(languageTags: readonly string[]): Locale {
   return 'en';
 }
 
+const numberFormats = new Map<Locale, Intl.NumberFormat>();
+
+function numberFormat(locale: Locale): Intl.NumberFormat {
+  let format = numberFormats.get(locale);
+  if (format === undefined) {
+    format = new Intl.NumberFormat(locale);
+    numberFormats.set(locale, format);
+  }
+  return format;
+}
+
 export function translate(
   locale: Locale,
   key: MessageKey,
@@ -39,7 +50,7 @@ export function translate(
     if (value === undefined) {
       return match;
     }
-    return typeof value === 'number' ? new Intl.NumberFormat(locale).format(value) : value;
+    return typeof value === 'number' ? numberFormat(locale).format(value) : value;
   });
 }
 

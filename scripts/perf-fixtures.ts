@@ -1,7 +1,7 @@
 // scripts/perf-fixtures.ts
 //
-// Generates and serves the performance fixtures used by Task 6's closet grid and Task 7's
-// on-device performance gate: 500 distinct 256x256 transparent WebP garment thumbnails.
+// Generates and serves the performance fixtures used by the closet grid's fixture mode and the
+// on-device scroll-performance gate: 500 distinct 256x256 transparent WebP garment thumbnails.
 //
 // Usage:
 //   node scripts/perf-fixtures.ts generate [count=500]
@@ -9,9 +9,9 @@
 
 import { createServer } from 'node:http';
 import { mkdir, readFile } from 'node:fs/promises';
-import { networkInterfaces } from 'node:os';
+import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export type FixtureSpec = {
   hue: number;
@@ -140,16 +140,18 @@ async function generate(count: number): Promise<void> {
   console.log(`Generated ${n(count)} fixtures in ${outDir}`);
 }
 
-function lanAddress(): string | null {
-  const interfaces = networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const net of interfaces[name] ?? []) {
-      if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  return null;
+/**
+ * Every non-internal IPv4 address, labeled with its interface name. All of them are printed
+ * because the first one isn't necessarily the Wi-Fi the phone is on (VPNs, bridges, Ethernet).
+ */
+export function lanAddresses(
+  interfaces: NodeJS.Dict<NetworkInterfaceInfo[]>,
+): { name: string; address: string }[] {
+  return Object.entries(interfaces).flatMap(([name, nets]) =>
+    (nets ?? [])
+      .filter((net) => net.family === 'IPv4' && !net.internal)
+      .map((net) => ({ name, address: net.address })),
+  );
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -188,10 +190,13 @@ function serve(port: number): void {
       });
   });
   server.listen(port, () => {
-    const lan = lanAddress();
     console.log(`Serving ${root} on http://127.0.0.1:${n(port)}`);
-    if (lan) {
-      console.log(`LAN URL: http://${lan}:${n(port)}`);
+    const candidates = lanAddresses(networkInterfaces());
+    if (candidates.length > 0) {
+      console.log('LAN URLs (use the one on the same Wi-Fi as the phone):');
+    }
+    for (const { name, address } of candidates) {
+      console.log(`  ${name}: http://${address}:${n(port)}`);
     }
   });
 }
@@ -212,8 +217,12 @@ async function main(): Promise<void> {
   process.exitCode = 1;
 }
 
+/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
+export function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
+  return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
+}
+
 // Guard the entry point so importing this module (e.g. from tests) has no side effects.
-const invokedPath = process.argv[1];
-if (invokedPath && import.meta.url === `file://${invokedPath}`) {
+if (isEntryPoint(import.meta.url, process.argv[1])) {
   void main();
 }

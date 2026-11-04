@@ -12,6 +12,9 @@ export const en = {
   'grid.empty': 'Add your {count} favorites to get started.',
   'grid.loadError': "Couldn't load this photo",
 
+  'closet.gallery': 'Gallery',
+  'closet.burstMode': 'Burst mode',
+
   'screen.today': 'TODAY',
   'screen.closet': 'YOUR CLOSET',
   'screen.build': 'BUILD AN OUTFIT',
@@ -20,5 +23,7 @@ export const en = {
 
   comingSoon: 'Coming in the next milestone.',
 
-  'perf.hud': '{frames} frames · {dropped} dropped ({ratio}%) · p95 {p95} ms',
+  'perf.hud': '{frames} frames · {dropped} dropped ({ratio}%)\np95 {p95} ms · median {median} ms ≈ {hz} Hz',
+  'perf.cacheCleared': 'Image cache cleared · stats reset',
+  'perf.cacheClearFailed': "Couldn't clear the image cache",
 } as const;
