@@ -1,8 +1,9 @@
 # Database: schema, RLS and storage
 
 The local backend is Supabase (Postgres 17) run via `pnpm db:*` scripts (see `AGENTS.md`). This
-document covers what Task 2 of Plan 2 added: the `public.profiles` table, its enums, the signup
-trigger, row level security, and the `garments` storage bucket.
+document covers the `public.profiles` table, its enums, the signup trigger, row level security, and
+the `garments` storage bucket. See `docs/testing.md` for how these are exercised by pgTAP and the
+integration Jest project.
 
 ## Tables and enums
 
@@ -55,7 +56,7 @@ RLS is enabled with three policies, all comparing `user_id = (select auth.uid())
 - `profiles_insert_own` — `insert`
 - `profiles_update_own` — `update`
 
-**There is no delete policy.** Account deletion is Plan 5's responsibility; until then a user's
+**There is no delete policy.** Account deletion is not yet implemented; until then a user's
 profile row can only go away via `on delete cascade` from `auth.users`.
 
 ### `storage.buckets` / `storage.objects` (`garments` bucket)
@@ -159,11 +160,14 @@ discards both the user and its profile row — no cleanup step is needed.
   server's `now()`, not the client-sent time; a second completion or a null keeps the original
   time.
 
+See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
+Docker.
+
 ## Local backup and restore
 
-Not exercised by this task — noted here for the integration session at the end of the plan, which
-owns live-account testing. Dump **outside the repo** — a local DB dump can contain real account
-data from manual testing and must never land in git history:
+Not exercised by CI or the automated test suites — this is a manual procedure for local
+development. Dump **outside the repo** — a local DB dump can contain real account data from manual
+testing and must never land in git history:
 
 ```bash
 pnpm exec supabase db dump --local -f ~/dressing-room-backup.sql   # schema + data, local DB only

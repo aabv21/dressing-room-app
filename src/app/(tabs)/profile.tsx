@@ -66,8 +66,8 @@ function AccountSection(): React.JSX.Element {
 /**
  * "Language": the ES/EN toggle plus "Use device language". A change applies at once (the
  * I18nProvider preference) and is saved to `profile.language` on its own, outside the Save button.
- * NOTE: the saved value isn't read back into the device preference on sign-in yet (the preference
- * is per device); upgrade path: apply `profile.language` in AuthProvider when a session starts.
+ * `profile.language` is applied to the device preference on sign-in by `AuthProvider`, so this
+ * section's own saves and that startup reconciliation share the same source of truth.
  */
 function LanguageSection({ onSave }: { onSave: (language: 'en' | 'es' | null) => Promise<MessageKey | undefined> }) {
   const { t, locale } = useI18n();
