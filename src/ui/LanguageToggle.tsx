@@ -12,11 +12,13 @@ const MIN_HIT_TARGET = layout.minHitTarget;
 /**
  * A two-segment ES/EN control (mockup 03, top right). Choosing a language sets an explicit
  * preference via `useLocalePreference`, overriding the device-locale default until the user picks
- * again (there's no "follow system" segment here — only Profile's full settings would offer that).
+ * again (there's no "follow system" segment here; Profile pairs it with a "Use device language"
+ * option). `onChange` fires only when the preference actually changes, e.g. so Profile can save it.
  */
-export function LanguageToggle(): React.JSX.Element {
+export function LanguageToggle(props: { onChange?: (locale: Locale) => void } = {}): React.JSX.Element {
+  const { onChange } = props;
   const { locale, t } = useI18n();
-  const { setPreference } = useLocalePreference();
+  const { preference, setPreference } = useLocalePreference();
 
   return (
     <View style={styles.track} accessibilityRole="tablist">
@@ -31,7 +33,11 @@ export function LanguageToggle(): React.JSX.Element {
             accessibilityState={{ selected }}
             accessibilityLabel={fullLabel}
             onPress={() => {
+              if (preference === segment) {
+                return;
+              }
               setPreference(segment);
+              onChange?.(segment);
             }}
             style={[styles.segment, selected ? styles.segmentOn : null]}
             hitSlop={6}

@@ -29,6 +29,7 @@ type TextFieldProps = {
   maxLength?: number;
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: () => void;
+  onBlur?: () => void;
   /** 'submit' keeps focus in this field after `onSubmitEditing` fires (M3's focus-chaining fields
    * call this, then move focus themselves); default (unset) is the platform's normal
    * blur-and-submit behavior. Replaces the deprecated `blurOnSubmit` prop. */
@@ -59,6 +60,7 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
     maxLength,
     returnKeyType,
     onSubmitEditing,
+    onBlur,
     submitBehavior,
     error,
     testID,
@@ -101,6 +103,7 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
           maxLength={maxLength}
           returnKeyType={returnKeyType}
           onSubmitEditing={onSubmitEditing}
+          onBlur={onBlur}
           submitBehavior={submitBehavior}
           autoCapitalize={autoCapitalize}
           autoCorrect={false}

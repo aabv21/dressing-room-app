@@ -90,10 +90,26 @@ export async function confirmPasswordReset(
   return { ok: true };
 }
 
-export async function signOut(client: Client = supabase): Promise<Result> {
-  const { error } = await client.auth.signOut();
-  if (error !== null) {
+async function signOutWithScope(client: Client, scope?: 'local'): Promise<Result> {
+  try {
+    const { error } = await (scope === undefined ? client.auth.signOut() : client.auth.signOut({ scope }));
+    return error === null ? { ok: true } : { ok: false, error: toAuthErrorKey(error) };
+  } catch (error) {
     return { ok: false, error: toAuthErrorKey(error) };
   }
-  return { ok: true };
+}
+
+/**
+ * Signs out with supabase-js's default `global` scope, which also revokes the server-side refresh
+ * tokens. Offline, that server call can't happen, so it falls back to `{ scope: 'local' }`, which
+ * only clears this device's session: the user still gets signed out here. NOTE: the refresh token
+ * then stays valid on the server until it expires; upgrade path: retry the revoke on the next
+ * sign-in if that ever matters. Any other failure is returned so the screen can show it.
+ */
+export async function signOut(client: Client = supabase): Promise<Result> {
+  const result = await signOutWithScope(client);
+  if (!result.ok && result.error === 'auth.error.network') {
+    return signOutWithScope(client, 'local');
+  }
+  return result;
 }

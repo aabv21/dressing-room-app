@@ -64,15 +64,17 @@ export async function saveProfile(userId: string, patch: ProfilePatch, client: C
 }
 
 /**
- * Stamps `onboarding_completed_at` with the current time. The `is null` filter keeps the original
- * completion time if the profile was already complete (e.g. onboarding shown again after a failed
- * launch-time profile read).
+ * Marks onboarding complete with the server's clock: the `profiles_stamp_onboarding_completed_at`
+ * trigger replaces any non-null value with `now()` (and `'now'` is also Postgres's own input
+ * literal for the current time), so the device clock never reaches the row. The `is null` filter
+ * (and the trigger) keep the original completion time if the profile was already complete, e.g.
+ * onboarding shown again after a failed launch-time profile read.
  */
 export async function completeOnboarding(userId: string, client: Client = supabase): Promise<Result> {
   return run(
     client
       .from('profiles')
-      .update({ onboarding_completed_at: new Date().toISOString() })
+      .update({ onboarding_completed_at: 'now' })
       .eq('user_id', userId)
       .is('onboarding_completed_at', null),
   );

@@ -87,6 +87,20 @@ bare `public.profiles` row (`user_id` only; every other column takes its default
 `updated_at` trigger (`public.set_updated_at()`) is the same pattern, firing `before update on
 public.profiles`.
 
+### Onboarding completion clock
+
+`public.stamp_onboarding_completed_at()` (migration `20261105120000_onboarding_completed_at_server_clock`)
+fires `before insert or update of onboarding_completed_at on public.profiles`. When the column goes
+from null to non-null it replaces whatever the client sent with `now()`, so the completion time
+always comes from the server clock, never a device's. Once set, it keeps the old value: a later
+write (another timestamp, or a null) cannot change it, so no client can move a finished profile
+back into onboarding. The app's `completeOnboarding` sends Postgres's `'now'` literal and filters on
+`onboarding_completed_at is null`.
+
+NOTE: the trigger also blocks the service role, so an admin reset of onboarding (back to null) must
+run with the trigger disabled: `set local session_replication_role = replica;` in the same
+transaction as the `update` (as the table owner).
+
 ## How to add a migration
 
 ```bash
@@ -141,6 +155,9 @@ discards both the user and its profile row — no cleanup step is needed.
 - `profiles_constraints.test.sql` — every CHECK constraint rejects an out-of-range or malformed
   value (`height_cm = 300`, `waist_cm = 10`, an 11-character `top_size`, `city_lat` without
   `city_lon`, onboarding completed with a null `clothing_type`) and accepts a fully valid row.
+- `profiles_onboarding_clock.test.sql` — completing onboarding (by update or by insert) stores the
+  server's `now()`, not the client-sent time; a second completion or a null keeps the original
+  time.
 
 ## Local backup and restore
 

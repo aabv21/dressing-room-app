@@ -107,7 +107,7 @@ describe('completeOnboarding', () => {
     return { client: { from } as unknown as Parameters<typeof completeOnboarding>[1], from, update, eq, is };
   }
 
-  test('stamps onboarding_completed_at with the current time, only if it is still unset', async () => {
+  test('asks the server to stamp onboarding_completed_at (never a client timestamp), only if it is still unset', async () => {
     jest.useFakeTimers({ now: new Date('2026-11-05T12:00:00.000Z') });
     const { client, from, update, eq, is } = updateClient({ error: null });
 
@@ -115,7 +115,8 @@ describe('completeOnboarding', () => {
 
     expect(result).toEqual({ ok: true });
     expect(from).toHaveBeenCalledWith('profiles');
-    expect(update).toHaveBeenCalledWith({ onboarding_completed_at: '2026-11-05T12:00:00.000Z' });
+    expect(update).toHaveBeenCalledWith({ onboarding_completed_at: 'now' });
+    expect(JSON.stringify(update.mock.calls)).not.toContain('2026-11-05');
     expect(eq).toHaveBeenCalledWith('user_id', 'user-1');
     expect(is).toHaveBeenCalledWith('onboarding_completed_at', null);
     jest.useRealTimers();

@@ -51,12 +51,13 @@ import { silhouettesFor } from '../profile/bodyType';
 import { completeOnboarding, getProfile, saveProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
 import { translate } from '../i18n';
+import { kvRemove, kvSet } from '../lib/kv';
 
 const mockedUseAuth = jest.mocked(useAuth);
 const mockedGetProfile = jest.mocked(getProfile);
 const mockedSaveProfile = jest.mocked(saveProfile);
 const mockedCompleteOnboarding = jest.mocked(completeOnboarding);
-const refreshProfile = jest.fn(() => Promise.resolve());
+const refreshProfile = jest.fn(() => Promise.resolve(true));
 
 const USER_ID = 'user-1';
 
@@ -91,9 +92,13 @@ async function launch(profile: Profile | null = profileRow()) {
   return renderRouter({ appDir: 'src/app', overrides: {} }, { initialUrl: '/' });
 }
 
+afterEach(() => {
+  kvRemove('locale-preference');
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedUseAuth.mockReturnValue({ status: 'signedIn', userId: USER_ID, onboardingComplete: false, refreshProfile });
+  mockedUseAuth.mockReturnValue({ status: 'signedIn', userId: USER_ID, email: 'ana@example.com', onboardingComplete: false, refreshProfile });
   mockedSaveProfile.mockResolvedValue({ ok: true });
   mockedCompleteOnboarding.mockResolvedValue({ ok: true });
 });
@@ -440,5 +445,177 @@ describe('Never clobbering a finished profile (P2 binding item a)', () => {
     expect(screen.queryByText('WHAT CLOTHES DO YOU WEAR?')).toBeNull();
     expect(mockedSaveProfile).not.toHaveBeenCalled();
     expect(mockedCompleteOnboarding).not.toHaveBeenCalled();
+  });
+});
+
+describe('Task 6 follow-ups (P2-R12)', () => {
+  const GRANTED = { status: Location.PermissionStatus.GRANTED, granted: true, canAskAgain: true, expires: 'never' } as const;
+  const COORDS = { latitude: 4.711, longitude: -74.0721, altitude: null, accuracy: 100, altitudeAccuracy: null, heading: null, speed: null };
+  const ADDRESS = {
+    city: 'Bogotá', subregion: null, region: null, district: null, street: null, streetNumber: null, country: null,
+    postalCode: null, name: null, isoCountryCode: null, timezone: null, formattedAddress: null,
+  };
+
+  test('in Spanish, the hips answers agree with "caderas" (feminine), the shoulder answers with "hombros"', async () => {
+    kvSet('locale-preference', 'es');
+    await launch(profileRow({ clothing_type: 'feminine' }));
+    await screen.findByText('TU CUERPO');
+
+    await fireEvent.press(screen.getByRole('button', { name: /¿No sabes\?/ }));
+
+    const answers = within(screen.getByTestId('body-helper-panel'))
+      .getAllByRole('radio')
+      .map((chip) => chip.props.accessibilityLabel as string);
+    // Shoulders, then hips, then waist.
+    expect(answers.slice(0, 3)).toEqual(['Estrechos', 'Medios', 'Anchos']);
+    expect(answers.slice(3, 6)).toEqual(['Estrechas', 'Medias', 'Anchas']);
+  });
+
+  test('deselecting a saved silhouette saves body_type as null', async () => {
+    await launch(profileRow({ clothing_type: 'feminine', body_type: 'pear', height_cm: 160 }));
+    await screen.findByText('YOUR BODY');
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Pear' }));
+    expect(screen.getByRole('radio', { name: 'Pear' })).not.toBeSelected();
+    await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => {
+      expect(mockedSaveProfile).toHaveBeenCalledWith(USER_ID, expect.objectContaining({ body_type: null, height_cm: 160 }));
+    });
+  });
+
+  test('switching clothing type to a set without the saved silhouette clears body_type', async () => {
+    const router = await launch(profileRow({ clothing_type: 'feminine', body_type: 'hourglass' }));
+    await screen.findByText('YOUR BODY');
+    await testRouter.back('/clothing');
+    await screen.findByText('WHAT CLOTHES DO YOU WEAR?');
+
+    await fireEvent.press(screen.getByRole('radio', { name: /^Masculine/ }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => {
+      expect(router.getPathname()).toBe('/body');
+    });
+    expect(mockedSaveProfile).toHaveBeenCalledWith(USER_ID, { clothing_type: 'masculine', body_type: null });
+  });
+
+  test('switching to a clothing type that still offers the saved silhouette keeps it', async () => {
+    await launch(profileRow({ clothing_type: 'feminine', body_type: 'rectangle' }));
+    await screen.findByText('YOUR BODY');
+    await testRouter.back('/clothing');
+    await screen.findByText('WHAT CLOTHES DO YOU WEAR?');
+
+    await fireEvent.press(screen.getByRole('radio', { name: /^Masculine/ }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => {
+      expect(mockedSaveProfile).toHaveBeenCalledWith(USER_ID, { clothing_type: 'masculine' });
+    });
+  });
+
+  test('a failed sign-out is shown instead of silently doing nothing', async () => {
+    jest.mocked(signOut).mockResolvedValueOnce({ ok: false, error: 'auth.error.unknown' });
+    await launch();
+    await screen.findByText('WHAT CLOTHES DO YOU WEAR?');
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Sign out' }));
+
+    expect(await screen.findByText(translate('en', 'auth.error.unknown'))).toBeTruthy();
+  });
+
+  test('Start shows a message (and stays on Style) when the post-completion refresh fails', async () => {
+    refreshProfile.mockResolvedValueOnce(false);
+    const router = await launch(profileRow({ clothing_type: 'feminine' }));
+    await screen.findByText('YOUR BODY');
+    await fireEvent.press(screen.getByRole('button', { name: 'Skip' }));
+    await screen.findByText('YOUR STYLE');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Start' }));
+
+    expect(await screen.findByText(translate('en', 'onboarding.error.continue'))).toBeTruthy();
+    expect(mockedCompleteOnboarding).toHaveBeenCalledWith(USER_ID);
+    expect(router.getPathname()).toBe('/style');
+    expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
+  });
+
+  test('a location result that arrives after the user typed a city is ignored', async () => {
+    jest.mocked(Location.requestForegroundPermissionsAsync).mockResolvedValue(GRANTED);
+    jest.mocked(Location.getCurrentPositionAsync).mockResolvedValue({ coords: COORDS, timestamp: 0 });
+    let resolveGeocode: (value: (typeof ADDRESS)[]) => void = () => undefined;
+    jest.mocked(Location.reverseGeocodeAsync).mockReturnValue(
+      new Promise((resolve) => {
+        resolveGeocode = resolve;
+      }),
+    );
+    await launch(profileRow({ clothing_type: 'feminine' }));
+    await screen.findByText('YOUR BODY');
+    await fireEvent.press(screen.getByRole('button', { name: 'Skip' }));
+    await screen.findByText('YOUR STYLE');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'use my location' }));
+    await fireEvent.changeText(screen.getByLabelText('Your city, for the weather'), 'Cali');
+    resolveGeocode([ADDRESS]);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'use my location' })).toBeEnabled();
+    });
+
+    expect(screen.getByLabelText('Your city, for the weather').props.value).toBe('Cali');
+    await fireEvent.press(screen.getByRole('button', { name: 'Start' }));
+    await waitFor(() => {
+      expect(mockedSaveProfile).toHaveBeenCalledWith(
+        USER_ID,
+        expect.objectContaining({ city_name: 'Cali', city_lat: null, city_lon: null }),
+      );
+    });
+  });
+
+  describe('height slider', () => {
+    test('in range, the thumb, the label and the spoken value agree, in metres', async () => {
+      await launch(profileRow({ clothing_type: 'feminine', height_cm: 172 }));
+      await screen.findByText('YOUR BODY');
+
+      const slider = screen.getByTestId('body-height-slider');
+      expect(slider.props.value).toBe(172);
+      expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.72 m');
+      expect(slider.props.accessibilityValue).toEqual({ min: 140, max: 210, now: 172, text: '1.72 meters' });
+      // Never the slider's own spoken-increment props: Android parses them as integers (P2-R13 I1).
+      expect(slider.props.accessibilityIncrements).toBeUndefined();
+      expect(slider.props.accessibilityUnits).toBeUndefined();
+      expect(screen.queryByTestId('body-height-note', { includeHiddenElements: true })).toBeNull();
+    });
+
+    test.each([
+      [125, 140, '1.25'],
+      [225, 210, '2.25'],
+    ])('a saved %i cm shows its true value, rests the thumb at %i and explains why', async (saved, thumb, meters) => {
+      await launch(profileRow({ clothing_type: 'feminine', height_cm: saved }));
+      await screen.findByText('YOUR BODY');
+
+      const slider = screen.getByTestId('body-height-slider');
+      expect(slider.props.value).toBe(thumb);
+      expect(screen.getByTestId('body-height-value')).toHaveTextContent(`${meters} m`);
+      expect(slider.props.accessibilityValue).toEqual({ min: 140, max: 210, now: thumb, text: `${meters} meters` });
+      expect(slider.props.accessibilityIncrements).toBeUndefined();
+      const note = translate('en', 'onboarding.body.heightOutOfRange', { min: '1.40', max: '2.10' });
+      // The visible note is hidden from screen readers, which hear it as the slider's hint instead.
+      expect(screen.getByTestId('body-height-note', { includeHiddenElements: true })).toHaveTextContent(note);
+      expect(slider.props.accessibilityHint).toBe(note);
+
+      // Untouched, the true value is what gets saved — never the clamped thumb position.
+      await fireEvent.press(screen.getByRole('button', { name: 'Next' }));
+      await waitFor(() => {
+        expect(mockedSaveProfile).toHaveBeenCalledWith(USER_ID, expect.objectContaining({ height_cm: saved }));
+      });
+    });
+
+    test('moving the thumb from an out-of-range height replaces it and hides the note', async () => {
+      await launch(profileRow({ clothing_type: 'feminine', height_cm: 125 }));
+      await screen.findByText('YOUR BODY');
+
+      await fireEvent(screen.getByTestId('body-height-slider'), 'valueChange', 150);
+
+      expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.50 m');
+      expect(screen.queryByTestId('body-height-note', { includeHiddenElements: true })).toBeNull();
+    });
   });
 });

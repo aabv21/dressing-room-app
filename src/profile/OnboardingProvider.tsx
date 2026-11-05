@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
+import type { MessageKey } from '../i18n';
 import { completeOnboarding, getProfile, saveProfile } from './profileRepository';
 import type { ProfilePatch, Result } from './profileRepository';
 
@@ -13,8 +14,12 @@ interface OnboardingContextValue {
   values: ProfilePatch;
   reload: () => void;
   save: (patch: ProfilePatch) => Promise<Result>;
-  /** Stamps onboarding as complete, then asks AuthProvider to re-read it so the guard moves on. */
-  finish: () => Promise<Result>;
+  /**
+   * Stamps onboarding as complete, then asks AuthProvider to re-read it so the guard moves on. If
+   * that re-read fails the user would be stuck on the last step with no feedback, so it reports
+   * `onboarding.error.continue` (pressing Start again is safe: completion is idempotent).
+   */
+  finish: () => Promise<{ ok: true } | { ok: false; error: MessageKey }>;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue | undefined>(undefined);
@@ -94,10 +99,11 @@ export function OnboardingProvider({ children }: { children: ReactNode }): React
           return { ok: false, error: 'profile.error.unknown' };
         }
         const result = await completeOnboarding(userId);
-        if (result.ok) {
-          await refreshProfile();
+        if (!result.ok) {
+          return result;
         }
-        return result;
+        const refreshed = await refreshProfile();
+        return refreshed ? { ok: true } : { ok: false, error: 'onboarding.error.continue' };
       },
     }),
     [status, values, userId, refreshProfile],

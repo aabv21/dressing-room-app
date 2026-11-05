@@ -1,7 +1,7 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
-import { AuthError } from '@supabase/supabase-js';
+import { AuthError, AuthRetryableFetchError } from '@supabase/supabase-js';
 
 // A literal object, not an outer-scope variable: this project's Jest config runs in native ESM
 // mode, where `jest.mock()` factories are not hoisted the way Babel's CJS jest-hoist plugin would
@@ -155,6 +155,49 @@ describe('signOut', () => {
 
     expect(client.auth.signOut).toHaveBeenCalledTimes(1);
     expect(result).toEqual({ ok: true });
+  });
+
+  test('offline, falls back to a local sign-out so the device still signs out', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: null });
+
+    const result = await signOut(asClient(client));
+
+    expect(client.auth.signOut).toHaveBeenNthCalledWith(2, { scope: 'local' });
+    expect(result).toEqual({ ok: true });
+  });
+
+  test('a thrown network error also falls back to the local sign-out', async () => {
+    const client = fakeClient();
+    client.auth.signOut.mockRejectedValueOnce(new TypeError('Network request failed')).mockResolvedValueOnce({ error: null });
+
+    const result = await signOut(asClient(client));
+
+    expect(client.auth.signOut).toHaveBeenNthCalledWith(2, { scope: 'local' });
+    expect(result).toEqual({ ok: true });
+  });
+
+  test('surfaces the error when the local fallback fails too', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: new AuthError('storage failed', 500, 'unexpected_failure') });
+
+    const result = await signOut(asClient(client));
+
+    expect(result).toEqual({ ok: false, error: 'auth.error.unknown' });
+  });
+
+  test('surfaces a non-network failure without retrying', async () => {
+    const client = fakeClient();
+    client.auth.signOut.mockResolvedValueOnce({ error: new AuthError('rate limited', 429, 'over_request_rate_limit') });
+
+    const result = await signOut(asClient(client));
+
+    expect(client.auth.signOut).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ ok: false, error: 'auth.error.rateLimited' });
   });
 });
 

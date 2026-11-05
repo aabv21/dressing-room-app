@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { signOut } from '../../auth/authService';
+import { useSignOut } from '../../auth/useSignOut';
 import { useI18n } from '../../i18n';
 import { OnboardingProvider, useOnboarding } from '../../profile/OnboardingProvider';
 import { AnchoredCta } from '../../ui/AnchoredCta';
@@ -13,6 +13,7 @@ import { colors, gradients, spacing } from '../../ui/theme';
 function ProfileGate(): React.JSX.Element | null {
   const { t } = useI18n();
   const { status, reload } = useOnboarding();
+  const signOut = useSignOut();
 
   if (status === 'ready') {
     return null;
@@ -28,14 +29,14 @@ function ProfileGate(): React.JSX.Element | null {
             <Text style={styles.message} accessibilityLiveRegion="polite">
               {t('onboarding.loadError')}
             </Text>
-            <LinkText
-              style={styles.signOut}
-              onPress={() => {
-                void signOut();
-              }}
-            >
+            <LinkText style={styles.signOut} disabled={signOut.signingOut} onPress={signOut.signOut}>
               {t('auth.signOut')}
             </LinkText>
+            {signOut.error !== undefined ? (
+              <Text style={styles.error} accessibilityLiveRegion="polite">
+                {t(signOut.error)}
+              </Text>
+            ) : null}
           </>
         )}
       </View>
@@ -77,5 +78,11 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     fontWeight: '600',
+  },
+  error: {
+    color: colors.error,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

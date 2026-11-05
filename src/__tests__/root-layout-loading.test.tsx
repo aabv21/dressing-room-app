@@ -10,7 +10,8 @@ jest.mock('../auth/AuthProvider', () => ({
     status: 'signedOut',
     userId: null,
     onboardingComplete: false,
-    refreshProfile: jest.fn(() => Promise.resolve()),
+    email: null,
+    refreshProfile: jest.fn(() => Promise.resolve(true)),
   })),
 }));
 
@@ -51,7 +52,8 @@ test('a loading transition after the first settle keeps (auth) mounted instead o
     status: 'signedOut',
     userId: null,
     onboardingComplete: false,
-    refreshProfile: jest.fn(() => Promise.resolve()),
+    email: null,
+    refreshProfile: jest.fn(() => Promise.resolve(true)),
   });
   const view = await render(<RootLayout />);
 
@@ -64,7 +66,8 @@ test('a loading transition after the first settle keeps (auth) mounted instead o
     status: 'loading',
     userId: 'user-1',
     onboardingComplete: false,
-    refreshProfile: jest.fn(() => Promise.resolve()),
+    email: null,
+    refreshProfile: jest.fn(() => Promise.resolve(true)),
   });
   await view.rerender(<RootLayout />);
 
@@ -77,7 +80,8 @@ test('the first-ever render (never settled) renders no screen name', async () =>
     status: 'loading',
     userId: null,
     onboardingComplete: false,
-    refreshProfile: jest.fn(() => Promise.resolve()),
+    email: null,
+    refreshProfile: jest.fn(() => Promise.resolve(true)),
   });
   await render(<RootLayout />);
 
