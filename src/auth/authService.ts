@@ -3,7 +3,7 @@
 // Expo/React Native's native module registry) so integration tests — which run under plain Node,
 // not jest-expo — can import only the node-safe half without pulling in modules that can't load
 // outside a real app or jest-expo's mocked RN environment. See emailAuth.ts's module doc.
-export type { Client, Result } from './emailAuth';
+export type { Client, Result, SignUpResult } from './emailAuth';
 export {
   confirmPasswordReset,
   requestPasswordReset,

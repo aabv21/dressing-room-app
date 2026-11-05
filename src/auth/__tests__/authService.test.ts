@@ -8,7 +8,9 @@ import { AuthError } from '@supabase/supabase-js';
 // (confirmed directly — a factory referencing an outer `const` here silently resolves `supabase`
 // to `undefined`). Import `supabase` from '../../lib/supabase' below to get this same mocked object.
 jest.mock('../../lib/supabase', () => ({
-  supabase: { auth: { signUp: jest.fn(() => Promise.resolve({ data: {}, error: null })) } },
+  supabase: {
+    auth: { signUp: jest.fn(() => Promise.resolve({ data: { session: { access_token: 'tok' } }, error: null })) },
+  },
 }));
 
 jest.mock('../nonce', () => ({
@@ -57,7 +59,7 @@ type FakeAuth = {
 function fakeClient(): { auth: FakeAuth } {
   return {
     auth: {
-      signUp: jest.fn(() => Promise.resolve({ data: {}, error: null })),
+      signUp: jest.fn(() => Promise.resolve({ data: { session: { access_token: 'tok' } }, error: null })),
       signInWithPassword: jest.fn(() => Promise.resolve({ data: {}, error: null })),
       signOut: jest.fn(() => Promise.resolve({ error: null })),
       resetPasswordForEmail: jest.fn(() => Promise.resolve({ data: {}, error: null })),
@@ -77,19 +79,28 @@ beforeEach(() => {
 });
 
 describe('signUpWithEmail', () => {
-  test('forwards email and password and resolves ok', async () => {
+  test('forwards email and password and resolves ok with needsConfirmation false when a session comes back', async () => {
     const client = fakeClient();
 
     const result = await signUpWithEmail('new@example.com', 'hunter22', asClient(client));
 
     expect(client.auth.signUp).toHaveBeenCalledWith({ email: 'new@example.com', password: 'hunter22' });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, needsConfirmation: false });
+  });
+
+  test('resolves needsConfirmation true when sign-up returns no session (P2-R6, confirmations on)', async () => {
+    const client = fakeClient();
+    client.auth.signUp.mockResolvedValue({ data: { session: null }, error: null });
+
+    const result = await signUpWithEmail('new@example.com', 'hunter22', asClient(client));
+
+    expect(result).toEqual({ ok: true, needsConfirmation: true });
   });
 
   test('maps a signup error through toAuthErrorKey', async () => {
     const client = fakeClient();
     client.auth.signUp.mockResolvedValue({
-      data: {},
+      data: { session: null },
       error: new AuthError('already registered', 422, 'user_already_exists'),
     });
 
@@ -106,7 +117,7 @@ describe('signUpWithEmail', () => {
       email: 'default-client@example.com',
       password: 'hunter22',
     });
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, needsConfirmation: false });
   });
 });
 

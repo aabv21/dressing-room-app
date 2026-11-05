@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useBottomChrome } from './layout';
+import type { ScreenChrome } from './layout';
 import { colors, gradients, layout, radii } from './theme';
 
 export type CtaTone = 'ai' | 'commit' | 'ghost';
@@ -68,9 +69,13 @@ function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBas
   );
 }
 
-export function AnchoredCta(props: { primary: CtaAction; secondary?: CtaAction }): React.JSX.Element {
-  const { primary, secondary } = props;
-  const { ctaBottom } = useBottomChrome();
+export function AnchoredCta(props: {
+  primary: CtaAction;
+  secondary?: CtaAction;
+  chrome?: ScreenChrome;
+}): React.JSX.Element {
+  const { primary, secondary, chrome = 'tabs' } = props;
+  const { ctaBottom } = useBottomChrome(chrome);
 
   return (
     <View style={[styles.zone, { bottom: ctaBottom }]} pointerEvents="box-none">
@@ -99,7 +104,7 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 14,
     paddingTop: 22,
-    paddingBottom: 8,
+    paddingBottom: layout.ctaZoneBottomPadding,
   },
   row: {
     flexDirection: 'row',

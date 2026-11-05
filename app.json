@@ -35,7 +35,7 @@
           "imageWidth": 76
         }
       ],
-      "expo-localization",
+      ["expo-localization", { "supportedLocales": ["en", "es"] }],
       "expo-sqlite",
       "expo-apple-authentication",
       [

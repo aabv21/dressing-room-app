@@ -5,9 +5,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnchoredCta } from './AnchoredCta';
 import { useBottomChrome } from './layout';
+import type { ScreenChrome } from './layout';
 import { colors, gradients, spacing } from './theme';
 
-type ScreenProps = { cta?: ComponentProps<typeof AnchoredCta> } & (
+type ScreenProps = {
+  cta?: ComponentProps<typeof AnchoredCta>;
+  chrome?: ScreenChrome;
+  /**
+   * Rendered above the title (mockup 03 screen 1's `.top` row: the LanguageToggle sits top-right,
+   * above the headline, not beside it at the same baseline). Only meaningful with `scroll !==
+   * false`, since a non-scrolling screen renders its own header entirely.
+   */
+  headerAccessory?: React.ReactNode;
+  /**
+   * 'hero' is ~1.26x the default title size (about 21-22pt vs 17pt), weight 900, and does not
+   * uppercase or strip line breaks — for `auth.welcome.title`'s forced two-line headline
+   * ("DRESS\nWITHOUT DOUBT"). 'default' (unset) keeps the existing single-line uppercased title.
+   */
+  titleVariant?: 'default' | 'hero';
+} & (
   | {
       /** Default: Screen scrolls its children and renders the title above them. */
       scroll?: true;
@@ -27,13 +43,26 @@ type ScreenProps = { cta?: ComponentProps<typeof AnchoredCta> } & (
 );
 
 /** Top/bottom content padding that clears the status bar, the anchored CTA and the tab bar. */
-export function useScreenContentInsets(): { top: number; bottom: number } {
+export function useScreenContentInsets(chrome: ScreenChrome = 'tabs'): { top: number; bottom: number } {
   const insets = useSafeAreaInsets();
-  const { contentPaddingBottom } = useBottomChrome();
+  const { contentPaddingBottom } = useBottomChrome(chrome);
   return { top: insets.top + spacing.md, bottom: contentPaddingBottom };
 }
 
-export function ScreenTitle({ title }: { title: string }): React.JSX.Element {
+export function ScreenTitle({
+  title,
+  variant = 'default',
+}: {
+  title: string;
+  variant?: 'default' | 'hero';
+}): React.JSX.Element {
+  if (variant === 'hero') {
+    return (
+      <Text style={styles.heroTitle} accessibilityRole="header">
+        {title}
+      </Text>
+    );
+  }
   return (
     <Text style={styles.title} accessibilityRole="header">
       {title.toUpperCase()}
@@ -42,8 +71,8 @@ export function ScreenTitle({ title }: { title: string }): React.JSX.Element {
 }
 
 export function Screen(props: ScreenProps): React.JSX.Element {
-  const { cta } = props;
-  const contentInsets = useScreenContentInsets();
+  const { cta, chrome = 'tabs', headerAccessory, titleVariant = 'default' } = props;
+  const contentInsets = useScreenContentInsets(chrome);
 
   return (
     <LinearGradient colors={gradients.background} style={styles.fill}>
@@ -52,16 +81,18 @@ export function Screen(props: ScreenProps): React.JSX.Element {
       ) : (
         <ScrollView
           style={styles.fill}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.content,
             { paddingTop: contentInsets.top, paddingBottom: contentInsets.bottom },
           ]}
         >
-          <ScreenTitle title={props.title} />
+          {headerAccessory ? <View style={styles.headerRow}>{headerAccessory}</View> : null}
+          <ScreenTitle title={props.title} variant={titleVariant} />
           {props.children}
         </ScrollView>
       )}
-      {cta ? <AnchoredCta {...cta} /> : null}
+      {cta ? <AnchoredCta {...cta} chrome={chrome} /> : null}
     </LinearGradient>
   );
 }
@@ -79,5 +110,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 17,
     letterSpacing: 1,
+  },
+  // ~1.26x the default 17pt title (I1: "about 21-22pt"), same 900 weight; no uppercase (a
+  // catalog-provided "\n" forces the mockup's two-line break instead of wrapping unpredictably).
+  // `letterSpacing: 1.1` matches the mockup's `.ttl { letter-spacing: .05em }` at this 22pt size
+  // (CSS `em` is relative to the element's own font-size: 22 * 0.05 = 1.1pt).
+  heroTitle: {
+    color: colors.ink,
+    fontWeight: '900',
+    fontSize: 22,
+    lineHeight: 26,
+    letterSpacing: 1.1,
+  },
+  // No justifyContent here by design: callers control their own accessory's alignment (e.g.
+  // welcome's language toggle sits flex-end; sign-in/forgot-password's back chevron sits
+  // flex-start) by wrapping their content in a full-width row with the alignment they need.
+  headerRow: {
+    flexDirection: 'row',
   },
 });

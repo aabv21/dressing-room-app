@@ -33,4 +33,11 @@ export const layout = {
   tabBarGap: 12,
   ctaGap: 10,
   ctaHeight: 48,
+  // AnchoredCta's `zone` wraps its buttons in `paddingBottom: ctaZoneBottomPadding` (the gradient
+  // fade needs room above the button). `useBottomChrome`'s chrome:'none' math (layout.ts)
+  // subtracts this so the button's own bottom edge — not the zone's — lands at exactly
+  // `insets.bottom + 22`, per global-constraints.md / M2.
+  ctaZoneBottomPadding: 8,
+  // Global minimum tap target (global-constraints.md: "hit targets of at least 44").
+  minHitTarget: 44,
 } as const;

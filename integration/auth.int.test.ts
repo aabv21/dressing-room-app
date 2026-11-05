@@ -26,7 +26,9 @@ test('sign up, sign out, then sign in works', async () => {
   const client = anonClient();
 
   const signUpResult = await signUpWithEmail(email, 'Password123!', client);
-  expect(signUpResult).toEqual({ ok: true });
+  // Local Supabase runs with confirmations off (see supabase/config.toml), so signUp returns a
+  // session immediately and needsConfirmation is false (I5 / ruling P2-R6).
+  expect(signUpResult).toEqual({ ok: true, needsConfirmation: false });
 
   const { data: signedUpUser } = await client.auth.getUser();
   if (signedUpUser.user !== null) {

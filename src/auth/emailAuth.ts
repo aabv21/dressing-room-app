@@ -7,6 +7,17 @@ import type { AuthErrorKey } from './errors';
 
 export type Result = { ok: true } | { ok: false; error: AuthErrorKey };
 
+/**
+ * Sign-up's own result additionally reports whether a session was issued. Local dev and v1 run
+ * with `enable_confirmations = false`, so `signUp` returns a session immediately and
+ * `needsConfirmation` is `false` — `AuthProvider`'s `onAuthStateChange` picks up the new session
+ * and the root guard navigates on its own. Ruling P2-R6: once confirmations are turned on (the
+ * integration session), `data.session` comes back `null` until the user clicks the confirmation
+ * link, so `needsConfirmation: true` tells the screen to show a "check your email" message instead
+ * of sitting there with no feedback and no session to react to.
+ */
+export type SignUpResult = { ok: true; needsConfirmation: boolean } | { ok: false; error: AuthErrorKey };
+
 export type Client = SupabaseClient<Database>;
 
 /**
@@ -17,12 +28,16 @@ export type Client = SupabaseClient<Database>;
  * functions with no client at all, the same pattern `src/profile/profileRepository.ts` uses;
  * `integration/*.int.test.ts` and every unit test instead pass an explicit client.
  */
-export async function signUpWithEmail(email: string, password: string, client: Client = supabase): Promise<Result> {
-  const { error } = await client.auth.signUp({ email, password });
+export async function signUpWithEmail(
+  email: string,
+  password: string,
+  client: Client = supabase,
+): Promise<SignUpResult> {
+  const { data, error } = await client.auth.signUp({ email, password });
   if (error !== null) {
     return { ok: false, error: toAuthErrorKey(error) };
   }
-  return { ok: true };
+  return { ok: true, needsConfirmation: data.session === null };
 }
 
 export async function signInWithEmail(email: string, password: string, client: Client = supabase): Promise<Result> {
