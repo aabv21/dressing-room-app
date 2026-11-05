@@ -35,6 +35,12 @@ type TextFieldProps = {
   submitBehavior?: TextInputProps['submitBehavior'];
   error?: string | undefined;
   testID?: string;
+  /** Default 'none' (emails, codes); free-text fields such as a city name pass 'words'. */
+  autoCapitalize?: TextInputProps['autoCapitalize'];
+  /** Rendered inside the field's frame, before / after the input (e.g. a pin icon, a "use my
+   * location" action). The frame then wraps all three, so the field still reads as one box. */
+  leading?: React.ReactNode;
+  trailing?: React.ReactNode;
 };
 
 /** `ref` forwards to the underlying `TextInput` so a screen can chain focus between fields
@@ -56,12 +62,16 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
     submitBehavior,
     error,
     testID,
+    autoCapitalize = 'none',
+    leading,
+    trailing,
   } = props;
   const { t } = useI18n();
   // Secure fields start masked; a visibility toggle reveals the typed value without changing
   // `secureTextEntry`'s default, matching the mockup's password field.
   const [revealed, setRevealed] = useState(false);
   const isPassword = secureTextEntry;
+  const framed = leading !== undefined || trailing !== undefined;
 
   return (
     <View style={styles.container} testID={testID !== undefined ? `${testID}-container` : undefined}>
@@ -76,7 +86,8 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
           {label}
         </Text>
       ) : null}
-      <View style={styles.fieldRow}>
+      <View style={[styles.fieldRow, framed ? styles.frame : null]}>
+        {leading}
         <TextInput
           ref={ref}
           testID={testID}
@@ -91,12 +102,13 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
           returnKeyType={returnKeyType}
           onSubmitEditing={onSubmitEditing}
           submitBehavior={submitBehavior}
-          autoCapitalize="none"
+          autoCapitalize={autoCapitalize}
           autoCorrect={false}
           placeholder={placeholder}
           placeholderTextColor={colors.muted}
-          style={[styles.input, isPassword ? styles.inputWithToggle : null]}
+          style={[styles.input, isPassword ? styles.inputWithToggle : null, framed ? styles.inputInFrame : null]}
         />
+        {trailing}
         {isPassword ? (
           <Pressable
             accessibilityRole="button"
@@ -144,6 +156,23 @@ const styles = StyleSheet.create({
     color: colors.ink,
     minHeight: MIN_HIT_TARGET,
   },
+  frame: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: radii.cell,
+    paddingHorizontal: spacing.md,
+    minHeight: MIN_HIT_TARGET,
+  },
+  inputInFrame: {
+    flex: 1,
+    borderWidth: 0,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
+  },
   inputWithToggle: {
     paddingRight: spacing.xl,
   },
@@ -157,7 +186,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   error: {
-    color: '#c0392b',
+    color: colors.error,
     fontSize: 12,
     fontWeight: '600',
   },

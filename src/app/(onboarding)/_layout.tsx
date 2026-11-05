@@ -1,13 +1,81 @@
 import { Stack } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-// NOTE: placeholder onboarding group so the root layout's Stack.Protected guard (src/app/_layout.tsx)
-// has a real route to point to before Task 6 exists. Ceiling: a single empty screen, no steps.
-// Upgrade path: Task 6 replaces this file and `index.tsx` with the real step flow
-// (clothing/body/style) per the plan.
-export default function OnboardingLayout() {
+import { signOut } from '../../auth/authService';
+import { useI18n } from '../../i18n';
+import { OnboardingProvider, useOnboarding } from '../../profile/OnboardingProvider';
+import { AnchoredCta } from '../../ui/AnchoredCta';
+import { LinkText } from '../../ui/LinkText';
+import { colors, gradients, spacing } from '../../ui/theme';
+
+/** Covers the steps until the profile has been (re-)read; see OnboardingProvider for why. */
+function ProfileGate(): React.JSX.Element | null {
+  const { t } = useI18n();
+  const { status, reload } = useOnboarding();
+
+  if (status === 'ready') {
+    return null;
+  }
+
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-    </Stack>
+    <LinearGradient colors={gradients.background} style={StyleSheet.absoluteFill} testID="onboarding-gate">
+      <View style={styles.center}>
+        {status === 'loading' ? (
+          <ActivityIndicator color={colors.accent} accessibilityLabel={t('onboarding.loading')} />
+        ) : (
+          <>
+            <Text style={styles.message} accessibilityLiveRegion="polite">
+              {t('onboarding.loadError')}
+            </Text>
+            <LinkText
+              style={styles.signOut}
+              onPress={() => {
+                void signOut();
+              }}
+            >
+              {t('auth.signOut')}
+            </LinkText>
+          </>
+        )}
+      </View>
+      {status === 'error' ? (
+        <AnchoredCta chrome="none" primary={{ label: t('onboarding.retry'), tone: 'commit', onPress: reload }} />
+      ) : null}
+    </LinearGradient>
   );
 }
+
+export default function OnboardingLayout() {
+  return (
+    <OnboardingProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="clothing" />
+        <Stack.Screen name="body" />
+        <Stack.Screen name="style" />
+      </Stack>
+      <ProfileGate />
+    </OnboardingProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  message: {
+    color: colors.ink,
+    fontSize: 15,
+    textAlign: 'center',
+  },
+  signOut: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});

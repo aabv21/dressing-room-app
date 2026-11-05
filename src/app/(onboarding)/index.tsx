@@ -1,21 +1,27 @@
-import { StyleSheet, Text } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect } from 'react';
 
-import { useI18n } from '../../i18n';
-import { Screen } from '../../ui/Screen';
-import { colors } from '../../ui/theme';
+import { useOnboarding } from '../../profile/OnboardingProvider';
 
-// NOTE: placeholder onboarding screen; Task 6 replaces this with the clothing/body/style step flow.
-export default function OnboardingPlaceholderScreen() {
-  const { t } = useI18n();
-  return (
-    <Screen title={t('screen.profile')} chrome="none">
-      <Text style={styles.comingSoon}>{t('comingSoon')}</Text>
-    </Screen>
-  );
+/**
+ * The group's root path ("/"), where the root guard lands a signed-in user with onboarding still
+ * open. Once the profile is read it resumes at the first unfinished step: Clothing is the only
+ * required one, so with a saved clothing type a relaunch continues at Body (Review Focus 3) — with
+ * Clothing pushed underneath, so going back still reaches the first step and its sign-out link.
+ */
+export default function OnboardingIndex() {
+  const { status, values } = useOnboarding();
+  const hasClothingType = values.clothing_type !== null && values.clothing_type !== undefined;
+
+  useEffect(() => {
+    if (status !== 'ready') {
+      return;
+    }
+    router.replace('/clothing');
+    if (hasClothingType) {
+      router.push('/body');
+    }
+  }, [status, hasClothingType]);
+
+  return null;
 }
-
-const styles = StyleSheet.create({
-  comingSoon: {
-    color: colors.muted,
-  },
-});

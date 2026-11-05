@@ -45,7 +45,7 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 - `src/i18n/` — translation tables; `en` is the source of truth, `es` is the only non-English file in the repo (see Conventions).
 - `src/closet/` — closet domain logic (items, outfits, wear counts).
 - `src/auth/` — the auth service (`authService.ts`, a barrel over `emailAuth.ts` and `socialAuth.ts`) and session state (`AuthProvider`/`useAuth`). `emailAuth.ts`/`socialAuth.ts` default their `client` parameter to `src/lib/supabase.ts`'s real `supabase` singleton, the same pattern `src/profile/profileRepository.ts` uses; `integration/`'s Jest project maps that import to a stub instead (see `jest.config.ts` and `integration/lib-supabase.stub.ts`).
-- `src/profile/` — `profileRepository.ts`'s profile reads (`onboarding_completed_at` for `AuthProvider`); Task 6 extends this with the onboarding writes.
+- `src/profile/` — `profileRepository.ts` (`getProfile`, the upsert `saveProfile`, `completeOnboarding`), Body-step validation (`validation.ts`, same ranges as the DB CHECKs), the body-type helper (`bodyType.ts`), `useCurrentCity` (expo-location, when-in-use only) and `OnboardingProvider`, which re-reads the profile before any onboarding step renders so a failed launch-time read can never overwrite a finished profile with defaults.
 - `src/perf/` — the on-device frame-stats harness (UI-thread frame callback, stats, HUD).
 - `src/test/` — shared Jest helpers (e.g. the FlashList mock); never imported by app code.
 - `.perf-fixtures/` — generated fixture thumbnails (gitignored; see `pnpm perf:generate`).

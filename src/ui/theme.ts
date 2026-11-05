@@ -4,7 +4,16 @@ export const colors = {
   hairline: '#ece6fb',
   accent: '#7c3aed',
   commit: '#141317',
+  // Mockup 03: the deeper violet for selected labels/links, the unfilled step-bar/slider track and
+  // the optional section's dashed outline.
+  accentText: '#6d28d9',
+  track: '#e6e0f5',
+  dashed: '#cfc6e8',
+  error: '#c0392b',
 } as const;
+
+/** Mockup 03's selected-card halo (`box-shadow: 0 0 0 3px rgba(124,58,237,.12)`). */
+export const selectionRing = '0 0 0 3px rgba(124, 58, 237, 0.12)';
 
 export const gradients = {
   background: ['#ffffff', '#f6f2ff', '#ebe3ff'],

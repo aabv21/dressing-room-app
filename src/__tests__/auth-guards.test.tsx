@@ -32,6 +32,14 @@ jest.mock('../auth/authService', () => ({
   signOut: jest.fn(),
 }));
 
+// The (onboarding) layout reads the profile on mount; this suite only checks which group the guard
+// picks, so the read never settles here.
+jest.mock('../profile/profileRepository', () => ({
+  getProfile: jest.fn(() => new Promise(() => undefined)),
+  saveProfile: jest.fn(),
+  completeOnboarding: jest.fn(),
+}));
+
 jest.mock('expo-apple-authentication', () => ({
   AppleAuthenticationButton: () => null,
   AppleAuthenticationButtonType: { CONTINUE: 1 },
