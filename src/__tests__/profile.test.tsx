@@ -58,6 +58,7 @@ const mockedSaveProfile = jest.mocked(saveProfile);
 
 const USER_ID = 'user-1';
 const LOCALE_PREFERENCE_KEY = 'locale-preference';
+const LANGUAGE_PENDING_KEY = 'language-save-pending';
 
 function profileRow(overrides: Partial<Profile> = {}): Profile {
   return {
@@ -99,6 +100,7 @@ function saveButton() {
 beforeEach(() => {
   jest.clearAllMocks();
   kvRemove(LOCALE_PREFERENCE_KEY);
+  kvRemove(LANGUAGE_PENDING_KEY);
   mockedUseAuth.mockReturnValue({
     status: 'signedIn',
     userId: USER_ID,
@@ -260,6 +262,19 @@ test('a language that fails to save still applies, and says it was not saved', a
 
   expect(screen.getByText('PERFIL')).toBeTruthy();
   expect(await screen.findByText(translate('es', 'profile.error.network'))).toBeTruthy();
+  // Remembered, so the next launch retries it instead of reverting to the server's value.
+  expect(kvGet(LANGUAGE_PENDING_KEY)).toBe(USER_ID);
+});
+
+test('a language save that goes through clears an earlier pending one', async () => {
+  kvSet(LANGUAGE_PENDING_KEY, USER_ID);
+  await openProfile();
+
+  await fireEvent.press(screen.getByRole('tab', { name: 'Español' }));
+
+  await waitFor(() => {
+    expect(kvGet(LANGUAGE_PENDING_KEY)).toBeNull();
+  });
 });
 
 test('language saves run in order, and a superseded failure is not shown', async () => {

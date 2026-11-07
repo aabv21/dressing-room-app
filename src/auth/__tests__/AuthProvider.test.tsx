@@ -8,9 +8,12 @@ const mockOnAuthStateChange = jest.fn((callback: typeof authStateCallback) => {
   return { data: { subscription: { unsubscribe: jest.fn() } } };
 });
 
+const mockReadStoredSession = jest.fn<{ userId: string; email: string | null } | null, []>(() => null);
+
 jest.mock('../../lib/supabase', () => ({
   supabase: { auth: { onAuthStateChange: (cb: never) => mockOnAuthStateChange(cb) } },
   startAuthAutoRefresh: () => mockStartAuthAutoRefresh(),
+  readStoredSession: () => mockReadStoredSession(),
 }));
 
 type FakeProfile = { onboarding_completed_at: string | null; language?: 'en' | 'es' | null } | null;
@@ -24,7 +27,7 @@ jest.mock('../../profile/profileRepository', () => ({
 }));
 
 import { I18nProvider, useLocalePreference } from '../../i18n/I18nProvider';
-import { kvRemove, kvSet } from '../../lib/kv';
+import { kvGet, kvRemove, kvSet } from '../../lib/kv';
 import { AuthProvider, useAuth } from '../AuthProvider';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -35,10 +38,165 @@ beforeEach(() => {
   jest.clearAllMocks();
   authStateCallback = undefined;
   mockGetProfile.mockResolvedValue(null);
+  mockReadStoredSession.mockReturnValue(null);
   kvRemove('locale-preference');
+  kvRemove('onboarding-complete');
+  kvRemove('language-save-pending');
 });
 
-describe('language sync on sign-in (P2-R13)', () => {
+const offline = (): Promise<never> => Promise.reject(new TypeError('Network request failed'));
+
+describe('offline launch', () => {
+  test('an expired session that could not be refreshed offline stays signed in as the stored user', async () => {
+    mockReadStoredSession.mockReturnValue({ userId: 'user-1', email: 'ana@example.com' });
+    mockGetProfile.mockImplementation(offline);
+
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      // supabase-js reports no session when the refresh of an expired token fails for lack of network.
+      authStateCallback?.('INITIAL_SESSION', null);
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('signedIn');
+    });
+    expect(result.current.userId).toBe('user-1');
+    expect(result.current.email).toBe('ana@example.com');
+  });
+
+  test('with no stored session, a null INITIAL_SESSION signs out', async () => {
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('INITIAL_SESSION', null);
+    });
+
+    expect(result.current.status).toBe('signedOut');
+    expect(mockGetProfile).not.toHaveBeenCalled();
+  });
+
+  test('an explicit SIGNED_OUT still signs out, and the stored session is not consulted for it', async () => {
+    mockReadStoredSession.mockReturnValue({ userId: 'user-1', email: null });
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('INITIAL_SESSION', null);
+    });
+    await waitFor(() => {
+      expect(result.current.status).toBe('signedIn');
+    });
+
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+
+    expect(result.current.status).toBe('signedOut');
+    expect(result.current.userId).toBeNull();
+  });
+
+  test('a later TOKEN_REFRESHED settles it with the real profile', async () => {
+    mockReadStoredSession.mockReturnValue({ userId: 'user-1', email: null });
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('INITIAL_SESSION', null);
+    });
+    await waitFor(() => {
+      expect(result.current.status).toBe('signedIn');
+    });
+    expect(result.current.onboardingComplete).toBe(false);
+
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: '2026-01-01T00:00:00Z' });
+    await act(() => {
+      authStateCallback?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+    });
+
+    await waitFor(() => {
+      expect(result.current.onboardingComplete).toBe(true);
+    });
+  });
+
+  test('a finished user who launches offline lands on the tabs: the last known onboarding flag is kept on the device', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: '2026-01-01T00:00:00Z' });
+    const first = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-1' } });
+    });
+    await waitFor(() => {
+      expect(first.result.current.onboardingComplete).toBe(true);
+    });
+    await first.unmount();
+
+    // Next launch: no network.
+    mockReadStoredSession.mockReturnValue({ userId: 'user-1', email: null });
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('INITIAL_SESSION', null);
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('signedIn');
+    });
+    expect(result.current.onboardingComplete).toBe(true);
+  });
+
+  test('while the restored session is unconfirmed, a profile read that finds no row counts as a failed read', async () => {
+    // Without a refreshed token the request goes out with the anon key, and RLS hides the row.
+    kvSet('onboarding-complete', JSON.stringify({ userId: 'user-1', complete: true }));
+    mockReadStoredSession.mockReturnValue({ userId: 'user-1', email: null });
+    mockGetProfile.mockResolvedValue(null);
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('INITIAL_SESSION', null);
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('signedIn');
+    });
+    expect(result.current.onboardingComplete).toBe(true);
+    let refreshed: boolean | undefined;
+    await act(async () => {
+      refreshed = await result.current.refreshProfile();
+    });
+    expect(refreshed).toBe(false);
+  });
+
+  test('signing out clears the cached onboarding flag', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: '2026-01-01T00:00:00Z' });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-1' } });
+    });
+    await waitFor(() => {
+      expect(result.current.onboardingComplete).toBe(true);
+    });
+    expect(kvGet('onboarding-complete')).not.toBeNull();
+
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+
+    expect(kvGet('onboarding-complete')).toBeNull();
+  });
+
+  test("another account never inherits the cached flag: it is dropped on an account switch", async () => {
+    kvSet('onboarding-complete', JSON.stringify({ userId: 'user-a', complete: true }));
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-b' } });
+    });
+
+    await waitFor(() => {
+      expect(result.current.status).toBe('signedIn');
+    });
+    expect(result.current.onboardingComplete).toBe(false);
+    expect(kvGet('onboarding-complete')).toBeNull();
+  });
+});
+
+describe('language sync on sign-in', () => {
   function i18nWrapper({ children }: { children: ReactNode }) {
     return (
       <I18nProvider>
@@ -108,6 +266,66 @@ describe('language sync on sign-in (P2-R13)', () => {
     });
 
     expect(result.current.locale.preference).toBe('en');
+  });
+
+  test('a failed save of the device choice is remembered and retried on the next profile load', async () => {
+    kvSet('locale-preference', 'es');
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: null });
+    mockSaveProfile.mockResolvedValueOnce({ ok: false, error: 'profile.error.network' } as never);
+
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(kvGet('language-save-pending')).toBe('user-1');
+    });
+
+    await act(async () => {
+      await result.current.auth.refreshProfile();
+    });
+
+    await waitFor(() => {
+      expect(kvGet('language-save-pending')).toBeNull();
+    });
+    expect(mockSaveProfile).toHaveBeenLastCalledWith('user-1', { language: 'es' });
+  });
+
+  test('while a language save is pending, the server value does not override the newer device choice', async () => {
+    // e.g. the user switched to English on Profile while offline; the server still says Spanish.
+    kvSet('locale-preference', 'en');
+    kvSet('language-save-pending', 'user-1');
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+
+    const { result } = await signIn();
+
+    await waitFor(() => {
+      expect(mockSaveProfile).toHaveBeenCalledWith('user-1', { language: 'en' });
+    });
+    expect(result.current.locale.preference).toBe('en');
+    await waitFor(() => {
+      expect(kvGet('language-save-pending')).toBeNull();
+    });
+  });
+
+  test('a pending "follow the device" choice is saved as null', async () => {
+    kvSet('language-save-pending', 'user-1');
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+
+    const { result } = await signIn();
+
+    await waitFor(() => {
+      expect(mockSaveProfile).toHaveBeenCalledWith('user-1', { language: null });
+    });
+    expect(result.current.locale.preference).toBe('system');
+  });
+
+  test("another account's pending language save is dropped, not applied", async () => {
+    kvSet('language-save-pending', 'user-a');
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+
+    const { result } = await signIn('user-b');
+
+    expect(result.current.locale.preference).toBe('es');
+    expect(mockSaveProfile).not.toHaveBeenCalled();
+    expect(kvGet('language-save-pending')).toBeNull();
   });
 });
 

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../../auth/AuthProvider';
+import { clearLanguageSavePending, markLanguageSavePending } from '../../auth/deviceState';
 import { useSignOut } from '../../auth/useSignOut';
 import type { MessageKey } from '../../i18n';
 import { useI18n } from '../../i18n';
@@ -67,7 +68,8 @@ function AccountSection(): React.JSX.Element {
  * "Language": the ES/EN toggle plus "Use device language". A change applies at once (the
  * I18nProvider preference) and is saved to `profile.language` on its own, outside the Save button.
  * `profile.language` is applied to the device preference on sign-in by `AuthProvider`, so this
- * section's own saves and that startup reconciliation share the same source of truth.
+ * section's own saves and that startup reconciliation share the same source of truth; a save that
+ * fails is retried there rather than overwritten.
  */
 function LanguageSection({ onSave }: { onSave: (language: 'en' | 'es' | null) => Promise<MessageKey | undefined> }) {
   const { t, locale } = useI18n();
@@ -191,9 +193,13 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
       return undefined;
     }
     if (!result.ok) {
+      // The choice already applies on this device; AuthProvider retries the save on the next
+      // profile load instead of replacing it with the server's older value.
+      markLanguageSavePending(userId);
       announceForAccessibility(t(result.error));
       return result.error;
     }
+    clearLanguageSavePending(userId);
     setSaved((previous) => ({ ...previous, language }));
     return undefined;
   }
