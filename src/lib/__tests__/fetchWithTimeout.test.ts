@@ -69,6 +69,16 @@ test("a caller's own abort still cancels the request", async () => {
   await expect(request).rejects.toMatchObject({ name: 'AbortError' });
 });
 
+test("once the request settles, it stops listening to the caller's signal", async () => {
+  fetchMock.mockResolvedValue({ ok: true } as Response);
+  const caller = new AbortController();
+  const removeListener = jest.spyOn(caller.signal, 'removeEventListener');
+
+  await fetchWithTimeout('http://x/', { signal: caller.signal });
+
+  expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+});
+
 test('a signal that is already aborted cancels at once', async () => {
   fetchMock.mockImplementation(hangingRequest);
   const caller = new AbortController();

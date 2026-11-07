@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import 'expo-sqlite/localStorage/install';
 import { AppState } from 'react-native';
 
-import { parseStoredSession } from './storedSession';
+import { authStorageKeyFor, clearPersistedAuthIn, parseStoredSession } from './storedSession';
 import type { StoredSession } from './storedSession';
 import type { Database } from './database.types';
 import { fetchWithTimeout } from './fetchWithTimeout';
@@ -25,9 +25,9 @@ if (supabaseAnonKey === undefined) {
   throw new Error('Missing EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable.');
 }
 
-// supabase-js's own default key (`sb-<first host label>-auth-token`), spelled out so
-// `readStoredSession` reads the same entry the client writes.
-const authStorageKey = `sb-${new URL(supabaseUrl).hostname.split('.')[0] ?? ''}-auth-token`;
+// supabase-js's own default key, spelled out so `readStoredSession` and `clearPersistedAuth` use
+// the same entries the client writes.
+const authStorageKey = authStorageKeyFor(supabaseUrl);
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -47,6 +47,11 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
  */
 export function readStoredSession(): StoredSession | null {
   return parseStoredSession(localStorage.getItem(authStorageKey));
+}
+
+/** Deletes this client's persisted session entries, for a sign-out supabase-js can't complete. */
+export function clearPersistedAuth(): void {
+  clearPersistedAuthIn(localStorage, authStorageKey);
 }
 
 /**

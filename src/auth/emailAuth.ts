@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { supabase } from '../lib/supabase';
+import { clearPersistedAuth, supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
 import { toAuthErrorKey } from './errors';
 import type { AuthErrorKey } from './errors';
@@ -109,14 +109,27 @@ async function signOutWithScope(client: Client, scope?: 'local'): Promise<Result
 /**
  * Signs out with supabase-js's default `global` scope, which also revokes the server-side refresh
  * tokens. Offline, that server call can't happen, so it falls back to `{ scope: 'local' }`, which
- * only clears this device's session: the user still gets signed out here. NOTE: the refresh token
- * then stays valid on the server until it expires; upgrade path: retry the revoke on the next
- * sign-in if that ever matters. Any other failure is returned so the screen can show it.
+ * only clears this device's session: the user still gets signed out here.
+ *
+ * The local sign-out can fail offline too: with an expired access token (e.g. a session restored
+ * on an offline launch), supabase-js first tries to refresh it, gets a network error and gives up
+ * without clearing anything. Then the persisted session entries are deleted directly
+ * (`clearStoredAuth`) and the local sign-out runs again: finding no session, supabase-js clears its
+ * state and emits SIGNED_OUT. Offline that takes up to ~30 s (supabase-js's refresh retries).
+ *
+ * NOTE: the refresh token then stays valid on the server until it expires; upgrade path: retry the
+ * revoke on the next sign-in if that ever matters. Any other failure is returned so the screen can
+ * show it.
  */
-export async function signOut(client: Client = supabase): Promise<Result> {
+export async function signOut(client: Client = supabase, clearStoredAuth: () => void = clearPersistedAuth): Promise<Result> {
   const result = await signOutWithScope(client);
-  if (!result.ok && result.error === 'auth.error.network') {
-    return signOutWithScope(client, 'local');
+  if (result.ok || result.error !== 'auth.error.network') {
+    return result;
   }
-  return result;
+  const local = await signOutWithScope(client, 'local');
+  if (local.ok || local.error !== 'auth.error.network') {
+    return local;
+  }
+  clearStoredAuth();
+  return signOutWithScope(client, 'local');
 }

@@ -36,6 +36,7 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - `pnpm db:test` — run pgTAP database tests (`supabase test db`).
 - `pnpm db:types` — regenerate `src/lib/database.types.ts` from the local schema.
 - `pnpm env:local` — write `.env.local` from the running local stack's `supabase status -o env`.
+- `pnpm check:supply-chain` — fail if `pnpm-workspace.yaml` loses `trustPolicy: no-downgrade` or `minimumReleaseAge`, or gains a `trustPolicyExclude` (CI's quality job runs it).
 
 Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 
@@ -95,7 +96,7 @@ Package management is pnpm, pinned in `package.json`'s `packageManager` to an ex
 
 **`pnpm check:expo` (`expo install --check`) is informational, not a CI gate.** It compares every installed package against the single latest version on the npm registry, with no awareness of `minimumReleaseAge` — so it will always flag a package whose newer release exists but is still too young to install under this repo's hardening. Run it (or `pnpm expo install --fix`) during a deliberate Expo SDK upgrade, after the candidate versions have cleared the 3-day age gate, not as part of the regular `typecheck`/`lint`/`test` gate.
 
-**Updating a dependency:** edit `package.json`, run `pnpm install` (not `--frozen-lockfile`) to update `pnpm-lock.yaml`, run the gate below, and commit both files together. `minimumReleaseAge` will refuse a version published too recently — wait it out or pin an older compatible version instead.
+**Updating a dependency:** edit `package.json`, run `pnpm install` (not `--frozen-lockfile`) to update `pnpm-lock.yaml`, run the gate below, and commit both files together. `pnpm install --frozen-lockfile` (what CI runs) installs exactly what the lockfile pins and does **not** re-check `trustPolicy` or `minimumReleaseAge`, so a lockfile change must always come from a local `pnpm install`/`pnpm update` with these settings on — never a hand-edited or externally generated lockfile. CI's `pnpm check:supply-chain` (`scripts/check-supply-chain.ts`) fails if `pnpm-workspace.yaml` loses `trustPolicy: no-downgrade` or `minimumReleaseAge`, or gains any `trustPolicyExclude`. `minimumReleaseAge` will refuse a version published too recently — wait it out or pin an older compatible version instead.
 
 ## Local backend
 

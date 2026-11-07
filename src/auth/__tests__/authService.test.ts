@@ -190,6 +190,35 @@ describe('signOut', () => {
     expect(result).toEqual({ ok: false, error: 'auth.error.unknown' });
   });
 
+  test('when the local fallback also fails offline, clears the stored session and signs out locally again', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: null });
+    const clearStoredAuth = jest.fn();
+
+    const result = await signOut(asClient(client), clearStoredAuth);
+
+    expect(result).toEqual({ ok: true });
+    expect(clearStoredAuth).toHaveBeenCalledTimes(1);
+    expect(client.auth.signOut).toHaveBeenCalledTimes(3);
+    expect(client.auth.signOut).toHaveBeenNthCalledWith(3, { scope: 'local' });
+    expect(clearStoredAuth.mock.invocationCallOrder[0]).toBeLessThan(client.auth.signOut.mock.invocationCallOrder[2] ?? 0);
+  });
+
+  test('a non-network local failure does not clear storage', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: new AuthError('storage failed', 500, 'unexpected_failure') });
+    const clearStoredAuth = jest.fn();
+
+    await signOut(asClient(client), clearStoredAuth);
+
+    expect(clearStoredAuth).not.toHaveBeenCalled();
+  });
+
   test('surfaces a non-network failure without retrying', async () => {
     const client = fakeClient();
     client.auth.signOut.mockResolvedValueOnce({ error: new AuthError('rate limited', 429, 'over_request_rate_limit') });

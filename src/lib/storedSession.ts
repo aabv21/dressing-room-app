@@ -30,3 +30,18 @@ export function parseStoredSession(raw: string | null): StoredSession | null {
   const email = user['email'];
   return { userId: user['id'], email: typeof email === 'string' ? email : null };
 }
+
+/** supabase-js's own default storage key for a project URL: `sb-<first host label>-auth-token`. */
+export function authStorageKeyFor(supabaseUrl: string): string {
+  return `sb-${new URL(supabaseUrl).hostname.split('.')[0] ?? ''}-auth-token`;
+}
+
+/**
+ * Removes every entry supabase-js persists for a session under `storageKey` (the session, its
+ * split-off user, and the PKCE code verifier), the same set its own sign-out removes.
+ */
+export function clearPersistedAuthIn(storage: { removeItem: (key: string) => void }, storageKey: string): void {
+  for (const key of [storageKey, `${storageKey}-user`, `${storageKey}-code-verifier`]) {
+    storage.removeItem(key);
+  }
+}
