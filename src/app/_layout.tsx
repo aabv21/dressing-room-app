@@ -1,10 +1,11 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '../auth/AuthProvider';
 import { I18nProvider } from '../i18n/I18nProvider';
+import { OnboardingArrivalContext } from '../ui/onboardingArrival';
 import { colors } from '../ui/theme';
 
 // Keeps the native splash screen up while `AuthProvider`'s first `onAuthStateChange` event (and,
@@ -12,17 +13,20 @@ import { colors } from '../ui/theme';
 // intermediate route before the guards below know which group to show.
 void SplashScreen.preventAutoHideAsync();
 
-type Settled = { status: 'signedOut' | 'signedIn'; onboardingComplete: boolean };
+type Settled = { status: 'signedOut' | 'signedIn'; onboardingComplete: boolean; userId: string | null };
 
 /**
- * I3: `status` returns to `'loading'` on every user change, not just the app's first launch (see
+ * `status` returns to `'loading'` on every user change, not just the app's first launch (see
  * `AuthProvider`'s `userChanged` branch) — e.g. the moment `signInWithEmail` succeeds and GoTrue's
- * session lands, before `loadProfile` resolves. Unconditionally returning `null` for `'loading'`
- * (as the first version did) unmounted the entire navigator on every sign-in, blanking the screen
- * the user was just looking at mid-request. Only the *first* settle (before anything has ever
- * rendered) hides behind `null` + the native splash; every `'loading'` after that keeps rendering
- * the *last settled* guard combination (so `(auth)` or `(onboarding)`/`(tabs)` stays mounted, not
- * a blank `<Stack>` with every `Stack.Protected` false) and overlays a small busy indicator.
+ * session lands, before `loadProfile` resolves. Returning `null` for every `'loading'` would
+ * unmount the entire navigator on each sign-in, blanking the screen the user was just looking at
+ * mid-request. Only the *first* settle (before anything has ever rendered) hides behind `null` +
+ * the native splash; every `'loading'` after that keeps rendering the *last settled* guard
+ * combination (so `(auth)` or `(onboarding)`/`(tabs)` stays mounted, not a blank `<Stack>` with
+ * every `Stack.Protected` false) and overlays a small busy indicator.
+ *
+ * Finishing onboarding (the same account going from incomplete to complete) lands on the Closet,
+ * where the first goal is adding favorites; every other way into the tabs opens on Today.
  *
  * `lastSettled` is `useState`, not a ref: it's read during render to decide what to show, and a
  * ref's `.current` may not reflect the value actually committed for this render (React's
@@ -31,11 +35,30 @@ type Settled = { status: 'signedOut' | 'signedIn'; onboardingComplete: boolean }
  * without an extra render round-trip — see https://react.dev/reference/react/useState#storing-information-from-previous-renders.
  */
 function Guards() {
-  const { status, onboardingComplete } = useAuth();
+  const { status, userId, onboardingComplete } = useAuth();
   const [lastSettled, setLastSettled] = useState<Settled | null>(null);
+  const [arrivalPending, setArrivalPending] = useState(false);
+  const settleArrival = useCallback(() => {
+    setArrivalPending(false);
+  }, []);
+  const arrival = useMemo(() => ({ pending: arrivalPending, settle: settleArrival }), [arrivalPending, settleArrival]);
 
-  if (status !== 'loading' && (lastSettled === null || lastSettled.status !== status || lastSettled.onboardingComplete !== onboardingComplete)) {
-    setLastSettled({ status, onboardingComplete });
+  if (
+    status !== 'loading' &&
+    (lastSettled === null ||
+      lastSettled.status !== status ||
+      lastSettled.onboardingComplete !== onboardingComplete ||
+      lastSettled.userId !== userId)
+  ) {
+    const finishedOnboarding =
+      lastSettled !== null &&
+      lastSettled.status === 'signedIn' &&
+      !lastSettled.onboardingComplete &&
+      lastSettled.userId === userId &&
+      status === 'signedIn' &&
+      onboardingComplete;
+    setArrivalPending(finishedOnboarding);
+    setLastSettled({ status, onboardingComplete, userId });
   }
 
   useEffect(() => {
@@ -46,7 +69,7 @@ function Guards() {
 
   let active: Settled;
   if (status === 'signedOut' || status === 'signedIn') {
-    active = { status, onboardingComplete };
+    active = { status, onboardingComplete, userId };
   } else if (lastSettled !== null) {
     active = lastSettled;
   } else {
@@ -56,24 +79,26 @@ function Guards() {
   }
 
   return (
-    <View style={styles.fill}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Protected guard={active.status === 'signedOut'}>
-          <Stack.Screen name="(auth)" />
-        </Stack.Protected>
-        <Stack.Protected guard={active.status === 'signedIn' && !active.onboardingComplete}>
-          <Stack.Screen name="(onboarding)" />
-        </Stack.Protected>
-        <Stack.Protected guard={active.status === 'signedIn' && active.onboardingComplete}>
-          <Stack.Screen name="(tabs)" />
-        </Stack.Protected>
-      </Stack>
-      {status === 'loading' ? (
-        <View style={styles.busyOverlay} pointerEvents="none" testID="auth-busy-overlay">
-          <ActivityIndicator color={colors.accent} />
-        </View>
-      ) : null}
-    </View>
+    <OnboardingArrivalContext.Provider value={arrival}>
+      <View style={styles.fill}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Protected guard={active.status === 'signedOut'}>
+            <Stack.Screen name="(auth)" />
+          </Stack.Protected>
+          <Stack.Protected guard={active.status === 'signedIn' && !active.onboardingComplete}>
+            <Stack.Screen name="(onboarding)" />
+          </Stack.Protected>
+          <Stack.Protected guard={active.status === 'signedIn' && active.onboardingComplete}>
+            <Stack.Screen name="(tabs)" />
+          </Stack.Protected>
+        </Stack>
+        {status === 'loading' ? (
+          <View style={styles.busyOverlay} pointerEvents="none" testID="auth-busy-overlay">
+            <ActivityIndicator color={colors.accent} />
+          </View>
+        ) : null}
+      </View>
+    </OnboardingArrivalContext.Provider>
   );
 }
 
