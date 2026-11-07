@@ -1,8 +1,9 @@
 // integration/profile.int.test.ts
 //
 // profileRepository against the running local stack: completeOnboarding is stamped by the server
-// clock (the profiles_stamp_onboarding_completed_at trigger), not by whatever the client sends,
-// and the Profile tab's language override round-trips as 'en' | 'es' | null.
+// clock (the profiles_stamp_onboarding_completed_at trigger), not by whatever the client sends;
+// saveProfile updates only the columns it is given; and the Profile tab's language override
+// round-trips as 'en' | 'es' | null.
 
 import { signInWithEmail } from '../src/auth/emailAuth';
 import { completeOnboarding, getProfile, saveProfile } from '../src/profile/profileRepository';
@@ -68,4 +69,22 @@ test('completeOnboarding stamps the server time on a fresh profile', async () =>
 test.each(['en', 'es', null] as const)('saves the language override %p', async (language) => {
   expect(await saveProfile(userId, { language }, client)).toEqual({ ok: true });
   expect((await getProfile(userId, client))?.language).toBe(language);
+});
+
+test('saveProfile updates only the given columns: one coordinate of a stored pair saves on its own', async () => {
+  expect(await saveProfile(userId, { city_name: 'Bogotá', city_lat: 4.71, city_lon: -74.07 }, client)).toEqual({ ok: true });
+
+  expect(await saveProfile(userId, { city_lat: 4.6 }, client)).toEqual({ ok: true });
+
+  const profile = await getProfile(userId, client);
+  expect(profile).toMatchObject({ city_name: 'Bogotá', city_lat: 4.6, city_lon: -74.07 });
+});
+
+test('a city name over 80 characters is rejected as an invalid value', async () => {
+  expect(await saveProfile(userId, { city_name: 'a'.repeat(81) }, client)).toEqual({ ok: false, error: 'profile.error.invalid' });
+});
+
+test('saveProfile reports an error when the session cannot reach the row', async () => {
+  // A signed-out client has no access to profiles at all.
+  expect(await saveProfile(userId, { height_cm: 170 }, anonClient())).toEqual({ ok: false, error: 'profile.error.unknown' });
 });

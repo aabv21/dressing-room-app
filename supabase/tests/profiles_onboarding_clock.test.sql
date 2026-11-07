@@ -18,7 +18,8 @@ select is(
   'a new profile starts with onboarding not completed'
 );
 
--- User C's row is removed so the insert path below can be exercised through RLS.
+-- User C's row is removed so the insert path below can be exercised. Clients can't insert
+-- (only the signup trigger does), so that insert runs as the table owner further down.
 delete from public.profiles where user_id = '33333333-3333-3333-3333-333333333333';
 
 set local role authenticated;
@@ -34,7 +35,7 @@ select is(
   'completing onboarding stores the server time, not the client-sent value'
 );
 
-select set_config('request.jwt.claims', json_build_object('sub', '33333333-3333-3333-3333-333333333333', 'role', 'authenticated')::text, true);
+reset role;
 
 insert into public.profiles (user_id, clothing_type, onboarding_completed_at)
 values ('33333333-3333-3333-3333-333333333333', 'masculine', '2000-01-01T00:00:00Z');
