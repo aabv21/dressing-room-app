@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   socialError: {
-    color: '#c0392b',
+    color: colors.error,
     fontSize: 12,
     fontWeight: '600',
   },

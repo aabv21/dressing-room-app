@@ -74,7 +74,7 @@ export function toEnvFile(statusEnv: Readonly<Record<string, string>>, existing?
 
 /** Parses `KEY=value` lines from `supabase status -o env` output into a plain object. */
 function parseStatusEnv(output: string): Record<string, string> {
-  const env: Record<string, string> = {};
+  const entries: [string, string][] = [];
   for (const line of output.split('\n')) {
     const trimmed = line.trim();
     if (trimmed === '') {
@@ -89,14 +89,17 @@ function parseStatusEnv(output: string): Record<string, string> {
     if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) {
       value = value.slice(1, -1);
     }
-    env[key] = value;
+    entries.push([key, value]);
   }
-  return env;
+  return Object.fromEntries(entries);
 }
 
 /** Reads the current `.env.local`, or `undefined` if it doesn't exist yet (a first run). */
 async function readExistingEnvFile(): Promise<string | undefined> {
   try {
+    // ENV_FILE_PATH is this script's own fixed path, never user input, so this isn't the
+    // path-traversal sink the rule guards against.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
     return await readFile(ENV_FILE_PATH, 'utf8');
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
@@ -113,6 +116,8 @@ async function main(): Promise<void> {
   ]);
   const statusEnv = parseStatusEnv(stdout);
   const contents = toEnvFile(statusEnv, existing);
+  // Same fixed path as readExistingEnvFile above.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await writeFile(ENV_FILE_PATH, contents, 'utf8');
   console.log(`Wrote ${ENV_FILE_PATH}`);
 }
