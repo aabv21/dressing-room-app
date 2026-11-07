@@ -146,6 +146,25 @@ test('edits enable Save, and Save sends only the changed fields', async () => {
   expect(screen.getByTestId('body-top-size').props.value).toBe('L');
 });
 
+test('a height never saved shows as not set (not the slider default) until the slider moves', async () => {
+  // e.g. the user skipped the Body step during onboarding.
+  await openProfile(profileRow({ height_cm: null }));
+
+  expect(screen.getByTestId('body-height-value')).toHaveTextContent('Not set');
+  expect(screen.getByText('Move the slider to set your height.')).toBeTruthy();
+  expect(screen.getByTestId('body-height-slider').props.accessibilityValue).toMatchObject({ text: 'Not set' });
+  expect(saveButton()).toBeDisabled();
+
+  await fireEvent(screen.getByTestId('body-height-slider'), 'valueChange', 172);
+
+  expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.72 m');
+  expect(screen.queryByText('Move the slider to set your height.')).toBeNull();
+  await fireEvent.press(saveButton());
+  await waitFor(() => {
+    expect(mockedSaveProfile).toHaveBeenCalledWith(USER_ID, { height_cm: 172 });
+  });
+});
+
 test('undoing an edit makes the form clean again', async () => {
   await openProfile();
 

@@ -225,6 +225,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         <BodySection
           value={draft}
           onChange={edit}
+          unsetHeight="notSet"
           errors={visibleErrors}
           onFieldBlur={(field) => {
             setTouched((previous) => new Set(previous).add(field));
