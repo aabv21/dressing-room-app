@@ -107,4 +107,10 @@ pnpm db:stop
 
 CI's `database` job (`.github/workflows/ci.yml`) runs the Docker-dependent steps in the same order,
 on the same ports, since the config in `supabase/config.toml` applies in CI too (the stack runs
-alone there, so there's no other local project to avoid colliding with).
+alone there, so there's no other local project to avoid colliding with). Two differences:
+
+- It starts the lean stack, `pnpm db:start:ci` (no Studio, Realtime, Edge Runtime, analytics or
+  image proxy). Mailpit stays up, since `test:int` reads reset codes from it.
+- After `db:test` it regenerates the types and fails if they differ from the committed file
+  (`pnpm db:types && git diff --exit-code src/lib/database.types.ts`), so a migration can't land
+  without its `database.types.ts`.

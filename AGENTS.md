@@ -31,6 +31,7 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - Fixture mode: start the app with `EXPO_PUBLIC_PERF_FIXTURES_URL=<url printed by perf:serve>` (e.g. `EXPO_PUBLIC_PERF_FIXTURES_URL=http://127.0.0.1:8787 pnpm expo run:ios`). The Closet tab then shows 500 fixture thumbnails, a disabled upload CTA, and the frame-stats HUD (tap: reset; long-press: also clear expo-image's memory and disk caches). Unset or empty, the Closet shows its empty state. The value is inlined at bundle time, so restart Metro after changing it.
 - `pnpm check:expo` / `pnpm expo install --fix` — run during Expo SDK upgrades, after the 3-day `minimumReleaseAge` allows the new versions; informational, not a CI gate (see Supply-chain hardening).
 - `pnpm db:start` / `pnpm db:stop` — start/stop the local Supabase stack (Docker, via OrbStack).
+- `pnpm db:start:ci` — the lean stack CI starts: everything `db:test`, `db:types` and `test:int` need (Postgres, Auth, REST, Storage, Kong, postgres-meta, Mailpit), without Studio, Realtime, Edge Runtime, analytics or the image proxy.
 - `pnpm db:reset` — reset the local database to the committed migrations and seed.
 - `pnpm db:test` — run pgTAP database tests (`supabase test db`).
 - `pnpm db:types` — regenerate `src/lib/database.types.ts` from the local schema.

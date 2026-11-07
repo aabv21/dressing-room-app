@@ -78,8 +78,14 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm db:start
+      # Lean stack: no Studio, Realtime, Edge Runtime, analytics or image proxy. Mailpit stays,
+      # since test:int reads password-reset codes from it.
+      - run: pnpm db:start:ci
       - run: pnpm db:test
+      - name: Generated types match the migrations
+        run: |
+          pnpm db:types
+          git diff --exit-code src/lib/database.types.ts
       - run: pnpm env:local
       - run: pnpm test:int
       - run: pnpm db:stop

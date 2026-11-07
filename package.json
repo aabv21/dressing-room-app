@@ -67,6 +67,7 @@
     "perf:generate": "node scripts/perf-fixtures.ts generate",
     "perf:serve": "node scripts/perf-fixtures.ts serve",
     "db:start": "supabase start",
+    "db:start:ci": "supabase start -x studio,realtime,edge-runtime,vector,logflare,imgproxy",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
