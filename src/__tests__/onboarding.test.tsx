@@ -355,10 +355,11 @@ describe('Style step', () => {
     });
     await fireEvent.press(screen.getByRole('button', { name: 'Start' }));
 
+    // Rounded to city precision (2 decimals) before it is saved.
     await waitFor(() => {
       expect(mockedSaveProfile).toHaveBeenCalledWith(
         USER_ID,
-        expect.objectContaining({ city_name: 'Bogotá', city_lat: 4.711, city_lon: -74.0721 }),
+        expect.objectContaining({ city_name: 'Bogotá', city_lat: 4.71, city_lon: -74.07 }),
       );
     });
   });

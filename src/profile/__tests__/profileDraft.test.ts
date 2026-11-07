@@ -1,4 +1,4 @@
-import { changedFields, defaultHeightFor, draftFromProfile, draftToPatch, withClothingType } from '../profileDraft';
+import { changedFields, defaultHeightFor, draftFromProfile, draftToPatch, styleToPatch, withClothingType } from '../profileDraft';
 import type { ProfileDraft } from '../profileDraft';
 
 function draft(overrides: Partial<ProfileDraft> = {}): ProfileDraft {
@@ -130,5 +130,34 @@ describe('changedFields', () => {
 
   test('a column missing from the saved values counts as null', () => {
     expect(changedFields({}, { chest_cm: null, waist_cm: 80 })).toEqual({ waist_cm: 80 });
+  });
+
+  test('the coordinates travel as a pair: one changed sends both', () => {
+    expect(
+      changedFields({ city_name: 'Bogotá', city_lat: 4.71, city_lon: -74.07 }, { city_name: 'Bogotá', city_lat: 4.6, city_lon: -74.07 }),
+    ).toEqual({ city_lat: 4.6, city_lon: -74.07 });
+  });
+
+  test('clearing the city sends both coordinates as null', () => {
+    expect(
+      changedFields(
+        { styles: [], occasions: [], city_name: 'Bogotá', city_lat: 4.71, city_lon: -74.07 },
+        styleToPatch(draft({ cityName: '' })),
+      ),
+    ).toEqual({ city_name: null, city_lat: null, city_lon: null });
+  });
+
+  test('unchanged coordinates are not sent', () => {
+    expect(changedFields({ city_lat: 1, city_lon: 2, height_cm: 170 }, { city_lat: 1, city_lon: 2, height_cm: 171 })).toEqual({
+      height_cm: 171,
+    });
+  });
+});
+
+describe('styleToPatch', () => {
+  test('sends each style and occasion once, in the order first chosen', () => {
+    expect(
+      styleToPatch(draft({ styles: ['urban', 'casual', 'urban'], occasions: ['home', 'home', 'office'] })),
+    ).toMatchObject({ styles: ['urban', 'casual'], occasions: ['home', 'office'] });
   });
 });
