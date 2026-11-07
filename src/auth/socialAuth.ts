@@ -63,7 +63,7 @@ function isConfiguredClientId(value: string | undefined): value is string {
  * integration session fills these in; see AGENTS.md), not a per-attempt user error, so it's logged
  * once via `console.warn` rather than silently retried every tap.
  *
- * Ruling (P2-R4): OAuth client IDs are not secrets — they identify the app to Google, the way a
+ * OAuth client IDs are not secrets — they identify the app to Google, the way a
  * bundle id does, and are meant to ship in the client. `EXPO_PUBLIC_*` inlines these at build time
  * (see Expo's docs and this repo's AGENTS.md); Expo's static analysis requires literal member
  * expressions wherever they're read, which is why they're read directly here rather than through a

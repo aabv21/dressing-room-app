@@ -88,7 +88,7 @@ describe('signUpWithEmail', () => {
     expect(result).toEqual({ ok: true, needsConfirmation: false });
   });
 
-  test('resolves needsConfirmation true when sign-up returns no session (P2-R6, confirmations on)', async () => {
+  test('resolves needsConfirmation true when sign-up returns no session (confirmations on)', async () => {
     const client = fakeClient();
     client.auth.signUp.mockResolvedValue({ data: { session: null }, error: null });
 
@@ -223,7 +223,7 @@ describe('requestPasswordReset', () => {
     expect(result).toEqual({ ok: true });
   });
 
-  test('resolves ok on a rate limit, per P2-R6: a code was already sent', async () => {
+  test('resolves ok on an email rate limit: a code was already sent', async () => {
     const client = fakeClient();
     client.auth.resetPasswordForEmail.mockResolvedValue({
       data: {},
@@ -288,7 +288,7 @@ describe('confirmPasswordReset', () => {
     expect(result).toEqual({ ok: false, error: 'auth.error.weakPassword' });
   });
 
-  test('signs out locally when updateUser fails after a successful verify, per P2-R5', async () => {
+  test('signs out locally when updateUser fails after a successful verify', async () => {
     const client = fakeClient();
     client.auth.updateUser.mockResolvedValue({
       data: {},

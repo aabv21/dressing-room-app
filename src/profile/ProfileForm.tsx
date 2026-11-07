@@ -62,7 +62,7 @@ export function ClothingSection({ value, onChange }: SectionProps): React.JSX.El
 // ---------------------------------------------------------------------------------------------
 // Body
 
-// Global constraints: the slider runs 140–210 cm in steps of 1. Saved heights may be anywhere in
+// The slider runs 140–210 cm in steps of 1. Saved heights may be anywhere in
 // the DB's 120–230 range, so one outside the slider keeps its true value in the label (and in what
 // a screen reader says) while the thumb rests at the nearest end, with a note explaining why.
 export const SLIDER_MIN = 140;

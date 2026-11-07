@@ -72,7 +72,7 @@ function ClothingStep() {
           {error}
         </Text>
       ) : null}
-      {/* P2-R9: onboarding must not be a dead end for someone who signed in with the wrong account. */}
+      {/* Onboarding must not be a dead end for someone who signed in with the wrong account. */}
       <View style={styles.signOutRow}>
         <LinkText style={styles.signOut} disabled={signOut.signingOut} onPress={signOut.signOut}>
           {t('auth.signOut')}

@@ -1,8 +1,8 @@
 # Performance gate: scroll performance on the owner's iPhone
 
-**Status: pending.** This is the protocol for the on-device go/no-go call for Expo (spec §5.1,
-Task 7). It is written before the owner session so the session itself is just execution: build,
-measure, record, decide. Steps 2–4 (run the session, decide, commit the result) happen later and
+**Status: pending.** This is the protocol for the on-device go/no-go call on Expo (the design
+spec's performance gate, §5.1). It is written ahead of the owner's device session so the session
+itself is just execution: build, measure, record, decide. Steps 2–4 (run the session, decide, commit the result) happen later and
 are not part of this document's authoring.
 
 ## What the gate measures
@@ -141,7 +141,7 @@ as final.
 ## Decision
 
 - **If it passes:** set the README status line to "Performance gate passed on `<model>`", fill in
-  the results table above, then commit and continue to Plan 2.
+  the results table above, then commit; the app keeps building on Expo.
 - **If it fails:** try these optimizations, once each, in order, then re-run the warm passes (no
   need to redo the cold pass unless the change affects loading):
   1. Smaller thumbnails (192 px instead of 256 px).
@@ -151,7 +151,7 @@ as final.
 
   Re-measure after each change (or after all four, owner's call on timeboxing). If it still fails
   after trying these, **stop**. Record the final result in the table above and bring the owner the
-  native SwiftUI + Jetpack Compose alternative (spec §5.1) before any further plan is written.
+  native SwiftUI + Jetpack Compose alternative (spec §5.1) before building anything further.
 
-**Deferred to the integration session (Plan 6):** the same protocol on a family Android phone, if
+**Deferred to the integration session:** the same protocol on a family Android phone, if
 one is available, using `pnpm expo run:android --device --variant release`.

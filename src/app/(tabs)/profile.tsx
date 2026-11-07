@@ -27,7 +27,7 @@ function SectionHeading({ children }: { children: string }): React.JSX.Element {
   );
 }
 
-/** "Account": the signed-in email and Sign out (deletion and export arrive with Plan 5). */
+/** "Account": the signed-in email and Sign out (account deletion and data export come later). */
 function AccountSection(): React.JSX.Element {
   const { t } = useI18n();
   const { email } = useAuth();

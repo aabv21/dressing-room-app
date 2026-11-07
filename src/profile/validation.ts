@@ -1,7 +1,7 @@
 import type { MessageKey } from '../i18n';
 import type { ProfilePatch } from './profileRepository';
 
-/** Same bounds as the `profiles` CHECK constraints (global constraints → numeric ranges). */
+/** Same bounds as the `profiles` CHECK constraints. */
 export const HEIGHT_RANGE = { min: 120, max: 230 } as const;
 export const MEASUREMENT_RANGE = { min: 40, max: 200 } as const;
 export const SIZE_MAX_LENGTH = 10;

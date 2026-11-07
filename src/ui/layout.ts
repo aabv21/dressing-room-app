@@ -19,10 +19,9 @@ export const TABS: readonly { route: TabRoute; labelKey: MessageKey; icon: Lucid
 export type ScreenChrome = 'tabs' | 'none';
 
 /**
- * `chrome: 'none'` is for screens with no tab bar (auth, onboarding — mockup 03's "CTAs are
- * anchored at the bottom... those screens have no tab bar, so the CTA sits at `insets.bottom +
- * 22`" per global-constraints.md). `chrome: 'tabs'` (default) keeps the existing tab-bar-aware
- * offsets.
+ * `chrome: 'none'` is for screens with no tab bar (auth, onboarding — mockup 03): their CTA is
+ * anchored at the bottom with its button at `insets.bottom + 22`. `chrome: 'tabs'` (default) keeps
+ * the existing tab-bar-aware offsets.
  */
 export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
   tabBarBottom: number;
@@ -35,8 +34,8 @@ export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
     // so its own bottom edge sits exactly `ctaBottom` above the screen bottom; the zone then adds
     // `paddingBottom: ctaZoneBottomPadding` *inside* that, pushing the button row up by that much
     // further — so the button's own rendered bottom edge ends up at `ctaBottom +
-    // ctaZoneBottomPadding`, not `ctaBottom` itself (round 1 had this backwards, subtracting
-    // instead of adding, landing the button ~2x too high). Solving for the target
+    // ctaZoneBottomPadding`, not `ctaBottom` itself (subtracting instead would land the button
+    // about twice as high as intended). Solving for the target
     // (`insets.bottom + 22`) means `ctaBottom` here must be that much *lower*.
     const ctaBottom = insets.bottom + 22 - layout.ctaZoneBottomPadding;
     const contentPaddingBottom = ctaBottom + layout.ctaHeight + 24;

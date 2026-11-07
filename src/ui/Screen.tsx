@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     letterSpacing: 1,
   },
-  // ~1.26x the default 17pt title (I1: "about 21-22pt"), same 900 weight; no uppercase (a
+  // ~1.26x the default 17pt title (the mockup's hero is about 21–22pt), same 900 weight; no uppercase (a
   // catalog-provided "\n" forces the mockup's two-line break instead of wrapping unpredictably).
   // `letterSpacing: 1.1` matches the mockup's `.ttl { letter-spacing: .05em }` at this 22pt size
   // (CSS `em` is relative to the element's own font-size: 22 * 0.05 = 1.1pt).

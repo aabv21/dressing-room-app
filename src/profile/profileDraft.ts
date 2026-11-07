@@ -35,7 +35,7 @@ export type ProfileDraft = {
 
 export type BodyErrors = Partial<Record<BodyField, FieldError>>;
 
-/** Global constraints: the slider defaults to 175 cm for masculine, 165 cm otherwise. */
+/** The slider starts at 175 cm for masculine, 165 cm otherwise. */
 export function defaultHeightFor(clothing: ClothingType | null): number {
   return clothing === 'masculine' ? 175 : 165;
 }
