@@ -106,15 +106,62 @@ filters the catalog by the feminine-only/masculine-only category sets (`FEMININE
 category/slot/color data; `src/closet/__tests__/catalog.test.ts` checks every tuple against the
 generated `Constants.public.Enums.*`.
 
+### `public.outfits`, `public.outfit_items`, `public.wears` (Plan 4)
+
+One outfit is a set of garments, logged either through a wear (`public.log_wear()`) or saved on its
+own (`public.save_outfit()`). `public.outfits (id uuid primary key default gen_random_uuid(),
+user_id uuid not null default auth.uid() references auth.users on delete cascade, saved_at
+timestamptz, created_at timestamptz not null default now())` — `saved_at` is null unless the outfit
+was explicitly saved. `public.outfit_items (outfit_id uuid references public.outfits on delete
+cascade, garment_id uuid references public.garments on delete cascade, primary key (outfit_id,
+garment_id))` is the join table between an outfit and its garments; it has no `user_id` of its own,
+so its policies check the referenced outfit/garment instead. `public.wears (id uuid primary key
+default gen_random_uuid(), user_id uuid not null default auth.uid() references auth.users on delete
+cascade, outfit_id uuid not null references public.outfits on delete cascade, worn_on date not
+null, occasion public.occasion, score smallint check (score between 0 and 100), created_at
+timestamptz not null default now())` is one row per logged wear of an outfit.
+
+Indexes: `outfits_user_id_idx` on `outfits (user_id)`, `outfit_items_outfit_id_idx` on
+`outfit_items (outfit_id)` (outfit_items has no `user_id` of its own to index), `wears_user_id_idx`
+on `wears (user_id)` and `wears_user_id_worn_on_idx` on `wears (user_id, worn_on desc)` (backs the
+diary/Today queries added in later plans).
+
+**Clients never insert or update these tables directly in the documented path** —
+`public.log_wear()` and `public.save_outfit()` (below) are the RPCs the app calls. Clients may
+`select` all three (own rows only) and `delete` their own `wears` rows (Plan 5's diary undo); there
+is no delete policy on `outfits` or `outfit_items`, and no update policy anywhere on any of the
+three. Because both RPCs are `security invoker`, the privilege to insert is still there — gated by
+each table's own insert policy — so a direct client insert of the caller's own row is technically
+possible; it's just never the app's path. See [Logging a wear](#logging-a-wear-public_log_wear) and
+[Wear count maintenance](#wear-count-maintenance-trigger) below.
+
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
+
+Server-only caches for the rating, feeling-lucky and weather Edge Functions; no client ever reads or
+writes them. `public.rating_cache` and `public.lucky_cache` share the same shape: `(user_id uuid
+references auth.users on delete cascade, cache_key text, result jsonb not null, created_at
+timestamptz not null default now())`, primary key `(user_id, cache_key)`. `public.weather_cache` is
+not user-scoped (weather is shared across users at the same place and hour): `(location_key text not
+null, hour timestamptz not null, payload jsonb not null)`, primary key `(location_key, hour)`. All
+three have RLS enabled with **no policies at all** and `revoke all` from both `anon` and
+`authenticated` — same "no API surface" pattern as `usage_counters` below, except nothing reads or
+writes them through a `security definer` function either; only `service_role` (the Edge Functions)
+ever touches them, bypassing RLS entirely as that role.
+
 ### `public.usage_counters`
 
 Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
-`supabase/functions/extract-attributes/handler.ts`).
+`supabase/functions/extract-attributes/handler.ts`), the Plan 4 rating quota (50 per user per UTC
+day) and the Plan 4 feeling-lucky quota (10 per user per UTC day).
 `(user_id uuid references auth.users on delete cascade, day date, kind quota_kind, count integer
-not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has one
-value today (`extraction`); Plans 4–5 add more with `alter type … add value`. RLS is enabled with
-**no policies at all** and `revoke all` from both `anon` and `authenticated` — the table has no API
-surface of its own; every read and write goes through `public.consume_quota()`.
+not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has three
+values: `extraction` (Plan 3), and `rating`/`lucky` (Plan 4, added by `alter type … add value` in
+`20261108120000_outfits_wears_caches.sql` — each `add value` is its own statement, and neither value
+is referenced anywhere else in that migration, so both commit in the same transaction as the rest of
+it; Postgres only forbids using a brand new enum value in the same transaction that added it, not
+adding several values together). RLS is enabled with **no policies at all** and `revoke all` from
+both `anon` and `authenticated` — the table has no API surface of its own; every read and write goes
+through `public.consume_quota()`.
 
 `public.consume_quota(p_user_id uuid, p_kind public.quota_kind, p_limit integer) returns boolean` is
 `security definer` with `set search_path = ''`, `execute` revoked from `public`, `anon` and
@@ -184,6 +231,36 @@ privileges), the client gets back only:
 update, and `garments_keep_created_at` (`public.keep_created_at()`) copies the old `created_at`
 back over whatever an update sends — both revoked from direct `execute` by clients, same as on
 `profiles`.
+
+### `public.outfits`, `public.outfit_items`, `public.wears` (Plan 4)
+
+RLS is enabled on all three, all comparing against `(select auth.uid())`:
+
+- `outfits` — `outfits_select_own` (select), `outfits_insert_own` (insert, `with check`). No update
+  or delete policy.
+- `outfit_items` — `outfit_items_select_own` (select) via `exists (select 1 from public.outfits o
+  where o.id = outfit_id and o.user_id = (select auth.uid()))`; `outfit_items_insert_own` (insert,
+  `with check`) requiring both the referenced outfit and the referenced garment to be the caller's.
+  No update or delete policy.
+- `wears` — `wears_select_own` (select), `wears_insert_own` (insert, `with check`),
+  `wears_delete_own` (delete). No update policy — a client update reaches RLS but matches no row (a
+  missing policy is a denial, same as the "New table checklist" below), so it succeeds without error
+  and changes nothing, exactly like `garments_rls.test.sql`'s cross-user update/delete.
+
+`revoke all on <table> from anon` and `revoke truncate, trigger, references on <table> from anon,
+authenticated` on all three. There is no column-grant narrowing here the way `garments` has: insert
+stays at the row-policy level because `public.log_wear()`/`public.save_outfit()` are `security
+invoker` and rely on the caller's own insert privilege and policies (see below) — the policies above
+are the only gate, and they're already as narrow as the RPCs need.
+
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
+
+RLS is enabled with **zero policies** on all three, and `revoke all on <table> from anon,
+authenticated` — same "no RLS-mediated access path at all" pattern as `usage_counters` below, except
+nothing reads or writes them through a `security definer` function either: only `service_role`
+(the rating/lucky/weather Edge Functions) ever touches them, bypassing RLS entirely as that role. A
+direct `select`/`insert`/`update`/`delete` from `authenticated` or `anon` is rejected by the table
+grant revoke before RLS is even consulted.
 
 ### `public.usage_counters`
 
@@ -272,6 +349,65 @@ select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'extrac
 and the function's own secrets with
 `pnpm exec supabase secrets set EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`
 (`ANTHROPIC_BASE_URL` stays unset there, so the function uses `https://api.anthropic.com`).
+
+### Logging a wear: `public.log_wear()`
+
+`public.log_wear(p_garment_ids uuid[], p_worn_on date, p_occasion public.occasion, p_score
+smallint) returns uuid` is the documented, and only intended, way to log a wear. It is `security
+invoker` with `set search_path = ''`, `execute` revoked from `public` and `anon`, granted to
+`authenticated` only. Being `security invoker` (not `security definer`) is deliberate: the actual
+inserts into `outfits`, `outfit_items` and `wears` run as the calling role, so they're still gated by
+those tables' own insert policies — the function doesn't bypass RLS, it just saves the client three
+round trips and the chance of a half-written outfit.
+
+1. Validates `p_garment_ids`: raises `22023` (`invalid_parameter_value`) if it's null, has fewer
+   than 2 elements, or contains a duplicate (`cardinality` compared against a `distinct unnest`
+   count).
+2. Checks ownership: `select count(*) from public.garments where id = any(p_garment_ids)` runs under
+   the caller's own RLS, so it only counts garments that are both in the array *and* the caller's
+   own. If that count is short of the array length — some id doesn't exist, or belongs to someone
+   else, the two cases are indistinguishable from outside and deliberately so — it raises `42501`
+   (`insufficient_privilege`).
+3. Inserts an `outfits` row (defaults: `user_id = auth.uid()`, `saved_at` stays null), one
+   `outfit_items` row per garment id, and one `wears` row (`worn_on`, `occasion`, `score` from the
+   arguments), returning the new wear's id.
+
+`public.save_outfit(p_garment_ids uuid[]) returns uuid` is the sibling RPC for saving a combination
+without logging a wear: same validation and ownership check, but it inserts only `outfits` (with
+`saved_at = now()`) and `outfit_items`, no `wears` row, and returns the outfit id instead.
+
+Because both are `security invoker`, `authenticated` keeps `insert` on `outfits`, `outfit_items` and
+`wears`, gated by each table's own insert policy (see "RLS and storage rules" above). A client can
+therefore insert directly into any of the three tables instead of calling the RPC — but only ever
+rows that pass those same policies (the caller's own `user_id`, their own outfit, their own
+garment), so a direct insert can't create anything the RPC couldn't. The RPC is the app's only path
+in practice: it's the one place the array validation and the all-or-nothing three-table insert
+live.
+
+### Wear count maintenance (trigger)
+
+`public.maintain_wear_counts()` fires as the trigger `wears_maintain_counts`
+(`after insert or delete on public.wears for each row`). It is `security definer` with
+`set search_path = ''` (so it can write `garments.wear_count`/`last_worn_at`, which no client role
+can — see the garments column grants above) and `execute` is revoked from `public`, `anon` and
+`authenticated` (the trigger still fires on every insert/delete; only a *direct* call is blocked).
+
+- **On insert:** every garment referenced by the new wear's outfit (through `outfit_items`) gets
+  `wear_count = wear_count + 1`, and `last_worn_at` moves forward to the wear's `worn_on` if that's
+  later than what's stored (`greatest(coalesce(last_worn_at, worn_on), worn_on)`, so a `null`
+  `last_worn_at` is always replaced).
+- **On delete:** every garment referenced by the deleted wear's outfit gets `wear_count =
+  greatest(wear_count - 1, 0)` (never negative), and `last_worn_at` is recomputed from scratch as
+  the max `worn_on` across that garment's *remaining* wears — joining `wears` back through
+  `outfit_items` for that garment, excluding the row being deleted — or `null` if none remain. This
+  is a full recompute rather than "move it back one step" because a garment can appear in several
+  outfits worn on different dates; only a fresh `max()` over what's left is correct after a delete.
+
+A garment can be in the same outfit as other garments that are deleted independently (`garments …
+on delete cascade` from `outfit_items`), but the trigger is on `wears`, not `outfit_items` or
+`garments`, so deleting a garment never fires it — the garment's own row is just gone, and any
+other garment that shared an outfit with it is unaffected (its own wear_count/last_worn_at came from
+its own wears, not from what else was in the outfit).
 
 ### Signup trigger
 
@@ -396,6 +532,19 @@ discards both the user and its profile row — no cleanup step is needed.
   secret header and the 5 s timeout; with them deleted, an insert still succeeds and queues nothing;
   with a URL pg_net rejects (so queueing the request raises), the insert still succeeds and keeps
   its row.
+- `outfits_wears.test.sql` — `log_wear` for A with 3 garments creates one outfit, 3 `outfit_items`
+  and one wear, and sets `wear_count`/`last_worn_at` on all 3 garments; a second `log_wear` reusing 2
+  of them bumps those to `wear_count` 2 and moves `last_worn_at` to the later date; deleting that
+  second wear restores both garments to `wear_count` 1 and falls `last_worn_at` back to the
+  remaining wear's date (not null, since each is still in the first wear); deleting a garment's only
+  remaining wear drops its `last_worn_at` to null; `log_wear` by B referencing A's garment raises
+  `42501`; a single garment or a duplicate id raises `22023`; B selecting A's outfits, outfit_items
+  or wears returns 0 rows; `save_outfit` stamps `saved_at`; an authenticated update of `wears`
+  touches no row (no update policy); deleting a garment cascades its `outfit_items` rows.
+- `ai_caches.test.sql` — `authenticated` and `anon` can neither select nor insert
+  `rating_cache`/`lucky_cache`/`weather_cache`; `consume_quota(A, 'rating', 1)` returns `true` then
+  `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though `'rating'` is exhausted
+  for the same user — the two `quota_kind` values are tracked independently.
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.
