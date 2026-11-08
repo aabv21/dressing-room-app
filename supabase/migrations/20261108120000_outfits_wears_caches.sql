@@ -110,8 +110,8 @@ create table public.wears (
 comment on table public.wears is
   'One row per logged wear of an outfit. Clients never insert or update '
   'directly — public.log_wear() is the documented path (RLS also allows a '
-  'direct insert of the caller''s own row). Clients may delete their own '
-  'rows (Plan 5''s diary undo).';
+  'direct insert of the caller''s own row referencing one of their own '
+  'outfits). Clients may delete their own rows (Plan 5''s diary undo).';
 
 create index wears_user_id_idx on public.wears (user_id);
 create index wears_user_id_worn_on_idx on public.wears (user_id, worn_on desc);
@@ -126,7 +126,13 @@ create policy "wears_select_own" on public.wears
 create policy "wears_insert_own" on public.wears
   for insert
   to authenticated
-  with check (user_id = (select auth.uid()));
+  with check (
+    user_id = (select auth.uid())
+    and exists (
+      select 1 from public.outfits o
+      where o.id = outfit_id and o.user_id = (select auth.uid())
+    )
+  );
 
 create policy "wears_delete_own" on public.wears
   for delete
@@ -154,9 +160,10 @@ begin
     update public.garments g
     set wear_count = g.wear_count + 1,
         last_worn_at = greatest(coalesce(g.last_worn_at, new.worn_on::timestamptz), new.worn_on::timestamptz)
-    where g.id in (
-      select oi.garment_id from public.outfit_items oi where oi.outfit_id = new.outfit_id
-    );
+    where g.user_id = new.user_id
+      and g.id in (
+        select oi.garment_id from public.outfit_items oi where oi.outfit_id = new.outfit_id
+      );
 
     return new;
   end if;
@@ -168,11 +175,12 @@ begin
           select max(w.worn_on)::timestamptz
           from public.wears w
           join public.outfit_items oi on oi.outfit_id = w.outfit_id
-          where oi.garment_id = g.id and w.id <> old.id
+          where oi.garment_id = g.id and w.id <> old.id and w.user_id = old.user_id
         )
-    where g.id in (
-      select oi.garment_id from public.outfit_items oi where oi.outfit_id = old.outfit_id
-    );
+    where g.user_id = old.user_id
+      and g.id in (
+        select oi.garment_id from public.outfit_items oi where oi.outfit_id = old.outfit_id
+      );
 
     return old;
   end if;
@@ -187,7 +195,11 @@ comment on function public.maintain_wear_counts() is
   'last_worn_at moves forward to worn_on if later. On delete, every garment '
   'in the deleted wear''s outfit loses one wear (floored at 0) and '
   'last_worn_at is recomputed from that garment''s remaining wears (through '
-  'outfit_items), or set to null if none remain.';
+  'outfit_items), or set to null if none remain. Every update is also '
+  'scoped to g.user_id = new/old.user_id, as defense in depth alongside the '
+  'wears_insert_own policy''s outfit-ownership check: even if a row ever '
+  'reached this trigger referencing another user''s outfit, it could never '
+  'touch that user''s garments.';
 
 revoke execute on function public.maintain_wear_counts() from public, anon, authenticated;
 

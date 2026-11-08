@@ -246,6 +246,13 @@ RLS is enabled on all three, all comparing against `(select auth.uid())`:
   `wears_delete_own` (delete). No update policy — a client update reaches RLS but matches no row (a
   missing policy is a denial, same as the "New table checklist" below), so it succeeds without error
   and changes nothing, exactly like `garments_rls.test.sql`'s cross-user update/delete.
+  `wears_insert_own`'s `with check` requires **both** `user_id = (select auth.uid())` **and**
+  `exists (select 1 from public.outfits o where o.id = outfit_id and o.user_id = (select
+  auth.uid()))` — checking `user_id` alone would let a caller insert a wear naming their own
+  `user_id` but someone else's `outfit_id` (a uuid they could have seen or guessed from
+  elsewhere), and the `security definer` wear-count trigger would then update that other user's
+  garments. The outfit-ownership check closes that; see "Wear count maintenance" below for the
+  trigger's own, second layer of defense against the same thing.
 
 `revoke all on <table> from anon` and `revoke truncate, trigger, references on <table> from anon,
 authenticated` on all three. There is no column-grant narrowing here the way `garments` has: insert
@@ -392,16 +399,29 @@ live.
 can — see the garments column grants above) and `execute` is revoked from `public`, `anon` and
 `authenticated` (the trigger still fires on every insert/delete; only a *direct* call is blocked).
 
-- **On insert:** every garment referenced by the new wear's outfit (through `outfit_items`) gets
-  `wear_count = wear_count + 1`, and `last_worn_at` moves forward to the wear's `worn_on` if that's
-  later than what's stored (`greatest(coalesce(last_worn_at, worn_on), worn_on)`, so a `null`
-  `last_worn_at` is always replaced).
-- **On delete:** every garment referenced by the deleted wear's outfit gets `wear_count =
-  greatest(wear_count - 1, 0)` (never negative), and `last_worn_at` is recomputed from scratch as
-  the max `worn_on` across that garment's *remaining* wears — joining `wears` back through
-  `outfit_items` for that garment, excluding the row being deleted — or `null` if none remain. This
-  is a full recompute rather than "move it back one step" because a garment can appear in several
-  outfits worn on different dates; only a fresh `max()` over what's left is correct after a delete.
+- **On insert:** every garment referenced by the new wear's outfit (through `outfit_items`) **and
+  belonging to the same user as the wear** (`g.user_id = new.user_id`) gets `wear_count =
+  wear_count + 1`, and `last_worn_at` moves forward to the wear's `worn_on` if that's later than
+  what's stored (`greatest(coalesce(last_worn_at, worn_on), worn_on)`, so a `null` `last_worn_at`
+  is always replaced).
+- **On delete:** every garment referenced by the deleted wear's outfit **and belonging to the same
+  user as the wear** (`g.user_id = old.user_id`) gets `wear_count = greatest(wear_count - 1, 0)`
+  (never negative), and `last_worn_at` is recomputed from scratch as the max `worn_on` across that
+  garment's *remaining* wears **by that same user** — joining `wears` back through `outfit_items`
+  for that garment, excluding the row being deleted and filtering `w.user_id = old.user_id` — or
+  `null` if none remain. This is a full recompute rather than "move it back one step" because a
+  garment can appear in several outfits worn on different dates; only a fresh `max()` over what's
+  left is correct after a delete.
+
+**The `g.user_id = new.user_id` / `g.user_id = old.user_id` filters are defense in depth, not the
+primary guard.** `wears_insert_own`'s policy (above) already stops a `wears` row from referencing
+another user's outfit in the first place, so in practice every garment this trigger touches is
+already the wear's own user's garment. The filters mean that even if some future change ever let a
+cross-tenant `wears` row land here — a new insert path, a bug in the policy, a direct write as a
+role that bypasses RLS — this `security definer` trigger still could not move another user's
+`wear_count`/`last_worn_at`, because it's scoped to `g.user_id = new/old.user_id` on top of the
+`outfit_items` join. Two independent layers (the policy and the trigger) have to both be wrong at
+once for a cross-tenant write to happen.
 
 A garment can be in the same outfit as other garments that are deleted independently (`garments …
 on delete cascade` from `outfit_items`), but the trigger is on `wears`, not `outfit_items` or
@@ -540,7 +560,11 @@ discards both the user and its profile row — no cleanup step is needed.
   remaining wear drops its `last_worn_at` to null; `log_wear` by B referencing A's garment raises
   `42501`; a single garment or a duplicate id raises `22023`; B selecting A's outfits, outfit_items
   or wears returns 0 rows; `save_outfit` stamps `saved_at`; an authenticated update of `wears`
-  touches no row (no update policy); deleting a garment cascades its `outfit_items` rows.
+  touches no row (no update policy); deleting a garment cascades its `outfit_items` rows. Also the
+  cross-tenant direct-insert paths: B inserting a `wears` row with their own `user_id` but A's
+  `outfit_id` raises `42501` and leaves A's `wear_count` unchanged; B inserting an `outfit_items`
+  row into A's outfit (even naming B's own garment) raises `42501`; B inserting an `outfit_items`
+  row naming A's garment (even into B's own outfit) raises `42501`.
 - `ai_caches.test.sql` — `authenticated` and `anon` can neither select nor insert
   `rating_cache`/`lucky_cache`/`weather_cache`; `consume_quota(A, 'rating', 1)` returns `true` then
   `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though `'rating'` is exhausted

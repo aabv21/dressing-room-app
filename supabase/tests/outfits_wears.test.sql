@@ -2,13 +2,16 @@
 -- items and a wear; wear_count/last_worn_at maintained on insert and delete),
 -- cross-user rejection (42501), validation (22023 for too few items or a
 -- duplicate), cross-user isolation on outfits/outfit_items/wears, save_outfit
--- stamping saved_at, no client update on wears, and a garment delete
--- cascading its outfit_items rows.
+-- stamping saved_at, no client update on wears, a garment delete cascading
+-- its outfit_items rows, and the cross-tenant direct-insert paths a security
+-- review flagged: a wear naming another user's outfit_id, and an
+-- outfit_item naming another user's outfit or garment, must all be denied
+-- (and must never reach the wear-count trigger).
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(31);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -55,6 +58,14 @@ select is(
   (select count(*)::int from public.outfit_items oi join public.outfits o on o.id = oi.outfit_id where o.user_id = '11111111-1111-1111-1111-111111111111'),
   3,
   'exactly 3 outfit_items rows were created'
+);
+
+-- Stash A's outfit id so B's direct cross-tenant insert attempts below can
+-- target a real outfit, not a made-up uuid that would never match anyway.
+select set_config(
+  'pgtap.a_outfit_id',
+  (select outfit_id::text from public.outfit_items oi join public.outfits o on o.id = oi.outfit_id where o.user_id = '11111111-1111-1111-1111-111111111111' limit 1),
+  true
 );
 
 reset role;
@@ -153,6 +164,68 @@ select throws_ok(
   null,
   'log_wear by B referencing A''s garment raises a policy error'
 );
+
+-- Security-review fix: B inserting a wear directly, claiming their own
+-- user_id but A's outfit_id, must still be rejected — wears_insert_own also
+-- requires the outfit to be the caller's own, not just user_id = auth.uid().
+select throws_ok(
+  format(
+    $$ insert into public.wears (user_id, outfit_id, worn_on) values ('22222222-2222-2222-2222-222222222222', %L, '2026-11-02') $$,
+    current_setting('pgtap.a_outfit_id')::uuid
+  ),
+  '42501',
+  null,
+  'B inserting a wear with A''s outfit_id raises a policy error'
+);
+
+-- A's garment counts must be unaffected by B's rejected attempt above.
+-- Check as postgres (bypassing RLS): B can't even see A's garment, so this
+-- read has to run as a role that isn't filtered by garments_select_own.
+reset role;
+
+select is(
+  (select wear_count from public.garments where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  1,
+  'A''s garment 1 wear_count is unchanged after B''s rejected cross-tenant wear insert'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-2222-2222-222222222222', 'role', 'authenticated')::text, true);
+
+-- B inserting an outfit_item into A's outfit (even with B's own garment) is
+-- rejected — outfit_items_insert_own requires the outfit to be the
+-- caller's, regardless of whose garment is named.
+select throws_ok(
+  format(
+    $$ insert into public.outfit_items (outfit_id, garment_id) values (%L, 'bbbbbbbb-0000-0000-0000-000000000001') $$,
+    current_setting('pgtap.a_outfit_id')::uuid
+  ),
+  '42501',
+  null,
+  'B inserting an outfit_item into A''s outfit raises a policy error'
+);
+
+-- B inserting an outfit_item naming A's garment (even into B's own outfit)
+-- is also rejected — outfit_items_insert_own requires the garment to be
+-- the caller's too. Give B their own outfit row directly (as postgres,
+-- bypassing RLS — this is fixture setup, not the thing under test).
+reset role;
+
+insert into public.outfits (id, user_id)
+values ('bbbbbbbb-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222');
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-2222-2222-222222222222', 'role', 'authenticated')::text, true);
+
+select throws_ok(
+  $$ insert into public.outfit_items (outfit_id, garment_id) values ('bbbbbbbb-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001') $$,
+  '42501',
+  null,
+  'B inserting an outfit_item naming A''s garment raises a policy error'
+);
+
+-- Back to impersonating A for the rest of the file.
+select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
 
 -- A single garment (fewer than 2) is rejected.
 select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
