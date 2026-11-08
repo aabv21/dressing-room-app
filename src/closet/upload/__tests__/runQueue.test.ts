@@ -56,6 +56,8 @@ type FakeStore = {
   saveItem: jest.Mock;
   removeItem: jest.Mock;
   all: () => QueueItem[];
+  /** Inserts an item directly into the backing store, as `queueStore.ts`'s `enqueue*` would. */
+  enqueue: (item: QueueItem) => void;
 };
 
 /** An in-memory QueueStoreApi, scoped to one user, for exercising runQueue without real SQLite. */
@@ -72,6 +74,9 @@ function createFakeStore(initial: readonly QueueItem[]): FakeStore {
       rows.delete(item.garmentId);
     }),
     all: () => [...rows.values()],
+    enqueue: (item: QueueItem) => {
+      rows.set(item.garmentId, item);
+    },
   };
 }
 
@@ -274,6 +279,32 @@ test('at most 2 prepare calls are in flight at once', async () => {
   await resultPromise;
   expect(maxInFlight).toBeLessThanOrEqual(2);
   expect(steps.prepare).toHaveBeenCalledTimes(3);
+});
+
+test('an item enqueued while a pass is running is committed by the same awaited call', async () => {
+  // I2: runQueue reads listQueue once per sweep; without a rerun flag an item added mid-pass
+  // would sit until some unrelated later trigger called runQueue again.
+  const store = createFakeStore([makeItem({ garmentId: 'a' })]);
+  const steps = createSteps();
+  const gate = deferred<{ fullUri: string; thumbUri: string }>();
+  steps.prepare.mockReturnValueOnce(gate.promise);
+
+  const resultPromise = runQueue('user-1', steps, store, () => 0);
+  await flushMicrotasks();
+
+  // A second item is enqueued into the same store while the first sweep is still mid-`prepare`
+  // for garment 'a' — this call overlaps the in-flight pass, so it should set the rerun flag
+  // instead of starting an unrelated second pass.
+  store.enqueue(makeItem({ garmentId: 'b' }));
+  const overlapping = runQueue('user-1', steps, store, () => 0);
+
+  gate.resolve({ fullUri: 'file:///full.webp', thumbUri: 'file:///thumb.webp' });
+  const [result, overlappingResult] = await Promise.all([resultPromise, overlapping]);
+
+  expect(result).toBe(overlappingResult);
+  expect(result).toEqual({ committed: 2, failed: 0, waiting: 0 });
+  expect(steps.prepare).toHaveBeenCalledTimes(2);
+  expect(store.all()).toHaveLength(0);
 });
 
 describe('backoffMs', () => {

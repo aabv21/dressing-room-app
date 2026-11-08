@@ -104,12 +104,24 @@ function upsert(item: QueueItem): void {
   );
 }
 
-/** Copies `sourceUri` into `Paths.document/uploads/<garmentId>-source.<ext>` and returns its URI. */
+function getRow(garmentId: string): QueueRow | null {
+  return db.getFirstSync<QueueRow>('SELECT * FROM upload_queue WHERE garment_id = ?;', [garmentId]);
+}
+
+// NOTE (P3-R8): named `<garmentId>-<uuid>-source.<ext>`, not the brief's `<garmentId>-source.<ext>`.
+// A fixed name would let a replacement's copy collide with (and be deleted alongside) the row a
+// worker already in flight for the same garment is using — see `saveItem`/`removeItem` below,
+// which key on `source_uri` instead of only `garment_id` to survive that race. Ceiling: file names
+// are no longer predictable from `garmentId` alone; upgrade path: none needed, callers always get
+// the name back from the returned `QueueItem.sourceUri`.
 function copyIntoUploads(garmentId: string, sourceUri: string): string {
   const uploadsDir = new Directory(Paths.document, 'uploads');
-  uploadsDir.create({ intermediates: true, overwrite: false });
+  // `idempotent: true` (not `overwrite`) is what makes a second `create()` call on an already-
+  // existing directory succeed silently instead of throwing — `overwrite` only controls whether an
+  // *existing* directory's contents are replaced, not whether "already exists" itself is an error.
+  uploadsDir.create({ intermediates: true, idempotent: true });
   const ext = Paths.extname(sourceUri).replace(/^\./, '') || 'jpg';
-  const destination = new File(uploadsDir, `${garmentId}-source.${ext}`);
+  const destination = new File(uploadsDir, `${garmentId}-${Crypto.randomUUID()}-source.${ext}`);
   const source = new File(sourceUri);
   source.copySync(destination, { overwrite: true });
   return destination.uri;
@@ -151,6 +163,7 @@ export function enqueuePhotos(userId: string, sourceUris: readonly string[]): Qu
 }
 
 export function enqueueReplacement(userId: string, garmentId: string, sourceUri: string): QueueItem {
+  const previous = getRow(garmentId);
   const copiedUri = copyIntoUploads(garmentId, sourceUri);
   const item: QueueItem = {
     garmentId,
@@ -166,6 +179,17 @@ export function enqueueReplacement(userId: string, garmentId: string, sourceUri:
     createdAt: Date.now(),
   };
   upsert(item);
+  // The old row's files are only ours to delete here if no worker is (or will be) mid-run on them:
+  // a 'captured' item has nothing running yet, and a failed item's run already gave up. Anything
+  // else (prepared/uploaded, not failed) may have a worker about to call `saveItem`/`removeItem`
+  // with its own stale snapshot — those calls are keyed on `source_uri`, so once this replacement
+  // has overwritten the row, the worker's write will no-op and its `removeItem` will delete only
+  // the files named in its own (old) snapshot, cleaning them up safely once it finishes.
+  if (previous !== null && (previous.stage === 'captured' || previous.failed === 1)) {
+    deleteIfExists(previous.source_uri);
+    deleteIfExists(previous.full_uri);
+    deleteIfExists(previous.thumb_uri);
+  }
   return item;
 }
 
@@ -177,12 +201,48 @@ export function listQueue(userId: string): QueueItem[] {
   return rows.map(rowToItem);
 }
 
+// `saveItem`/`removeItem` are called by a running `runQueue` worker holding a `QueueItem` it read
+// at the start of its pass. If `enqueueReplacement` swaps that same garment's row for a new one
+// (new `source_uri`) while the worker is mid-run, the worker's write must not clobber the
+// replacement or delete its files: both statements below are conditioned on `source_uri` still
+// matching the snapshot the caller holds, so a stale write affects zero rows instead of the
+// replacement's row (Review Focus 1: no photo lost, no garment duplicated).
+
 export function saveItem(item: QueueItem): void {
-  upsert(item);
+  db.runSync(
+    `UPDATE upload_queue SET
+       user_id = ?,
+       "replace" = ?,
+       stage = ?,
+       full_uri = ?,
+       thumb_uri = ?,
+       attempts = ?,
+       next_attempt_at = ?,
+       failed = ?,
+       created_at = ?
+     WHERE garment_id = ? AND source_uri = ?;`,
+    [
+      item.userId,
+      item.replace ? 1 : 0,
+      item.stage,
+      item.fullUri,
+      item.thumbUri,
+      item.attempts,
+      item.nextAttemptAt,
+      item.failed ? 1 : 0,
+      item.createdAt,
+      item.garmentId,
+      item.sourceUri,
+    ],
+  );
 }
 
 export function removeItem(item: QueueItem): void {
-  db.runSync('DELETE FROM upload_queue WHERE garment_id = ?;', [item.garmentId]);
+  const result = db.runSync('DELETE FROM upload_queue WHERE garment_id = ? AND source_uri = ?;', [
+    item.garmentId,
+    item.sourceUri,
+  ]);
+  if (result.changes === 0) return;
   deleteIfExists(item.sourceUri);
   deleteIfExists(item.fullUri);
   deleteIfExists(item.thumbUri);

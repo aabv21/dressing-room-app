@@ -40,6 +40,17 @@ export type RunQueueResult = { committed: number; failed: number; waiting: numbe
 /** Calls in flight, keyed by user, so overlapping callers share one pass instead of racing. */
 const inFlight = new Map<string, Promise<RunQueueResult>>();
 
+/**
+ * Set when a call to `runQueue` arrives while a pass for that user is already running. Without
+ * this, an item enqueued mid-pass (e.g. from the camera screen while a previous batch is still
+ * uploading) would sit until some later, unrelated trigger called `runQueue` again — the running
+ * pass took its item list once, up front, and never looks again. Checked (and cleared) after each
+ * sweep through `due`; set, it starts another sweep inside the same shared promise instead of
+ * resolving, so the overlapping caller's own `await runQueue(...)` only settles once its item has
+ * actually been attempted.
+ */
+const rerunRequested = new Set<string>();
+
 export function runQueue(
   userId: string,
   steps: QueueSteps,
@@ -47,13 +58,37 @@ export function runQueue(
   now: () => number = Date.now,
 ): Promise<RunQueueResult> {
   const existing = inFlight.get(userId);
-  if (existing !== undefined) return existing;
+  if (existing !== undefined) {
+    rerunRequested.add(userId);
+    return existing;
+  }
 
-  const pass = runQueuePass(userId, steps, store, now).finally(() => {
+  const pass = runQueuePasses(userId, steps, store, now).finally(() => {
     inFlight.delete(userId);
   });
   inFlight.set(userId, pass);
   return pass;
+}
+
+/** Repeats `runQueuePass` while a rerun was requested during the previous sweep, summing results. */
+async function runQueuePasses(
+  userId: string,
+  steps: QueueSteps,
+  store: QueueStoreApi,
+  now: () => number,
+): Promise<RunQueueResult> {
+  let committed = 0;
+  let failed = 0;
+  let waiting = 0;
+  for (;;) {
+    rerunRequested.delete(userId);
+    const sweep = await runQueuePass(userId, steps, store, now);
+    committed += sweep.committed;
+    failed += sweep.failed;
+    waiting += sweep.waiting;
+    if (!rerunRequested.has(userId)) break;
+  }
+  return { committed, failed, waiting };
 }
 
 async function runQueuePass(
