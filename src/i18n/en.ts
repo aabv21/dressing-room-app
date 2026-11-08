@@ -465,6 +465,7 @@ export const en = {
   'today.fresh': 'Nothing you wore this week',
   'today.another': 'Another',
   'today.loading': "Finding today's outfit…",
+  'today.offline': 'Offline — showing your last suggestions',
   'today.empty': 'No outfit came up today. Add a few more pieces to your closet.',
   'today.empty.occasion': 'Nothing fits this occasion today. Try another one, or add more pieces.',
   'today.tooSmall': 'Add {n} more to get outfits: {slots}',

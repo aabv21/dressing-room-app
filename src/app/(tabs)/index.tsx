@@ -3,7 +3,7 @@
 // "How does it look?" chip opens the rating.
 import { randomUUID } from 'expo-crypto';
 import { router, useIsFocused } from 'expo-router';
-import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles } from 'lucide-react-native';
+import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -124,6 +124,17 @@ function LoadingCard(): React.JSX.Element {
           </View>
         </View>
       ))}
+    </View>
+  );
+}
+
+/** A small line above the card when the list shown is the last one, because the fetch couldn't connect. */
+function OfflineNote(): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <View style={styles.offline} accessible accessibilityLiveRegion="polite">
+      <WifiOff size={13} color={colors.muted} />
+      <Text style={styles.muted}>{t('today.offline')}</Text>
     </View>
   );
 }
@@ -325,6 +336,7 @@ export default function TodayScreen(): React.JSX.Element {
           }}
         />
       </ScrollView>
+      {lucky.offline ? <OfflineNote /> : null}
       {body}
       {notice === undefined ? null : <View style={styles.noticeRoom} />}
     </Screen>
@@ -397,6 +409,12 @@ const styles = StyleSheet.create({
     color: colors.accentText,
     fontSize: 12,
     fontWeight: '700',
+  },
+  offline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 2,
   },
   fresh: {
     marginTop: 2,

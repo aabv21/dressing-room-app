@@ -1,5 +1,6 @@
 // Today's "feeling lucky" list: `lucky-list`'s ranked outfits for the day and occasion, walked one
-// at a time with "Another", plus the day's occasion kept on the device.
+// at a time with "Another", plus the day's occasion kept on the device. The last good list per
+// occasion is kept on the device too (`storedLucky.ts`), so Today is readable offline.
 import { useIsFocused } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
@@ -10,6 +11,7 @@ import { useCloset } from '../closet/ClosetProvider';
 import type { Garment } from '../closet/garmentRepository';
 import { kvGet, kvRemove, kvSet } from '../lib/kv';
 import { fetchLuckyList, localDate, type AiError, type AiOutcome } from './aiClient';
+import { readStoredLucky, storeLucky } from './storedLucky';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from './types';
 
 export type LuckyState = 'loading' | 'ready' | 'too_small' | 'error';
@@ -26,6 +28,11 @@ export type LuckyList = {
   /** The slots a `too_small` closet lacks; empty otherwise. */
   missing: Slot[];
   error: AiError | null;
+  /**
+   * The list shown is the last one that came back (now or earlier today), because the latest fetch
+   * couldn't connect.
+   */
+  offline: boolean;
   /** Fetches again after an error. */
   reload: () => void;
   /** The local day the list is for (`localDate()`, re-read on returning to the foreground). */
@@ -102,7 +109,11 @@ function closetFingerprint(garments: readonly Garment[]): string {
 
 const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
 
-type Settled = { query: string; outcome: AiOutcome<LuckyResponse> };
+/**
+ * The latest answer for `query`. `failed` is the error of a later fetch for the same query that
+ * kept this (good) outcome on screen.
+ */
+type Settled = { query: string; outcome: AiOutcome<LuckyResponse>; failed: AiError | null };
 
 /**
  * Fetches the list once the closet has loaded (P4-R15: never against a closet still on its way),
@@ -112,14 +123,19 @@ type Settled = { query: string; outcome: AiOutcome<LuckyResponse> };
  * in flight: a trigger during one runs once after it, with the latest occasion and day. The
  * function's cache makes refetches cheap. A refetch keeps the shown outfit while it's still in the
  * list; outfits with a piece that's no longer available are hidden at once, before it lands.
+ *
+ * Every good answer is stored for the day and occasion. Until this session has one, the stored list
+ * is shown (also while the first fetch runs), and a failed fetch keeps it, with `offline` set when
+ * the failure was the network.
  */
 export function useLuckyList(occasion: Occasion | null): LuckyList {
+  const { userId } = useAuth();
   const day = useLocalDay();
   const focused = useIsFocused();
   const { garments, status: closetStatus } = useCloset();
   const closetReady = closetStatus !== 'loading';
   const fingerprint = useMemo(() => closetFingerprint(garments), [garments]);
-  const query = `${day}|${occasion ?? ''}`;
+  const query = `${userId ?? ''}|${day}|${occasion ?? ''}`;
 
   const [settled, setSettled] = useState<Settled | null>(null);
   // Bumped by `reload`: the effect below fetches again.
@@ -127,9 +143,9 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
 
   // The inputs the next request uses, so a queued one runs with the latest of them. Declared before
   // the fetch effects, so it's up to date when they run in the same commit.
-  const latest = useRef({ occasion, day, query, fingerprint });
+  const latest = useRef({ userId, occasion, day, query, fingerprint });
   useEffect(() => {
-    latest.current = { occasion, day, query, fingerprint };
+    latest.current = { userId, occasion, day, query, fingerprint };
   });
   const inFlight = useRef(false);
   const queued = useRef(false);
@@ -161,11 +177,12 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
         fetchedFingerprint.current = inputs.fingerprint;
         const outcome = await fetchLuckyList({ occasion: inputs.occasion, date: inputs.day });
         if (!mounted.current) return;
+        if (outcome.ok && inputs.userId !== null) storeLucky(inputs.userId, inputs.day, inputs.occasion, outcome.result);
         // A failed refetch keeps the list already shown for this query.
         setSettled((previous) =>
           !outcome.ok && previous?.query === inputs.query && previous.outcome.ok
-            ? previous
-            : { query: inputs.query, outcome },
+            ? { ...previous, failed: outcome.error }
+            : { query: inputs.query, outcome, failed: null },
         );
       } while (takeQueued());
       inFlight.current = false;
@@ -188,8 +205,24 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     };
   }, [focused, closetReady, fingerprint, run]);
 
-  const outcome = settled?.query === query ? settled.outcome : null;
-  const response = outcome?.ok === true ? outcome.result : null;
+  const current = settled?.query === query ? settled : null;
+  const outcome = current?.outcome ?? null;
+  // Today's last good list from an earlier session (or occasion), read again when the query changes;
+  // not while the closet loads, since its outfits are filtered against the closet.
+  const stored = useMemo(
+    () => (userId === null || !closetReady ? null : readStoredLucky(userId, day, occasion)),
+    [userId, day, occasion, closetReady],
+  );
+  let response: LuckyResponse | null = null;
+  // The error of the latest fetch when an earlier list is shown instead.
+  let failed: AiError | null = null;
+  if (outcome?.ok === true) {
+    response = outcome.result;
+    failed = current?.failed ?? null;
+  } else if (stored !== null) {
+    response = stored;
+    failed = outcome?.ok === false ? outcome.error : null;
+  }
   // While another occasion's list loads, the last known weather stays up (it doesn't depend on it).
   const lastResponse = response ?? (settled?.outcome.ok === true ? settled.outcome.result : null);
 
@@ -215,14 +248,12 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
   }, []);
 
   let state: LuckyState;
-  if (outcome === null) {
+  if (response !== null) {
+    state = response.kind === 'too_small' ? 'too_small' : 'ready';
+  } else if (outcome === null) {
     state = 'loading';
-  } else if (!outcome.ok) {
-    state = 'error';
-  } else if (outcome.result.kind === 'too_small') {
-    state = 'too_small';
   } else {
-    state = 'ready';
+    state = 'error';
   }
 
   return {
@@ -232,7 +263,8 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     next,
     weather: lastResponse?.weather ?? null,
     missing: response?.kind === 'too_small' ? response.missing : [],
-    error: outcome?.ok === false ? outcome.error : null,
+    error: response === null && outcome?.ok === false ? outcome.error : null,
+    offline: response !== null && failed === 'network',
     reload,
     day,
   };

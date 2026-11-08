@@ -467,6 +467,7 @@ export const es: Record<MessageKey, string> = {
   'today.fresh': 'No repite lo de esta semana',
   'today.another': 'Otro',
   'today.loading': 'Buscando el outfit de hoy…',
+  'today.offline': 'Sin conexión: tus últimas sugerencias',
   'today.empty': 'Hoy no salió ningún outfit. Agrega algunas prendas más a tu clóset.',
   'today.empty.occasion': 'Hoy nada encaja con esta ocasión. Prueba otra o agrega más prendas.',
   'today.tooSmall': 'Agrega {n} más para tener outfits: {slots}',

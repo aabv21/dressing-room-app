@@ -9,6 +9,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import TodayScreen from '../app/(tabs)/index';
 import type { Garment } from '../closet/garmentRepository';
 import { kvGet, kvRemove } from '../lib/kv';
+import { storeLucky } from '../outfits/storedLucky';
 import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
@@ -28,8 +29,9 @@ jest.mock('expo-router', () => ({
   useIsFocused: () => mockFocus.focused,
 }));
 
+const mockAuth = { userId: 'user-1' };
 jest.mock('../auth/AuthProvider', () => ({
-  useAuth: () => ({ userId: 'user-1' }),
+  useAuth: () => mockAuth,
 }));
 
 const mockCloset: { garments: Garment[]; status: 'loading' | 'ready' | 'offline' } = { garments: [], status: 'ready' };
@@ -90,6 +92,7 @@ const KV_KEY = 'today.occasion.user-1.2026-11-08';
 let appStateListeners: ((state: AppStateStatus) => void)[] = [];
 
 beforeEach(() => {
+  mockAuth.userId = 'user-1';
   mockFocus.focused = true;
   mockCloset.garments = CLOSET;
   mockCloset.status = 'ready';
@@ -529,3 +532,116 @@ describe('navigation', () => {
     });
   });
 });
+
+describe('offline', () => {
+  const OFFLINE_NOTE = 'Offline — showing your last suggestions';
+
+  test("a cold start shows today's stored list at once, and the note when the fetch can't connect", async () => {
+    storeLucky('user-1', '2026-11-08', null, list([SECOND, FIRST]));
+    let fail: () => void = () => undefined;
+    mockedFetch.mockReturnValue(
+      new Promise((resolve) => {
+        fail = () => {
+          resolve({ ok: false, error: 'network' });
+        };
+      }),
+    );
+    await render(<TodayScreen />);
+
+    // Shown while the fetch runs, with its weather, and no note yet.
+    expect(screen.getByText('Skirt · Camel')).toBeOnTheScreen();
+    expect(screen.getByText(/24 °C, sunny/)).toBeOnTheScreen();
+    expect(screen.queryByLabelText("Finding today's outfit…")).toBeNull();
+    expect(screen.queryByText(OFFLINE_NOTE)).toBeNull();
+
+    await act(async () => {
+      fail();
+      await Promise.resolve();
+    });
+    expect(await screen.findByText(OFFLINE_NOTE)).toBeOnTheScreen();
+    expect(screen.getByText('Skirt · Camel')).toBeOnTheScreen();
+    expect(screen.queryByText("Couldn't reach the AI. Check your internet and try again.")).toBeNull();
+    expect(screen.getByRole('button', { name: "I'll wear it" })).toBeEnabled();
+  });
+
+  test('a successful fetch replaces the stored list and is stored for the next start', async () => {
+    storeLucky('user-1', '2026-11-08', null, list([SECOND]));
+    mockedFetch.mockReturnValue(ok(list([FIRST])));
+    const first = await render(<TodayScreen />);
+
+    expect(await screen.findByText('Jeans · Blue')).toBeOnTheScreen();
+    expect(screen.queryByText('Skirt · Camel')).toBeNull();
+    expect(screen.queryByText(OFFLINE_NOTE)).toBeNull();
+    await first.unmount();
+
+    mockedFetch.mockResolvedValue({ ok: false, error: 'network' });
+    await render(<TodayScreen />);
+    expect(screen.getByText('Jeans · Blue')).toBeOnTheScreen();
+    expect(await screen.findByText(OFFLINE_NOTE)).toBeOnTheScreen();
+  });
+
+  test('a failed refetch in the same session keeps the list and shows the note', async () => {
+    mockedFetch.mockReturnValueOnce(ok(list())).mockResolvedValue({ ok: false, error: 'network' });
+    const view = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    mockFocus.focused = false;
+    await view.rerender(<TodayScreen />);
+    mockFocus.focused = true;
+    await view.rerender(<TodayScreen />);
+
+    expect(await screen.findByText(OFFLINE_NOTE)).toBeOnTheScreen();
+    expect(screen.getByText('Jeans · Blue')).toBeOnTheScreen();
+  });
+
+  test('a stored too_small answer is shown offline too', async () => {
+    storeLucky('user-1', '2026-11-08', null, { kind: 'too_small', missing: ['shoes'], weather: null });
+    mockedFetch.mockResolvedValue({ ok: false, error: 'network' });
+    await render(<TodayScreen />);
+
+    expect(await screen.findByText(OFFLINE_NOTE)).toBeOnTheScreen();
+    expect(screen.getByText('Add 1 more to get outfits: shoes')).toBeOnTheScreen();
+  });
+
+  test("another day's, occasion's or user's stored list isn't shown", async () => {
+    storeLucky('user-1', '2026-11-07', null, list());
+    storeLucky('user-1', '2026-11-08', 'office', list());
+    storeLucky('user-2', '2026-11-08', null, list());
+    mockedFetch.mockResolvedValue({ ok: false, error: 'network' });
+    await render(<TodayScreen />);
+
+    expect(await screen.findByText("Couldn't reach the AI. Check your internet and try again.")).toBeOnTheScreen();
+    expect(screen.queryByText('Jeans · Blue')).toBeNull();
+    expect(screen.queryByText(OFFLINE_NOTE)).toBeNull();
+  });
+
+  test('a stored list waits for the closet to load', async () => {
+    storeLucky('user-1', '2026-11-08', null, list());
+    mockCloset.status = 'loading';
+    mockCloset.garments = [];
+    mockedFetch.mockReturnValue(new Promise(() => undefined));
+    const view = await render(<TodayScreen />);
+
+    expect(screen.getByLabelText("Finding today's outfit…")).toBeOnTheScreen();
+
+    mockCloset.status = 'offline';
+    mockCloset.garments = CLOSET;
+    await view.rerender(<TodayScreen />);
+    expect(await screen.findByText('Jeans · Blue')).toBeOnTheScreen();
+  });
+
+  test('another error than the network keeps the stored list without the offline note', async () => {
+    storeLucky('user-1', '2026-11-08', null, list());
+    mockedFetch.mockResolvedValue({ ok: false, error: 'unavailable' });
+    await render(<TodayScreen />);
+
+    expect(await screen.findByText('Jeans · Blue')).toBeOnTheScreen();
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText(OFFLINE_NOTE)).toBeNull();
+    expect(screen.queryByText("The AI can't suggest outfits right now. Try again in a moment.")).toBeNull();
+  });
+});
+
