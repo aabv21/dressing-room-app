@@ -213,7 +213,7 @@ function hashString(seed: string): number {
 }
 
 /** mulberry32: a small, fast, deterministic PRNG seeded from a 32-bit integer. */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let state = seed;
   return () => {
     state = (state + 0x6d2b79f5) | 0;
@@ -224,7 +224,8 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function seededShuffle<T>(items: readonly T[], rng: () => number): T[] {
+/** Fisher-Yates over a copy of `items`, driven by `rng` (deterministic for a seeded rng). */
+export function seededShuffle<T>(items: readonly T[], rng: () => number): T[] {
   const shuffled = [...items];
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(rng() * (i + 1));
