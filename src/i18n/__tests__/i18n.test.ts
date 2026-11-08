@@ -57,6 +57,8 @@ test('every rating reason and label the functions send has a message', () => {
     expect(keys).toContain(`rating.reason.${dimension}.good`);
     expect(keys).toContain(`rating.reason.${dimension}.warn`);
   }
+  expect(keys).toContain('rating.reason.color_harmony.good.one');
+  expect(keys).toContain('rating.reason.color_harmony.good.plain');
   for (const label of ['great', 'good', 'fair', 'poor'] satisfies RatingLabel[]) {
     expect(keys).toContain(`rating.label.${label}`);
   }

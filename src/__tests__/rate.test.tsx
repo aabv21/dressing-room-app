@@ -6,11 +6,19 @@ import { randomUUID } from 'expo-crypto';
 import { router } from 'expo-router';
 
 import RateScreen from '../app/rate';
+import { I18nProvider } from '../i18n/I18nProvider';
+import { kvSet } from '../lib/kv';
 import type { Garment } from '../closet/garmentRepository';
 import { rateOutfit, type AiOutcome } from '../outfits/aiClient';
 import { logWear, saveOutfit } from '../outfits/outfitRepository';
 import type { RatingResult } from '../outfits/types';
 import { garment } from '../test/garmentFixture';
+
+// UUID-shaped, as the screen checks before calling the function.
+const TOP = '00000000-0000-4000-8000-000000000001';
+const SKIRT = '00000000-0000-4000-8000-000000000002';
+const HEELS = '00000000-0000-4000-8000-000000000003';
+const BOOTS = '00000000-0000-4000-8000-000000000004';
 
 const mockParams: { ids?: string; occasion?: string } = {};
 jest.mock('expo-router', () => ({
@@ -23,7 +31,7 @@ const mockRefresh = jest.fn(() => Promise.resolve());
 jest.mock('../closet/ClosetProvider', () => ({
   useCloset: () => ({
     garments: mockCloset.garments,
-    thumbUrls: new Map([['top-1', 'https://signed/top-1']]),
+    thumbUrls: new Map([[TOP, `https://signed/${TOP}`]]),
     status: 'ready',
     refresh: mockRefresh,
     replaceLocal: jest.fn(),
@@ -50,10 +58,10 @@ const mockedUuid = jest.mocked(randomUUID);
 const mockedCanGoBack = jest.mocked(router.canGoBack);
 
 const CLOSET: Garment[] = [
-  garment({ id: 'top-1', category: 'blouse', colors: ['black'], extraction_status: 'done', wear_count: 9 }),
-  garment({ id: 'skirt-1', category: 'skirt', colors: ['camel'], extraction_status: 'done', wear_count: 1 }),
-  garment({ id: 'heels-1', category: 'heels', colors: ['black'], extraction_status: 'done', wear_count: 0 }),
-  garment({ id: 'boots-1', category: 'boots', colors: ['brown'], extraction_status: 'done', wear_count: 4 }),
+  garment({ id: TOP, category: 'blouse', colors: ['black'], extraction_status: 'done', wear_count: 9 }),
+  garment({ id: SKIRT, category: 'skirt', colors: ['camel'], extraction_status: 'done', wear_count: 1 }),
+  garment({ id: HEELS, category: 'heels', colors: ['black'], extraction_status: 'done', wear_count: 0 }),
+  garment({ id: BOOTS, category: 'boots', colors: ['brown'], extraction_status: 'done', wear_count: 4 }),
 ];
 
 function result(overrides: Partial<RatingResult> = {}): RatingResult {
@@ -75,7 +83,7 @@ function ok(value: RatingResult): Promise<AiOutcome<RatingResult>> {
 }
 
 beforeEach(() => {
-  mockParams.ids = 'top-1,skirt-1,heels-1';
+  mockParams.ids = `${TOP},${SKIRT},${HEELS}`;
   mockParams.occasion = 'office';
   mockCloset.garments = CLOSET;
   mockedRate.mockReset();
@@ -99,7 +107,7 @@ test('rates the outfit on mount and shows the score, label and AI confidence', a
   expect(screen.getByText('HOW DOES IT LOOK?')).toBeOnTheScreen();
   expect(mockedRate).toHaveBeenCalledTimes(1);
   expect(mockedRate).toHaveBeenCalledWith({
-    garmentIds: ['top-1', 'skirt-1', 'heels-1'],
+    garmentIds: [TOP, SKIRT, HEELS],
     occasion: 'office',
     date: '2026-11-08',
   });
@@ -186,7 +194,7 @@ test('three colors are joined for the locale', async () => {
 test('"Try the swap" re-rates the outfit with the swapped id on the same screen', async () => {
   mockedRate
     .mockReturnValueOnce(
-      ok(result({ score: 62, label: 'fair', weakestSlot: 'shoes', swap: { fromId: 'heels-1', toId: 'boots-1', score: 81 } })),
+      ok(result({ score: 62, label: 'fair', weakestSlot: 'shoes', swap: { fromId: HEELS, toId: BOOTS, score: 81 } })),
     )
     .mockReturnValueOnce(ok(result({ score: 81, label: 'good' })));
   await render(<RateScreen />);
@@ -197,7 +205,7 @@ test('"Try the swap" re-rates the outfit with the swapped id on the same screen'
   expect(await screen.findByText('81%')).toBeOnTheScreen();
   expect(mockedRate).toHaveBeenCalledTimes(2);
   expect(mockedRate).toHaveBeenLastCalledWith({
-    garmentIds: ['top-1', 'skirt-1', 'boots-1'],
+    garmentIds: [TOP, SKIRT, BOOTS],
     occasion: 'office',
     date: '2026-11-08',
   });
@@ -207,7 +215,7 @@ test('"Try the swap" re-rates the outfit with the swapped id on the same screen'
 test('a swap whose target is gone on re-rating shows the not-found message, not a crash', async () => {
   mockedRate
     .mockReturnValueOnce(
-      ok(result({ score: 62, label: 'fair', weakestSlot: 'shoes', swap: { fromId: 'heels-1', toId: 'boots-1', score: 81 } })),
+      ok(result({ score: 62, label: 'fair', weakestSlot: 'shoes', swap: { fromId: HEELS, toId: BOOTS, score: 81 } })),
     )
     .mockReturnValueOnce(Promise.resolve({ ok: false, error: 'not_found' }));
   await render(<RateScreen />);
@@ -242,7 +250,7 @@ test('renders the outfit pieces in slot order with their wear counts', async () 
 
   await screen.findByText('78%');
   const labels = screen.getAllByTestId(/^outfit-piece-/).map((row) => row.props.testID as string);
-  expect(labels).toEqual(['outfit-piece-top-1', 'outfit-piece-skirt-1', 'outfit-piece-heels-1']);
+  expect(labels).toEqual([`outfit-piece-${TOP}`, `outfit-piece-${SKIRT}`, `outfit-piece-${HEELS}`]);
   expect(screen.getByText('Blouse · Black')).toBeOnTheScreen();
   expect(screen.getByText('9 wears')).toBeOnTheScreen();
   expect(screen.getByText('never worn')).toBeOnTheScreen();
@@ -262,7 +270,7 @@ test('Save calls saveOutfit with the ids once, then shows Saved ✓', async () =
   await fireEvent.press(save);
   await fireEvent.press(save);
   expect(mockedSaveOutfit).toHaveBeenCalledTimes(1);
-  expect(mockedSaveOutfit).toHaveBeenCalledWith(['top-1', 'skirt-1', 'heels-1']);
+  expect(mockedSaveOutfit).toHaveBeenCalledWith([TOP, SKIRT, HEELS]);
   expect(screen.getByRole('button', { name: "I'll wear it" })).toBeDisabled();
 
   resolveSave({ ok: true });
@@ -296,7 +304,7 @@ test('"I\'ll wear it" logs the wear with the score, then shows Logged ✓ and re
   expect(mockedLogWear).toHaveBeenCalledTimes(1);
   expect(mockedLogWear).toHaveBeenCalledWith({
     wearId: 'wear-1',
-    garmentIds: ['top-1', 'skirt-1', 'heels-1'],
+    garmentIds: [TOP, SKIRT, HEELS],
     wornOn: '2026-11-08',
     occasion: 'office',
     score: 78,
@@ -358,7 +366,7 @@ test('the header back button goes back when there is history', async () => {
 });
 
 test('fewer than two ids is incomplete without calling the AI', async () => {
-  mockParams.ids = 'top-1';
+  mockParams.ids = TOP;
   await render(<RateScreen />);
 
   expect(
@@ -382,9 +390,102 @@ test('new params on the open screen rate the new outfit from scratch', async () 
   await render(<RateScreen />);
   await screen.findByText('78%');
 
-  mockParams.ids = 'top-1,skirt-1,boots-1';
+  mockParams.ids = `${TOP},${SKIRT},${BOOTS}`;
   await screen.rerender(<RateScreen />);
 
   expect(await screen.findByText('90%')).toBeOnTheScreen();
-  expect(mockedRate).toHaveBeenLastCalledWith(expect.objectContaining({ garmentIds: ['top-1', 'skirt-1', 'boots-1'] }));
+  expect(mockedRate).toHaveBeenLastCalledWith(expect.objectContaining({ garmentIds: [TOP, SKIRT, BOOTS] }));
+});
+
+test.each([
+  ['en', 'The black tones work together'],
+  ['es', 'Los tonos de negro combinan'],
+] as const)('a single color reads as one tone (%s)', async (locale, text) => {
+  mockedRate.mockReturnValue(
+    ok(result({ reasons: [{ key: 'rating.reason.color_harmony.good', tone: 'good', params: { colors: 'black' } }] })),
+  );
+  kvSet('locale-preference', locale);
+  try {
+    await render(
+      <I18nProvider>
+        <RateScreen />
+      </I18nProvider>,
+    );
+    expect(await screen.findByText(text)).toBeOnTheScreen();
+  } finally {
+    kvSet('locale-preference', 'system');
+  }
+});
+
+test.each([
+  ['a malformed id', `${TOP},not-a-uuid,${HEELS}`, 'Some of these pieces are no longer in your closet.'],
+  [
+    'more pieces than the function rates',
+    Array.from({ length: 7 }, (_, index) => `00000000-0000-4000-8000-00000000010${String(index)}`).join(','),
+    'This outfit is missing a piece: it needs a top and a bottom (or a one-piece) and shoes.',
+  ],
+])('%s is refused without calling the AI, with only a way back', async (_case, ids, message) => {
+  mockParams.ids = ids;
+  await render(<RateScreen />);
+
+  expect(await screen.findByText(message)).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Go back' })).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  expect(mockedRate).not.toHaveBeenCalled();
+});
+
+const LOW_WITH_SWAP = result({
+  score: 62,
+  label: 'fair',
+  weakestSlot: 'shoes',
+  swap: { fromId: HEELS, toId: BOOTS, score: 81 },
+});
+
+test('"Try the swap" is disabled once the outfit is logged', async () => {
+  mockedRate.mockReturnValue(ok(LOW_WITH_SWAP));
+  mockedLogWear.mockResolvedValue({ ok: true });
+  await render(<RateScreen />);
+
+  expect(await screen.findByRole('button', { name: 'Try the swap' })).toBeEnabled();
+  await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
+
+  expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Try the swap' })).toBeDisabled();
+});
+
+test('after a swap, Save sends the swapped ids', async () => {
+  mockedRate.mockReturnValueOnce(ok(LOW_WITH_SWAP)).mockReturnValueOnce(ok(result({ score: 81, label: 'good' })));
+  mockedSaveOutfit.mockResolvedValue({ ok: true });
+  await render(<RateScreen />);
+
+  await fireEvent.press(await screen.findByRole('button', { name: 'Try the swap' }));
+  await screen.findByText('81%');
+  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(await screen.findByRole('button', { name: 'Saved ✓' })).toBeOnTheScreen();
+  expect(mockedSaveOutfit).toHaveBeenCalledWith([TOP, SKIRT, BOOTS]);
+});
+
+test('after a swap, "I\'ll wear it" sends the swapped ids, the new score and a new wear id', async () => {
+  mockedRate.mockReturnValueOnce(ok(LOW_WITH_SWAP)).mockReturnValueOnce(ok(result({ score: 81, label: 'good' })));
+  mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' }).mockResolvedValueOnce({ ok: true });
+  await render(<RateScreen />);
+
+  // A failed attempt on the original outfit takes the first wear id.
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+  await screen.findByText("Couldn't connect. Check your internet and try again.");
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Try the swap' }));
+  await screen.findByText('81%');
+  await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
+
+  expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
+  expect(mockedLogWear).toHaveBeenLastCalledWith({
+    wearId: 'wear-2',
+    garmentIds: [TOP, SKIRT, BOOTS],
+    wornOn: '2026-11-08',
+    occasion: 'office',
+    score: 81,
+  });
+  expect(mockedLogWear.mock.calls.map(([input]) => input.wearId)).toEqual(['wear-1', 'wear-2']);
 });

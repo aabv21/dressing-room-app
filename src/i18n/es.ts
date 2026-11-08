@@ -433,6 +433,7 @@ export const es: Record<MessageKey, string> = {
 
   'rating.reason.color_harmony.good': '{colors} combinan',
   'rating.reason.color_harmony.good.plain': 'Los colores combinan',
+  'rating.reason.color_harmony.good.one': 'Los tonos de {colors} combinan',
   'rating.reason.color_harmony.warn': 'Los colores chocan entre sí',
   'rating.reason.pattern_mix.good': 'Los estampados funcionan juntos',
   'rating.reason.pattern_mix.warn': 'Compiten demasiados estampados',

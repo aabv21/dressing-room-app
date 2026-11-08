@@ -29,8 +29,11 @@ type Translate = ReturnType<typeof useI18n>['t'];
 
 type Rating = { kind: 'loading' } | { kind: 'result'; result: RatingResult } | { kind: 'error'; error: AiError };
 
-/** `rate-outfit` rates 2–6 pieces; fewer can't be a complete outfit, so it isn't sent. */
+/** `rate-outfit`'s input bounds (its `MIN_GARMENTS`/`MAX_GARMENTS`); an outfit outside them isn't sent. */
 const MIN_PIECES = 2;
+const MAX_PIECES = 6;
+/** The garment id shape `rate-outfit` accepts (`_shared/userContext.ts`'s `UUID`). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Room for a message shown above the buttons, so it never covers the outfit's last piece.
 const NOTICE_ROOM = 56;
 
@@ -41,6 +44,17 @@ function first(value: string | string[] | undefined): string | undefined {
 function parseIds(raw: string | string[] | undefined): string[] {
   const joined = Array.isArray(raw) ? raw.join(',') : (raw ?? '');
   return [...new Set(joined.split(',').map((id) => id.trim()))].filter((id) => id !== '');
+}
+
+/**
+ * Why a link's ids can't be rated, without asking the function: a malformed id can't be a garment
+ * (`not_found`), and too few or too many pieces aren't an outfit (`incomplete`). Either way a retry
+ * can't succeed, so the screen offers only "Go back".
+ */
+function invalidIds(ids: readonly string[]): AiError | null {
+  if (ids.some((id) => !UUID.test(id))) return 'not_found';
+  if (ids.length < MIN_PIECES || ids.length > MAX_PIECES) return 'incomplete';
+  return null;
 }
 
 function parseOccasion(raw: string | undefined): Occasion | null {
@@ -73,7 +87,12 @@ function reasonText(reason: RatingReason, t: Translate, locale: Locale): string 
     .split(',')
     .filter(isGarmentColor)
     .map((color) => t(`garment.color.${color}`));
-  if (names.length === 0) return t('rating.reason.color_harmony.good.plain');
+  const [only] = names;
+  if (only === undefined) return t('rating.reason.color_harmony.good.plain');
+  // One color sits mid-sentence ("The black tones…"), so it's lowercased; a list opens the sentence.
+  if (names.length === 1) {
+    return t('rating.reason.color_harmony.good.one', { ...params, colors: only.toLocaleLowerCase(locale) });
+  }
   return t(reason.key, { ...params, colors: joinColors(names, t('rate.and'), locale) });
 }
 
@@ -194,23 +213,32 @@ function ResultBody({
   );
 }
 
-function RateOutfit({ initialIds, occasion }: { initialIds: string[]; occasion: Occasion | null }): React.JSX.Element {
+function RateOutfit({
+  initialIds,
+  initialError,
+  occasion,
+}: {
+  initialIds: string[];
+  initialError: AiError | null;
+  occasion: Occasion | null;
+}): React.JSX.Element {
   const { t } = useI18n();
   const insets = useScreenContentInsets('none');
   const { garments, thumbUrls, refresh } = useCloset();
   const byId = useMemo(() => new Map(garments.map((garment) => [garment.id, garment])), [garments]);
 
   const [ids, setIds] = useState(initialIds);
-  const complete = ids.length >= MIN_PIECES;
+  // Only the link's ids can be invalid: a swap's target id comes from the function itself.
+  const rateable = initialError === null;
   const pieces = useMemo(() => ids.flatMap((id) => byId.get(id) ?? []), [ids, byId]);
 
   // Bumped by "Try again": the effect below rates `ids` again.
   const [attempt, setAttempt] = useState(0);
   const [rating, setRating] = useState<Rating>(() =>
-    complete ? { kind: 'loading' } : { kind: 'error', error: 'incomplete' },
+    initialError === null ? { kind: 'loading' } : { kind: 'error', error: initialError },
   );
   useEffect(() => {
-    if (!complete) return;
+    if (!rateable) return;
     let current = true;
     void rateOutfit({ garmentIds: ids, occasion, date: localDate() }).then((outcome) => {
       if (current) {
@@ -220,7 +248,7 @@ function RateOutfit({ initialIds, occasion }: { initialIds: string[]; occasion: 
     return () => {
       current = false;
     };
-  }, [ids, occasion, complete, attempt]);
+  }, [ids, occasion, rateable, attempt]);
 
   // False once the screen is gone: a late save or wear result is dropped.
   const mounted = useRef(true);
@@ -337,7 +365,8 @@ function RateOutfit({ initialIds, occasion }: { initialIds: string[]; occasion: 
         pieces={pieces}
         byId={byId}
         thumbUrls={thumbUrls}
-        swapDisabled={pending !== null}
+        // A logged wear is of this outfit; swapping after it would rate one that wasn't worn.
+        swapDisabled={pending !== null || logged}
         onSwap={trySwap}
       />
     );
@@ -408,7 +437,14 @@ export default function RateScreen(): React.JSX.Element {
   const occasion = parseOccasion(first(params.occasion));
   // Keyed by the outfit: a link to this screen while it's open (new params, same instance) starts
   // over with the new outfit instead of keeping the old one's rating and swap state.
-  return <RateOutfit key={`${ids.join(',')}|${occasion ?? ''}`} initialIds={ids} occasion={occasion} />;
+  return (
+    <RateOutfit
+      key={`${ids.join(',')}|${occasion ?? ''}`}
+      initialIds={ids}
+      initialError={invalidIds(ids)}
+      occasion={occasion}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

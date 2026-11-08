@@ -431,6 +431,7 @@ export const en = {
 
   'rating.reason.color_harmony.good': '{colors} go well together',
   'rating.reason.color_harmony.good.plain': 'The colors go well together',
+  'rating.reason.color_harmony.good.one': 'The {colors} tones work together',
   'rating.reason.color_harmony.warn': 'The colors clash',
   'rating.reason.pattern_mix.good': 'The patterns work together',
   'rating.reason.pattern_mix.warn': 'Too many patterns compete',
