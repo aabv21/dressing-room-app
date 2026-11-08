@@ -51,11 +51,37 @@ Supabase stack:
   `saveProfile` updating only the given columns (one coordinate of a stored pair saves on its own),
   the 80-character city limit, an error for a session that can't reach the row, and the
   `profile.language` round-trip.
+- `garments.int.test.ts` — `public.garments` and the photo folder through supabase-js: user B can't
+  select, update or delete A's garment, download A's `full.webp` or upload into A's folder; the same
+  id inserted twice with `upsert(…, { ignoreDuplicates: true })` (the app's retried upload) leaves one
+  row; a client update of `extraction_status` fails with `42501`.
+- `extraction.int.test.ts` — attribute extraction end to end: A uploads
+  `integration/fixtures/garment.webp` and inserts the row, the insert trigger calls the
+  `extract-attributes` Edge Function through pg_net, and the function calls the mock Claude below.
+  Claude's `ok` fixture gives `done` with its category within 20 s; a 500 or a refusal gives
+  `failed`; a Claude that never answers gives `failed` within 40 s (the function's 30 s timeout);
+  inserting the same id again makes no second Claude call; and a user whose daily quota is already
+  used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
+  Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with `pnpm db:start && pnpm env:local && pnpm test:int`
 when touching auth, RLS, or profile persistence; `--runInBand` because the suites share one
 database and create/delete real `auth.users` rows.
+
+`integration/mockAnthropic.ts` is the mock Claude: `startMockAnthropic(port = 54499)` serves
+`POST /v1/messages` on `0.0.0.0` (the function calls it from inside a container, as
+`http://host.docker.internal:54499`, the local `ANTHROPIC_BASE_URL` in `supabase/config.toml`).
+`respondWith({ status, body })` or `respondWith({ hang: true })` sets the reply for every following
+call; `calls()` counts the calls; `close()` also drops hung connections. Replies reuse the recorded
+fixtures in `supabase/functions/_shared/__tests__/fixtures/`, so the real API is never called.
+`integration/fixtures/garment.webp` is a 784 px, ~9 KB WebP of a garment silhouette, encoded once
+with sharp from `scripts/perf-fixtures.ts`'s `fixtureSvg` and committed.
+
+Function logs (one line per call: the garment id and an outcome word) are in
+`docker logs supabase_edge_runtime_dressing-room-app`; pg_net's view of each call is in
+`net._http_response` (a `timed_out` row is expected for the hang case, since pg_net stops waiting
+after 5 s while the function carries on).
 
 `integration/lib-supabase.stub.ts` is mapped (via `jest.config.ts`'s `moduleNameMapper`) over
 `src/lib/supabase.ts` for this project only: `emailAuth.ts`/`socialAuth.ts` default their `client`
@@ -79,6 +105,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `profiles_onboarding_clock.test.sql` — `onboarding_completed_at` is stamped from the server clock,
   not whatever the client sent.
 - `profiles_write_rules.test.sql` — `created_at` can't be changed by a client update.
+- `garment_extraction_trigger.test.sql` — the garments insert trigger's shape and privileges, the
+  pg_net request it queues, and that an insert still succeeds with the Vault secrets missing.
 
 See `docs/database.md` for how these tests impersonate a user and create test rows without a real
 JWT.
@@ -130,8 +158,9 @@ CI's `database` job (`.github/workflows/ci.yml`) runs the Docker-dependent steps
 on the same ports, since the config in `supabase/config.toml` applies in CI too (the stack runs
 alone there, so there's no other local project to avoid colliding with). Two differences:
 
-- It starts the lean stack, `pnpm db:start:ci` (no Studio, Realtime, Edge Runtime, analytics or
-  image proxy). Mailpit stays up, since `test:int` reads reset codes from it.
+- It starts the lean stack, `pnpm db:start:ci` (no Studio, Realtime, analytics or image proxy).
+  Mailpit stays up, since `test:int` reads reset codes from it, and so does the Edge Runtime, since
+  `extraction.int.test.ts` runs the extraction function end to end.
 - After `db:test` it regenerates the types and fails if they differ from the committed file
   (`pnpm db:types && git diff --exit-code src/lib/database.types.ts`), so a migration can't land
   without its `database.types.ts`.

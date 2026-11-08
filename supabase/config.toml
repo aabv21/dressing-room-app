@@ -413,8 +413,14 @@ inspector_port = 8183
 # The Deno major version to use.
 deno_version = 2
 
-# [edge_runtime.secrets]
-# secret_key = "env(SECRET_VALUE)"
+# Local-only values; the hosted project sets its own with `supabase secrets set`.
+# EXTRACT_WEBHOOK_SECRET must match the `extract_webhook_secret` Vault secret in
+# seed.sql. ANTHROPIC_BASE_URL points at integration/mockAnthropic.ts on the
+# host, so local runs never reach the real Claude API.
+[edge_runtime.secrets]
+EXTRACT_WEBHOOK_SECRET = "local-only-not-a-secret"
+ANTHROPIC_API_KEY = "local-only-not-a-key"
+ANTHROPIC_BASE_URL = "http://host.docker.internal:54499"
 
 # Called by the garments insert webhook (pg_net), which authenticates with the
 # `x-webhook-secret` header checked inside the function, not with a user JWT.

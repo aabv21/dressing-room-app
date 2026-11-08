@@ -25,13 +25,13 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - `pnpm typecheck` — `tsc --noEmit`.
 - `pnpm lint` — `eslint .`.
 - `pnpm test` — `jest --selectProjects app scripts functions` (unit tests only; no Docker needed).
-- `pnpm test:int` — `jest --selectProjects integration --runInBand`: `src/auth`'s email/password and session flows, the cross-user RLS boundary, and `profileRepository`'s server-clock completion and language round-trip, against a running local Supabase (`pnpm db:start && pnpm db:reset && pnpm env:local` first). Not part of `pnpm test`; CI runs it in its own `database` job (`.github/workflows/ci.yml`). Run it manually when touching auth, RLS or profile persistence. See `docs/testing.md` for how the Jest projects and pgTAP fit together.
+- `pnpm test:int` — `jest --selectProjects integration --runInBand`: `src/auth`'s email/password and session flows, the cross-user RLS boundary (profiles, garments, photos), `profileRepository`'s server-clock completion and language round-trip, and garment attribute extraction end to end (trigger → pg_net → Edge Function → mock Claude), against a running local Supabase (`pnpm db:start && pnpm db:reset && pnpm env:local` first). Not part of `pnpm test`; CI runs it in its own `database` job (`.github/workflows/ci.yml`). Run it manually when touching auth, RLS, profile or garment persistence, or the extraction function. See `docs/testing.md` for how the Jest projects and pgTAP fit together.
 - `pnpm perf:generate [count=500]` — write the performance fixture thumbnails (WebP) to `.perf-fixtures/` (gitignored).
 - `pnpm perf:serve [port=8787]` — serve `.perf-fixtures/` over HTTP and print every LAN URL, labeled by network interface.
 - Fixture mode: start the app with `EXPO_PUBLIC_PERF_FIXTURES_URL=<url printed by perf:serve>` (e.g. `EXPO_PUBLIC_PERF_FIXTURES_URL=http://127.0.0.1:8787 pnpm expo run:ios`). The Closet tab then shows 500 fixture thumbnails, a disabled upload CTA, and the frame-stats HUD (tap: reset; long-press: also clear expo-image's memory and disk caches). Unset or empty, the Closet shows its empty state. The value is inlined at bundle time, so restart Metro after changing it.
 - `pnpm check:expo` / `pnpm expo install --fix` — run during Expo SDK upgrades, after the 3-day `minimumReleaseAge` allows the new versions; informational, not a CI gate (see Supply-chain hardening).
 - `pnpm db:start` / `pnpm db:stop` — start/stop the local Supabase stack (Docker, via OrbStack).
-- `pnpm db:start:ci` — the lean stack CI starts: everything `db:test`, `db:types` and `test:int` need (Postgres, Auth, REST, Storage, Kong, postgres-meta, Mailpit), without Studio, Realtime, Edge Runtime, analytics or the image proxy.
+- `pnpm db:start:ci` — the lean stack CI starts: everything `db:test`, `db:types` and `test:int` need (Postgres, Auth, REST, Storage, Kong, postgres-meta, Mailpit, Edge Runtime), without Studio, Realtime, analytics or the image proxy.
 - `pnpm db:reset` — reset the local database to the committed migrations and seed.
 - `pnpm db:test` — run pgTAP database tests (`supabase test db`).
 - `pnpm db:types` — regenerate `src/lib/database.types.ts` from the local schema.
@@ -103,7 +103,7 @@ Package management is pnpm, pinned in `package.json`'s `packageManager` to an ex
 
 The local backend is Supabase running in Docker (via OrbStack), driven only through the `supabase` npm devDependency (`pnpm exec supabase …` / the `db:*` scripts) — never a global or Homebrew install.
 
-- `pnpm db:start` — starts the local stack (Postgres, Auth, Storage, Studio, Mailpit). First run pulls Docker images and can take several minutes.
+- `pnpm db:start` — starts the local stack (Postgres, Auth, Storage, Studio, Mailpit, Edge Runtime). First run pulls Docker images and can take several minutes. The Edge Runtime serves every function under `supabase/functions/` at `http://127.0.0.1:54421/functions/v1/<name>` and reloads on file changes; its logs are in `docker logs supabase_edge_runtime_dressing-room-app`.
 - `pnpm db:reset` — drops and recreates the local database from `supabase/migrations/` and `supabase/seed.sql`.
 - `pnpm db:test` — runs the pgTAP suite under `supabase/tests/`.
 - `pnpm db:types` — regenerates `src/lib/database.types.ts` from the local schema; commit the result alongside the migration that changed it.
@@ -113,6 +113,10 @@ The local backend is Supabase running in Docker (via OrbStack), driven only thro
 - Password reset uses a 6-digit code (`{{ .Token }}` in `supabase/templates/recovery.html`), not a link.
 - Passwords need at least 8 characters on the server too (`minimum_password_length` in `supabase/config.toml`); the hosted project's Auth settings must match.
 - NOTE: `requestPasswordReset` reports `over_email_send_rate_limit` as sent, and GoTrue uses that code for the project-wide hourly email cap too (`[auth.rate_limit].email_sent`), so the integration session must set the hosted email and SMTP/SES limits generously. See `docs/testing.md`.
+- Functions: the local secrets are literal, local-only values in `supabase/config.toml`'s `[edge_runtime.secrets]` (`EXTRACT_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`), applied when the stack starts, so restart it (`pnpm db:stop && pnpm db:start`) after changing them. `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by the runtime.
+- Mock Claude: locally `ANTHROPIC_BASE_URL` is `http://host.docker.internal:54499`, where `integration/mockAnthropic.ts` listens while `extraction.int.test.ts` runs. Nothing local ever reaches the real Claude API; with no mock running, extraction ends `failed`.
+- Vault: the garments insert trigger (`public.request_garment_extraction()`) reads the function URL and webhook secret from the Vault secrets `extract_attributes_url` and `extract_webhook_secret`, which `supabase/seed.sql` creates locally on every `pnpm db:reset` (the URL uses Kong's container name, since pg_net runs inside the db container). See `docs/database.md`'s "Extraction trigger".
+- NOTE: the owner's integration session sets the hosted values: the two Vault secrets (the real function URL and a random secret, via `vault.create_secret`) and `pnpm exec supabase secrets set EXTRACT_WEBHOOK_SECRET=<same secret> ANTHROPIC_API_KEY=<key>`. Until then hosted inserts queue no extraction and garments reach review with empty fields.
 - **The service-role key never goes in `src/`.** It bypasses Row Level Security; it belongs only in scripts, CI secrets, and test setup, read from `supabase status -o env` or `.env.local`, never bundled into the app.
 
 ## Social sign-in

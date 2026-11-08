@@ -222,6 +222,48 @@ subquery, and the helper function it would need would also be exposed as an RPC.
 `created_at` can't be rewritten either: `public.keep_created_at()` (`before update`) copies the old
 value back over whatever an update sends.
 
+### Extraction trigger
+
+`public.request_garment_extraction()` (migration `20261108025224_garment_extraction_trigger`) fires
+`after insert on public.garments for each row` as the trigger `garments_request_extraction`. It is
+`security definer` with `set search_path = ''`, so it can read the Vault, and `execute` is revoked
+from `public`, `anon` and `authenticated`. It reads two secrets from `vault.decrypted_secrets`:
+
+- `extract_attributes_url` — the `extract-attributes` Edge Function URL as the database sees it;
+- `extract_webhook_secret` — the shared secret the function checks in the `x-webhook-secret`
+  header (its `EXTRACT_WEBHOOK_SECRET`).
+
+With both present it calls `net.http_post` (the `pg_net` extension, created `with schema
+extensions`; its functions live in the `net` schema) with body `{"garment_id": <id>}` and a 5 s
+timeout. If either secret is missing it does nothing, so inserts keep working on a project that
+isn't configured yet; those garments stay `pending` until the app's 10-minute rule sends them to
+review.
+
+pg_net queues the request in the inserting transaction and sends it after commit. So a rolled-back
+insert calls nothing, and an `insert … on conflict do nothing` duplicate (the app's retried upload)
+inserts no row and fires no trigger. The 5 s timeout only ends pg_net's wait for the response: the
+function keeps running, finishes its own 30 s Claude timeout and writes the result back
+(`net._http_response` then shows `timed_out` for that request, which is expected).
+
+**Local values** come from `supabase/seed.sql`, recreated by every `pnpm db:reset`:
+`extract_webhook_secret = 'local-only-not-a-secret'` (matching `[edge_runtime.secrets]` in
+`supabase/config.toml`), and `extract_attributes_url =
+'http://supabase_kong_dressing-room-app:8000/functions/v1/extract-attributes'`. pg_net runs inside
+the db container, where `127.0.0.1:54421` is the container itself, so the URL uses Kong's container
+name on the stack's Docker network. `integration/extraction.int.test.ts` proves the whole path.
+
+**Hosted values** are set by hand in the owner's integration session, never from a file in this
+repo:
+
+```sql
+select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/extract-attributes', 'extract_attributes_url');
+select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'extract_webhook_secret');
+```
+
+and the function's own secrets with
+`pnpm exec supabase secrets set EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`
+(`ANTHROPIC_BASE_URL` stays unset there, so the function uses `https://api.anthropic.com`).
+
 ### Signup trigger
 
 `public.handle_new_user()` is `security definer` with `set search_path = ''` (every name inside it
@@ -336,6 +378,11 @@ discards both the user and its profile row — no cleanup step is needed.
 - `usage_quota.test.sql` — `consume_quota` returns `true` up to `p_limit` and `false` after; a
   different kind or user is tracked independently; `p_limit 0` always returns `false`; calling the
   function or reading `usage_counters` directly as `authenticated` raises a policy error.
+- `garment_extraction_trigger.test.sql` — `garments_request_extraction` exists, fires only `after
+  insert … for each row` and calls `request_garment_extraction()`, which is `security definer` and
+  not executable by `authenticated`; with both Vault secrets set (test values, inside the
+  transaction) an insert queues one `net.http_request_queue` POST carrying the garment id, the
+  secret header and the 5 s timeout; with them deleted, an insert still succeeds and queues nothing.
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.
