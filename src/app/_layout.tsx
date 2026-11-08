@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AuthProvider, useAuth } from '../auth/AuthProvider';
+import { ClosetProvider } from '../closet/ClosetProvider';
+import { UploadQueueProvider } from '../closet/UploadQueueProvider';
 import { I18nProvider } from '../i18n/I18nProvider';
 import { OnboardingArrivalContext } from '../ui/onboardingArrival';
 import { colors } from '../ui/theme';
@@ -78,20 +80,31 @@ function Guards() {
     return null;
   }
 
+  const stack = (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Protected guard={active.status === 'signedOut'}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
+      <Stack.Protected guard={active.status === 'signedIn' && !active.onboardingComplete}>
+        <Stack.Screen name="(onboarding)" />
+      </Stack.Protected>
+      <Stack.Protected guard={active.status === 'signedIn' && active.onboardingComplete}>
+        <Stack.Screen name="(tabs)" />
+      </Stack.Protected>
+    </Stack>
+  );
+
   return (
     <OnboardingArrivalContext.Provider value={arrival}>
       <View style={styles.fill}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Protected guard={active.status === 'signedOut'}>
-            <Stack.Screen name="(auth)" />
-          </Stack.Protected>
-          <Stack.Protected guard={active.status === 'signedIn' && !active.onboardingComplete}>
-            <Stack.Screen name="(onboarding)" />
-          </Stack.Protected>
-          <Stack.Protected guard={active.status === 'signedIn' && active.onboardingComplete}>
-            <Stack.Screen name="(tabs)" />
-          </Stack.Protected>
-        </Stack>
+        {active.status === 'signedIn' && active.userId !== null ? (
+          // Keyed by user: another account never sees the previous one's closet or upload queue.
+          <ClosetProvider key={active.userId}>
+            <UploadQueueProvider>{stack}</UploadQueueProvider>
+          </ClosetProvider>
+        ) : (
+          stack
+        )}
         {status === 'loading' ? (
           <View style={styles.busyOverlay} pointerEvents="none" testID="auth-busy-overlay">
             <ActivityIndicator color={colors.accent} />

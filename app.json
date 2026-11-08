@@ -39,6 +39,13 @@
       "expo-sqlite",
       "expo-apple-authentication",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Dressing Room uses the photos you pick to add your clothes to your closet.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Dressing Room uses your location once to find your city, so outfit suggestions can match the weather.",
