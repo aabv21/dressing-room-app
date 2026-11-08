@@ -145,7 +145,11 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     [garment.id, replaceLocal, report],
   );
   const [deleting, setDeleting] = useState(false);
-  const statusLocked = statusSaving !== null || deleting;
+  // One write at a time: a field save, a status save and a delete each wait for the others, so
+  // no two `replaceLocal` calls race from different snapshots and a late save can't re-add a
+  // deleted garment.
+  const busy = saving || statusSaving !== null;
+  const statusLocked = busy || deleting;
   const statusOptions = useMemo(
     () => STATUSES.map((value) => ({ value, label: t(`garment.status.${value}`), disabled: statusLocked })),
     [t, statusLocked],
@@ -209,8 +213,6 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   } else if (missingCategory) {
     message = <Text style={styles.hint}>{t('garment.categoryRequired')}</Text>;
   }
-  // Delete waits for any save in flight, so a late save can't re-add the deleted garment.
-  const busy = saving || statusSaving !== null;
 
   return (
     <LinearGradient colors={gradients.background} style={styles.fill}>
@@ -300,7 +302,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
           label: t('garment.save'),
           tone: 'commit',
           icon: Check,
-          disabled: !dirty || missingCategory || reading || saving || deleting,
+          disabled: !dirty || missingCategory || reading || busy || deleting,
           onPress: () => {
             void save();
           },

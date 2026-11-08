@@ -459,3 +459,37 @@ describe('saves never race (I2, M1)', () => {
     expect(mockReplaceLocal).not.toHaveBeenCalled();
   });
 });
+
+describe('one save at a time (fix round 2)', () => {
+  test('Save is disabled while a status save is in flight', async () => {
+    const status = deferred();
+    mockedUpdateGarment.mockReturnValueOnce(status.promise);
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Striped' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Lent out' }));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    status.resolve({ ok: true });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    });
+  });
+
+  test('the status chips are disabled while a field save is in flight', async () => {
+    const save = deferred();
+    mockedUpdateGarment.mockReturnValueOnce(save.promise);
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Striped' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('radio', { name: 'Lent out' })).toBeDisabled();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Lent out' }));
+    expect(mockedUpdateGarment).toHaveBeenCalledTimes(1);
+
+    save.resolve({ ok: true });
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Lent out' })).toBeEnabled();
+    });
+  });
+});
