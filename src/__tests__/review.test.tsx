@@ -2,6 +2,7 @@
 // seams mocked; the queue order and the asked fields themselves are covered by closetSelectors.test.
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
+import { AccessibilityInfo } from 'react-native';
 
 import ReviewScreen from '../app/review';
 import { usePendingPolling } from '../closet/ClosetProvider';
@@ -182,7 +183,19 @@ test('a failed read asks the basics, and Confirm stays disabled until there is a
   expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
 });
 
-test('a network error shows the message and keeps the values', async () => {
+type HostNode = { type: unknown; parent: HostNode | null };
+
+function insideScrollView(node: HostNode): boolean {
+  for (let current = node.parent; current !== null; current = current.parent) {
+    if (current.type === 'RCTScrollView') {
+      return true;
+    }
+  }
+  return false;
+}
+
+test('a network error shows the message by the buttons, announces it and keeps the values', async () => {
+  const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
   mockCloset.garments = three();
   mockedConfirmReview.mockResolvedValue({ ok: false, error: 'network' });
   await renderReview();
@@ -190,10 +203,58 @@ test('a network error shows the message and keeps the values', async () => {
   await fireEvent.press(screen.getByRole('radio', { name: 'Both' }));
   await fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
 
-  expect(await screen.findByText("Couldn't save. Check your internet and try again.")).toBeOnTheScreen();
+  const message = await screen.findByText("Couldn't save. Check your internet and try again.");
+  expect(message).toBeOnTheScreen();
+  // In the anchored CTA zone (always visible), not at the end of the scrolling form.
+  expect(insideScrollView(message as unknown as HostNode)).toBe(false);
+  expect(insideScrollView(screen.getByRole('radio', { name: 'Both' }) as unknown as HostNode)).toBe(true);
+  expect(announce).toHaveBeenCalledWith("Couldn't save. Check your internet and try again.");
   expect(screen.getByRole('radio', { name: 'Both' })).toBeChecked();
   expect(screen.getByText('1 of 3')).toBeOnTheScreen();
   expect(mockReplaceLocal).not.toHaveBeenCalled();
+  announce.mockRestore();
+});
+
+test('an older garment joining the queue keeps the card on screen and its draft (I1)', async () => {
+  mockCloset.garments = three();
+  await renderReview();
+  await fireEvent.press(screen.getByRole('radio', { name: 'Formal' }));
+
+  // Polling brings in a garment created before the one on screen (e.g. its extraction just finished).
+  mockCloset.garments = [extracted('g-0', 0, { category: 'skirt' }), ...three()];
+  await screen.rerender(<ReviewScreen />);
+
+  expect(screen.getByRole('button', { name: 'Category · Jeans' })).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Formal' })).toBeChecked();
+  expect(screen.getByText('2 of 4')).toBeOnTheScreen();
+});
+
+test('the garment on screen removed elsewhere moves to the next one by position', async () => {
+  mockCloset.garments = three();
+  await renderReview();
+  await fireEvent.press(screen.getByRole('button', { name: 'Skip' }));
+  expect(screen.getByRole('button', { name: 'Category · T-shirt' })).toBeOnTheScreen();
+
+  // g-2 (on screen) is deleted elsewhere while an older garment joins: the next is g-3, not g-1.
+  mockCloset.garments = [extracted('g-0', 0, { category: 'skirt' }), extracted('g-1', 1), extracted('g-3', 3, { category: 'dress' })];
+  await screen.rerender(<ReviewScreen />);
+  expect(screen.getByRole('button', { name: 'Category · Dress' })).toBeOnTheScreen();
+  expect(screen.getByText('3 of 3')).toBeOnTheScreen();
+
+  // The last one gone too: wraps to the first, never an out-of-range index.
+  mockCloset.garments = [extracted('g-0', 0, { category: 'skirt' }), extracted('g-1', 1)];
+  await screen.rerender(<ReviewScreen />);
+  expect(screen.getByRole('button', { name: 'Category · Skirt' })).toBeOnTheScreen();
+  expect(screen.getByText('1 of 2')).toBeOnTheScreen();
+});
+
+test('a doubted category offers every category, not only its slot (P3-R12)', async () => {
+  mockCloset.garments = [extracted('g-1', 1, { uncertain_fields: ['category'] })];
+  await renderReview();
+
+  expect(screen.getByText("The AI isn't sure: what is it?")).toBeOnTheScreen();
+  expect(screen.getByRole('radio', { name: 'Jeans' })).toBeChecked();
+  expect(screen.getByRole('radio', { name: 'T-shirt' })).toBeOnTheScreen();
 });
 
 test('over quota shows its notice', async () => {

@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useIsFocused } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 
 import { GARMENT_FIELDS, type ClothingType, type GarmentField } from '../closet/catalog';
@@ -24,6 +24,7 @@ import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { colors, gradients, radii, spacing } from '../ui/theme';
 
 const CLOCK_TICK_MS = 30_000;
+const ERROR_ROOM = 56;
 
 // Mockup order: the basics as confirmed rows, then the questions, then the finer details.
 const BASIC_FIELDS: readonly GarmentField[] = ['category', 'colors', 'seasons', 'formality'];
@@ -135,8 +136,9 @@ function ReviewCard(props: {
       onConfirmed(garment.id);
     } else {
       setError(result.error);
+      AccessibilityInfo.announceForAccessibility(t(`closet.error.${result.error}`));
     }
-  }, [garment, values, replaceLocal, onConfirmed]);
+  }, [garment, values, replaceLocal, onConfirmed, t]);
 
   let notice: string | null = null;
   if (garment.extraction_status === 'over_quota') {
@@ -166,7 +168,11 @@ function ReviewCard(props: {
     <LinearGradient colors={gradients.background} style={styles.fill}>
       <ScrollView
         style={styles.fill}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+        contentContainerStyle={[
+          styles.content,
+          // Room for the error shown above the buttons, so it never covers the last field.
+          { paddingTop: insets.top, paddingBottom: insets.bottom + (error === null ? 0 : ERROR_ROOM) },
+        ]}
       >
         <View style={styles.titleRow}>
           <ScreenTitle title={t('review.title')} />
@@ -188,19 +194,30 @@ function ReviewCard(props: {
             <Text style={styles.doubtText}>
               <Text style={styles.doubtLead}>{t('review.unsure')}</Text> {t(`review.ask.${field}`)}
             </Text>
-            <FieldEditor field={field} values={values} onChange={setValues} clothingType={clothingType} />
+            <FieldEditor
+              field={field}
+              values={values}
+              onChange={setValues}
+              clothingType={clothingType}
+              narrowCategory={false}
+            />
           </View>
         ))}
         <View>{DETAIL_FIELDS.filter((field) => !asked.has(field)).map(row)}</View>
-        {error === null ? null : (
-          <Text style={styles.error} accessibilityRole="alert">
-            {t(`closet.error.${error}`)}
-          </Text>
-        )}
       </ScrollView>
       <CtaBackdrop />
       <AnchoredCta
         chrome="none"
+        // Next to the buttons, not at the end of the form, so it's on screen however far it scrolls.
+        {...(error === null
+          ? {}
+          : {
+              notice: (
+                <Text style={styles.error} accessibilityRole="alert" testID="review-error">
+                  {t(`closet.error.${error}`)}
+                </Text>
+              ),
+            })}
         secondary={{ label: t('review.skip'), tone: 'ghost', onPress: onSkip, disabled: saving }}
         primary={{
           label: t('review.confirm'),
@@ -251,32 +268,39 @@ export default function ReviewScreen(): React.JSX.Element {
   // Confirmed here: dropped from the queue even if a refresh that started earlier brings back the
   // unreviewed row, and counted so "3 of 12" keeps moving forward.
   const [confirmed, setConfirmed] = useState<ReadonlySet<string>>(() => new Set());
-  // The current garment by id, so items joining the queue (polling) never swap it mid-review; the
-  // index is the fallback once that garment has left the queue.
-  const [cursor, setCursor] = useState<{ id: string | null; index: number }>({ id: null, index: 0 });
+  // The garment on screen, pinned by id from its first render: a garment joining the queue ahead
+  // of it (polling: an extraction finishing, or a pending one turning stale) never swaps the card
+  // and its draft. Its `created_at` places the next one when it leaves the queue (confirmed here or
+  // gone elsewhere): the queue is oldest first, so the next is the first garment no older than it.
+  const [pinned, setPinned] = useState<{ id: string; createdAt: number } | null>(null);
 
   const queue = useMemo(
     () => reviewQueue(garments, now).filter((g) => !confirmed.has(g.id)),
     [garments, now, confirmed],
   );
-  const found = cursor.id === null ? -1 : queue.findIndex((g) => g.id === cursor.id);
-  const position = found === -1 ? (cursor.index < queue.length ? cursor.index : 0) : found;
+  let position = 0;
+  if (pinned !== null) {
+    const found = queue.findIndex((g) => g.id === pinned.id);
+    const next = queue.findIndex((g) => Date.parse(g.created_at) >= pinned.createdAt);
+    position = found !== -1 ? found : Math.max(next, 0);
+  }
   const current = queue.at(position);
+  if (current !== undefined && current.id !== pinned?.id) {
+    // Storing derived state during render (React's documented pattern): pins the garment now shown.
+    setPinned({ id: current.id, createdAt: Date.parse(current.created_at) });
+  }
 
   const onSkip = useCallback(() => {
-    const next = (position + 1) % queue.length;
-    setCursor({ id: queue.at(next)?.id ?? null, index: next });
+    const next = queue.at((position + 1) % queue.length);
+    if (next !== undefined) {
+      setPinned({ id: next.id, createdAt: Date.parse(next.created_at) });
+    }
   }, [position, queue]);
 
-  const onConfirmed = useCallback(
-    (id: string) => {
-      const remaining = queue.filter((g) => g.id !== id);
-      const next = position < remaining.length ? position : 0;
-      setConfirmed((previous) => new Set(previous).add(id));
-      setCursor({ id: remaining.at(next)?.id ?? null, index: next });
-    },
-    [position, queue],
-  );
+  // The confirmed garment leaves the queue; the pin then resolves to the one after it.
+  const onConfirmed = useCallback((id: string) => {
+    setConfirmed((previous) => new Set(previous).add(id));
+  }, []);
 
   if (current === undefined) {
     return <CaughtUp />;
@@ -369,6 +393,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   error: {
+    alignSelf: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radii.cell,
+    backgroundColor: colors.errorTint,
+    textAlign: 'center',
     color: colors.error,
     fontSize: 14,
   },

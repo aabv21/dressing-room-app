@@ -97,6 +97,22 @@ describe('FieldEditor', () => {
     ]);
   });
 
+  test('category: a doubted category is not narrowed, so a current jeans also offers tops (P3-R12)', async () => {
+    await render(
+      <FieldEditor
+        field="category"
+        values={valuesOf({ category: 'jeans' })}
+        onChange={jest.fn()}
+        clothingType="everything"
+        narrowCategory={false}
+      />,
+    );
+
+    expect(screen.getByRole('radio', { name: 'Jeans' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'T-shirt' })).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'Pants' })).toBeOnTheScreen();
+  });
+
   test('category: without one, every category for the clothing type is offered', async () => {
     await render(<FieldEditor field="category" values={valuesOf()} onChange={jest.fn()} clothingType="masculine" />);
 

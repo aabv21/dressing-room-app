@@ -105,16 +105,21 @@ function displayValue(field: GarmentField, values: FieldValues, t: Translate): s
 }
 
 /**
- * Category choices: the clothing type's categories, narrowed to the current category's slot (a
- * pair of jeans is offered other bottoms). Clearing the selection shows every category again. The
- * current category always stays listed, even one outside the clothing type.
+ * Category choices: the clothing type's categories, narrowed to the current category's slot when
+ * `narrow` (a pair of jeans is offered other bottoms). Clearing the selection shows every category
+ * again. The current category always stays listed, even one outside the clothing type.
  */
-function categoryOptions(values: FieldValues, clothingType: ClothingType, t: Translate): ChipOption<string>[] {
+function categoryOptions(
+  values: FieldValues,
+  clothingType: ClothingType,
+  narrow: boolean,
+  t: Translate,
+): ChipOption<string>[] {
   const available = new Set(categoriesFor(clothingType));
   const current = values.category;
+  const slot = narrow && current !== null ? slotOf(current) : null;
   return GARMENT_CATEGORIES.filter(
-    (category) =>
-      (available.has(category) || category === current) && (current === null || slotOf(category) === slotOf(current)),
+    (category) => (available.has(category) || category === current) && (slot === null || slotOf(category) === slot),
   ).map((category) => ({ value: category, label: t(`garment.category.${category}`) }));
 }
 
@@ -123,13 +128,14 @@ function editorProps(
   values: FieldValues,
   onChange: (next: FieldValues) => void,
   clothingType: ClothingType,
+  narrowCategory: boolean,
   t: Translate,
 ): Pick<React.ComponentProps<typeof ChipGroup<string>>, 'options' | 'selected' | 'onChange' | 'multiple' | 'stretch'> {
   const optional = <T,>(value: T | null): T[] => (value === null ? [] : [value]);
   switch (field) {
     case 'category':
       return {
-        options: categoryOptions(values, clothingType, t),
+        options: categoryOptions(values, clothingType, narrowCategory, t),
         selected: optional(values.category),
         multiple: false,
         onChange: (next) => {
@@ -241,12 +247,17 @@ export function FieldEditor(props: {
   values: FieldValues;
   onChange: (next: FieldValues) => void;
   clothingType: ClothingType;
+  /**
+   * Category only (default true): offer just the current category's slot. Off when the AI doubted
+   * the category itself, since the right answer may be in another slot (P3-R12).
+   */
+  narrowCategory?: boolean;
 }): React.JSX.Element {
-  const { field, values, onChange, clothingType } = props;
+  const { field, values, onChange, clothingType, narrowCategory = true } = props;
   const { t } = useI18n();
   return (
     <ChipGroup
-      {...editorProps(field, values, onChange, clothingType, t)}
+      {...editorProps(field, values, onChange, clothingType, narrowCategory, t)}
       tone="accent"
       accessibilityLabel={t(`garment.field.${field}`)}
     />
