@@ -41,26 +41,26 @@ function moveIntoUploads(uri: string): string {
   return destination.uri;
 }
 
-/** Encodes `uri` as WebP with its longer side at most `target.longestSide`; resolves the file's URI. */
-async function encode(uri: string, target: Target): Promise<string> {
-  const context = ImageManipulator.manipulate(uri);
-  const images: ImageRef[] = [];
-  try {
-    const original = await context.renderAsync();
-    images.push(original);
-    const resize = resizeFor(original.width, original.height, target.longestSide);
-    let image = original;
-    if (resize !== null) {
-      image = await context.resize(resize).renderAsync();
-      images.push(image);
-    }
-    const saved = await image.saveAsync({ format: SaveFormat.WEBP, compress: target.compress });
-    return moveIntoUploads(saved.uri);
-  } finally {
-    // Decoded bitmaps are large; free them now rather than whenever the JS garbage collector runs.
-    for (const each of images) each.release();
-    context.release();
-  }
+type Context = ReturnType<typeof ImageManipulator.manipulate>;
+
+/**
+ * Renders `context`, then, if the result is still longer than `longestSide` (a decoder that
+ * ignored its load options), renders it again resized. Every image rendered is pushed to `images`
+ * so the caller can release it.
+ */
+async function renderWithin(context: Context, longestSide: number, images: ImageRef[]): Promise<ImageRef> {
+  const rendered = await context.renderAsync();
+  images.push(rendered);
+  const resize = resizeFor(rendered.width, rendered.height, longestSide);
+  if (resize === null) return rendered;
+  const resized = await context.resize(resize).renderAsync();
+  images.push(resized);
+  return resized;
+}
+
+async function saveWebp(image: ImageRef, target: Target): Promise<string> {
+  const saved = await image.saveAsync({ format: SaveFormat.WEBP, compress: target.compress });
+  return moveIntoUploads(saved.uri);
 }
 
 /**
@@ -68,24 +68,41 @@ async function encode(uri: string, target: Target): Promise<string> {
  * possible (the original photo otherwise), then a 784 px full image at quality 0.8 and a 256 px
  * thumbnail at 0.7. The cut-out PNG is a temporary file and is always deleted afterwards.
  *
- * NOTE: when there is no cut-out, each encode decodes the source photo at full resolution (a
- * 48 MP photo is ~190 MB of pixels). Ceiling: memory on low-end Android; upgrade path: pass
- * `manipulate(uri, { maxWidth, maxHeight })` to downsample while decoding.
+ * The source is decoded once, downsampled while decoding to fit 784 px (iOS: CGImageSource with
+ * EXIF orientation applied; Android: Glide's bounded decode; neither upscales), so a 48 MP photo
+ * never exists in memory at full size. The thumbnail is then built from that rendered full image
+ * rather than from the source again.
+ *
+ * NOTE: the bounded decode is only as lean as the platform loader: Android hands the bounds to the
+ * app's image loader and, if that loader ignores them, decodes in full before downscaling. Ceiling:
+ * one full-size bitmap per worker on such a loader; upgrade path: cap the source in the
+ * garment-cutout module's decoder (already 2048 px for cut-outs) for the no-cut-out path too.
  */
 export async function preparePhoto(sourceUri: string): Promise<{ fullUri: string; thumbUri: string }> {
   const cutoutUri = await cutOutGarment(sourceUri);
   const input = cutoutUri ?? sourceUri;
+  const contexts: Context[] = [];
+  const images: ImageRef[] = [];
+  let fullUri: string | null = null;
   try {
-    const fullUri = await encode(input, FULL);
-    try {
-      const thumbUri = await encode(input, THUMB);
-      return { fullUri, thumbUri };
-    } catch (error) {
-      // The queue retries `prepare` from the source, so a half-prepared pair is only litter.
-      deleteQuietly(fullUri);
-      throw error;
-    }
+    const fullContext = ImageManipulator.manipulate(input, { maxWidth: FULL.longestSide, maxHeight: FULL.longestSide });
+    contexts.push(fullContext);
+    const full = await renderWithin(fullContext, FULL.longestSide, images);
+    fullUri = await saveWebp(full, FULL);
+
+    const thumbContext = ImageManipulator.manipulate(full);
+    contexts.push(thumbContext);
+    const thumb = await renderWithin(thumbContext, THUMB.longestSide, images);
+    const thumbUri = await saveWebp(thumb, THUMB);
+    return { fullUri, thumbUri };
+  } catch (error) {
+    // The queue retries `prepare` from the source, so a half-prepared pair is only litter.
+    if (fullUri !== null) deleteQuietly(fullUri);
+    throw error;
   } finally {
+    // Decoded bitmaps are large; free them now rather than whenever the JS garbage collector runs.
+    for (const image of images) image.release();
+    for (const context of contexts) context.release();
     if (cutoutUri !== null) deleteQuietly(cutoutUri);
   }
 }

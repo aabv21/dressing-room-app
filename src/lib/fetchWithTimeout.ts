@@ -8,11 +8,13 @@ export const REQUEST_TIMEOUT_MS = 12_000;
 /**
  * The deadline covers the whole request, including sending its body, so storage uploads (a `POST`
  * or `PUT` to a URL containing `/storage/v1/object/`) get longer: a 2 MiB garment photo over a slow
- * link can need more than 12 s.
+ * link can need more than 12 s. Signing URLs (`/object/sign/`) and listing (`/object/list/`) are
+ * also `POST`s there but send no photo, so they keep 12 s.
  */
 export const UPLOAD_TIMEOUT_MS = 60_000;
 
 const STORAGE_OBJECT_PATH = '/storage/v1/object/';
+const NOT_UPLOADS = ['/storage/v1/object/sign/', '/storage/v1/object/list/'];
 
 function urlOf(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
@@ -22,7 +24,11 @@ function urlOf(input: RequestInfo | URL): string {
 
 function deadlineFor(input: RequestInfo | URL, init: RequestInit): number {
   const method = (init.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase();
-  const upload = (method === 'POST' || method === 'PUT') && urlOf(input).includes(STORAGE_OBJECT_PATH);
+  const url = urlOf(input);
+  const upload =
+    (method === 'POST' || method === 'PUT') &&
+    url.includes(STORAGE_OBJECT_PATH) &&
+    !NOT_UPLOADS.some((path) => url.includes(path));
   return upload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
 

@@ -80,6 +80,20 @@ test.each(['POST', 'PUT'])('a storage object %s survives 30 s and aborts at 60 s
   expect(await outcome).toBe('AbortError');
 });
 
+test.each(['sign/garments', 'sign/garments/u/g/thumb.webp', 'list/garments'])(
+  'a storage POST to /object/%s (not an upload) keeps the 12 s deadline',
+  async (path) => {
+    fetchMock.mockImplementation(hangingRequest);
+
+    const outcome = outcomeOf(
+      fetchWithTimeout(`http://127.0.0.1:54421/storage/v1/object/${path}`, { method: 'POST', body: '{}' }),
+    );
+
+    jest.advanceTimersByTime(REQUEST_TIMEOUT_MS);
+    expect(await outcome).toBe('AbortError');
+  },
+);
+
 test('a REST GET still aborts at 12 s', async () => {
   fetchMock.mockImplementation(hangingRequest);
 
