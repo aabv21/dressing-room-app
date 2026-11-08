@@ -346,15 +346,40 @@ describe('consumeQuota and the caches', () => {
 
     expect(await cacheGet(ENV, fakeFetch(() => json(200, [])).fetch, 'lucky_cache', USER_ID, 'abc')).toBeNull();
     expect(await cacheGet(ENV, fakeFetch(() => json(500, {})).fetch, 'rating_cache', USER_ID, 'abc')).toBeNull();
+    expect(call?.url.searchParams.get('select')).toBe('result,created_at');
+  });
+
+  test('a degraded entry is a hit for an hour, then a miss; any other entry never expires', async () => {
+    const now = Date.parse('2026-11-08T10:00:00Z');
+    const minutesAgo = (minutes: number): string => new Date(now - minutes * 60_000).toISOString();
+    const entry = (result: unknown, createdAt: unknown) =>
+      fakeFetch(() => json(200, [{ result, created_at: createdAt }])).fetch;
+    const degraded = { score: 70, degraded: true };
+
+    expect(await cacheGet(ENV, entry(degraded, minutesAgo(59)), 'rating_cache', USER_ID, 'k', now)).toEqual(degraded);
+    expect(await cacheGet(ENV, entry(degraded, minutesAgo(61)), 'rating_cache', USER_ID, 'k', now)).toBeNull();
+    expect(await cacheGet(ENV, entry(degraded, null), 'lucky_cache', USER_ID, 'k', now)).toBeNull();
+    const fine = { score: 80, degraded: false };
+    expect(await cacheGet(ENV, entry(fine, minutesAgo(5 * 24 * 60)), 'rating_cache', USER_ID, 'k', now)).toEqual(fine);
+    expect(await cacheGet(ENV, entry({ score: 80 }, minutesAgo(5 * 24 * 60)), 'rating_cache', USER_ID, 'k', now)).toEqual({
+      score: 80,
+    });
   });
 
   test('cachePut upserts with the service role and reports failure instead of throwing', async () => {
     const ok = fakeFetch(() => new Response(null, { status: 201 }));
-    expect(await cachePut(ENV, ok.fetch, 'rating_cache', USER_ID, 'abc', { score: 80 })).toBe(true);
+    const now = Date.parse('2026-11-08T10:00:00Z');
+    expect(await cachePut(ENV, ok.fetch, 'rating_cache', USER_ID, 'abc', { score: 80 }, now)).toBe(true);
     const [call] = ok.calls;
     expect(call?.method).toBe('POST');
     expect(call?.headers.get('prefer')).toContain('resolution=merge-duplicates');
-    expect(JSON.parse(call?.body ?? '')).toEqual({ user_id: USER_ID, cache_key: 'abc', result: { score: 80 } });
+    // created_at is sent so a recomputed entry restarts its age (the upsert only updates sent columns).
+    expect(JSON.parse(call?.body ?? '')).toEqual({
+      user_id: USER_ID,
+      cache_key: 'abc',
+      result: { score: 80 },
+      created_at: '2026-11-08T10:00:00.000Z',
+    });
 
     const failing = fakeFetch(() => Promise.reject(new TypeError('fetch failed')));
     expect(await cachePut(ENV, failing.fetch, 'lucky_cache', USER_ID, 'abc', {})).toBe(false);
@@ -402,7 +427,7 @@ describe('runJev and runClaude', () => {
     expect(await pending).toBeNull();
   });
 
-  test('runClaude posts to /v1/messages with the API key and is aborted after 30 s', async () => {
+  test('runClaude posts to /v1/messages with the API key and is aborted after 20 s', async () => {
     const ok = fakeFetch(() => json(200, { content: [] }));
     expect(await runClaude(ENV, ok.fetch, { model: 'claude-haiku-5-5' })).toEqual({ content: [] });
     const [call] = ok.calls;
@@ -417,7 +442,7 @@ describe('runJev and runClaude', () => {
       settled = true;
       return value;
     });
-    await jest.advanceTimersByTimeAsync(29_999);
+    await jest.advanceTimersByTimeAsync(19_999);
     expect(settled).toBe(false);
     await jest.advanceTimersByTimeAsync(1);
     expect(await pending).toBeNull();

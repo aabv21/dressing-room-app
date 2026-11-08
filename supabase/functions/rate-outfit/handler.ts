@@ -50,10 +50,19 @@ export type RatingResult = {
   noBetterSwap: boolean;
 };
 
+/**
+ * What `rating_cache` stores: the result plus an internal marker, stripped before answering. A
+ * degraded result (a Claude estimate, or a swap search that was skipped or failed) is served from
+ * the cache for an hour only (ruling P4-R12; see `cacheGet`).
+ */
+type CachedRating = RatingResult & { degraded: boolean };
+
 type Outcome = 'cached' | 'rated' | 'fallback' | 'over_quota' | 'unavailable' | 'invalid' | 'error';
 
 export const RATING_DAILY_LIMIT = 50;
 export const MAX_SWAP_CANDIDATES = 8;
+/** No swap rating starts once this long has passed since the request arrived (ruling P4-R11). */
+export const SWAP_BUDGET_MS = 15_000;
 const MIN_GARMENTS = 2;
 const MAX_GARMENTS = 6;
 const CACHE_VERSION = 1;
@@ -71,7 +80,13 @@ type RatingContext = {
   weather: WeatherSummary | null;
   season: Season;
   date: string;
+  startedAt: number;
 };
+
+type SwapOutcome = Pick<RatingResult, 'swap' | 'noBetterSwap'> & { degraded: boolean };
+
+/** A swap search that was skipped or failed: nothing is known, so neither a swap nor "no better swap". */
+const UNKNOWN_SWAP: SwapOutcome = { swap: null, noBetterSwap: false, degraded: true };
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -137,28 +152,32 @@ function stateFor(ctx: RatingContext, outfit: readonly RuleGarment[]) {
 
 const slotOfGarment = (garment: RuleGarment): Slot | null => (garment.category === null ? null : slotOf(garment.category));
 
+const overBudget = (ctx: RatingContext): boolean => Date.now() - ctx.startedAt >= SWAP_BUDGET_MS;
+
 /**
  * The best swap for the piece in `weakestSlot`: the caller's other available garments in that
  * slot that pass the occasion/season/weather rules on their own (Jev judges the combination),
  * least recently worn first, capped at `MAX_SWAP_CANDIDATES`, each rated with Jev (never the
- * fallback). A swap is offered only when it beats `current` by `swapMinGain`.
+ * fallback). A swap is offered only when it beats `current` by `swapMinGain`. No candidate
+ * rating starts after `SWAP_BUDGET_MS`; a search cut short that way is `UNKNOWN_SWAP`.
  */
 async function findSwap(
   ctx: RatingContext,
   outfit: readonly RuleGarment[],
   weakestSlot: Slot,
   current: number,
-): Promise<Pick<RatingResult, 'swap' | 'noBetterSwap'>> {
+): Promise<SwapOutcome> {
   // NOTE: when the slot holds several pieces (two accessories) the first one is swapped; Jev
   // names a slot, not a piece. Upgrade path: ask Jev to name the piece by index.
   const from = outfit.find((garment) => slotOfGarment(garment) === weakestSlot);
-  if (from === undefined) return { swap: null, noBetterSwap: false };
+  if (from === undefined) return { swap: null, noBetterSwap: false, degraded: false };
+  if (overBudget(ctx)) return UNKNOWN_SWAP;
 
   let closet: RuleGarment[];
   try {
     closet = await loadGarments(ctx.env, ctx.fetch, ctx.auth);
   } catch {
-    return { swap: null, noBetterSwap: false };
+    return UNKNOWN_SWAP;
   }
   const rules: RuleContext = {
     occasion: ctx.occasion,
@@ -178,19 +197,21 @@ async function findSwap(
     .sort((a, b) => b.freshness - a.freshness || (a.garment.id < b.garment.id ? -1 : 1))
     .slice(0, MAX_SWAP_CANDIDATES)
     .map(({ garment }) => garment);
-  if (candidates.length === 0) return { swap: null, noBetterSwap: true };
+  if (candidates.length === 0) return { swap: null, noBetterSwap: true, degraded: false };
 
   const rated = await mapLimit(candidates, MAX_CONCURRENT_JEV, async (candidate) => {
+    if (overBudget(ctx)) return 'skipped' as const;
     const variant = outfit.map((garment) => (garment === from ? candidate : garment));
     const rating = await jevRating(ctx.env, ctx.fetch, stateFor(ctx, variant), ctx.rand);
     return rating === null ? null : { toId: candidate.id, score: rating.score };
   });
-  const scored = rated.filter((entry) => entry !== null);
+  if (rated.includes('skipped')) return UNKNOWN_SWAP;
+  const scored = rated.filter((entry) => entry !== null && entry !== 'skipped');
   // Every candidate's rating failed: nothing is known about them, so don't claim none is better.
-  if (scored.length === 0) return { swap: null, noBetterSwap: false };
+  if (scored.length === 0) return UNKNOWN_SWAP;
   const best = scored.reduce((a, b) => (b.score > a.score ? b : a));
-  if (best.score - current < RATING_CONFIG.swapMinGain) return { swap: null, noBetterSwap: true };
-  return { swap: { fromId: from.id, toId: best.toId, score: best.score }, noBetterSwap: false };
+  if (best.score - current < RATING_CONFIG.swapMinGain) return { swap: null, noBetterSwap: true, degraded: false };
+  return { swap: { fromId: from.id, toId: best.toId, score: best.score }, noBetterSwap: false, degraded: false };
 }
 
 function resultFrom(
@@ -198,7 +219,7 @@ function resultFrom(
   estimated: boolean,
   outfit: readonly RuleGarment[],
   slots: ReadonlySet<Slot>,
-): RatingResult {
+): CachedRating {
   const { weakestSlot } = rating.answers;
   return {
     score: rating.score,
@@ -213,7 +234,33 @@ function resultFrom(
     weakestSlot: weakestSlot !== null && slots.has(weakestSlot) ? weakestSlot : null,
     swap: null,
     noBetterSwap: false,
+    degraded: estimated,
   };
+}
+
+/** The cached value without the internal `degraded` marker. */
+function withoutMarker(cached: unknown): unknown {
+  if (!isRecord(cached)) return cached;
+  return Object.fromEntries(Object.entries(cached).filter(([field]) => field !== 'degraded'));
+}
+
+/**
+ * A cached swap points at a garment that may have been deleted or put away since: re-read it
+ * with the caller's token and drop the swap (without rewriting the cache) unless it's available.
+ */
+async function recheckSwap(ctx: RatingContext, cached: unknown): Promise<unknown> {
+  if (!isRecord(cached) || !isRecord(cached.swap)) return cached;
+  const { toId } = cached.swap;
+  let available = false;
+  if (typeof toId === 'string' && UUID.test(toId)) {
+    try {
+      const [target] = await loadGarments(ctx.env, ctx.fetch, ctx.auth, [toId]);
+      available = target?.status === 'available';
+    } catch {
+      available = false;
+    }
+  }
+  return available ? cached : { ...cached, swap: null, noBetterSwap: false };
 }
 
 async function rate(
@@ -223,7 +270,7 @@ async function rate(
 ): Promise<{ outcome: Outcome; status: number; body: unknown }> {
   const key = await cacheKey(outfit, ctx);
   const cached = await cacheGet(ctx.env, ctx.fetch, 'rating_cache', userId, key);
-  if (cached !== null) return { outcome: 'cached', status: 200, body: cached };
+  if (cached !== null) return { outcome: 'cached', status: 200, body: await recheckSwap(ctx, withoutMarker(cached)) };
 
   if (!(await consumeQuota(ctx.env, ctx.fetch, userId, 'rating', RATING_DAILY_LIMIT))) {
     return { outcome: 'over_quota', status: 429, body: { error: 'over_quota' } };
@@ -231,7 +278,7 @@ async function rate(
 
   const slots = new Set(outfit.flatMap((garment) => slotOfGarment(garment) ?? []));
   const state = stateFor(ctx, outfit);
-  let result: RatingResult;
+  let result: CachedRating;
   let outcome: Outcome;
   const jev = await jevRating(ctx.env, ctx.fetch, state, ctx.rand);
   if (jev !== null) {
@@ -249,10 +296,11 @@ async function rate(
   }
 
   await cachePut(ctx.env, ctx.fetch, 'rating_cache', userId, key, result);
-  return { outcome, status: 200, body: result };
+  return { outcome, status: 200, body: withoutMarker(result) };
 }
 
 export async function handleRate(request: Request, deps: RateDeps): Promise<Response> {
+  const startedAt = Date.now();
   if (request.method !== 'POST') return reply('invalid', 405, { error: 'method_not_allowed' });
   const auth = request.headers.get('authorization');
   const userId = userIdFromJwt(auth);
@@ -289,6 +337,7 @@ export async function handleRate(request: Request, deps: RateDeps): Promise<Resp
       weather,
       season: seasonOf(input.date, lat),
       date: input.date,
+      startedAt,
     };
     const { outcome, status, body } = await rate(ctx, userId, outfit);
     return reply(outcome, status, body);

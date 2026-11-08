@@ -60,7 +60,7 @@ export type FnEnv = {
 type FetchFn = typeof fetch;
 
 export const JEV_TIMEOUT_MS = 10_000;
-export const CLAUDE_TIMEOUT_MS = 30_000;
+export const CLAUDE_TIMEOUT_MS = 20_000;
 export const WEATHER_TIMEOUT_MS = 5_000;
 /** At most this many Jev requests at once per function invocation. */
 export const MAX_CONCURRENT_JEV = 5;
@@ -384,28 +384,46 @@ export async function consumeQuota(
 
 export type ResultCache = 'rating_cache' | 'lucky_cache';
 
-/** The cached `result`, or null on a miss or any error (a failed read just recomputes). */
+/** How long a result marked `degraded: true` (a fallback, a skipped or failed step) is served from the cache. */
+export const DEGRADED_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
+ * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
+ * unknown), so a better answer is tried again; any other result never expires (ruling P4-R12).
+ * The marker is returned as stored; callers strip it before answering.
+ */
 export async function cacheGet(
   env: FnEnv,
   fetchFn: FetchFn,
   table: ResultCache,
   userId: string,
   key: string,
+  now: number = Date.now(),
 ): Promise<unknown> {
   try {
     const rows = await restRows(
       fetchFn,
-      `${env.supabaseUrl}/rest/v1/${table}?select=result&user_id=eq.${userId}&cache_key=eq.${encodeURIComponent(key)}`,
+      `${env.supabaseUrl}/rest/v1/${table}?select=result,created_at&user_id=eq.${userId}&cache_key=eq.${encodeURIComponent(key)}`,
       serviceHeaders(env),
     );
     const [row] = rows;
-    return isRecord(row) && row.result !== undefined ? row.result : null;
+    if (!isRecord(row) || row.result === undefined || row.result === null) return null;
+    if (isRecord(row.result) && row.result.degraded === true) {
+      const createdAt = typeof row.created_at === 'string' ? Date.parse(row.created_at) : Number.NaN;
+      if (Number.isNaN(createdAt) || now - createdAt > DEGRADED_TTL_MS) return null;
+    }
+    return row.result;
   } catch {
     return null;
   }
 }
 
-/** Upserts a cached result; false (never a throw) when the write fails. */
+/**
+ * Upserts a cached result; false (never a throw) when the write fails. `created_at` is written
+ * explicitly: a merge-duplicates upsert only updates the columns sent, so a recomputed entry
+ * would otherwise keep its old age and a degraded one would never be served.
+ */
 export function cachePut(
   env: FnEnv,
   fetchFn: FetchFn,
@@ -413,8 +431,14 @@ export function cachePut(
   userId: string,
   key: string,
   result: unknown,
+  now: number = Date.now(),
 ): Promise<boolean> {
-  return upsert(env, fetchFn, table, { user_id: userId, cache_key: key, result });
+  return upsert(env, fetchFn, table, {
+    user_id: userId,
+    cache_key: key,
+    result,
+    created_at: new Date(now).toISOString(),
+  });
 }
 
 export async function sha256Hex(text: string): Promise<string> {
@@ -438,7 +462,7 @@ export function runJev(env: FnEnv, fetchFn: FetchFn, request: unknown): Promise<
   );
 }
 
-/** The Messages API response body, or null on a non-2xx answer, a network error or 30 s passing. */
+/** The Messages API response body, or null on a non-2xx answer, a network error or 20 s passing. */
 export function runClaude(env: FnEnv, fetchFn: FetchFn, request: unknown): Promise<unknown> {
   return fetchJson(
     fetchFn,

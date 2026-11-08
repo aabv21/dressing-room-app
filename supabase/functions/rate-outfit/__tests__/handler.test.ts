@@ -152,13 +152,25 @@ const PROFILE: Row = {
 
 const WEATHER = { tempC: 15, condition: 'cloudy', band: 'cool', rain: false };
 
-type RouteName = 'garments' | 'closet' | 'profile' | 'weatherGet' | 'weatherPut' | 'quota' | 'cacheGet' | 'cachePut' | 'jev' | 'claude';
+type RouteName =
+  | 'garments'
+  | 'closet'
+  | 'profile'
+  | 'weatherGet'
+  | 'weatherPut'
+  | 'forecast'
+  | 'quota'
+  | 'cacheGet'
+  | 'cachePut'
+  | 'jev'
+  | 'claude';
 type Call = { route: RouteName; url: URL; headers: Headers; body: string | undefined };
 type JevState = { outfit: { slot: string; category: string }[]; context: { weather: unknown } };
 
 function routeOf(method: string, url: URL): RouteName {
   if (url.origin === ENV.typesafeBaseUrl && url.pathname === '/v1/systemone' && method === 'POST') return 'jev';
   if (url.origin === ENV.anthropicBaseUrl && url.pathname === '/v1/messages' && method === 'POST') return 'claude';
+  if (url.origin === ENV.openMeteoUrl && url.pathname === '/v1/forecast') return 'forecast';
   if (url.pathname === '/rest/v1/garments' && method === 'GET') return url.searchParams.has('id') ? 'garments' : 'closet';
   if (url.pathname === '/rest/v1/profiles' && method === 'GET') return 'profile';
   if (url.pathname === '/rest/v1/weather_cache') return method === 'GET' ? 'weatherGet' : 'weatherPut';
@@ -177,7 +189,11 @@ type World = {
   /** Jev's answer for one request; the default rates every outfit with jev-ok. */
   jev: (state: JevState) => Response | Promise<Response>;
   claude: () => Response | Promise<Response>;
-  ratingCache: Map<string, unknown>;
+  /** rating_cache rows by cache_key, as stored (the result keeps its internal `degraded` marker). */
+  ratingCache: Map<string, { result: unknown; created_at: string }>;
+  /** False: weather_cache misses and the forecast is fetched through `forecast`. */
+  weatherCached: boolean;
+  forecast: (init: RequestInit) => Response | Promise<Response>;
   fail?: Partial<Record<RouteName, Response>>;
 };
 
@@ -189,6 +205,8 @@ function world(overrides: Partial<World> = {}): World {
     jev: () => json(200, fixture('jev-ok')),
     claude: () => json(200, claudeMessage(FALLBACK_OUTPUT)),
     ratingCache: new Map(),
+    weatherCached: true,
+    forecast: () => json(500, {}),
     ...overrides,
   };
 }
@@ -217,18 +235,21 @@ function fakeFetch(w: World) {
       case 'profile':
         return json(200, w.profile === null ? [] : [w.profile]);
       case 'weatherGet':
-        return json(200, [{ payload: { weather: WEATHER, lat: 40.42, lon: -3.7 } }]);
+        return json(200, w.weatherCached ? [{ payload: { weather: WEATHER, lat: 40.42, lon: -3.7 } }] : []);
+      case 'forecast':
+        return w.forecast(init);
       case 'weatherPut':
         return new Response(null, { status: 201 });
       case 'quota':
         return json(200, w.quota);
       case 'cacheGet': {
         const key = (url.searchParams.get('cache_key') ?? '').replace(/^eq\./, '');
-        return json(200, w.ratingCache.has(key) ? [{ result: w.ratingCache.get(key) }] : []);
+        const row = w.ratingCache.get(key);
+        return json(200, row === undefined ? [] : [row]);
       }
       case 'cachePut': {
-        const row = JSON.parse(body ?? '{}') as { cache_key: string; result: unknown };
-        w.ratingCache.set(row.cache_key, row.result);
+        const row = JSON.parse(body ?? '{}') as { cache_key: string; result: unknown; created_at: string };
+        w.ratingCache.set(row.cache_key, { result: row.result, created_at: row.created_at });
         return new Response(null, { status: 201 });
       }
       case 'jev': {
@@ -265,6 +286,8 @@ async function rate(w: World, request: Request = rateRequest()) {
   const response = await handleRate(request, { env: ENV, fetch: fake.fetch, rand: mulberry32(7) });
   return { response, body: (await response.json()) as unknown, ...fake };
 }
+
+const cachedResults = (w: World): unknown[] => [...w.ratingCache.values()].map((row) => row.result);
 
 const routes = (calls: Call[]): RouteName[] => calls.map((call) => call.route);
 const count = (calls: Call[], route: RouteName): number => calls.filter((call) => call.route === route).length;
@@ -338,7 +361,7 @@ describe('rating', () => {
     expect(response.status).toBe(200);
     expect(body).toEqual(expected);
     expect(routes(calls)).toEqual(['garments', 'profile', 'weatherGet', 'cacheGet', 'quota', 'jev', 'cachePut']);
-    expect([...w.ratingCache.values()]).toEqual([expected]);
+    expect(cachedResults(w)).toEqual([{ ...expected, degraded: false }]);
 
     const [garments, profile] = calls;
     for (const call of [garments, profile]) {
@@ -423,7 +446,8 @@ describe('rating', () => {
     expect(count(calls, 'claude')).toBe(1);
     const claude = calls.find((call) => call.route === 'claude');
     expect(claude?.headers.get('x-api-key')).toBe(ENV.anthropicApiKey);
-    expect([...w.ratingCache.values()]).toEqual([body]);
+    expect(cachedResults(w)).toEqual([{ ...(body as Row), degraded: true }]);
+    expect(body).not.toHaveProperty('degraded');
     expect(outcomes()).toEqual([{ outcome: 'fallback' }]);
   });
 
@@ -580,7 +604,7 @@ describe('swaps', () => {
     for (const state of swapStates) {
       expect(state.outfit.map((piece) => piece.category)).toEqual(['t_shirt', 'jeans', shoesOf(state)]);
     }
-    expect([...w.ratingCache.values()]).toEqual([body]);
+    expect(cachedResults(w)).toEqual([{ ...(body as Row), degraded: false }]);
   });
 
   test('when no candidate beats the score by 5, there is no swap and noBetterSwap is true', async () => {
@@ -664,6 +688,268 @@ describe('swaps', () => {
     const { body, calls } = await rate(w, rateRequest({ garment_ids: [TOP, BOTTOM, SHOES], occasion: 'sport', date: DATE }));
     expect(count(calls, 'jev')).toBe(2);
     expect(body).toMatchObject({ swap: { fromId: SHOES, toId: BOOTS, score: 44 } });
+  });
+});
+
+describe('degraded results (P4-R12)', () => {
+  const lowShoes = (): Response => json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes')));
+  const minutesAgo = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
+  const age = (w: World, minutes: number): void => {
+    for (const row of w.ratingCache.values()) row.created_at = minutesAgo(minutes);
+  };
+
+  test('a fallback rating is cached degraded: a hit at 59 min, a recomputing miss (with quota) at 61 min', async () => {
+    const w = world({ jev: () => json(500, {}) });
+    await rate(w);
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
+
+    age(w, 59);
+    const hit = await rate(w);
+    expect(count(hit.calls, 'quota') + count(hit.calls, 'jev') + count(hit.calls, 'claude')).toBe(0);
+    expect(hit.body).not.toHaveProperty('degraded');
+    expect(hit.body).toMatchObject({ estimated: true });
+
+    age(w, 61);
+    w.jev = () => json(200, fixture('jev-ok'));
+    const miss = await rate(w);
+    expect(count(miss.calls, 'quota')).toBe(1);
+    expect(count(miss.calls, 'jev')).toBe(1);
+    expect(miss.body).toMatchObject({ score: 80, estimated: false });
+    expect(miss.body).not.toHaveProperty('degraded');
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: false })]);
+    expect(outcomes()).toEqual([{ outcome: 'fallback' }, { outcome: 'cached' }, { outcome: 'rated' }]);
+  });
+
+  test('a recomputed entry that is still degraded restarts its hour', async () => {
+    const w = world({ jev: () => json(500, {}) });
+    await rate(w);
+    age(w, 61);
+    await rate(w);
+    const again = await rate(w);
+    expect(count(again.calls, 'quota')).toBe(0);
+  });
+
+  test('a non-degraded entry is still a hit after 5 days', async () => {
+    const w = world();
+    await rate(w);
+    age(w, 5 * 24 * 60);
+    const hit = await rate(w);
+    expect(count(hit.calls, 'quota') + count(hit.calls, 'jev')).toBe(0);
+    expect(hit.body).not.toHaveProperty('degraded');
+  });
+
+  test.each([
+    ['the closet read fails', { fail: { closet: json(503, {}) } }],
+    ['every candidate rating fails', {}],
+  ])('a failed swap search (%s) is degraded', async (_label, overrides) => {
+    const w = world({ jev: (state) => (shoesOf(state) === 'sneakers' ? lowShoes() : json(500, {})), ...overrides });
+    const { body } = await rate(w);
+    expect(body).toMatchObject({ swap: null, noBetterSwap: false });
+    expect(body).not.toHaveProperty('degraded');
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
+  });
+
+  test('a completed swap search, with or without a swap, is not degraded', async () => {
+    const found = world({ jev: (state) => (shoesOf(state) === 'sneakers' ? lowShoes() : json(200, jevAt(0.44))) });
+    await rate(found);
+    expect(cachedResults(found)).toEqual([expect.objectContaining({ degraded: false, swap: expect.anything() as unknown })]);
+    const none = world({ jev: (state) => (shoesOf(state) === 'sneakers' ? lowShoes() : json(200, jevAt(0.37))) });
+    await rate(none);
+    expect(cachedResults(none)).toEqual([expect.objectContaining({ degraded: false, noBetterSwap: true })]);
+  });
+});
+
+describe('a cached swap is re-checked (M1)', () => {
+  const withSwap = (): World =>
+    world({
+      jev: (state) =>
+        shoesOf(state) === 'sneakers'
+          ? json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes')))
+          : json(200, shoesOf(state) === 'boots' ? jevAt(0.44) : jevAt(0.3)),
+    });
+
+  test('a swap target that is still available is kept, read with the user’s token', async () => {
+    const w = withSwap();
+    const first = await rate(w);
+    const second = await rate(w);
+    expect(second.body).toEqual(first.body);
+    const check = second.calls.filter((call) => call.route === 'garments').at(-1);
+    expect(check?.url.searchParams.get('id')).toBe(`in.(${BOOTS})`);
+    expect(check?.headers.get('authorization')).toBe(AUTH);
+  });
+
+  test.each([
+    ['deleted', (w: World) => w.garments.delete(BOOTS)],
+    ['in the laundry', (w: World) => w.garments.set(BOOTS, garment(BOOTS, 'boots', { status: 'laundry' }))],
+  ])('a swap target that is now %s is dropped from the answer, and the cache is not rewritten', async (_label, change) => {
+    const w = withSwap();
+    await rate(w);
+    const stored = structuredClone([...w.ratingCache.values()]);
+    change(w);
+    const { body, calls } = await rate(w);
+    expect(body).toMatchObject({ score: 36, swap: null, noBetterSwap: false });
+    expect(count(calls, 'cachePut') + count(calls, 'jev') + count(calls, 'quota')).toBe(0);
+    expect([...w.ratingCache.values()]).toEqual(stored);
+  });
+
+  test('a cached result without a swap reads no garment again', async () => {
+    const w = world();
+    await rate(w);
+    const { calls } = await rate(w);
+    expect(count(calls, 'garments')).toBe(1);
+  });
+});
+
+describe('latency budget (P4-R11)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  const after = <T,>(ms: number, init: RequestInit, value: () => T): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        resolve(value());
+      }, ms);
+      init.signal?.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(new DOMException('The operation was aborted.', 'AbortError'));
+      });
+    });
+
+  const hrefOf = (input: string | URL | Request): string =>
+    typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const bodyOf = (init: RequestInit): string => (typeof init.body === 'string' ? init.body : '');
+
+  /**
+   * Advances fake time by `ms` in small steps, letting real macrotasks run between them: the cache
+   * key's `crypto.subtle.digest` settles on a real event-loop turn, so one big jump would pass
+   * timers the handler hasn't scheduled yet.
+   */
+  async function drive(ms: number, step = 50): Promise<void> {
+    for (let elapsed = 0; elapsed < ms; elapsed += step) {
+      for (let turn = 0; turn < 3; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+      await jest.advanceTimersByTimeAsync(Math.min(step, ms - elapsed));
+    }
+  }
+
+  test('Jev times out at 10 s, then Claude answers at 19 s → 200, estimated', async () => {
+    const fake = fakeFetch(world());
+    const pending = handleRate(rateRequest(), {
+      env: ENV,
+      fetch: async (input, init = {}) => {
+        if (hrefOf(input).startsWith(ENV.typesafeBaseUrl)) return after(60_000, init, () => json(200, fixture('jev-ok')));
+        if (hrefOf(input).startsWith(ENV.anthropicBaseUrl)) {
+          return after(19_000, init, () => json(200, claudeMessage(FALLBACK_OUTPUT)));
+        }
+        return fake.fetch(input, init);
+      },
+      rand: mulberry32(7),
+    });
+    await drive(10_000 + 19_000 + 200);
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ estimated: true, confidence: null });
+    expect(outcomes()).toEqual([{ outcome: 'fallback' }]);
+  });
+
+  test('a Claude answer slower than 20 s is abandoned → 503', async () => {
+    const w = world({ jev: () => json(500, {}) });
+    const fake = fakeFetch(w);
+    const pending = handleRate(rateRequest(), {
+      env: ENV,
+      fetch: async (input, init = {}) =>
+        hrefOf(input).startsWith(ENV.anthropicBaseUrl)
+          ? after(20_500, init, () => json(200, claudeMessage(FALLBACK_OUTPUT)))
+          : fake.fetch(input, init),
+      rand: mulberry32(7),
+    });
+    await drive(20_000 + 200);
+    expect((await pending).status).toBe(503);
+  });
+
+  test('when 15 s have passed before the swaps, no swap Jev call is made and the result is degraded', async () => {
+    const w = world();
+    const fake = fakeFetch(w);
+    let jevCalls = 0;
+    const pending = handleRate(rateRequest(), {
+      env: ENV,
+      fetch: async (input, init = {}) => {
+        const url = new URL(hrefOf(input));
+        // A slow garments read (6 s) plus a slow but in-time Jev answer (9.5 s).
+        if (url.pathname === '/rest/v1/garments' && url.searchParams.has('id')) {
+          return after(6_000, init, () => undefined).then(() => fake.fetch(input, init));
+        }
+        if (url.origin !== ENV.typesafeBaseUrl) return fake.fetch(input, init);
+        jevCalls += 1;
+        return after(9_500, init, () => json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes'))));
+      },
+      rand: mulberry32(7),
+    });
+    await drive(16_000);
+    const response = await pending;
+    expect(jevCalls).toBe(1);
+    expect(fake.calls.some((call) => call.route === 'closet')).toBe(false);
+    expect(await response.json()).toMatchObject({ score: 36, weakestSlot: 'shoes', swap: null, noBetterSwap: false });
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
+  });
+
+  test('swap waves stop launching once 15 s have passed', async () => {
+    const w = world();
+    for (let index = 0; index < 10; index += 1) {
+      const id = `20000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+      w.garments.set(id, garment(id, 'flats'));
+    }
+    let swapCalls = 0;
+    const fake = fakeFetch(w);
+    const pending = handleRate(rateRequest(), {
+      env: ENV,
+      fetch: async (input, init = {}) => {
+        if (!hrefOf(input).startsWith(ENV.typesafeBaseUrl)) return fake.fetch(input, init);
+        const state = (JSON.parse(bodyOf(init)) as { state: JevState }).state;
+        if (shoesOf(state) === 'sneakers') {
+          return after(9_000, init, () => json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes'))));
+        }
+        swapCalls += 1;
+        return after(7_000, init, () => json(200, jevAt(0.5)));
+      },
+      rand: mulberry32(7),
+    });
+    await drive(30_000);
+    const response = await pending;
+    // 8 candidates: the first wave of 5 starts at ~9 s; at ~16 s the budget is spent, so the other 3 never start.
+    expect(swapCalls).toBe(5);
+    expect(await response.json()).toMatchObject({ swap: null, noBetterSwap: false });
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
+  });
+
+  test('a forecast that hangs is abandoned after 5 s: weather null and a neutral weather_fit', async () => {
+    const w = world({ weatherCached: false });
+    w.forecast = (init) => after(60_000, init, () => json(200, {}));
+    const jevBodies: string[] = [];
+    const fake = fakeFetch(w);
+    const pending = handleRate(rateRequest(), {
+      env: ENV,
+      fetch: async (input, init = {}) => {
+        if (hrefOf(input).startsWith(ENV.typesafeBaseUrl)) jevBodies.push(bodyOf(init));
+        return fake.fetch(input, init);
+      },
+      rand: mulberry32(7),
+    });
+    await drive(4_900);
+    expect(jevBodies).toHaveLength(0);
+    await drive(600);
+    const response = await pending;
+    expect(response.status).toBe(200);
+    const state = (JSON.parse(jevBodies[0] ?? '{}') as { state: JevState }).state;
+    expect(state.context.weather).toBeNull();
+    const parsed = parseJevAnswers(fixture('jev-ok'), RATING_LEVELS);
+    if (parsed === null) throw new Error('fixture did not parse');
+    const neutral = { ...parsed.dims, weather_fit: { normalized: 0.5, confidence: parsed.dims.weather_fit.confidence } };
+    expect(await response.json()).toMatchObject({ score: composeRating(neutral, false).score });
+    expect(fake.calls.some((call) => call.route === 'weatherPut')).toBe(false);
   });
 });
 

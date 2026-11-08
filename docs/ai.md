@@ -339,12 +339,24 @@ the season, the weather band and rain.
 | Malformed body | 400 `invalid_input` | `invalid` |
 | An id that is deleted or not the caller's | 404 `garment_not_found` | `invalid` |
 | A garment without a category, or no (top + bottom or one_piece) + shoes | 422 `incomplete` | `invalid` |
-| Cache hit (no quota, no Jev) | 200 cached `RatingResult` | `cached` |
+| Cache hit (no quota, no Jev) | 200 cached `RatingResult`; a cached swap whose target is gone or not `available` is answered as `swap: null, noBetterSwap: false` | `cached` |
 | Over the daily quota | 429 `over_quota` | `over_quota` |
 | Jev rated it | 200 `RatingResult`, cached | `rated` |
 | Jev failed, Claude rated it | 200, `estimated: true`, `confidence: null`, cached | `fallback` |
-| Both failed | 503 `rating_unavailable`, nothing cached | `unavailable` |
+| Both failed | 503 `rating_unavailable`, nothing cached; the day's quota was already used for it | `unavailable` |
 | Loading garments or the profile, or the quota RPC, failed | 500 `internal` | `error` |
+
+**Degraded results.** `rating_cache` stores the result with an internal `degraded` marker, which is
+stripped from every response. A result is degraded when it is a Claude estimate, or when its swap
+search was skipped or failed (the closet read failed, every candidate's rating failed, or the time
+budget ran out). `cacheGet` serves a degraded entry only while it is younger than an hour
+(`rating_cache.created_at`; `cachePut` rewrites `created_at` on every upsert), then treats it as a
+miss, so the next call recomputes and counts against the quota. Any other entry never expires.
+
+**Latency budget.** Worst case about 40 s: the weather cache miss (geocoding and forecast, 5 s
+each), Jev 10 s, then the Claude fallback 20 s. No swap rating starts once 15 s have passed since
+the request arrived; a search cut short that way answers `swap: null, noBetterSwap: false` and is
+degraded. The app gives function calls a longer deadline than its 12 s default (Task 7).
 
 ### Claude fallback
 
