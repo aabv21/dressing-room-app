@@ -3,11 +3,15 @@
 -- them. `consume_quota` independently tracks the new 'rating' and 'lucky'
 -- quota_kind values added for Plan 4 (each returns true up to its limit,
 -- then false; one kind being exhausted doesn't affect the other).
+--
+-- anon's insert attempts are checked separately from authenticated's: the
+-- earlier draft of this file only checked anon's select, so an anon
+-- insert path going unrevoked would have passed silently.
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(15);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-a@example.com', crypt('password', gen_salt('bf')), '{}', '{}');
@@ -79,6 +83,27 @@ select throws_ok(
   '42501',
   null,
   'the anon role cannot read weather_cache'
+);
+
+select throws_ok(
+  $$ insert into public.rating_cache (user_id, cache_key, result) values ('11111111-1111-1111-1111-111111111111', 'k', '{}'::jsonb) $$,
+  '42501',
+  null,
+  'the anon role cannot insert rating_cache'
+);
+
+select throws_ok(
+  $$ insert into public.lucky_cache (user_id, cache_key, result) values ('11111111-1111-1111-1111-111111111111', 'k', '{}'::jsonb) $$,
+  '42501',
+  null,
+  'the anon role cannot insert lucky_cache'
+);
+
+select throws_ok(
+  $$ insert into public.weather_cache (location_key, hour, payload) values ('loc', now(), '{}'::jsonb) $$,
+  '42501',
+  null,
+  'the anon role cannot insert weather_cache'
 );
 
 reset role;

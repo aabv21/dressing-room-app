@@ -121,19 +121,36 @@ cascade, outfit_id uuid not null references public.outfits on delete cascade, wo
 null, occasion public.occasion, score smallint check (score between 0 and 100), created_at
 timestamptz not null default now())` is one row per logged wear of an outfit.
 
-Indexes: `outfits_user_id_idx` on `outfits (user_id)`, `outfit_items_outfit_id_idx` on
-`outfit_items (outfit_id)` (outfit_items has no `user_id` of its own to index), `wears_user_id_idx`
-on `wears (user_id)` and `wears_user_id_worn_on_idx` on `wears (user_id, worn_on desc)` (backs the
-diary/Today queries added in later plans).
+Indexes: `outfits_user_id_idx` on `outfits (user_id)`; on `outfit_items`, `outfit_items_garment_id_idx`
+on `outfit_items (garment_id)` — no separate index on `outfit_id` alone, since the primary key
+`(outfit_id, garment_id)` already leads with `outfit_id` and serves that lookup; on `wears`,
+`wears_user_id_idx` on `wears (user_id)`, `wears_user_id_worn_on_idx` on `wears (user_id, worn_on
+desc)` (backs the diary/Today queries added in later plans) and `wears_outfit_id_idx` on `wears
+(outfit_id)` (backs the wear-count trigger's and the RPCs' per-outfit lookups).
 
 **Clients never insert or update these tables directly in the documented path** —
 `public.log_wear()` and `public.save_outfit()` (below) are the RPCs the app calls. Clients may
 `select` all three (own rows only) and `delete` their own `wears` rows (Plan 5's diary undo); there
-is no delete policy on `outfits` or `outfit_items`, and no update policy anywhere on any of the
-three. Because both RPCs are `security invoker`, the privilege to insert is still there — gated by
-each table's own insert policy — so a direct client insert of the caller's own row is technically
-possible; it's just never the app's path. See [Logging a wear](#logging-a-wear-public_log_wear) and
+is no delete policy on `outfits` or `outfit_items` (and `delete` is revoked outright on both — see
+"RLS and storage rules" below), and no update policy anywhere on any of the three (`update` is
+revoked outright on all three). Because both RPCs are `security invoker`, the privilege to insert is
+still there — gated by each table's own insert policy — so a direct client insert of the caller's
+own row is technically possible; it's just never the app's path, and it carries its own self-only
+integrity gaps (see "RLS and storage rules" below). See [Logging a wear](#logging-a-wear) and
 [Wear count maintenance](#wear-count-maintenance-trigger) below.
+
+**Deleting an outfit does not decrement any garment's wear count — a cascade trap.** `outfit_items.outfit_id
+references public.outfits on delete cascade`, so deleting an `outfits` row deletes its
+`outfit_items` rows as part of the same statement, before Postgres processes `wears.outfit_id
+references public.outfits on delete cascade`'s cascade into `wears` and fires
+`wears_maintain_counts` for each deleted wear. By the time that trigger runs, the `outfit_items`
+rows it would join through to find "which garments" are already gone, so its `where … and g.id in
+(select oi.garment_id from public.outfit_items oi where oi.outfit_id = old.outfit_id)` matches
+nothing and no garment's `wear_count`/`last_worn_at` moves. There is no client path to delete an
+`outfits` row today (no delete policy, and delete is revoked outright — see above), so this can't
+happen yet. **Plan 5, which adds the diary undo, must delete the `wears` row(s) first** (the
+existing `wears_delete_own` policy already allows that) and only then, if it ever deletes the
+outfit at all, delete `outfits` — never the other order.
 
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
 
@@ -237,15 +254,15 @@ back over whatever an update sends — both revoked from direct `execute` by cli
 RLS is enabled on all three, all comparing against `(select auth.uid())`:
 
 - `outfits` — `outfits_select_own` (select), `outfits_insert_own` (insert, `with check`). No update
-  or delete policy.
+  or delete policy, and (see below) `update`/`delete` are also revoked at the table-privilege level.
 - `outfit_items` — `outfit_items_select_own` (select) via `exists (select 1 from public.outfits o
   where o.id = outfit_id and o.user_id = (select auth.uid()))`; `outfit_items_insert_own` (insert,
   `with check`) requiring both the referenced outfit and the referenced garment to be the caller's.
-  No update or delete policy.
+  No update or delete policy, and `update`/`delete` are revoked at the table-privilege level too.
 - `wears` — `wears_select_own` (select), `wears_insert_own` (insert, `with check`),
-  `wears_delete_own` (delete). No update policy — a client update reaches RLS but matches no row (a
-  missing policy is a denial, same as the "New table checklist" below), so it succeeds without error
-  and changes nothing, exactly like `garments_rls.test.sql`'s cross-user update/delete.
+  `wears_delete_own` (delete). No update policy, and `update` is revoked at the table-privilege
+  level (see below) — unlike `outfits`/`outfit_items`, `delete` stays granted, since
+  `wears_delete_own` is a real policy (Plan 5's diary undo).
   `wears_insert_own`'s `with check` requires **both** `user_id = (select auth.uid())` **and**
   `exists (select 1 from public.outfits o where o.id = outfit_id and o.user_id = (select
   auth.uid()))` — checking `user_id` alone would let a caller insert a wear naming their own
@@ -255,10 +272,30 @@ RLS is enabled on all three, all comparing against `(select auth.uid())`:
   trigger's own, second layer of defense against the same thing.
 
 `revoke all on <table> from anon` and `revoke truncate, trigger, references on <table> from anon,
-authenticated` on all three. There is no column-grant narrowing here the way `garments` has: insert
-stays at the row-policy level because `public.log_wear()`/`public.save_outfit()` are `security
-invoker` and rely on the caller's own insert privilege and policies (see below) — the policies above
-are the only gate, and they're already as narrow as the RPCs need.
+authenticated` on all three. **Unlike an earlier draft of this migration, a missing policy alone is
+not what blocks `update`/`delete` here.** Supabase's default ACL (`pg_default_acl`) grants
+`authenticated` every table privilege on a new table, including `update` and `delete` — with no
+policy for either, an `update` with no matching row count (not a `42501`) rather than a policy
+error, exactly like `garments_rls.test.sql`'s cross-user update/delete demonstrates for a table that
+*does* have other policies. Since there is no legitimate update path on any of the three tables, and
+no delete path on `outfits`/`outfit_items`, the migration also runs `revoke update, delete on
+public.outfits, public.outfit_items from authenticated` and `revoke update on public.wears from
+authenticated` — so a client `update` anywhere, or a `delete` on `outfits`/`outfit_items`, raises
+`42501` (a real privilege error) rather than silently touching zero rows. There is no column-grant
+narrowing here the way `garments` has: `insert` stays at the row-policy level because
+`public.log_wear()`/`public.save_outfit()` are `security invoker` and rely on the caller's own
+insert privilege and policies (see below) — the policies above are the only gate on insert, and
+they're already as narrow as the RPCs need.
+
+**Direct inserts are self-only, not fully equivalent to the RPCs.** Because insert privilege and the
+row policies are the whole gate, a client that insists on inserting directly into `outfits`,
+`outfit_items` or `wears` instead of calling `log_wear()`/`save_outfit()` can still build a
+logically broken state the RPCs never produce: an `outfits` row with no `outfit_items`, a `wears`
+row for an outfit nobody put any garments in, or an `outfit_items` row whose outfit has no `wears`
+row at all. Every one of those rows would still only ever be the caller's own (RLS guarantees that
+part), so this is a self-inflicted data-integrity gap, never a cross-tenant one — but it's real, and
+it's the reason `log_wear()`/`save_outfit()` are documented as the only intended path rather than
+merely "a convenience."
 
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
 
@@ -357,39 +394,56 @@ and the function's own secrets with
 `pnpm exec supabase secrets set EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`
 (`ANTHROPIC_BASE_URL` stays unset there, so the function uses `https://api.anthropic.com`).
 
-### Logging a wear: `public.log_wear()`
+### Logging a wear
 
-`public.log_wear(p_garment_ids uuid[], p_worn_on date, p_occasion public.occasion, p_score
-smallint) returns uuid` is the documented, and only intended, way to log a wear. It is `security
-invoker` with `set search_path = ''`, `execute` revoked from `public` and `anon`, granted to
-`authenticated` only. Being `security invoker` (not `security definer`) is deliberate: the actual
-inserts into `outfits`, `outfit_items` and `wears` run as the calling role, so they're still gated by
-those tables' own insert policies — the function doesn't bypass RLS, it just saves the client three
-round trips and the chance of a half-written outfit.
+`public.log_wear(p_wear_id uuid, p_garment_ids uuid[], p_worn_on date, p_occasion public.occasion
+default null, p_score smallint default null) returns uuid` is the documented, and only intended,
+way to log a wear. It is `security invoker` with `set search_path = ''`, `execute` revoked from
+`public` and `anon`, granted to `authenticated` only. Being `security invoker` (not `security
+definer`) is deliberate: the actual inserts into `outfits`, `outfit_items` and `wears` run as the
+calling role, so they're still gated by those tables' own insert policies — the function doesn't
+bypass RLS, it just saves the client three round trips and the chance of a half-written outfit.
 
-1. Validates `p_garment_ids`: raises `22023` (`invalid_parameter_value`) if it's null, has fewer
-   than 2 elements, or contains a duplicate (`cardinality` compared against a `distinct unnest`
-   count).
-2. Checks ownership: `select count(*) from public.garments where id = any(p_garment_ids)` runs under
+**Idempotent on `p_wear_id`** (Review Focus 5: double-tapping "I'll wear it", or retrying after a
+lost response, must log exactly one wear). The app generates `p_wear_id` once per tap
+(client-side, a plain random uuid) and sends the same value on every retry of that same tap.
+
+1. `select id from public.wears where id = p_wear_id` — if a row comes back, the wear already
+   exists and is visible to the caller (RLS means visible ⇒ the caller's own), so the function
+   returns that id immediately and inserts nothing. This is the retry path: the first call's insert
+   landed but its response was lost, so the retry just re-confirms the same id.
+2. Otherwise, validates `p_garment_ids`: raises `22023` (`invalid_parameter_value`) if it's null,
+   has fewer than 2 elements, or contains a duplicate (`cardinality` compared against a `distinct
+   unnest` count).
+3. Checks ownership: `select count(*) from public.garments where id = any(p_garment_ids)` runs under
    the caller's own RLS, so it only counts garments that are both in the array *and* the caller's
    own. If that count is short of the array length — some id doesn't exist, or belongs to someone
    else, the two cases are indistinguishable from outside and deliberately so — it raises `42501`
    (`insufficient_privilege`).
-3. Inserts an `outfits` row (defaults: `user_id = auth.uid()`, `saved_at` stays null), one
-   `outfit_items` row per garment id, and one `wears` row (`worn_on`, `occasion`, `score` from the
-   arguments), returning the new wear's id.
+4. Inserts an `outfits` row (defaults: `user_id = auth.uid()`, `saved_at` stays null), one
+   `outfit_items` row per garment id, and one `wears` row with `id = p_wear_id` (`worn_on`,
+   `occasion`, `score` from the arguments), returning the new wear's id.
+
+**If `p_wear_id` belongs to someone else's wear,** step 1's select finds nothing (RLS hides it), so
+the function falls through to step 4's insert, whose primary key conflict on `wears.id` then raises
+— a uuid collision with another user's row is vanishingly unlikely in practice (the app generates a
+fresh random uuid per tap), but the behavior is still "raise," never "silently attach to or
+overwrite someone else's wear."
 
 `public.save_outfit(p_garment_ids uuid[]) returns uuid` is the sibling RPC for saving a combination
-without logging a wear: same validation and ownership check, but it inserts only `outfits` (with
-`saved_at = now()`) and `outfit_items`, no `wears` row, and returns the outfit id instead.
+without logging a wear: same garment-array validation and ownership check as steps 2–3 above (not
+idempotent — it has no caller-supplied id to check against), but it inserts only `outfits` (with
+`saved_at = now()`) and `outfit_items`, no `wears` row, and returns the outfit id instead. Calling
+it never creates a `wears` row and never fires `wears_maintain_counts`, so it never changes any
+garment's `wear_count`/`last_worn_at`.
 
 Because both are `security invoker`, `authenticated` keeps `insert` on `outfits`, `outfit_items` and
 `wears`, gated by each table's own insert policy (see "RLS and storage rules" above). A client can
 therefore insert directly into any of the three tables instead of calling the RPC — but only ever
 rows that pass those same policies (the caller's own `user_id`, their own outfit, their own
-garment), so a direct insert can't create anything the RPC couldn't. The RPC is the app's only path
-in practice: it's the one place the array validation and the all-or-nothing three-table insert
-live.
+garment); see "RLS and storage rules" above for the self-only integrity gaps that direct path still
+has. The RPCs are the app's only path in practice: they're the one place the array validation, the
+idempotency check and the all-or-nothing multi-table insert live.
 
 ### Wear count maintenance (trigger)
 
@@ -403,7 +457,8 @@ can — see the garments column grants above) and `execute` is revoked from `pub
   belonging to the same user as the wear** (`g.user_id = new.user_id`) gets `wear_count =
   wear_count + 1`, and `last_worn_at` moves forward to the wear's `worn_on` if that's later than
   what's stored (`greatest(coalesce(last_worn_at, worn_on), worn_on)`, so a `null` `last_worn_at`
-  is always replaced).
+  is always replaced). This also bumps `updated_at` on every affected garment — see the P4-R6 note
+  below, "Logging a wear bumps garments.updated_at," before keying any cache on that column.
 - **On delete:** every garment referenced by the deleted wear's outfit **and belonging to the same
   user as the wear** (`g.user_id = old.user_id`) gets `wear_count = greatest(wear_count - 1, 0)`
   (never negative), and `last_worn_at` is recomputed from scratch as the max `worn_on` across that
@@ -412,6 +467,12 @@ can — see the garments column grants above) and `execute` is revoked from `pub
   `null` if none remain. This is a full recompute rather than "move it back one step" because a
   garment can appear in several outfits worn on different dates; only a fresh `max()` over what's
   left is correct after a delete.
+
+**`worn_on` (a `date`) is always converted with `at time zone 'UTC'`, never a bare `::timestamptz`
+cast.** A bare cast interprets the date in the database session's `TimeZone` setting, which could
+in principle differ between connections (pooled connections, a future session-level `set
+timezone`); pinning it to UTC means `last_worn_at` always lands on the same instant for the same
+`worn_on`, regardless of what produced the connection.
 
 **The `g.user_id = new.user_id` / `g.user_id = old.user_id` filters are defense in depth, not the
 primary guard.** `wears_insert_own`'s policy (above) already stops a `wears` row from referencing
@@ -428,6 +489,21 @@ on delete cascade` from `outfit_items`), but the trigger is on `wears`, not `out
 `garments`, so deleting a garment never fires it — the garment's own row is just gone, and any
 other garment that shared an outfit with it is unaffected (its own wear_count/last_worn_at came from
 its own wears, not from what else was in the outfit).
+
+**P4-R6: logging a wear bumps `garments.updated_at` (confirmed empirically — see below), so neither
+the rating cache (Task 4) nor the lucky fingerprint (Task 5) may key on it.** The trigger's `update
+public.garments set wear_count = …, last_worn_at = …` is an ordinary `update` statement, which fires
+`garments_set_updated_at` (`public.set_updated_at()`, `before update on public.garments`) exactly
+like any other garment update — there is nothing wear-count-specific that would exempt it. A quick
+same-transaction check can look like a no-op (`now()` is stable for the whole transaction in
+Postgres, so an insert and a trigger-fired update inside one transaction can share a timestamp down
+to the microsecond), but across separate statements the bump is real: inserting a garment, then
+(in a later statement) inserting a wear that references it through `outfit_items`, moves that
+garment's `updated_at` forward. Both caches must hash each garment's *rating-relevant* columns
+(`category`, `colors`, `pattern`, `formality`, `fit`, `seasons`, `warmth`, `status`) instead of
+`updated_at`, or every "I'll wear it" tap would invalidate both caches for every garment in the
+outfit — a quota-counted recompute (`rating`/`lucky` consume_quota) on an action that changed
+nothing about how any of those garments should be rated.
 
 ### Signup trigger
 
@@ -553,22 +629,34 @@ discards both the user and its profile row — no cleanup step is needed.
   with a URL pg_net rejects (so queueing the request raises), the insert still succeeds and keeps
   its row.
 - `outfits_wears.test.sql` — `log_wear` for A with 3 garments creates one outfit, 3 `outfit_items`
-  and one wear, and sets `wear_count`/`last_worn_at` on all 3 garments; a second `log_wear` reusing 2
-  of them bumps those to `wear_count` 2 and moves `last_worn_at` to the later date; deleting that
-  second wear restores both garments to `wear_count` 1 and falls `last_worn_at` back to the
-  remaining wear's date (not null, since each is still in the first wear); deleting a garment's only
-  remaining wear drops its `last_worn_at` to null; `log_wear` by B referencing A's garment raises
-  `42501`; a single garment or a duplicate id raises `22023`; B selecting A's outfits, outfit_items
-  or wears returns 0 rows; `save_outfit` stamps `saved_at`; an authenticated update of `wears`
-  touches no row (no update policy); deleting a garment cascades its `outfit_items` rows. Also the
-  cross-tenant direct-insert paths: B inserting a `wears` row with their own `user_id` but A's
-  `outfit_id` raises `42501` and leaves A's `wear_count` unchanged; B inserting an `outfit_items`
-  row into A's outfit (even naming B's own garment) raises `42501`; B inserting an `outfit_items`
-  row naming A's garment (even into B's own outfit) raises `42501`.
+  and one wear (returning the caller-supplied wear id), and sets `wear_count`/`last_worn_at` on all
+  3 garments; **calling it again with the same wear id is idempotent** (P4-R5): it returns the same
+  id, logs no additional wear or outfit, and the counts stay put; a second, distinct `log_wear`
+  reusing 2 of the 3 garments bumps those to `wear_count` 2 and moves `last_worn_at` to the later
+  date; **A deleting that second wear as `authenticated` (not `postgres`)** restores both garments
+  to `wear_count` 1 and falls `last_worn_at` back to the remaining wear's date (not null, since each
+  is still in the first wear) — proving the `security definer` trigger fires correctly for a real
+  client-issued delete, not just one run as the table owner; deleting a garment's only remaining
+  wear drops its `last_worn_at` to null; `log_wear` by B referencing A's garment raises `42501`; a
+  single garment or a duplicate id raises `22023` for both `log_wear` and `save_outfit`; `save_outfit`
+  by A referencing B's garment raises `42501`; `save_outfit` stamps `saved_at`, creates no `wears`
+  row and never changes any garment's `wear_count`; B selecting A's outfits or wears returns 0 rows;
+  **B selecting A's `outfit_items` by `outfit_id` or by `garment_id` returns 0 rows** (asserted
+  directly against `outfit_items`, not through a join with `outfits` that would pass even under a
+  vacuous `using (true)` policy); **an authenticated `update` on `outfits`, `outfit_items` or
+  `wears` now raises `42501`** (a real privilege error, since update is revoked outright — see "RLS
+  and storage rules" above), and so does an authenticated `delete` on `outfits`/`outfit_items`;
+  **B deleting A's wear by id removes 0 rows** and leaves A's wear and counts unchanged; deleting a
+  garment cascades its `outfit_items` rows. Also the cross-tenant direct-insert paths: B inserting a
+  `wears` row with their own `user_id` but A's `outfit_id` raises `42501` and leaves A's
+  `wear_count` unchanged; B inserting an `outfit_items` row into A's outfit (even naming B's own
+  garment) raises `42501`; B inserting an `outfit_items` row naming A's garment (even into B's own
+  outfit) raises `42501`.
 - `ai_caches.test.sql` — `authenticated` and `anon` can neither select nor insert
-  `rating_cache`/`lucky_cache`/`weather_cache`; `consume_quota(A, 'rating', 1)` returns `true` then
-  `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though `'rating'` is exhausted
-  for the same user — the two `quota_kind` values are tracked independently.
+  `rating_cache`/`lucky_cache`/`weather_cache` (select and insert are both checked for **both**
+  roles, so an unrevoked insert path on either role can't pass silently); `consume_quota(A, 'rating',
+  1)` returns `true` then `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though
+  `'rating'` is exhausted for the same user — the two `quota_kind` values are tracked independently.
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.

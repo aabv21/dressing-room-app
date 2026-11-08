@@ -48,6 +48,15 @@ revoke all on public.outfits from anon;
 
 revoke truncate, trigger, references on public.outfits from anon, authenticated;
 
+-- Supabase's default ACL grants authenticated every privilege on a new
+-- table, including update and delete, with no policy to gate them (an
+-- update with no update policy still raises 42501 — it's the table-level
+-- privilege itself, not row filtering, that's revoked here). There is no
+-- update or delete path for outfits at all; the same column-grant-style
+-- narrowing garments uses for insert/update is a revoke-everything here
+-- instead, since there's nothing to grant back.
+revoke update, delete on public.outfits from authenticated;
+
 -- public.outfit_items ---------------------------------------------------------
 
 create table public.outfit_items (
@@ -60,7 +69,10 @@ comment on table public.outfit_items is
   'Join rows between an outfit and its garments. No user_id of its own — '
   'policies check the referenced outfit and garment instead.';
 
-create index outfit_items_outfit_id_idx on public.outfit_items (outfit_id);
+-- No index on outfit_id alone: the primary key (outfit_id, garment_id)
+-- already leads with outfit_id, so Postgres can use it for an
+-- outfit_id-only lookup without a separate index.
+create index outfit_items_garment_id_idx on public.outfit_items (garment_id);
 
 alter table public.outfit_items enable row level security;
 
@@ -92,8 +104,14 @@ revoke all on public.outfit_items from anon;
 
 revoke truncate, trigger, references on public.outfit_items from anon, authenticated;
 
+-- Same reasoning as outfits above: no update or delete path, so the
+-- default ACL's grant of those privileges to authenticated is revoked
+-- outright rather than left for a missing policy to (seem to) deny.
+revoke update, delete on public.outfit_items from authenticated;
+
 -- An index on user_id doesn't apply here (outfit_items has no user_id of its
--- own); per-user filtering goes through outfit_id, already indexed above.
+-- own); per-user filtering goes through outfit_id (the primary key) or
+-- garment_id (indexed above) instead.
 
 -- public.wears ----------------------------------------------------------------
 
@@ -115,6 +133,7 @@ comment on table public.wears is
 
 create index wears_user_id_idx on public.wears (user_id);
 create index wears_user_id_worn_on_idx on public.wears (user_id, worn_on desc);
+create index wears_outfit_id_idx on public.wears (outfit_id);
 
 alter table public.wears enable row level security;
 
@@ -143,9 +162,13 @@ revoke all on public.wears from anon;
 
 revoke truncate, trigger, references on public.wears from anon, authenticated;
 
--- No update policy anywhere on wears: a client can never update a wear row,
--- even their own (revoke all above already blocks it at the privilege
--- level; the missing policy is a second, row-level denial).
+-- There is no update path for wears at all, so update is revoked outright
+-- (same reasoning as outfits/outfit_items above) rather than left to a
+-- missing policy — without this revoke, the default ACL still grants
+-- authenticated the UPDATE privilege, and an update with no update policy
+-- succeeds while matching zero rows instead of raising. delete stays
+-- granted: wears_delete_own is a real policy (Plan 5's diary undo).
+revoke update on public.wears from authenticated;
 
 -- public.maintain_wear_counts() / wears_maintain_counts ----------------------
 
@@ -159,7 +182,10 @@ begin
   if tg_op = 'INSERT' then
     update public.garments g
     set wear_count = g.wear_count + 1,
-        last_worn_at = greatest(coalesce(g.last_worn_at, new.worn_on::timestamptz), new.worn_on::timestamptz)
+        last_worn_at = greatest(
+          coalesce(g.last_worn_at, new.worn_on::timestamp at time zone 'UTC'),
+          new.worn_on::timestamp at time zone 'UTC'
+        )
     where g.user_id = new.user_id
       and g.id in (
         select oi.garment_id from public.outfit_items oi where oi.outfit_id = new.outfit_id
@@ -172,7 +198,7 @@ begin
     update public.garments g
     set wear_count = greatest(g.wear_count - 1, 0),
         last_worn_at = (
-          select max(w.worn_on)::timestamptz
+          select max(w.worn_on)::timestamp at time zone 'UTC'
           from public.wears w
           join public.outfit_items oi on oi.outfit_id = w.outfit_id
           where oi.garment_id = g.id and w.id <> old.id and w.user_id = old.user_id
@@ -199,7 +225,9 @@ comment on function public.maintain_wear_counts() is
   'scoped to g.user_id = new/old.user_id, as defense in depth alongside the '
   'wears_insert_own policy''s outfit-ownership check: even if a row ever '
   'reached this trigger referencing another user''s outfit, it could never '
-  'touch that user''s garments.';
+  'touch that user''s garments. worn_on (a date) is always converted with '
+  '''at time zone UTC'', never a bare ::timestamptz cast, so last_worn_at '
+  'can''t shift with the session''s TimeZone setting.';
 
 revoke execute on function public.maintain_wear_counts() from public, anon, authenticated;
 
@@ -210,10 +238,11 @@ create trigger wears_maintain_counts
 -- public.log_wear() / public.save_outfit() -----------------------------------
 
 create function public.log_wear(
+  p_wear_id uuid,
   p_garment_ids uuid[],
   p_worn_on date,
-  p_occasion public.occasion,
-  p_score smallint
+  p_occasion public.occasion default null,
+  p_score smallint default null
 )
 returns uuid
 language plpgsql
@@ -225,6 +254,21 @@ declare
   v_wear_id uuid;
   v_owned_count integer;
 begin
+  -- Idempotent on p_wear_id: a retry after a lost response (Review Focus 5)
+  -- must log exactly one wear. If a wear with this id already exists and is
+  -- visible to the caller (select, not just existence — RLS means a
+  -- visible row is always the caller's own), return it unchanged and
+  -- insert nothing else. If the id exists but isn't visible (someone
+  -- else's wear, or the caller doesn't own it), this select finds no row
+  -- and falls through to the insert below, whose primary key conflict then
+  -- raises — the caller never silently "succeeds" against another user's
+  -- row by reusing its id.
+  select id into v_wear_id from public.wears where id = p_wear_id;
+
+  if v_wear_id is not null then
+    return v_wear_id;
+  end if;
+
   if p_garment_ids is null
      or cardinality(p_garment_ids) < 2
      or cardinality(p_garment_ids) <> (select count(*) from (select distinct unnest(p_garment_ids)) d)
@@ -245,25 +289,32 @@ begin
   insert into public.outfit_items (outfit_id, garment_id)
   select v_outfit_id, g from unnest(p_garment_ids) as g;
 
-  insert into public.wears (outfit_id, worn_on, occasion, score)
-  values (v_outfit_id, p_worn_on, p_occasion, p_score)
+  insert into public.wears (id, outfit_id, worn_on, occasion, score)
+  values (p_wear_id, v_outfit_id, p_worn_on, p_occasion, p_score)
   returning id into v_wear_id;
 
   return v_wear_id;
 end;
 $$;
 
-comment on function public.log_wear(uuid[], date, public.occasion, smallint) is
-  'Inserts an outfit, its items and a wear, returning the wear id. Raises '
-  '22023 for fewer than 2 garment ids or a duplicate, 42501 if any garment '
-  'isn''t the caller''s own (checked under the caller''s own RLS, so an '
-  'owned count short of the array length means at least one id is either '
-  'missing or someone else''s). security invoker: the actual inserts run as '
-  'the calling role, gated by outfits/outfit_items/wears'' own insert '
-  'policies — the same policies a client''s direct insert would need.';
+comment on function public.log_wear(uuid, uuid[], date, public.occasion, smallint) is
+  'Inserts an outfit, its items and a wear with id = p_wear_id, returning '
+  'the wear id. Idempotent on p_wear_id: the app generates the id once per '
+  'tap and reuses it on retry, so calling this twice with the same id logs '
+  'exactly one wear (Review Focus 5 — double-tapping or retrying offline '
+  'must never double-log). Raises 22023 for fewer than 2 garment ids or a '
+  'duplicate, 42501 if any garment isn''t the caller''s own (checked under '
+  'the caller''s own RLS, so an owned count short of the array length means '
+  'at least one id is either missing or someone else''s). If p_wear_id '
+  'already belongs to another user''s wear (not visible under RLS), the '
+  'existence check above finds nothing and the insert''s primary key '
+  'conflict raises instead of silently returning someone else''s id. '
+  'security invoker: the actual inserts run as the calling role, gated by '
+  'outfits/outfit_items/wears'' own insert policies — the same policies a '
+  'client''s direct insert would need.';
 
-revoke execute on function public.log_wear(uuid[], date, public.occasion, smallint) from public, anon;
-grant execute on function public.log_wear(uuid[], date, public.occasion, smallint) to authenticated;
+revoke execute on function public.log_wear(uuid, uuid[], date, public.occasion, smallint) from public, anon;
+grant execute on function public.log_wear(uuid, uuid[], date, public.occasion, smallint) to authenticated;
 
 create function public.save_outfit(p_garment_ids uuid[])
 returns uuid

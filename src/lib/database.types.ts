@@ -177,7 +177,7 @@ isOneToOne: false
 { Args: { "p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
                            },
 "log_wear":
-{ Args: { "p_garment_ids": (string)[],"p_occasion": Database["public"]['Enums']["occasion"],"p_score": number,"p_worn_on": string }; Returns: string
+{ Args: { "p_garment_ids": (string)[],"p_occasion"?: Database["public"]['Enums']["occasion"],"p_score"?: number,"p_wear_id": string,"p_worn_on": string }; Returns: string
                            },
 "save_outfit":
 { Args: { "p_garment_ids": (string)[] }; Returns: string
