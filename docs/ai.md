@@ -371,18 +371,25 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
    formality, fit, seasons, warmth, status; not `updated_at` or `last_worn_at`, which logging a
    wear bumps), so an "I'll wear it" tap doesn't reshuffle the day's list. A hit keeps the list as
    ranked but recomputes each outfit's `freshThisWeek` from the current wear dates, and answers
-   with this hour's weather (the stored one, validated, only when this hour's is unknown).
+   with this hour's weather (the stored one, validated, only when this hour's is unknown). So on a
+   hit Today shows the current hour's weather next to a list ranked earlier in the day.
 4. Quota `lucky` 10 per UTC day (cache misses only).
 5. `generateCandidates` (at most 200, seed = user id + date) → sorted by `preScore`, highest first
    → the top 30, spread over the closet: at most 2 per base (the same pieces but the extra), and
-   no garment in more than 4 while other candidates remain (a second pass fills the 30 without
-   that cap, so a closet with one pair of shoes still gets a full list).
+   each garment in at most `max(4, ceil(30 / distinct garments of its slot among the candidates))`
+   of them while other candidates remain. The only garment of its slot (the one coat on a cold
+   day, the one pair of shoes) is never capped, while slots with alternatives still are. A second
+   pass fills whatever the first left open, without the per-garment cap.
    - Candidates are seeded random draws, not an enumeration: shoes, then top + bottom or a
      one-piece (weighted by availability: half the tops and bottoms against the one-pieces),
      outerwear when the weather calls for it and the closet has an admissible piece, and one
-     optional bag or accessory, where "none" weighs as much as every extra together. Duplicates
-     are dropped; drawing stops at 200 candidates or 4,000 draws. Pieces worn in the last 7 days
-     are avoided while at least 3 candidates survive without them.
+     optional bag or accessory, where "none" weighs as much as every extra together. Each slot's
+     pool holds only pieces that pass the per-piece rules (available, in season, in the occasion's
+     formality range; on a hot day, no outerwear and no warmth 3). That way one formal outfit in a
+     large casual closet is always found for an event, and a draw can only fail on colors or
+     patterns. Duplicates are dropped; drawing stops at 200 candidates or after 4,000 draws in
+     total. Pieces worn in the last 7 days are avoided while at least 3 candidates survive without
+     them: that pass may use half the draws, and the fallback pass the rest.
    - `preScore` is the mean over the base pieces (outerwear included, extras not) of the days since
      last worn (never worn = 30, capped at 30) plus 5 for a neutral color, so adding a belt never
      wins and a dress isn't behind separates for having fewer pieces.

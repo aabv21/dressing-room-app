@@ -457,6 +457,37 @@ describe('generateCandidates', () => {
     expect(Date.now() - start).toBeLessThan(500);
   });
 
+  test('one formal outfit in a 200-garment casual closet is found on every seed for an event', () => {
+    const closet: RuleGarment[] = [];
+    for (let i = 0; i < 50; i += 1) {
+      closet.push(garment({ category: 't_shirt', colors: ['black'] }), garment({ category: 'jeans', colors: ['navy'] }));
+      closet.push(garment({ category: 'sneakers', colors: ['white'] }), garment({ category: 'bag', colors: ['black'] }));
+    }
+    const shirt = garment({ category: 'shirt', formality: 4 });
+    const pants = garment({ category: 'pants', colors: ['black'], formality: 4 });
+    const loafers = garment({ category: 'loafers', colors: ['black'], formality: 4 });
+    closet.push(shirt, pants, loafers);
+    const ctx: RuleContext = { ...MILD_CTX, occasion: 'event' };
+    for (let seed = 0; seed < 20; seed += 1) {
+      const result = generateCandidates(closet, ctx, `user:${String(seed)}`);
+      expect(result.map((outfit) => outfit.map((item) => item.id).sort())).toEqual([[shirt.id, pants.id, loafers.id].sort()]);
+    }
+  });
+
+  test('on a hot day the pools hold no outerwear and no warmth-3 piece, so draws are not wasted on them', () => {
+    const closet = [
+      garment({ category: 't_shirt' }),
+      ...Array.from({ length: 30 }, () => garment({ category: 'sweater', warmth: 3 })),
+      garment({ category: 'shorts', colors: ['navy'] }),
+      ...Array.from({ length: 30 }, () => garment({ category: 'sneakers', warmth: 3 })),
+      garment({ category: 'sandals' }),
+    ];
+    const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'hot' }) };
+    for (let seed = 0; seed < 20; seed += 1) {
+      expect(generateCandidates(closet, ctx, `hot:${String(seed)}`, 5)).toHaveLength(1);
+    }
+  });
+
   test('excludes an item worn 2 days ago when 3+ alternatives exist', () => {
     const recentShoes = garment({ category: 'sneakers', colors: ['white'], last_worn_at: '2026-11-06T00:00:00Z' });
     const closet = [

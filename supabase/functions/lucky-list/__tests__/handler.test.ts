@@ -423,10 +423,38 @@ describe('the lucky list', () => {
     expect(Math.max(...perBase.values())).toBeLessThanOrEqual(2);
   });
 
-  test('a closet with one pair of shoes still fills the 30 (the per-piece cap gives way)', async () => {
+  /** ≥ 5 distinct tops or one-pieces, no top in more than 8 of the 30, and a dress. */
+  function expectSpread(w: World, outfits: readonly LuckyOutfit[]): void {
+    expect(outfits).toHaveLength(30);
+    const pieces = outfits.map((outfit) => piecesOf(w, outfit));
+    const bodies = pieces.flatMap((outfit) =>
+      outfit.filter((piece) => ['top', 'one_piece'].includes(slotOf(piece.category ?? 'accessory'))),
+    );
+    expect(new Set(bodies.map((piece) => piece.id)).size).toBeGreaterThanOrEqual(5);
+    const perTop = new Map<string, number>();
+    for (const piece of bodies) perTop.set(piece.id, (perTop.get(piece.id) ?? 0) + 1);
+    expect(Math.max(...perTop.values())).toBeLessThanOrEqual(8);
+    expect(pieces.some((outfit) => outfit.some((piece) => piece.category === 'dress'))).toBe(true);
+  }
+
+  test('a closet with one pair of shoes still fills the 30, spread over the tops (per-slot cap)', async () => {
     const w = world({ garments: bigCloset().filter((row) => !['sneakers', 'loafers'].includes(String(row.category))) });
     const { body } = await lucky(w);
-    expect((body as OkBody).outfits).toHaveLength(30);
+    expectSpread(w, (body as OkBody).outfits);
+    for (const outfit of (body as OkBody).outfits) expect(slotsOf(w, outfit)).toContain('shoes');
+  });
+
+  test('a cold day with one coat: the coat is in every outfit and the 30 still spread over the tops', async () => {
+    const coats = bigCloset().filter((row) => row.category === 'coat');
+    const oneCoat = coats[0]?.id;
+    const w = world({
+      weather: COLD,
+      garments: bigCloset().filter((row) => row.category !== 'jacket' && (row.category !== 'coat' || row.id === oneCoat)),
+    });
+    const { body } = await lucky(w);
+    const { outfits } = body as OkBody;
+    expectSpread(w, outfits);
+    for (const outfit of outfits) expect(outfit.garmentIds).toContain(oneCoat);
   });
 
   test('the same user and date give the same candidate order on a recompute; another date another order (M3)', async () => {

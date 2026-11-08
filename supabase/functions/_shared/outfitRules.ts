@@ -152,6 +152,17 @@ function isAdmissible(item: RuleGarment, ctx: Pick<RuleContext, 'occasion' | 'se
   return true;
 }
 
+/**
+ * The rules one piece must pass whatever it is worn with: `isAdmissible` (available, in season,
+ * in the occasion's formality range) and, when hot, no outerwear and no warmth-3 piece. Shared by
+ * `passesRules` and `generateCandidates`'s pools, so the two can't drift.
+ */
+function fitsAlone(item: RuleGarment, ctx: Pick<RuleContext, 'occasion' | 'season' | 'weather'>): boolean {
+  if (item.category === null || !isAdmissible(item, ctx)) return false;
+  if (ctx.weather?.band === 'hot' && (slotOf(item.category) === 'outerwear' || item.warmth === 3)) return false;
+  return true;
+}
+
 /** All of global-constraints.md's "Feeling lucky"/rating rule checks for one candidate outfit. */
 export function passesRules(outfit: Outfit, ctx: RuleContext): boolean {
   if (outfit.length === 0) return false;
@@ -160,13 +171,7 @@ export function passesRules(outfit: Outfit, ctx: RuleContext): boolean {
   let nonSolidPatterns = 0;
 
   for (const item of outfit) {
-    if (item.category === null || !isAdmissible(item, ctx)) return false;
-
-    const slot = slotOf(item.category);
-    if (ctx.weather?.band === 'hot') {
-      if (slot === 'outerwear') return false;
-      if (item.warmth === 3) return false;
-    }
+    if (!fitsAlone(item, ctx)) return false;
 
     for (const color of item.colors) {
       if (!NEUTRAL_COLORS.has(color)) nonNeutralColors.add(color);
@@ -283,7 +288,7 @@ function groupBySlot(garments: readonly RuleGarment[]): SlotGroups {
   return groups;
 }
 
-/** How many draws `generateCandidates` may make per candidate it is asked for. */
+/** How many draws `generateCandidates` may make in total (both passes) per candidate it is asked for. */
 const ATTEMPTS_PER_CANDIDATE = 20;
 
 /**
@@ -292,9 +297,12 @@ const ATTEMPTS_PER_CANDIDATE = 20;
  * shoes, then top + bottom or a one-piece (weighted by how many garments can fill each: half the
  * tops and bottoms against the one-pieces), outerwear when the weather calls for it and the
  * closet has an admissible piece (P4-R7), and an optional bag or accessory, where "none" weighs
- * as much as all the extras together. Duplicates are dropped; drawing stops at `limit`
- * candidates or `limit × 20` draws. Items worn in the last 7 days are avoided while at least 3
- * candidates survive without them. Deterministic for a given seed and closet order.
+ * as much as all the extras together. Each slot's pool holds only pieces that pass the per-piece
+ * rules (`fitsAlone`), so a few admissible garments in a large closet are always reachable and a
+ * draw can only fail on colors or patterns. Duplicates are dropped; drawing stops at `limit`
+ * candidates or after `limit × 20` draws in total. Items worn in the last 7 days are avoided while
+ * at least 3 candidates survive without them: that first pass may use half the draws, the
+ * fallback pass the rest. Deterministic for a given seed and closet order.
  */
 export function generateCandidates(
   garments: readonly RuleGarment[],
@@ -317,10 +325,11 @@ export function generateCandidates(
     (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
 
   const pick = <T,>(items: readonly T[]): T | undefined => items.at(Math.floor(rng() * items.length));
+  let drawsLeft = limit * ATTEMPTS_PER_CANDIDATE;
 
-  function draw(excludeRecentlyWorn: boolean, remaining: number): Outfit[] {
+  function draw(excludeRecentlyWorn: boolean, remaining: number, maxDraws: number): Outfit[] {
     const pool = (items: readonly RuleGarment[]): RuleGarment[] =>
-      excludeRecentlyWorn ? items.filter((item) => !isRecentlyWorn(item, ctx.today)) : [...items];
+      items.filter((item) => fitsAlone(item, ctx) && !(excludeRecentlyWorn && isRecentlyWorn(item, ctx.today)));
     const shoes = pool(groups.shoes);
     const tops = pool(groups.top);
     const bottoms = pool(groups.bottom);
@@ -333,7 +342,8 @@ export function generateCandidates(
 
     const results: Outfit[] = [];
     const seen = new Set<string>();
-    for (let attempt = 0; attempt < remaining * ATTEMPTS_PER_CANDIDATE && results.length < remaining; attempt += 1) {
+    for (let attempt = 0; attempt < maxDraws && results.length < remaining; attempt += 1) {
+      drawsLeft -= 1;
       const outfit: (RuleGarment | undefined)[] = [pick(shoes)];
       if (rng() * totalWeight < pairWeight) outfit.push(pick(tops), pick(bottoms));
       else outfit.push(pick(onePieces));
@@ -353,7 +363,7 @@ export function generateCandidates(
     return results;
   }
 
-  const withoutRecent = draw(true, limit);
+  const withoutRecent = draw(true, limit, Math.floor(drawsLeft / 2));
   if (withoutRecent.length >= MIN_FALLBACK_CANDIDATES) return withoutRecent;
-  return draw(false, limit);
+  return draw(false, limit, drawsLeft);
 }

@@ -1,7 +1,7 @@
 // The `lucky-list` Edge Function's request handler: the day's ranked "feeling lucky" outfits from
 // a signed-in user's closet. Rule-passing candidates come from seeded random draws (user id +
-// date); the 30 best pre-scored ones, spread over the closet (at most 2 per base, and each
-// garment in at most 4 while others remain), are rated with Jev and sorted by score; outfits
+// date); the 30 best pre-scored ones, spread over the closet (at most 2 per base, and a
+// per-slot cap on each garment while others remain), are rated with Jev and sorted by score; outfits
 // whose rating failed (or never started inside the time budget) follow in pre-score order with
 // `score: null`.
 // Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node
@@ -12,7 +12,7 @@
 // never garments, the profile, prompts or model output. See `docs/ai.md`'s "The `lucky-list`
 // function".
 
-import { OCCASIONS, type Occasion, type Slot } from '../_shared/catalog.ts';
+import { OCCASIONS, type Occasion, type Slot, slotOf } from '../_shared/catalog.ts';
 import { isRecord } from '../_shared/extraction.ts';
 import {
   basePieces,
@@ -75,7 +75,10 @@ export const LUCKY_DAILY_LIMIT = 10;
 export const MAX_RANKED = 30;
 /** At most this many of the ranked outfits share the same base (the same pieces but the extra; P4-R13). */
 export const MAX_PER_BASE = 2;
-/** While enough other candidates remain, no garment is in more than this many of the ranked outfits. */
+/**
+ * The floor of the per-garment cap among the ranked outfits (raised for a slot with few
+ * garments; see `selectForRanking`), applied while enough other candidates remain.
+ */
 export const MAX_PER_PIECE = 4;
 /** No Jev ranking call starts once this long has passed since the request arrived (ruling P4-R11). */
 export const RANK_BUDGET_MS = 15_000;
@@ -202,28 +205,45 @@ async function rank(ctx: RankContext, candidates: readonly Outfit[]): Promise<{ 
 
 /**
  * The `MAX_RANKED` candidates Jev rates: the best by pre-score (ties in generation order), with at
- * most `MAX_PER_BASE` per base. A first pass also keeps every garment to `MAX_PER_PIECE` outfits,
- * so the few freshest pieces can't fill the whole list; a second pass fills what's left without
- * that cap (a closet with one pair of shoes still gets 30). Returned in pre-score order.
+ * most `MAX_PER_BASE` per base. A first pass also caps how many of them each base garment is in,
+ * per slot: `max(MAX_PER_PIECE, ceil(MAX_RANKED / distinct garments of that slot among the
+ * candidates))`. The few freshest pieces can't fill the whole list, while a garment that is the
+ * only one of its slot (the one coat on a cold day, the one pair of shoes) is never capped. A
+ * second pass fills what's left without that cap. Returned in pre-score order.
  */
 function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
   const sorted = candidates
-    .map((outfit, index) => ({ outfit, index, pre: preScore(outfit, date) }))
+    .map((outfit, index) => ({ outfit, index, pre: preScore(outfit, date), base: basePieces(outfit) }))
     .sort((a, b) => b.pre - a.pre || a.index - b.index);
+  const garmentsPerSlot = new Map<Slot, Set<string>>();
+  for (const { base } of sorted) {
+    for (const garment of base) {
+      if (garment.category === null) continue;
+      const slot = slotOf(garment.category);
+      garmentsPerSlot.set(slot, (garmentsPerSlot.get(slot) ?? new Set<string>()).add(garment.id));
+    }
+  }
+  const capOf = (garment: RuleGarment): number => {
+    const distinct = garment.category === null ? 1 : (garmentsPerSlot.get(slotOf(garment.category))?.size ?? 1);
+    return Math.max(MAX_PER_PIECE, Math.ceil(MAX_RANKED / distinct));
+  };
+
   const perBase = new Map<string, number>();
   const perPiece = new Map<string, number>();
   const chosen = new Set<number>();
   for (const capPieces of [true, false]) {
-    for (const { outfit, index } of sorted) {
+    for (const { base, index } of sorted) {
       if (chosen.size >= MAX_RANKED) break;
       if (chosen.has(index)) continue;
-      const base = basePieces(outfit).map((garment) => garment.id);
-      const baseKey = [...base].sort().join(',');
+      const baseKey = base
+        .map((garment) => garment.id)
+        .sort()
+        .join(',');
       if ((perBase.get(baseKey) ?? 0) >= MAX_PER_BASE) continue;
-      if (capPieces && base.some((id) => (perPiece.get(id) ?? 0) >= MAX_PER_PIECE)) continue;
+      if (capPieces && base.some((garment) => (perPiece.get(garment.id) ?? 0) >= capOf(garment))) continue;
       chosen.add(index);
       perBase.set(baseKey, (perBase.get(baseKey) ?? 0) + 1);
-      for (const id of base) perPiece.set(id, (perPiece.get(id) ?? 0) + 1);
+      for (const garment of base) perPiece.set(garment.id, (perPiece.get(garment.id) ?? 0) + 1);
     }
   }
   return sorted.filter(({ index }) => chosen.has(index)).map(({ outfit }) => outfit);
