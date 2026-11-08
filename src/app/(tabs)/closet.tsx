@@ -34,9 +34,10 @@ const CLOCK_TICK_MS = 30_000;
 // ChipGroup's chips are 36 pt tall with hitSlop up to the 44 pt minimum.
 const CHIP_SLOP = (layout.minHitTarget - 36) / 2;
 
-// NOTE: `/camera`, `/review` and `/garment/[id]` are added by Plan 3's Tasks 8–10 (P3-R3); until
-// their route files exist, typed routes doesn't list them. Ceiling: an unchecked path; upgrade
-// path: once the routes exist, push the literals directly and delete this helper.
+// NOTE: `/review` and `/garment/[id]` are added by Plan 3's Tasks 9-10 (P3-R3); until their route
+// files exist, typed routes doesn't list them. `/camera` (Task 8) exists now and is pushed as a
+// plain literal below. Ceiling: an unchecked path for the two still pending; upgrade path: once
+// each route exists, push its literal directly and narrow (then delete) this helper.
 function pendingRoute(path: string): Href {
   return path as Href;
 }
@@ -220,7 +221,7 @@ function RealCloset(): React.JSX.Element {
         tone: 'commit',
         icon: Camera,
         onPress: () => {
-          router.push(pendingRoute('/camera'));
+          router.push('/camera');
         },
       },
     }),

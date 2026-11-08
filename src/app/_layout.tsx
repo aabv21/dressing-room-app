@@ -90,6 +90,11 @@ function Guards() {
       </Stack.Protected>
       <Stack.Protected guard={active.status === 'signedIn' && active.onboardingComplete}>
         <Stack.Screen name="(tabs)" />
+        {/* P3-R3: registered here (not inside (tabs)'s own navigator) so expo-router knows the
+            route before its file exists, for Tasks 9-10's `review` and `garment/[id]`; Task 8 adds
+            its own entry the same way. A full-screen modal, matching mockup 02 screen 2's camera
+            having no tab bar or back header of its own. */}
+        <Stack.Screen name="camera" options={{ presentation: 'fullScreenModal' }} />
       </Stack.Protected>
     </Stack>
   );
