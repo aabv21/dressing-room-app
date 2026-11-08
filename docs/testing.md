@@ -1,6 +1,6 @@
 # Testing
 
-Three Jest projects, one pgTAP suite. `pnpm test` runs the two that need no Docker; `pnpm test:int`
+Four Jest projects, one pgTAP suite. `pnpm test` runs the three that need no Docker; `pnpm test:int`
 and `pnpm db:test` need a running local Supabase stack (see `AGENTS.md`'s "Local backend").
 
 ## Jest projects (`jest.config.ts`)
@@ -26,6 +26,16 @@ Tests for `scripts/**/*.test.ts` (repo tooling, e.g. `scripts/env-local.ts`), ru
 Node — no Expo globals, no React Native. Kept out of the `app` project because `jest-expo`'s preset
 installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `scripts` test file's own
 `@jest-environment node` docblock during teardown.
+
+### `functions`
+
+Tests for the Supabase Edge Function logic under `supabase/functions/**/*.test.ts`, running under
+plain Node like `scripts`. Function code is runtime-neutral TypeScript with explicit `.ts` imports;
+only each function's `index.ts` touches Deno, and no test imports it. The `extract-attributes`
+handler takes `fetch` as a dependency, so its tests use a fake `fetch` that routes by URL and method
+and records every call, and Jest fake timers drive the 30 s Claude timeout. Claude responses come
+from recorded-shape fixtures in `supabase/functions/_shared/__tests__/fixtures/`; the real API is
+never called. See `docs/ai.md`.
 
 ### `integration`
 

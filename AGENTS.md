@@ -24,7 +24,7 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - `pnpm ios` / `pnpm android` — start the dev server targeting a platform.
 - `pnpm typecheck` — `tsc --noEmit`.
 - `pnpm lint` — `eslint .`.
-- `pnpm test` — `jest --selectProjects app scripts` (unit tests only; no Docker needed).
+- `pnpm test` — `jest --selectProjects app scripts functions` (unit tests only; no Docker needed).
 - `pnpm test:int` — `jest --selectProjects integration --runInBand`: `src/auth`'s email/password and session flows, the cross-user RLS boundary, and `profileRepository`'s server-clock completion and language round-trip, against a running local Supabase (`pnpm db:start && pnpm db:reset && pnpm env:local` first). Not part of `pnpm test`; CI runs it in its own `database` job (`.github/workflows/ci.yml`). Run it manually when touching auth, RLS or profile persistence. See `docs/testing.md` for how the Jest projects and pgTAP fit together.
 - `pnpm perf:generate [count=500]` — write the performance fixture thumbnails (WebP) to `.perf-fixtures/` (gitignored).
 - `pnpm perf:serve [port=8787]` — serve `.perf-fixtures/` over HTTP and print every LAN URL, labeled by network interface.
@@ -52,6 +52,7 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 - `src/perf/` — the on-device frame-stats harness (UI-thread frame callback, stats, HUD).
 - `src/test/` — shared Jest helpers (e.g. the FlashList mock); never imported by app code.
 - `.perf-fixtures/` — generated fixture thumbnails (gitignored; see `pnpm perf:generate`).
+- `supabase/functions/` — Supabase Edge Functions. `_shared/` holds runtime-neutral modules (`catalog.ts`, the garment enums; `extraction.ts`, the Claude request and response sanitizer); each function folder has a runtime-neutral `handler.ts` (tested under the `functions` Jest project) and a Deno-only `index.ts`. `deno-env.d.ts` types the few Deno APIs `index.ts` uses. No third-party imports. Prompts, schema and costs: `docs/ai.md`.
 - `scripts/` — repo tooling (TypeScript, run with Node's native type stripping — no `.js`/`.mjs` sources).
 - `integration/` — `*.int.test.ts` Jest suites that run against a live local Supabase (plain Node, no Expo/React Native — see `pnpm test:int` above and `helpers.ts`'s module doc for why `src/auth/emailAuth.ts` is imported directly rather than through `authService.ts`'s barrel). `lib-supabase.stub.ts` is mapped over `src/lib/supabase.ts` by `jest.config.ts`'s `integration` project, so the default-client path in `emailAuth.ts`/`socialAuth.ts` throws loudly instead of touching native modules if a test ever omits its client.
 

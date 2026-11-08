@@ -1,0 +1,18 @@
+{
+  "id": "msg_fixture_refusal",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [],
+  "stop_reason": "refusal",
+  "stop_sequence": null,
+  "stop_details": {
+    "type": "refusal",
+    "category": null,
+    "explanation": "The request was declined."
+  },
+  "usage": {
+    "input_tokens": 1240,
+    "output_tokens": 0
+  }
+}
