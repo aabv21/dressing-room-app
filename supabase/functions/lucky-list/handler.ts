@@ -203,28 +203,38 @@ async function rank(ctx: RankContext, candidates: readonly Outfit[]): Promise<{ 
   return { ranked, complete: unrated.length === 0 };
 }
 
+/** The slot a garment's ranking cap is counted in: a one-piece shares the top's (they are alternatives). */
+function capSlotOf(garment: RuleGarment): Slot | null {
+  if (garment.category === null) return null;
+  const slot = slotOf(garment.category);
+  return slot === 'one_piece' ? 'top' : slot;
+}
+
 /**
  * The `MAX_RANKED` candidates Jev rates: the best by pre-score (ties in generation order), with at
  * most `MAX_PER_BASE` per base. A first pass also caps how many of them each base garment is in,
  * per slot: `max(MAX_PER_PIECE, ceil(MAX_RANKED / distinct garments of that slot among the
- * candidates))`. The few freshest pieces can't fill the whole list, while a garment that is the
- * only one of its slot (the one coat on a cold day, the one pair of shoes) is never capped. A
- * second pass fills what's left without that cap. Returned in pre-score order.
+ * candidates))`. Tops and one-pieces are counted together, since either one dresses the body: a
+ * lone top beside several dresses is not unavoidable. The few freshest pieces can't fill the
+ * whole list, while a garment with no alternative (the one coat on a cold day, the one pair of
+ * shoes) is never capped. A second pass fills what's left without that cap. Returned in
+ * pre-score order. Exported for tests and probes.
  */
-function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
+export function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
   const sorted = candidates
     .map((outfit, index) => ({ outfit, index, pre: preScore(outfit, date), base: basePieces(outfit) }))
     .sort((a, b) => b.pre - a.pre || a.index - b.index);
   const garmentsPerSlot = new Map<Slot, Set<string>>();
   for (const { base } of sorted) {
     for (const garment of base) {
-      if (garment.category === null) continue;
-      const slot = slotOf(garment.category);
+      const slot = capSlotOf(garment);
+      if (slot === null) continue;
       garmentsPerSlot.set(slot, (garmentsPerSlot.get(slot) ?? new Set<string>()).add(garment.id));
     }
   }
   const capOf = (garment: RuleGarment): number => {
-    const distinct = garment.category === null ? 1 : (garmentsPerSlot.get(slotOf(garment.category))?.size ?? 1);
+    const slot = capSlotOf(garment);
+    const distinct = slot === null ? 1 : (garmentsPerSlot.get(slot)?.size ?? 1);
     return Math.max(MAX_PER_PIECE, Math.ceil(MAX_RANKED / distinct));
   };
 

@@ -376,9 +376,11 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
 4. Quota `lucky` 10 per UTC day (cache misses only).
 5. `generateCandidates` (at most 200, seed = user id + date) → sorted by `preScore`, highest first
    → the top 30, spread over the closet: at most 2 per base (the same pieces but the extra), and
-   each garment in at most `max(4, ceil(30 / distinct garments of its slot among the candidates))`
-   of them while other candidates remain. The only garment of its slot (the one coat on a cold
-   day, the one pair of shoes) is never capped, while slots with alternatives still are. A second
+   each base garment in at most `max(4, ceil(30 / distinct garments of its slot among the
+   candidates))` of them while other candidates remain, with tops and one-pieces counted as one
+   slot since either one dresses the body (bottoms keep their own count). A garment with no
+   alternative (the one coat on a cold day, the one pair of shoes) is never capped, while slots
+   with alternatives still are. A second
    pass fills whatever the first left open, without the per-garment cap.
    - Candidates are seeded random draws, not an enumeration: shoes, then top + bottom or a
      one-piece (weighted by availability: half the tops and bottoms against the one-pieces),

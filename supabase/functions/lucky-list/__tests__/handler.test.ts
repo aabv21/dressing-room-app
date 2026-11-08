@@ -444,6 +444,55 @@ describe('the lucky list', () => {
     for (const outfit of (body as OkBody).outfits) expect(slotsOf(w, outfit)).toContain('shoes');
   });
 
+  /** Ten seeds (the seed is user id + date), November 1–10. */
+  const TEN_DATES = Array.from({ length: 10 }, (_, i) => `2026-11-${String(i + 1).padStart(2, '0')}`);
+
+  const timesIn = (outfits: readonly LuckyOutfit[]): Map<string, number> => {
+    const counts = new Map<string, number>();
+    for (const id of outfits.flatMap((outfit) => outfit.garmentIds)) counts.set(id, (counts.get(id) ?? 0) + 1);
+    return counts;
+  };
+
+  test('exactly one dress: tops and one-pieces share one cap, so the dress is not treated as unavoidable', async () => {
+    const dresses = bigCloset().filter((row) => row.category === 'dress');
+    for (const date of TEN_DATES) {
+      // The lone dress is neutral and never worn, so it pre-scores with the best bases.
+      const w = world({
+        garments: bigCloset()
+          .filter((row) => row.id !== dresses[1]?.id)
+          .map((row) => (row.id === dresses[0]?.id ? { ...row, colors: ['black'] } : row)),
+      });
+      const { outfits } = (await lucky(w, luckyRequest({ date, occasion: 'university' }))).body as OkBody;
+      expect(outfits).toHaveLength(30);
+      expect(Math.max(...timesIn(outfits).values())).toBeLessThanOrEqual(8);
+      const bodies = new Set(
+        outfits.flatMap((outfit) =>
+          piecesOf(w, outfit)
+            .filter((piece) => ['top', 'one_piece'].includes(slotOf(piece.category ?? 'accessory')))
+            .map((piece) => piece.id),
+        ),
+      );
+      expect(bodies.size).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  test('one top and 7 dresses: the lone top is not unavoidable either', async () => {
+    const onlyTop = idOf(5);
+    const extraDresses = [41, 42, 43, 44, 45].map((n) => garment(n, 'dress', { colors: ['black'] }));
+    for (const date of TEN_DATES) {
+      const w = world({
+        garments: [
+          ...bigCloset().filter((row) => slotOf((row.category ?? 'accessory') as GarmentCategory) !== 'top' || row.id === onlyTop),
+          ...extraDresses,
+        ],
+      });
+      const { outfits } = (await lucky(w, luckyRequest({ date, occasion: 'university' }))).body as OkBody;
+      expect(outfits).toHaveLength(30);
+      expect(timesIn(outfits).get(onlyTop) ?? 0).toBeLessThanOrEqual(8);
+      expect(outfits.some((outfit) => piecesOf(w, outfit).some((piece) => piece.category === 'dress'))).toBe(true);
+    }
+  });
+
   test('a cold day with one coat: the coat is in every outfit and the 30 still spread over the tops', async () => {
     const coats = bigCloset().filter((row) => row.category === 'coat');
     const oneCoat = coats[0]?.id;
