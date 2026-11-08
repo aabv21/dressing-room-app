@@ -8,6 +8,7 @@ import {
   composeRating,
   type DimensionScores,
   heightBucket,
+  neutralizeUnknownWeather,
   parseJevAnswers,
   pickReasons,
   RATING_CONFIG,
@@ -159,6 +160,91 @@ describe('parseJevAnswers', () => {
     expect(parseJevAnswers(mutate((a) => ((a.weather_fit as Record<string, unknown>).type = 'noul')), RATING_LEVELS)).toBeNull();
     expect(parseJevAnswers(mutate((a) => ((a.unsafe_for_weather as Record<string, unknown>).noul = null)), RATING_LEVELS)).toBeNull();
     expect(parseJevAnswers(mutate((a) => ((a.weakest_piece as Record<string, unknown>).choice = 'sleeves')), RATING_LEVELS)).toBeNull();
+  });
+});
+
+describe('parseJevAnswers hard failures and tolerance', () => {
+  const ok = fixture('jev-ok') as { answers: Record<string, Record<string, unknown>> };
+  const mutate = (change: (answers: Record<string, Record<string, unknown>>) => void): unknown => {
+    const copy = structuredClone(ok);
+    change(copy.answers);
+    return copy;
+  };
+
+  it('reports each Noul separately, with hardFailure as their OR', () => {
+    expect(parseJevAnswers(fixture('jev-ok'), RATING_LEVELS)).toMatchObject({
+      hardFailure: false,
+      hardFailures: { inappropriate_for_occasion: false, unsafe_for_weather: false },
+    });
+    expect(parseJevAnswers(fixture('jev-hard-failure'), RATING_LEVELS)).toMatchObject({
+      hardFailure: true,
+      hardFailures: { inappropriate_for_occasion: true, unsafe_for_weather: false },
+    });
+    expect(
+      parseJevAnswers(mutate((a) => ((a.unsafe_for_weather as Record<string, unknown>).noul = 0.9)), RATING_LEVELS),
+    ).toMatchObject({ hardFailure: true, hardFailures: { inappropriate_for_occasion: false, unsafe_for_weather: true } });
+  });
+
+  it('accepts a score, confidence or noul a rounding error outside its range and clamps it', () => {
+    const parsed = parseJevAnswers(
+      mutate((a) => {
+        (a.color_harmony as Record<string, unknown>).score = 3 + 1e-12;
+        (a.pattern_mix as Record<string, unknown>).score = -1e-12;
+        (a.style_match as Record<string, unknown>).confidence = 1 + 1e-12;
+        (a.formality_coherence as Record<string, unknown>).confidence = -1e-12;
+        (a.unsafe_for_weather as Record<string, unknown>).noul = 1 + 1e-12;
+      }),
+      RATING_LEVELS,
+    );
+    expect(parsed?.dims.color_harmony.normalized).toBe(1);
+    expect(parsed?.dims.pattern_mix.normalized).toBe(0);
+    expect(parsed?.dims.style_match.confidence).toBe(1);
+    expect(parsed?.dims.formality_coherence.confidence).toBe(0);
+    expect(parsed?.hardFailures.unsafe_for_weather).toBe(true);
+  });
+
+  it('still rejects values clearly outside the range', () => {
+    expect(parseJevAnswers(mutate((a) => ((a.color_harmony as Record<string, unknown>).score = 3 + 1e-6)), RATING_LEVELS)).toBeNull();
+    expect(parseJevAnswers(mutate((a) => ((a.color_harmony as Record<string, unknown>).score = -1e-6)), RATING_LEVELS)).toBeNull();
+    expect(parseJevAnswers(mutate((a) => ((a.style_match as Record<string, unknown>).confidence = 1.000001)), RATING_LEVELS)).toBeNull();
+    expect(parseJevAnswers(mutate((a) => ((a.unsafe_for_weather as Record<string, unknown>).noul = -0.01)), RATING_LEVELS)).toBeNull();
+  });
+});
+
+describe('neutralizeUnknownWeather', () => {
+  const unsafe = (): ReturnType<typeof parseJevAnswers> => {
+    const copy = structuredClone(fixture('jev-ok')) as { answers: Record<string, Record<string, unknown>> };
+    (copy.answers.unsafe_for_weather as Record<string, unknown>).noul = 0.95;
+    (copy.answers.weather_fit as Record<string, unknown>).score = 0;
+    return parseJevAnswers(copy, RATING_LEVELS);
+  };
+
+  it('leaves the answers alone when the weather is known', () => {
+    const parsed = unsafe();
+    if (parsed === null) throw new Error('fixture did not parse');
+    expect(neutralizeUnknownWeather(parsed, { tempC: 3, condition: 'snow', band: 'cold', rain: false })).toEqual(parsed);
+  });
+
+  it('with no weather, sets weather_fit to the neutral 0.5 (keeping its confidence) and ignores unsafe_for_weather', () => {
+    const parsed = unsafe();
+    if (parsed === null) throw new Error('fixture did not parse');
+    expect(parsed.hardFailure).toBe(true);
+    const neutral = neutralizeUnknownWeather(parsed, null);
+    expect(neutral.dims.weather_fit).toEqual({ normalized: 0.5, confidence: parsed.dims.weather_fit.confidence });
+    expect(neutral.hardFailure).toBe(false);
+    expect(neutral.hardFailures).toEqual({ inappropriate_for_occasion: false, unsafe_for_weather: false });
+    expect(neutral.weakestSlot).toBe(parsed.weakestSlot);
+    // The other dimensions are untouched, and the input isn't mutated.
+    expect(neutral.dims.color_harmony).toEqual(parsed.dims.color_harmony);
+    expect(parsed.dims.weather_fit.normalized).toBe(0);
+  });
+
+  it('keeps inappropriate_for_occasion capping the score when the weather is unknown', () => {
+    const parsed = parseJevAnswers(fixture('jev-hard-failure'), RATING_LEVELS);
+    if (parsed === null) throw new Error('fixture did not parse');
+    const neutral = neutralizeUnknownWeather(parsed, null);
+    expect(neutral.hardFailure).toBe(true);
+    expect(composeRating(neutral.dims, neutral.hardFailure).score).toBe(40);
   });
 });
 

@@ -11,6 +11,7 @@ import { firstText, isRecord } from './extraction.ts';
 import {
   type DimensionScores,
   HARD_FAILURES,
+  type HardFailure,
   NOUL_QUESTIONS,
   RATING_DIMENSIONS,
   type RatingAnswers,
@@ -21,6 +22,7 @@ import {
   WEAKEST_PIECE,
   WEAKEST_PIECE_INSTRUCTIONS,
   weakestPieceOptions,
+  withHardFailures,
 } from './rating.ts';
 
 export const FALLBACK_MODEL = 'claude-haiku-5-5';
@@ -115,15 +117,15 @@ export function parseFallback(body: unknown, levels: Record<RatingDimension, num
     dims.push([dimension, { normalized: index / top, confidence: 0 }]);
   }
 
-  let hardFailure = false;
+  const failures: [HardFailure, boolean][] = [];
   for (const failure of HARD_FAILURES) {
     const value = output.get(failure);
     if (typeof value !== 'boolean') return null;
-    if (value) hardFailure = true;
+    failures.push([failure, value]);
   }
 
   const weakestSlot = slotFromAnswer(output.get(WEAKEST_PIECE));
   if (weakestSlot === undefined) return null;
 
-  return { dims: Object.fromEntries(dims) as DimensionScores, hardFailure, weakestSlot };
+  return withHardFailures(Object.fromEntries(dims) as DimensionScores, failures, weakestSlot);
 }

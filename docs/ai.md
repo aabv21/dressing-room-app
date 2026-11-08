@@ -308,6 +308,44 @@ slot that pass the weather/occasion rules, excluding the current pieces, capped 
 with Jev (at most 5 at once; the fallback isn't used for swaps). The best swap is shown only if it
 beats the current score by at least **5**; otherwise the result is `noBetterSwap: true`.
 
+Swaps are not looked for after a fallback rating: Jev has just failed, and a Jev-scored candidate
+can't be compared with a Claude-estimated score. Candidates are checked one by one against the
+occasion, season and weather rules (`passesRules` on the single piece, without the whole-outfit
+"cold needs outerwear" rule) and taken least recently worn first. When the weakest slot holds two
+pieces (two accessories), the first is swapped.
+
+### Unknown weather
+
+With no weather (no city, or one that can't be geocoded), `neutralizeUnknownWeather` sets
+`weather_fit` to the neutral 0.5, keeping the rater's confidence in it, and ignores
+`unsafe_for_weather` before the score is composed, whatever Jev or Claude answered;
+`inappropriate_for_occasion` still caps the score. Both parsers report each hard failure in
+`hardFailures` (with `hardFailure` as their OR). Jev scores, confidences and Nouls within 1e-9 of
+their range are clamped instead of rejected.
+
+### The `rate-outfit` function
+
+`POST { garment_ids: 2–6 unique uuids, occasion: Occasion | null, date: 'YYYY-MM-DD' }` with the
+user's JWT (`verify_jwt = true`). Garments and the profile are read with that JWT, so RLS applies;
+the quota, `rating_cache` and `weather_cache` use the service role. The cache key hashes each
+garment's id and rating-relevant columns (category, colors, pattern, formality, fit, seasons,
+warmth, status; not `updated_at`, which logging a wear bumps), `profile.updated_at`, the occasion,
+the season, the weather band and rain.
+
+| Case | Response | Logged outcome |
+| --- | --- | --- |
+| Not POST | 405 `method_not_allowed` | `invalid` |
+| No user in the JWT | 401 `unauthorized` | `invalid` |
+| Malformed body | 400 `invalid_input` | `invalid` |
+| An id that is deleted or not the caller's | 404 `garment_not_found` | `invalid` |
+| A garment without a category, or no (top + bottom or one_piece) + shoes | 422 `incomplete` | `invalid` |
+| Cache hit (no quota, no Jev) | 200 cached `RatingResult` | `cached` |
+| Over the daily quota | 429 `over_quota` | `over_quota` |
+| Jev rated it | 200 `RatingResult`, cached | `rated` |
+| Jev failed, Claude rated it | 200, `estimated: true`, `confidence: null`, cached | `fallback` |
+| Both failed | 503 `rating_unavailable`, nothing cached | `unavailable` |
+| Loading garments or the profile, or the quota RPC, failed | 500 `internal` | `error` |
+
 ### Claude fallback
 
 When Jev errors, times out or returns an answer that doesn't parse, Claude Haiku 5.5 rates the same

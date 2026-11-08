@@ -427,6 +427,11 @@ ANTHROPIC_BASE_URL = "http://host.docker.internal:54499"
 [functions.extract-attributes]
 verify_jwt = false
 
+# Called by signed-in users; the gateway verifies the JWT before the function
+# runs, and the function reads garments and the profile with that same token.
+[functions.rate-outfit]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54427

@@ -103,7 +103,13 @@ export type RatingState = {
 
 export type DimensionScores = Record<RatingDimension, { normalized: number; confidence: number }>;
 
-export type RatingAnswers = { dims: DimensionScores; hardFailure: boolean; weakestSlot: Slot | null };
+export type RatingAnswers = {
+  dims: DimensionScores;
+  /** The OR of `hardFailures`, which is what `composeRating` takes. */
+  hardFailure: boolean;
+  hardFailures: Record<HardFailure, boolean>;
+  weakestSlot: Slot | null;
+};
 
 export type RatingReason = { key: string; tone: 'good' | 'warn'; params?: Record<string, string> };
 
@@ -285,8 +291,14 @@ export function buildJevRequest(
   };
 }
 
-function isUnit(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+// Jev's probability-weighted values can land a rounding error outside their range (1.0000000002).
+const RANGE_TOLERANCE = 1e-9;
+
+/** `value` clamped to [min, max] when it is a finite number within the tolerance of that range; otherwise null. */
+function inRange(value: unknown, min: number, max: number): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < min - RANGE_TOLERANCE || value > max + RANGE_TOLERANCE) return null;
+  return Math.min(max, Math.max(min, value));
 }
 
 /** `none` → null; a slot → that slot; anything else → undefined (malformed). */
@@ -297,8 +309,9 @@ export function slotFromAnswer(value: unknown): Slot | null | undefined {
 
 /**
  * Maps a System One response body to normalized dimension scores (score ÷ (levels − 1), 0..1),
- * the hard-failure flag (any Noul above the threshold) and the weakest slot. Never throws; null
- * when any answer is missing, of the wrong type or out of range.
+ * the hard-failure flags (each Noul above the threshold, and their OR) and the weakest slot.
+ * Never throws; null when any answer is missing, of the wrong type or out of range by more than
+ * a 1e-9 rounding tolerance (values within it are clamped).
  */
 export function parseJevAnswers(body: unknown, levels: Record<RatingDimension, number>): RatingAnswers | null {
   if (!isRecord(body) || !isRecord(body.answers)) return null;
@@ -310,17 +323,18 @@ export function parseJevAnswers(body: unknown, levels: Record<RatingDimension, n
     const answer = answers.get(dimension);
     const top = (levelCounts.get(dimension) ?? 0) - 1;
     if (!isRecord(answer) || answer.type !== 'score' || top < 1) return null;
-    const { score, confidence } = answer;
-    if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > top) return null;
-    if (!isUnit(confidence)) return null;
+    const score = inRange(answer.score, 0, top);
+    const confidence = inRange(answer.confidence, 0, 1);
+    if (score === null || confidence === null) return null;
     dims.push([dimension, { normalized: score / top, confidence }]);
   }
 
-  let hardFailure = false;
+  const failures: [HardFailure, boolean][] = [];
   for (const failure of HARD_FAILURES) {
     const answer = answers.get(failure);
-    if (!isRecord(answer) || answer.type !== 'noul' || !isUnit(answer.noul)) return null;
-    if (answer.noul > RATING_CONFIG.hardFailureThreshold) hardFailure = true;
+    const noul = isRecord(answer) && answer.type === 'noul' ? inRange(answer.noul, 0, 1) : null;
+    if (noul === null) return null;
+    failures.push([failure, noul > RATING_CONFIG.hardFailureThreshold]);
   }
 
   const choice = answers.get(WEAKEST_PIECE);
@@ -328,7 +342,41 @@ export function parseJevAnswers(body: unknown, levels: Record<RatingDimension, n
   const weakestSlot = slotFromAnswer(choice.choice);
   if (weakestSlot === undefined) return null;
 
-  return { dims: Object.fromEntries(dims) as DimensionScores, hardFailure, weakestSlot };
+  return withHardFailures(Object.fromEntries(dims) as DimensionScores, failures, weakestSlot);
+}
+
+/** Assembles `RatingAnswers` from per-Noul flags, deriving `hardFailure` as their OR. */
+export function withHardFailures(
+  dims: DimensionScores,
+  failures: readonly (readonly [HardFailure, boolean])[],
+  weakestSlot: Slot | null,
+): RatingAnswers {
+  const hardFailures = Object.fromEntries(failures) as Record<HardFailure, boolean>;
+  return { dims, hardFailure: failures.some(([, failed]) => failed), hardFailures, weakestSlot };
+}
+
+const NEUTRAL_WEATHER_FIT = 0.5;
+
+/**
+ * With no weather (no city, or one that can't be geocoded), the rating is neutral on weather
+ * whatever the rater answered: `weather_fit` becomes the middle level (0.5, keeping the rater's
+ * confidence in it) and `unsafe_for_weather` no longer caps the score. Known weather passes
+ * through unchanged. Never mutates `answers`.
+ */
+export function neutralizeUnknownWeather(answers: RatingAnswers, weather: WeatherSummary | null): RatingAnswers {
+  if (weather !== null) return answers;
+  const dims: DimensionScores = {
+    ...answers.dims,
+    weather_fit: { normalized: NEUTRAL_WEATHER_FIT, confidence: answers.dims.weather_fit.confidence },
+  };
+  return withHardFailures(
+    dims,
+    [
+      ['inappropriate_for_occasion', answers.hardFailures.inappropriate_for_occasion],
+      ['unsafe_for_weather', false],
+    ],
+    answers.weakestSlot,
+  );
 }
 
 export function labelOf(score: number): RatingLabel {

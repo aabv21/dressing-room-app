@@ -113,13 +113,18 @@ describe('parseFallback', () => {
     expect(parsed?.dims.style_match.normalized).toBeCloseTo(1 / 3, 9);
     expect(Object.values(parsed?.dims ?? {}).map((dim) => dim.confidence)).toEqual(RATING_DIMENSIONS.map(() => 0));
     expect(parsed?.hardFailure).toBe(false);
+    expect(parsed?.hardFailures).toEqual({ inappropriate_for_occasion: false, unsafe_for_weather: false });
     expect(parsed?.weakestSlot).toBe('shoes');
   });
 
   it('turns either boolean into a hard failure and none into a null weakest slot', () => {
     const parsed = parseFallback(messageWith({ ...OUTPUT, unsafe_for_weather: true, weakest_piece: 'none' }), RATING_LEVELS);
     expect(parsed?.hardFailure).toBe(true);
+    expect(parsed?.hardFailures).toEqual({ inappropriate_for_occasion: false, unsafe_for_weather: true });
     expect(parsed?.weakestSlot).toBeNull();
+    const occasion = parseFallback(messageWith({ ...OUTPUT, inappropriate_for_occasion: true }), RATING_LEVELS);
+    expect(occasion?.hardFailure).toBe(true);
+    expect(occasion?.hardFailures).toEqual({ inappropriate_for_occasion: true, unsafe_for_weather: false });
   });
 
   it('returns null for a refusal, invalid JSON or an out-of-schema value', () => {
