@@ -361,6 +361,7 @@ export const en = {
   'garment.reading': 'Reading the photo…',
   'garment.back': 'Back',
   'garment.save': 'Save',
+  'garment.categoryRequired': 'Pick a category to save.',
   'garment.replacePhoto': 'Replace photo',
   'garment.replacing': 'Uploading the new photo…',
   'garment.delete': 'Delete garment',

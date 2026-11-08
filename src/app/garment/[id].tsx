@@ -66,6 +66,15 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   useEffect(() => {
     latest.current = garment;
   }, [garment]);
+  // False once the screen is gone or the garment deleted: a late save result must not bring the
+  // garment back into the closet through `replaceLocal`.
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   const [failure, setFailure] = useState<Failure | null>(null);
   const report = useCallback(
@@ -94,6 +103,9 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     setSaving(true);
     setFailure(null);
     const result = await updateGarment(garment.id, patch);
+    if (!active.current) {
+      return;
+    }
     setSaving(false);
     if (!result.ok) {
       report({ action: 'save', error: result.error });
@@ -104,46 +116,50 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     setDraft((current) => changedFields({ ...stored, ...patch }, { ...stored, ...current }));
   }, [garment.id, patch, stored, replaceLocal, report]);
 
-  // The status saves on tap. The choice shows at once and stands until the stored status moves
-  // (this save landing, or a refresh); a failed save drops it, reverting to the stored one.
-  const [statusChoice, setStatusChoice] = useState<{ value: GarmentStatus; over: GarmentStatus } | null>(null);
-  const statusRequest = useRef(0);
-  if (statusChoice !== null && statusChoice.over !== garment.status) {
+  // The status saves on tap, one save at a time: the chips are disabled until it lands. The tapped
+  // chip shows at once; a failure goes back to the last confirmed status. A refresh that moves the
+  // stored status resets the confirmed one to it.
+  const [statusSaving, setStatusSaving] = useState<GarmentStatus | null>(null);
+  const [confirmedStatus, setConfirmedStatus] = useState({ stored: garment.status, value: garment.status });
+  if (confirmedStatus.stored !== garment.status) {
     // Storing derived state during render (React's documented pattern): the stored status moved.
-    setStatusChoice(null);
+    setConfirmedStatus({ stored: garment.status, value: garment.status });
   }
-  const status = statusChoice !== null && statusChoice.over === garment.status ? statusChoice.value : garment.status;
+  const status = statusSaving ?? confirmedStatus.value;
   const changeStatus = useCallback(
     async (next: GarmentStatus) => {
-      statusRequest.current += 1;
-      const request = statusRequest.current;
-      setStatusChoice({ value: next, over: latest.current.status });
+      setStatusSaving(next);
       setFailure(null);
       const result = await updateGarment(garment.id, { status: next });
-      // A later tap owns the chips now.
-      if (request !== statusRequest.current) {
+      if (!active.current) {
         return;
       }
+      setStatusSaving(null);
       if (result.ok) {
+        setConfirmedStatus((current) => ({ ...current, value: next }));
         replaceLocal({ ...latest.current, status: next });
       } else {
-        setStatusChoice(null);
         report({ action: 'save', error: result.error });
       }
     },
     [garment.id, replaceLocal, report],
   );
+  const [deleting, setDeleting] = useState(false);
+  const statusLocked = statusSaving !== null || deleting;
   const statusOptions = useMemo(
-    () => STATUSES.map((value) => ({ value, label: t(`garment.status.${value}`) })),
-    [t],
+    () => STATUSES.map((value) => ({ value, label: t(`garment.status.${value}`), disabled: statusLocked })),
+    [t, statusLocked],
   );
 
-  const [deleting, setDeleting] = useState(false);
   const remove = useCallback(async () => {
     setDeleting(true);
     setFailure(null);
     const result = await deleteGarment(garment.user_id, garment.id);
+    if (!active.current) {
+      return;
+    }
     if (result.ok) {
+      active.current = false;
       onDeleted();
       return;
     }
@@ -181,7 +197,20 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   }, [enqueueReplacement, garment.id, garment.photo_version]);
 
   const title = garment.category === null ? t('garment.unnamed') : t(`garment.category.${garment.category}`);
-  const message = failure === null ? null : failureText(failure, t);
+  // A reviewed garment must keep a category: without one it drops out of the slots and suggestions.
+  const missingCategory = values.category === null && !reading;
+  let message: React.ReactNode = null;
+  if (failure !== null) {
+    message = (
+      <Text style={styles.error} accessibilityRole="alert">
+        {failureText(failure, t)}
+      </Text>
+    );
+  } else if (missingCategory) {
+    message = <Text style={styles.hint}>{t('garment.categoryRequired')}</Text>;
+  }
+  // Delete waits for any save in flight, so a late save can't re-add the deleted garment.
+  const busy = saving || statusSaving !== null;
 
   return (
     <LinearGradient colors={gradients.background} style={styles.fill}>
@@ -209,10 +238,10 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('garment.delete')}
-            accessibilityState={{ disabled: deleting }}
-            disabled={deleting}
+            accessibilityState={{ disabled: deleting || busy }}
+            disabled={deleting || busy}
             hitSlop={4}
-            style={[styles.iconButton, styles.deleteButton, deleting ? styles.dimmed : null]}
+            style={[styles.iconButton, styles.deleteButton, deleting || busy ? styles.dimmed : null]}
             onPress={confirmDelete}
           >
             <Trash2 size={20} color={colors.error} />
@@ -246,6 +275,8 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
               values={values}
               onChange={onChange}
               clothingType={clothingType}
+              // P3-R13: every category, so a shirt can become a jacket in one tap.
+              narrowCategory={false}
               disabled={reading}
             />
           </View>
@@ -255,15 +286,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
       <AnchoredCta
         chrome="none"
         // By the buttons, not at the end of the form, so it's on screen however far it scrolls.
-        {...(message === null
-          ? {}
-          : {
-              notice: (
-                <Text style={styles.error} accessibilityRole="alert">
-                  {message}
-                </Text>
-              ),
-            })}
+        {...(message === null ? {} : { notice: message })}
         secondary={{
           label: t('garment.replacePhoto'),
           tone: 'ghost',
@@ -277,7 +300,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
           label: t('garment.save'),
           tone: 'commit',
           icon: Check,
-          disabled: !dirty || reading || saving || deleting,
+          disabled: !dirty || missingCategory || reading || saving || deleting,
           onPress: () => {
             void save();
           },
@@ -392,6 +415,17 @@ const styles = StyleSheet.create({
     color: colors.accentText,
     fontSize: 14,
     fontWeight: '600',
+  },
+  hint: {
+    alignSelf: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radii.cell,
+    backgroundColor: colors.tint,
+    textAlign: 'center',
+    color: colors.accentText,
+    fontSize: 14,
   },
   error: {
     alignSelf: 'center',

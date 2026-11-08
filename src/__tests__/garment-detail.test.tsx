@@ -325,3 +325,137 @@ test('an unknown id while the closet is still loading waits instead of saying no
 
   expect(screen.queryByText('This garment is no longer in your closet')).not.toBeOnTheScreen();
 });
+
+type RequestResult = Awaited<ReturnType<typeof updateGarment>>;
+
+function deferred(): { promise: Promise<RequestResult>; resolve: (result: RequestResult) => void } {
+  let resolve: (result: RequestResult) => void = () => undefined;
+  const promise = new Promise<RequestResult>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe('category (I1, P3-R13)', () => {
+  test('clearing the category disables Save and shows a hint until one is picked', async () => {
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Jeans' }));
+
+    expect(screen.getByText('Pick a category to save.')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Shorts' }));
+    expect(screen.queryByText('Pick a category to save.')).not.toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+  });
+
+  test('a T-shirt can become a jacket in one tap: every category is offered', async () => {
+    mockCloset.garments = [jeans({ category: 't_shirt' })];
+    mockedUpdateGarment.mockResolvedValue({ ok: true });
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Jacket' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(mockedUpdateGarment).toHaveBeenCalledWith('g-1', { category: 'jacket' });
+  });
+});
+
+describe('saves never race (I2, M1)', () => {
+  test('a second status tap while one is saving is ignored, and the first one lands', async () => {
+    const first = deferred();
+    mockedUpdateGarment.mockReturnValueOnce(first.promise);
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'In the laundry' }));
+    expect(screen.getByRole('radio', { name: 'Lent out' })).toBeDisabled();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Lent out' }));
+
+    first.resolve({ ok: true });
+    await waitFor(() => {
+      expect(mockReplaceLocal).toHaveBeenCalledWith({ ...jeans(), status: 'laundry' });
+    });
+    expect(mockedUpdateGarment).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('radio', { name: 'In the laundry' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Lent out' })).toBeEnabled();
+  });
+
+  test('a failed status save reverts to the last confirmed status, not the first one', async () => {
+    mockedUpdateGarment.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, error: 'network' });
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'In the laundry' }));
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: 'Lent out' })).toBeEnabled();
+    });
+    await fireEvent.press(screen.getByRole('radio', { name: 'Lent out' }));
+
+    expect(await screen.findByText(NETWORK_ERROR)).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'In the laundry' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Lent out' })).not.toBeChecked();
+  });
+
+  test('delete is disabled while a save is in flight', async () => {
+    const save = deferred();
+    mockedUpdateGarment.mockReturnValueOnce(save.promise);
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Striped' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByRole('button', { name: 'Delete garment' })).toBeDisabled();
+
+    save.resolve({ ok: true });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete garment' })).toBeEnabled();
+    });
+  });
+
+  test('delete is disabled while a status save is in flight', async () => {
+    const save = deferred();
+    mockedUpdateGarment.mockReturnValueOnce(save.promise);
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Lent out' }));
+    expect(screen.getByRole('button', { name: 'Delete garment' })).toBeDisabled();
+
+    save.resolve({ ok: true });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete garment' })).toBeEnabled();
+    });
+  });
+
+  test('while deleting, Save and the status chips are disabled', async () => {
+    const alert = confirmEveryAlert();
+    let finish: (result: RequestResult) => void = () => undefined;
+    mockedDeleteGarment.mockReturnValueOnce(
+      new Promise<RequestResult>((done) => {
+        finish = done;
+      }),
+    );
+    await renderDetail();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Striped' }));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Delete garment' }));
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Lent out' })).toBeDisabled();
+    finish({ ok: false, error: 'network' });
+    expect(await screen.findByText("Couldn't delete. Check your internet and try again.")).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    alert.mockRestore();
+  });
+
+  test('a status save that resolves after the screen is gone applies nothing', async () => {
+    const save = deferred();
+    mockedUpdateGarment.mockReturnValueOnce(save.promise);
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'In the laundry' }));
+    await screen.unmount();
+    save.resolve({ ok: true });
+    await Promise.resolve();
+
+    expect(mockReplaceLocal).not.toHaveBeenCalled();
+  });
+});

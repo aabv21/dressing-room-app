@@ -363,6 +363,7 @@ export const es: Record<MessageKey, string> = {
   'garment.reading': 'Leyendo la foto…',
   'garment.back': 'Volver',
   'garment.save': 'Guardar',
+  'garment.categoryRequired': 'Elige una categoría para guardar.',
   'garment.replacePhoto': 'Cambiar foto',
   'garment.replacing': 'Subiendo la foto nueva…',
   'garment.delete': 'Eliminar prenda',
