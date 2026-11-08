@@ -164,7 +164,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `usage_quota.test.sql` — `consume_quota()`'s per-user, per-day counter and its limit, and that
   clients can neither call it nor read `usage_counters`.
 - `garment_extraction_trigger.test.sql` — the garments insert trigger's shape and privileges, the
-  pg_net request it queues, and that an insert still succeeds with the Vault secrets missing.
+  pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
+  queueing the request fails.
 
 See `docs/database.md` for how these tests impersonate a user and create test rows without a real
 JWT.

@@ -229,7 +229,8 @@ value back over whatever an update sends.
 
 ### Extraction trigger
 
-`public.request_garment_extraction()` (migration `20261108025224_garment_extraction_trigger`) fires
+`public.request_garment_extraction()` (migration `20261108025224_garment_extraction_trigger`,
+redefined by `20261108110716_garment_extraction_trigger_never_blocks_insert`) fires
 `after insert on public.garments for each row` as the trigger `garments_request_extraction`. It is
 `security definer` with `set search_path = ''`, so it can read the Vault, and `execute` is revoked
 from `public`, `anon` and `authenticated`. It reads two secrets from `vault.decrypted_secrets`:
@@ -242,7 +243,10 @@ With both present it calls `net.http_post` (the `pg_net` extension, created `wit
 extensions`; its functions live in the `net` schema) with body `{"garment_id": <id>}` and a 5 s
 timeout. If either secret is missing it does nothing, so inserts keep working on a project that
 isn't configured yet; those garments stay `pending` until the app's 10-minute rule sends them to
-review.
+review. Any error inside it (the Vault read, or `net.http_post` rejecting the URL or misbehaving
+after a pg_net change) is caught the same way: `exception when others` raises a warning carrying
+only the SQLSTATE (never the message, which could echo the URL) and returns the row, so the insert
+commits and the garment takes the same path to review.
 
 pg_net queues the request in the inserting transaction and sends it after commit. So a rolled-back
 insert calls nothing, and an `insert … on conflict do nothing` duplicate (the app's retried upload)
@@ -389,7 +393,9 @@ discards both the user and its profile row — no cleanup step is needed.
   insert … for each row` and calls `request_garment_extraction()`, which is `security definer` and
   not executable by `authenticated`; with both Vault secrets set (test values, inside the
   transaction) an insert queues one `net.http_request_queue` POST carrying the garment id, the
-  secret header and the 5 s timeout; with them deleted, an insert still succeeds and queues nothing.
+  secret header and the 5 s timeout; with them deleted, an insert still succeeds and queues nothing;
+  with a URL pg_net rejects (so queueing the request raises), the insert still succeeds and keeps
+  its row.
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.

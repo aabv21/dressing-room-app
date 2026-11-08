@@ -1,13 +1,14 @@
 -- public.request_garment_extraction(): the `after insert` trigger on
 -- public.garments that asks the extract-attributes Edge Function (via pg_net)
 -- to fill in a new garment's attributes. It runs as its owner (security
--- definer) so it can read the Vault, clients can't execute it, and a missing
--- Vault secret never blocks the insert: it just queues no request.
+-- definer) so it can read the Vault, clients can't execute it, and neither a
+-- missing Vault secret nor a failing request ever blocks the insert: it just
+-- queues no request.
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(8);
+select plan(10);
 
 select has_trigger('public', 'garments', 'garments_request_extraction', 'garments has the extraction trigger');
 
@@ -91,6 +92,28 @@ select is(
   (select count(*)::int from net.http_request_queue where convert_from(body, 'utf8') like '%aaaaaaaa-0000-0000-0000-000000000002%'),
   0,
   'no request is queued when the Vault secrets are missing'
+);
+
+-- A request that can't be queued (here a Vault URL pg_net rejects; on a hosted
+-- project it could be pg_net or Vault misbehaving) must not roll back the
+-- insert: extraction is optional, the garment still reaches review.
+select vault.create_secret('not a url', 'extract_attributes_url');
+select vault.create_secret('test-secret', 'extract_webhook_secret');
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
+
+select lives_ok(
+  $$ insert into public.garments (id) values ('aaaaaaaa-0000-0000-0000-000000000003') $$,
+  'an insert succeeds when queueing the extraction request fails'
+);
+
+reset role;
+
+select is(
+  (select count(*)::int from public.garments where id = 'aaaaaaaa-0000-0000-0000-000000000003'),
+  1,
+  'the garment row is kept when queueing the extraction request fails'
 );
 
 select * from finish();
