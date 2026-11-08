@@ -1,4 +1,7 @@
+import { PermanentUploadError } from './permanentUploadError';
 import { listQueue, removeItem, saveItem, type QueueItem } from './queueStore';
+
+export { PermanentUploadError };
 
 /**
  * Drives queued garment photos through capture → prepare → upload → commit, resumably: each
@@ -13,9 +16,6 @@ export type QueueSteps = {
   upload(item: QueueItem & { fullUri: string; thumbUri: string }): Promise<void>;
   commit(item: QueueItem): Promise<void>;
 };
-
-/** Thrown by a step to mark an item failed immediately, skipping the usual 8-attempt backoff. */
-export class PermanentUploadError extends Error {}
 
 const BASE_BACKOFF_MS = 5_000;
 const MAX_BACKOFF_MS = 10 * 60 * 1000;

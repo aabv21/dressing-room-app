@@ -55,6 +55,13 @@ Supabase stack:
   select, update or delete A's garment, download A's `full.webp` or upload into A's folder; the same
   id inserted twice with `upsert(…, { ignoreDuplicates: true })` (the app's retried upload) leaves one
   row; a client update of `extraction_status` fails with `42501`.
+- `garmentRepository.int.test.ts` — `src/closet/garmentRepository.ts` signed in as a normal user:
+  both photo variants upload (upsert) and the row is created as the upload queue does it,
+  `listGarments` returns it newest first, `signedPhotoUrls` gives URLs that fetch the photo (HTTP
+  200) and skips a missing one, a photo over the 2 MiB bucket limit throws `PermanentUploadError`,
+  `bumpPhotoVersion` moves 1 → 2, `confirmReview` stamps `reviewed_at`, and `deleteGarment` leaves
+  no row and no photos (and succeeds again on a retry). Uploads use `uploadGarmentPhotoBytes`, the
+  storage half of `uploadGarmentPhoto`; its expo-file-system read is covered by the unit test.
 - `extraction.int.test.ts` — attribute extraction end to end: A uploads
   `integration/fixtures/garment.webp` and inserts the row, the insert trigger calls the
   `extract-attributes` Edge Function through pg_net, and the function calls the mock Claude below.
@@ -89,7 +96,8 @@ parameter to the real Supabase singleton, which imports `react-native` and
 `expo-sqlite/localStorage/install` — native modules that cannot load under plain Node. Every
 integration test passes an explicit client built by `integration/helpers.ts` (`anonClient()` /
 `serviceClient()`), so the default-client path is never meant to run here; the stub throws loudly if
-it ever does.
+it ever does. `integration/expo-file-system.stub.ts` is mapped over `expo-file-system` the same
+way, since `garmentRepository.ts` imports its native-only `File`.
 
 ## pgTAP (`supabase/tests/*.test.sql`)
 

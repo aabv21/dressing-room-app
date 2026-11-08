@@ -72,6 +72,9 @@ const config: Config = {
         // path is never meant to run here; map it to a stub that throws if it ever is. Matches the
         // relative specifier as written in `src/auth/{emailAuth,socialAuth}.ts` (`../lib/supabase`).
         '^(\\.\\./)+lib/supabase$': '<rootDir>/integration/lib-supabase.stub.ts',
+        // `garmentRepository.ts` imports expo-file-system's `File` (native-only) for its file-reading
+        // upload; integration tests use the bytes variant, so map it to a stub that throws if used.
+        '^expo-file-system$': '<rootDir>/integration/expo-file-system.stub.ts',
       },
     },
   ],
