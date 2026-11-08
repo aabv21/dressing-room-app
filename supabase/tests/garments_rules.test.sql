@@ -1,13 +1,14 @@
 -- CHECK constraints and column-grant write rules on public.garments: out-of-range
 -- formality/warmth/colors/photo_version all raise check_violation; a client can
--- insert only `id` (user_id, status and extraction_status are then set by the
--- defaults, not the client) and can never write extraction_status, wear_count
--- or user_id; created_at is kept and updated_at moves on update.
+-- insert only `id` and its own `user_id` (status and extraction_status are set
+-- by the defaults, not the client; another user's user_id is rejected) and can
+-- never update extraction_status, wear_count or user_id; created_at is kept and
+-- updated_at moves on update.
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(16);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-a@example.com', crypt('password', gen_salt('bf')), '{}', '{}');
@@ -35,6 +36,34 @@ select is(
   (select extraction_status from public.garments where id = 'cccccccc-0000-0000-0000-000000000001'),
   'pending'::public.extraction_status,
   'inserting with id only sets extraction_status to pending'
+);
+
+-- The app states the owner it queued the garment for: its own user_id is
+-- accepted, anyone else's is rejected by the insert policy, and columns outside
+-- the insert grant stay off limits.
+select lives_ok(
+  $$ insert into public.garments (id, user_id) values ('cccccccc-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111') $$,
+  'inserting with id and the caller''s own user_id succeeds'
+);
+
+select is(
+  (select user_id from public.garments where id = 'cccccccc-0000-0000-0000-000000000002'),
+  '11111111-1111-1111-1111-111111111111'::uuid,
+  'the stated user_id is the stored owner'
+);
+
+select throws_ok(
+  $$ insert into public.garments (id, user_id) values ('cccccccc-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222') $$,
+  '42501',
+  null,
+  'inserting with another user''s user_id raises a policy error'
+);
+
+select throws_ok(
+  $$ insert into public.garments (id, extraction_status) values ('cccccccc-0000-0000-0000-000000000004', 'done') $$,
+  '42501',
+  null,
+  'inserting extraction_status raises a privilege error'
 );
 
 select throws_ok(

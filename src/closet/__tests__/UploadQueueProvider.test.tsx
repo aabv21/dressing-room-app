@@ -1,5 +1,6 @@
+const mockAuth = { current: { status: 'signedIn', userId: 'user-1' as string | null } };
 jest.mock('../../auth/AuthProvider', () => ({
-  useAuth: () => ({ status: 'signedIn', userId: 'user-1' }),
+  useAuth: () => mockAuth.current,
 }));
 const mockRefresh = jest.fn(() => Promise.resolve());
 jest.mock('../ClosetProvider', () => ({
@@ -79,6 +80,7 @@ async function renderProvider(): Promise<void> {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuth.current = { status: 'signedIn', userId: 'user-1' };
   queue = undefined;
   mockedListQueue.mockReturnValue([]);
   jest.mocked(removeItem).mockImplementation(() => undefined);
@@ -249,4 +251,54 @@ test('discardFailed removes only the failed items', async () => {
   expect(removeItem).toHaveBeenCalledTimes(1);
   expect(removeItem).toHaveBeenCalledWith(failedItem);
   expect(screen.getByTestId('counts')).toHaveTextContent('pending 1 failed 0');
+});
+
+test('a pass still in flight when the provider unmounts neither refreshes nor schedules a retry', async () => {
+  jest.useFakeTimers({ now: 1_000_000 });
+  let finish: ((result: { committed: number; failed: number; waiting: number }) => void) | undefined;
+  mockedRunQueue.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  mockedListQueue.mockReturnValue([item({ garmentId: 'waiting', nextAttemptAt: 1_000_000 + 5_000 })]);
+  const view = await render(
+    <UploadQueueProvider>
+      <Probe />
+    </UploadQueueProvider>,
+  );
+
+  await view.unmount();
+  await act(async () => {
+    finish?.({ committed: 1, failed: 0, waiting: 1 });
+    await jest.advanceTimersByTimeAsync(60_000);
+  });
+
+  expect(mockRefresh).not.toHaveBeenCalled();
+  expect(mockedRunQueue).toHaveBeenCalledTimes(1);
+});
+
+test("once another account's session is active, triggers no longer start passes for this user", async () => {
+  const view = await render(
+    <UploadQueueProvider>
+      <Probe />
+    </UploadQueueProvider>,
+  );
+  await act(async () => {
+    await Promise.resolve();
+  });
+  mockedRunQueue.mockClear();
+
+  mockAuth.current = { status: 'loading', userId: 'user-2' };
+  await view.rerender(
+    <UploadQueueProvider>
+      <Probe />
+    </UploadQueueProvider>,
+  );
+  await act(async () => {
+    appStateHandler?.('active');
+    await Promise.resolve();
+  });
+
+  expect(mockedRunQueue).not.toHaveBeenCalled();
 });

@@ -1,5 +1,9 @@
+const mockAuth = { current: { status: 'signedIn', userId: 'user-1' as string | null } };
 jest.mock('../../auth/AuthProvider', () => ({
-  useAuth: () => ({ status: 'signedIn', userId: 'user-1' }),
+  useAuth: () => mockAuth.current,
+}));
+jest.mock('expo-network', () => ({
+  addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
 jest.mock('../garmentRepository', () => ({
   garmentPhotoPath: (userId: string, garmentId: string, variant: string) => `${userId}/${garmentId}/${variant}.webp`,
@@ -8,8 +12,9 @@ jest.mock('../garmentRepository', () => ({
 }));
 
 import { act, render, screen } from '@testing-library/react-native';
+import * as Network from 'expo-network';
 import { useEffect } from 'react';
-import { Text } from 'react-native';
+import { AppState, Text, type AppStateStatus } from 'react-native';
 
 import { kvGet, kvRemove, kvSet } from '../../lib/kv';
 import { garment } from '../../test/garmentFixture';
@@ -41,9 +46,37 @@ async function renderProvider(poll = false): Promise<void> {
   );
 }
 
+let appStateHandler: ((state: AppStateStatus) => void) | undefined;
+let networkHandler: ((event: Network.NetworkStateEvent) => void) | undefined;
+const appStateRemove = jest.fn();
+const networkRemove = jest.fn();
+
+/** A promise the test settles by hand, to hold a refresh in flight. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
+  mockAuth.current = { status: 'signedIn', userId: 'user-1' };
+  appStateHandler = undefined;
+  networkHandler = undefined;
+  jest.spyOn(AppState, 'addEventListener').mockImplementation((type, handler) => {
+    if (type === 'change') {
+      appStateHandler = handler;
+    }
+    return { remove: appStateRemove };
+  });
+  jest.mocked(Network.addNetworkStateListener).mockImplementation((handler) => {
+    networkHandler = handler;
+    return { remove: networkRemove };
+  });
   kvRemove(CACHE_KEY);
+  kvRemove('closet.v1.user-2');
   mockedSign.mockImplementation((paths) => Promise.resolve(new Map(paths.map((path) => [path, `https://signed/${path}`]))));
 });
 
@@ -193,4 +226,138 @@ test('replaceLocal and removeLocal update the list and the cache', async () => {
   expect(screen.getByTestId('ids')).toHaveTextContent('a:laundry');
   const parsed = JSON.parse(kvGet(CACHE_KEY) ?? '{}') as { garments: { id: string; status: string }[] };
   expect(parsed.garments).toEqual([expect.objectContaining({ id: 'a', status: 'laundry' })]);
+});
+
+describe('work in flight for a user who is gone (I1)', () => {
+  test('a refresh that resolves after unmount writes neither state nor kv', async () => {
+    kvSet(CACHE_KEY, JSON.stringify({ garments: [garment({ id: 'cached', extraction_status: 'done' })], thumbs: {} }));
+    const list = deferred<ReturnType<typeof garment>[]>();
+    mockedList.mockReturnValueOnce(list.promise);
+    const view = await render(
+      <ClosetProvider>
+        <Probe />
+      </ClosetProvider>,
+    );
+
+    await view.unmount();
+    await act(async () => {
+      list.resolve([]);
+      await Promise.resolve();
+    });
+
+    expect(JSON.parse(kvGet(CACHE_KEY) ?? '{}')).toEqual({
+      garments: [expect.objectContaining({ id: 'cached' })],
+      thumbs: {},
+    });
+    expect(mockedSign).not.toHaveBeenCalled();
+  });
+
+  test('a follow-up refresh queued behind one in flight never starts after unmount', async () => {
+    const list = deferred<ReturnType<typeof garment>[]>();
+    mockedList.mockReturnValueOnce(list.promise).mockResolvedValue([]);
+    let refresh: (() => Promise<void>) | undefined;
+    function Grab(): null {
+      const value = useCloset().refresh;
+      useEffect(() => {
+        refresh = value;
+      });
+      return null;
+    }
+    const view = await render(
+      <ClosetProvider>
+        <Grab />
+      </ClosetProvider>,
+    );
+    const followUp = refresh?.();
+
+    await view.unmount();
+    await act(async () => {
+      list.resolve([]);
+      await followUp;
+    });
+
+    expect(mockedList).toHaveBeenCalledTimes(1);
+  });
+
+  test("a refresh that resolves after the session switched to another user doesn't touch the first user's closet", async () => {
+    kvSet(CACHE_KEY, JSON.stringify({ garments: [garment({ id: 'mine', extraction_status: 'done' })], thumbs: {} }));
+    const list = deferred<ReturnType<typeof garment>[]>();
+    mockedList.mockReturnValueOnce(list.promise);
+    const view = await render(
+      <ClosetProvider>
+        <Probe />
+      </ClosetProvider>,
+    );
+
+    // AuthProvider already reports user-2 while the guard still shows user-1's tree (loading).
+    mockAuth.current = { status: 'loading', userId: 'user-2' };
+    await view.rerender(
+      <ClosetProvider>
+        <Probe />
+      </ClosetProvider>,
+    );
+    await act(async () => {
+      list.resolve([garment({ id: 'theirs', user_id: 'user-2', extraction_status: 'done' })]);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('ids')).toHaveTextContent('mine');
+    expect(JSON.parse(kvGet(CACHE_KEY) ?? '{}')).toMatchObject({ garments: [expect.objectContaining({ id: 'mine' })] });
+    expect(kvGet('closet.v1.user-2')).toBeNull();
+  });
+});
+
+describe('refresh on foreground and reconnect (I2)', () => {
+  test('returning to the foreground refreshes; going to the background does not', async () => {
+    mockedList.mockResolvedValue([]);
+    await renderProvider();
+    expect(await screen.findByText('ready')).toBeOnTheScreen();
+    mockedList.mockClear();
+
+    await act(async () => {
+      appStateHandler?.('background');
+      await Promise.resolve();
+    });
+    expect(mockedList).not.toHaveBeenCalled();
+
+    await act(async () => {
+      appStateHandler?.('active');
+      await Promise.resolve();
+    });
+    expect(mockedList).toHaveBeenCalledTimes(1);
+  });
+
+  test('coming back online refreshes and clears the offline note', async () => {
+    mockedList.mockRejectedValueOnce(new TypeError('Network request failed')).mockResolvedValue([]);
+    await renderProvider();
+    expect(await screen.findByText('offline')).toBeOnTheScreen();
+
+    await act(async () => {
+      networkHandler?.({ isConnected: false, isInternetReachable: false });
+      await Promise.resolve();
+    });
+    expect(mockedList).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      networkHandler?.({ isConnected: true, isInternetReachable: true });
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText('ready')).toBeOnTheScreen();
+    expect(mockedList).toHaveBeenCalledTimes(2);
+  });
+
+  test('both listeners are removed on unmount', async () => {
+    mockedList.mockResolvedValue([]);
+    const view = await render(
+      <ClosetProvider>
+        <Probe />
+      </ClosetProvider>,
+    );
+
+    await view.unmount();
+
+    expect(appStateRemove).toHaveBeenCalledTimes(1);
+    expect(networkRemove).toHaveBeenCalledTimes(1);
+  });
 });

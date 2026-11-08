@@ -107,11 +107,16 @@ export async function uploadGarmentPhoto(
 }
 
 /**
- * Creates the garment row from the client-generated id (every other column takes its default).
- * A row that already exists is left alone, so a commit retried after a lost response is harmless.
+ * Creates the garment row from the client-generated id, owned by `userId` (every other column
+ * takes its default). Stating the owner makes RLS reject the insert (42501) if another account is
+ * signed in by the time it runs, instead of filing the garment under that account; the error is
+ * thrown as is, so the queue retries it rather than failing the photo. A row that already exists
+ * is left alone, so a commit retried after a lost response is harmless.
  */
-export async function insertGarment(id: string, client: Client = supabase): Promise<void> {
-  const { error } = await client.from('garments').upsert({ id }, { onConflict: 'id', ignoreDuplicates: true });
+export async function insertGarment(id: string, userId: string, client: Client = supabase): Promise<void> {
+  const { error } = await client
+    .from('garments')
+    .upsert({ id, user_id: userId }, { onConflict: 'id', ignoreDuplicates: true });
   if (error !== null) {
     throw error;
   }

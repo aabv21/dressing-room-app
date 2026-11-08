@@ -60,7 +60,14 @@ function nextRetryAt(items: readonly QueueItem[], now: number): number | null {
  * unrelated trigger while the app stays open. A pass that committed garments refreshes the closet.
  */
 export function UploadQueueProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const { userId } = useAuth();
+  const { userId: sessionUserId } = useAuth();
+  // The user whose queue this is, fixed for the provider's lifetime (keyed by user in the layout);
+  // a pass started for them never runs another account's queue during a switch.
+  const [userId] = useState(sessionUserId);
+  const sessionUser = useRef(sessionUserId);
+  useEffect(() => {
+    sessionUser.current = sessionUserId;
+  }, [sessionUserId]);
   const { refresh } = useCloset();
   const { t } = useI18n();
   const steps = useMemo(() => createQueueSteps(), []);
@@ -81,7 +88,9 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
   }, [userId]);
 
   const run = useCallback(async (): Promise<void> => {
-    if (userId === null) {
+    // Another account's session is already active (a switch still settling): starting a pass would
+    // only burn the owner's retry attempts on SessionMismatchError.
+    if (userId === null || sessionUser.current !== userId) {
       return;
     }
     let committed = 0;
@@ -90,6 +99,8 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     } catch {
       // A storage error aborted the pass; the items stay queued for the next trigger.
     }
+    // Unmounted (signed out or switched user) while the pass ran: no refresh and no retry timer
+    // for a user who is gone. Their items stay queued for their next sign-in.
     if (!mounted.current) {
       return;
     }

@@ -43,7 +43,7 @@ beforeAll(async () => {
 
   await uploadGarmentPhotoBytes(userId, garmentId, 'full', PHOTO, client);
   await uploadGarmentPhotoBytes(userId, garmentId, 'thumb', PHOTO, client);
-  await insertGarment(garmentId, client);
+  await insertGarment(garmentId, userId, client);
 });
 
 afterAll(async () => {
@@ -61,14 +61,18 @@ afterAll(async () => {
 
 test('an uploaded and inserted garment is listed, newest first', async () => {
   const laterId = randomUUID();
-  await insertGarment(laterId, client);
+  await insertGarment(laterId, userId, client);
   // A retried commit inserts the same id again: still one row.
-  await insertGarment(laterId, client);
+  await insertGarment(laterId, userId, client);
 
   const garments = await listGarments(client);
 
   expect(garments.map((garment) => garment.id)).toEqual([laterId, garmentId]);
   expect(garments[1]).toMatchObject({ id: garmentId, user_id: userId, photo_version: 1 });
+});
+
+test("inserting a garment owned by anyone but the session's user is rejected by RLS (42501)", async () => {
+  await expect(insertGarment(randomUUID(), randomUUID(), client)).rejects.toMatchObject({ code: '42501' });
 });
 
 test('re-uploading a variant overwrites it (upsert) instead of failing', async () => {

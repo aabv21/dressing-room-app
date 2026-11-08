@@ -185,18 +185,34 @@ describe('uploadGarmentPhoto', () => {
   });
 });
 
-test('insertGarment sends only the id and ignores a duplicate', async () => {
+test('insertGarment sends the id and the owner, and ignores a duplicate', async () => {
   const { client, builder } = fakeClient();
 
-  await insertGarment('g-1', client);
+  await insertGarment('g-1', 'user-1', client);
 
-  expect(builder['upsert']).toHaveBeenCalledWith({ id: 'g-1' }, { onConflict: 'id', ignoreDuplicates: true });
+  expect(builder['upsert']).toHaveBeenCalledWith(
+    { id: 'g-1', user_id: 'user-1' },
+    { onConflict: 'id', ignoreDuplicates: true },
+  );
 });
 
 test('insertGarment throws on error', async () => {
   const { client } = fakeClient({ rows: { data: null, error: new Error('denied') } });
 
-  await expect(insertGarment('g-1', client)).rejects.toThrow('denied');
+  await expect(insertGarment('g-1', 'user-1', client)).rejects.toThrow('denied');
+});
+
+test("an RLS rejection (another account's session) is retryable, never permanent", async () => {
+  const rlsError = { code: '42501', message: 'new row violates row-level security policy for table "garments"' };
+  const { client } = fakeClient({ rows: { data: null, error: rlsError, status: 403 } });
+
+  const outcome = await insertGarment('g-1', 'user-1', client).then(
+    () => null,
+    (error: unknown) => error,
+  );
+
+  expect(outcome).toBe(rlsError);
+  expect(outcome).not.toBeInstanceOf(PermanentUploadError);
 });
 
 test('bumpPhotoVersion writes the next version for that garment', async () => {

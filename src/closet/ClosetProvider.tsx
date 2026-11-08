@@ -1,5 +1,7 @@
+import * as Network from 'expo-network';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { AppState } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
 import { kvGet, kvSet } from '../lib/kv';
@@ -55,7 +57,15 @@ function readCache(userId: string): CachedCloset | null {
  * starts from that user's own cache.
  */
 export function ClosetProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const { userId } = useAuth();
+  const { userId: sessionUserId } = useAuth();
+  // The user this closet belongs to, fixed for the provider's lifetime (the layout keys it by
+  // user). During a user switch AuthProvider reports the next user while this tree is still
+  // mounted, so `sessionUserId` can differ from it.
+  const [userId] = useState(sessionUserId);
+  const sessionUser = useRef(sessionUserId);
+  useEffect(() => {
+    sessionUser.current = sessionUserId;
+  }, [sessionUserId]);
   const [initial] = useState(() => (userId === null ? null : readCache(userId)));
   const [garments, setGarments] = useState<Garment[]>(initial?.garments ?? []);
   const [thumbs, setThumbs] = useState<Record<string, SignedThumb>>(initial?.thumbs ?? {});
@@ -68,23 +78,32 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
   const followUp = useRef<Promise<void> | null>(null);
   const mounted = useRef(true);
 
+  // Work started for this closet's user must not land after they are gone: after unmount (sign-out)
+  // or once another account's session is active, a late result would overwrite this user's
+  // offline copy with an empty or foreign list.
+  const isCurrent = useCallback(() => mounted.current && sessionUser.current === userId, [userId]);
+
   const commit = useCallback(
     (next: CachedCloset) => {
+      if (!isCurrent()) {
+        return;
+      }
       latest.current = next;
       if (userId !== null) {
         kvSet(cacheKey(userId), JSON.stringify(next));
       }
-      if (mounted.current) {
-        setGarments(next.garments);
-        setThumbs(next.thumbs);
-      }
+      setGarments(next.garments);
+      setThumbs(next.thumbs);
     },
-    [userId],
+    [userId, isCurrent],
   );
 
   const load = useCallback(async () => {
     try {
       const listed = await listGarments();
+      if (!isCurrent()) {
+        return;
+      }
       const now = Date.now();
       const previous = latest.current.thumbs;
       const toSign = listed.filter((g) => {
@@ -102,6 +121,9 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
       commit({ garments: listed, thumbs: nextThumbs });
       if (toSign.length > 0 && userId !== null) {
         const signed = await signedPhotoUrls(toSign.map((g) => garmentPhotoPath(userId, g.id, 'thumb')));
+        if (!isCurrent()) {
+          return;
+        }
         const freshThumbs: Record<string, SignedThumb> = {};
         for (const g of toSign) {
           const url = signed.get(garmentPhotoPath(userId, g.id, 'thumb'));
@@ -111,20 +133,21 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
         }
         commit({ garments: latest.current.garments, thumbs: { ...latest.current.thumbs, ...freshThumbs } });
       }
-      if (mounted.current) {
-        setStatus('ready');
-      }
+      setStatus('ready');
     } catch {
-      if (mounted.current) {
+      if (isCurrent()) {
         setStatus('offline');
       }
     }
-  }, [commit, userId]);
+  }, [commit, userId, isCurrent]);
 
   // One refresh at a time. A call that arrives mid-refresh gets one follow-up refresh (shared by
   // every such caller), so a caller that just changed data on the server always sees it.
   const refresh = useCallback((): Promise<void> => {
     const start = (): Promise<void> => {
+      if (!isCurrent()) {
+        return Promise.resolve();
+      }
       const run = load().finally(() => {
         inFlight.current = null;
       });
@@ -140,13 +163,32 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
       return inFlight.current ?? start();
     });
     return followUp.current;
-  }, [load]);
+  }, [load, isCurrent]);
 
+  // Refresh on mount, on returning to the foreground (signed URLs may have expired meanwhile; only
+  // stale ones are re-signed) and when the network comes back (clears `offline`).
   useEffect(() => {
     mounted.current = true;
     void refresh();
+
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refresh();
+      }
+    });
+    let wasOnline: boolean | null = null;
+    const network = Network.addNetworkStateListener((event) => {
+      const online = event.isConnected === true && event.isInternetReachable !== false;
+      if (online && wasOnline === false) {
+        void refresh();
+      }
+      wasOnline = online;
+    });
+
     return () => {
       mounted.current = false;
+      appState.remove();
+      network.remove();
     };
   }, [refresh]);
 

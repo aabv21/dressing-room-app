@@ -10,6 +10,17 @@ import type { QueueSteps } from './runQueue';
 type Client = SupabaseClient<Database>;
 
 /**
+ * The item belongs to another account than the one now signed in (a sign-out or user switch while
+ * a pass was running). Retryable: the item runs again once its owner signs back in.
+ */
+export class SessionMismatchError extends Error {
+  constructor() {
+    super('upload queued by a different account than the current session');
+    this.name = 'SessionMismatchError';
+  }
+}
+
+/**
  * The real queue stages: prepare the photo on-device, upload both variants (upserts, so a retry
  * overwrites), then create the row or, for a replacement, bump its `photo_version`.
  *
@@ -18,6 +29,14 @@ type Client = SupabaseClient<Database>;
  * upgrade path: store the version read at enqueue time and bump with an `eq('photo_version', …)` guard.
  */
 export function createQueueSteps(client: Client = supabase): QueueSteps {
+  // Reads the stored session (no network unless the token needs refreshing).
+  async function assertSessionOwns(item: QueueItem): Promise<void> {
+    const { data } = await client.auth.getSession();
+    if (data.session?.user.id !== item.userId) {
+      throw new SessionMismatchError();
+    }
+  }
+
   async function commitReplacement(item: QueueItem): Promise<void> {
     const { data, error } = await client
       .from('garments')
@@ -44,14 +63,16 @@ export function createQueueSteps(client: Client = supabase): QueueSteps {
   return {
     prepare: (sourceUri) => preparePhoto(sourceUri),
     async upload(item) {
+      await assertSessionOwns(item);
       await uploadGarmentPhoto(item.userId, item.garmentId, 'full', item.fullUri, client);
       await uploadGarmentPhoto(item.userId, item.garmentId, 'thumb', item.thumbUri, client);
     },
     async commit(item) {
+      await assertSessionOwns(item);
       if (item.replace) {
         await commitReplacement(item);
       } else {
-        await insertGarment(item.garmentId, client);
+        await insertGarment(item.garmentId, item.userId, client);
       }
     },
   };

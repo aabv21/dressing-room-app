@@ -162,9 +162,14 @@ check column grants — see below):
 insert, update on public.garments from authenticated` (removing Supabase's default wide-open
 privileges), the client gets back only:
 
-- `grant insert (id)` — a client insert supplies only `id`; `user_id` comes from its column
-  default (`auth.uid()`), and every other column takes its own default (`status = 'available'`,
-  `extraction_status = 'pending'`, empty arrays, `photo_version = 1`, `wear_count = 0`, …).
+- `grant insert (id)` plus `grant insert (user_id)` (migration `…_garments_insert_user_id.sql`)
+  — a client insert supplies `id` and may state `user_id` (default `auth.uid()`); every other
+  column takes its own default (`status = 'available'`, `extraction_status = 'pending'`, empty
+  arrays, `photo_version = 1`, `wear_count = 0`, …). The app always states the owner it queued the
+  photo for, so `garments_insert_own`'s `with check (user_id = (select auth.uid()))` rejects
+  (`42501`) a commit that runs after a sign-out or user switch instead of the default filing the
+  garment under whoever is signed in; the upload queue retries that error rather than failing the
+  photo.
 - `grant update (category, colors, pattern, material, formality, seasons, warmth, fit, occasions,
   status, photo_version, reviewed_at)` — the client can edit a garment's attributes and status, but
   **can never write** `user_id`, `extraction_status`, `uncertain_fields`, `wear_count`,
@@ -373,8 +378,10 @@ discards both the user and its profile row — no cleanup step is needed.
   table at all.
 - `garments_rules.test.sql` — every CHECK constraint (`formality`, `warmth`, 4 colors,
   `photo_version`) rejects an out-of-range value; an insert with only `id` gets `user_id` from the
-  caller and defaults `status`/`extraction_status`; a client can't write `extraction_status`,
-  `wear_count` or `user_id`; an update leaves `created_at` unchanged and moves `updated_at`.
+  caller and defaults `status`/`extraction_status`; an insert stating the caller's own `user_id`
+  succeeds, another user's raises `42501`, and inserting `extraction_status` raises `42501`; a
+  client can't update `extraction_status`, `wear_count` or `user_id`; an update leaves
+  `created_at` unchanged and moves `updated_at`.
 - `usage_quota.test.sql` — `consume_quota` returns `true` up to `p_limit` and `false` after; a
   different kind or user is tracked independently; `p_limit 0` always returns `false`; calling the
   function or reading `usage_counters` directly as `authenticated` raises a policy error.

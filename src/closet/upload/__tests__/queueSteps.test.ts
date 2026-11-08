@@ -11,6 +11,7 @@ import { bumpPhotoVersion, insertGarment, uploadGarmentPhoto } from '../../garme
 import { preparePhoto } from '../preparePhoto';
 import type { QueueItem } from '../queueStore';
 import { createQueueSteps } from '../queueSteps';
+import { PermanentUploadError } from '../permanentUploadError';
 
 type Client = NonNullable<Parameters<typeof createQueueSteps>[0]>;
 
@@ -32,7 +33,14 @@ function makeItem(overrides: Partial<QueueItem> = {}): QueueItem {
 }
 
 /** A client whose garment row read resolves `row`, and whose storage `remove` resolves `removeError`. */
-function fakeClient(row: { data: unknown; error: unknown }, removeError: unknown = null) {
+function fakeClient(
+  row: { data: unknown; error: unknown },
+  removeError: unknown = null,
+  sessionUserId: string | null = 'user-1',
+) {
+  const getSession = jest.fn(() =>
+    Promise.resolve({ data: { session: sessionUserId === null ? null : { user: { id: sessionUserId } } }, error: null }),
+  );
   const maybeSingle = jest.fn(() => Promise.resolve(row));
   const eq = jest.fn(() => ({ maybeSingle }));
   const select = jest.fn(() => ({ eq }));
@@ -40,6 +48,7 @@ function fakeClient(row: { data: unknown; error: unknown }, removeError: unknown
   const client = {
     from: jest.fn(() => ({ select })),
     storage: { from: jest.fn(() => ({ remove })) },
+    auth: { getSession },
   } as unknown as Client;
   return { client, select, eq, remove };
 }
@@ -71,8 +80,30 @@ test('commit inserts a new garment', async () => {
 
   await createQueueSteps(client).commit(makeItem());
 
-  expect(insertGarment).toHaveBeenCalledWith('g-1', client);
+  expect(insertGarment).toHaveBeenCalledWith('g-1', 'user-1', client);
   expect(bumpPhotoVersion).not.toHaveBeenCalled();
+});
+
+describe("an item queued by another account than the session's", () => {
+  test.each([
+    ['another user', 'user-2'],
+    ['nobody (signed out)', null],
+  ])('with %s signed in, upload and commit throw a retryable error and touch nothing', async (_, sessionUser) => {
+    const { client } = fakeClient({ data: null, error: null }, null, sessionUser);
+    const steps = createQueueSteps(client);
+
+    const uploadError: unknown = await steps
+      .upload({ ...makeItem({ stage: 'prepared' }), fullUri: 'file:///f.webp', thumbUri: 'file:///t.webp' })
+      .then(() => null, (error: unknown) => error);
+    const commitError: unknown = await steps.commit(makeItem()).then(() => null, (error: unknown) => error);
+
+    expect(uploadError).toBeInstanceOf(Error);
+    expect(uploadError).not.toBeInstanceOf(PermanentUploadError);
+    expect(commitError).toBeInstanceOf(Error);
+    expect(commitError).not.toBeInstanceOf(PermanentUploadError);
+    expect(uploadGarmentPhoto).not.toHaveBeenCalled();
+    expect(insertGarment).not.toHaveBeenCalled();
+  });
 });
 
 test("commit for a replacement bumps the current row's photo version", async () => {
