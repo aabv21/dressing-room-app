@@ -1,6 +1,6 @@
 // The city modal pushed from Today's weather line: the profile's city prefilled, "use my location"
 // and Save. Rendered directly with auth, the profile repository, expo-location and the router mocked.
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 
@@ -92,6 +92,35 @@ test('a denied location permission says so and saves nothing', async () => {
   await fireEvent.press(await screen.findByRole('button', { name: 'use my location' }));
   expect(await screen.findByText('Location access is off. Type your city instead.')).toBeOnTheScreen();
   expect(mockedSaveProfile).not.toHaveBeenCalled();
+});
+
+test('"use my location" is disabled while a save is in flight', async () => {
+  mockedGetProfile.mockResolvedValue(profile());
+  jest.mocked(Location.requestForegroundPermissionsAsync).mockClear();
+  let finishSave: (value: Awaited<ReturnType<typeof saveProfile>>) => void = () => undefined;
+  mockedSaveProfile.mockReturnValue(
+    new Promise((resolve) => {
+      finishSave = resolve;
+    }),
+  );
+  await render(<CityScreen />);
+
+  await fireEvent.changeText(await screen.findByDisplayValue('Madrid'), 'Lima');
+  expect(screen.getByRole('button', { name: 'use my location' })).toBeEnabled();
+  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  const locate = screen.getByRole('button', { name: 'use my location' });
+  expect(locate).toBeDisabled();
+  await fireEvent.press(locate);
+  expect(Location.requestForegroundPermissionsAsync).not.toHaveBeenCalled();
+
+  // A failed save keeps the modal open, and the location button works again.
+  await act(async () => {
+    finishSave({ ok: false, error: 'profile.error.network' });
+    await Promise.resolve();
+  });
+  expect(await screen.findByText("Couldn't save. Check your internet and try again.")).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'use my location' })).toBeEnabled();
 });
 
 test('an unchanged city closes without saving', async () => {

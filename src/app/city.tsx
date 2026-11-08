@@ -169,8 +169,9 @@ export default function CityScreen(): React.JSX.Element {
           trailing={
             <Pressable
               accessibilityRole="button"
-              accessibilityState={{ disabled: locating, busy: locating }}
-              disabled={locating}
+              // Not while a save is in flight: a location landing then would change the field under it.
+              accessibilityState={{ disabled: locating || saving, busy: locating }}
+              disabled={locating || saving}
               onPress={() => {
                 void locate();
               }}
