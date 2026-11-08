@@ -443,4 +443,53 @@ describe('generateCandidates', () => {
       expect(outfit.some((item) => item.category === 'coat')).toBe(true);
     }
   });
+
+  test('the only coat is the wrong formality for the occasion on a cold day: candidates are returned without it', () => {
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'], formality: 1 }),
+      garment({ category: 'jeans', colors: ['navy'], formality: 1 }),
+      garment({ category: 'sneakers', colors: ['white'], formality: 1 }),
+      garment({ category: 'coat', colors: ['black'], formality: 5 }),
+    ];
+    const ctx: RuleContext = { ...MILD_CTX, occasion: 'sport', weather: weather({ band: 'cold' }) };
+    const result = generateCandidates(closet, ctx, 'seed');
+    expect(result.length).toBeGreaterThan(0);
+    for (const outfit of result) {
+      expect(outfit.every((item) => item.category !== 'coat')).toBe(true);
+    }
+  });
+
+  test('the only coat is out of season on a rainy, non-hot day: candidates are returned without it', () => {
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'] }),
+      garment({ category: 'jeans', colors: ['navy'] }),
+      garment({ category: 'sneakers', colors: ['white'] }),
+      garment({ category: 'coat', colors: ['black'], seasons: ['winter'] }),
+    ];
+    const ctx: RuleContext = { ...MILD_CTX, season: 'summer', weather: weather({ band: 'mild', rain: true }) };
+    const result = generateCandidates(closet, ctx, 'seed');
+    expect(result.length).toBeGreaterThan(0);
+    for (const outfit of result) {
+      expect(outfit.every((item) => item.category !== 'coat')).toBe(true);
+    }
+  });
+
+  test('one admissible and one inadmissible coat on a cold day: every candidate gets the admissible one', () => {
+    const admissibleCoat = garment({ category: 'coat', colors: ['black'], formality: 2 });
+    const inadmissibleCoat = garment({ category: 'blazer', colors: ['navy'], formality: 5 });
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'], formality: 1 }),
+      garment({ category: 'jeans', colors: ['navy'], formality: 1 }),
+      garment({ category: 'sneakers', colors: ['white'], formality: 1 }),
+      admissibleCoat,
+      inadmissibleCoat,
+    ];
+    const ctx: RuleContext = { ...MILD_CTX, occasion: 'sport', weather: weather({ band: 'cold' }) };
+    const result = generateCandidates(closet, ctx, 'seed');
+    expect(result.length).toBeGreaterThan(0);
+    for (const outfit of result) {
+      expect(outfit.some((item) => item.id === admissibleCoat.id)).toBe(true);
+      expect(outfit.some((item) => item.id === inadmissibleCoat.id)).toBe(false);
+    }
+  });
 });

@@ -43,10 +43,12 @@ export type RuleContext = {
   weather: WeatherSummary | null;
   today: string;
   /**
-   * Whether the closet has any available outerwear at all. Defaults to `true` so existing
-   * callers (and `passesRules`'s pre-P4-R7 semantics) are unaffected; `generateCandidates` sets
-   * it from the actual closet. When `false`, a cold-weather outfit is allowed with no outerwear
-   * rather than making the lucky list empty for a user who owns none (ruling P4-R7).
+   * Whether the closet has at least one outerwear piece admissible for this context (available,
+   * in-season, in the occasion's formality range — not merely present in the closet). Defaults
+   * to `true` so existing callers (and `passesRules`'s pre-P4-R7 semantics) are unaffected;
+   * `generateCandidates` sets it from the actual closet. When `false`, a cold-weather outfit is
+   * allowed with no outerwear rather than making the lucky list empty for a user who owns none,
+   * or whose only coat doesn't fit today's occasion or season (ruling P4-R7).
    */
   outerwearAvailable?: boolean;
 };
@@ -141,20 +143,24 @@ function formalityRangeFor(occasion: Occasion | null): readonly [number, number]
   return occasion === null ? FORMALITY_RANGE.any : FORMALITY_RANGE[occasion];
 }
 
+/** Season and formality admissibility shared by `passesRules` and `generateCandidates`'s outerwear-availability check, so the two can't drift. */
+function isAdmissible(item: RuleGarment, ctx: Pick<RuleContext, 'occasion' | 'season'>): boolean {
+  if (item.status !== 'available' || item.category === null) return false;
+  if (item.seasons.length > 0 && !item.seasons.includes(ctx.season)) return false;
+  const [minFormality, maxFormality] = formalityRangeFor(ctx.occasion);
+  if (item.formality !== null && (item.formality < minFormality || item.formality > maxFormality)) return false;
+  return true;
+}
+
 /** All of global-constraints.md's "Feeling lucky"/rating rule checks for one candidate outfit. */
 export function passesRules(outfit: Outfit, ctx: RuleContext): boolean {
   if (outfit.length === 0) return false;
 
-  const [minFormality, maxFormality] = formalityRangeFor(ctx.occasion);
   const nonNeutralColors = new Set<GarmentColor>();
   let nonSolidPatterns = 0;
 
   for (const item of outfit) {
-    if (item.status !== 'available' || item.category === null) return false;
-
-    if (item.seasons.length > 0 && !item.seasons.includes(ctx.season)) return false;
-
-    if (item.formality !== null && (item.formality < minFormality || item.formality > maxFormality)) return false;
+    if (item.category === null || !isAdmissible(item, ctx)) return false;
 
     const slot = slotOf(item.category);
     if (ctx.weather?.band === 'hot') {
@@ -297,8 +303,12 @@ export function generateCandidates(
   };
 
   // Hoisted out of the per-combination loop (P4-R7): computed once from the closet, not
-  // re-derived for every base combination.
-  const outerwearAvailable = shuffled.outerwear.length > 0;
+  // re-derived for every base combination. "Available" means admissible for this context, not
+  // merely in the closet — an inadmissible-only coat (wrong formality/season) must behave the
+  // same as owning none, using the same `isAdmissible` check `passesRules` applies per piece
+  // (fix round 2: the formality/season gap in the first P4-R7 fix).
+  const admissibleOuterwear = shuffled.outerwear.filter((item) => isAdmissible(item, ctx));
+  const outerwearAvailable = admissibleOuterwear.length > 0;
   const ctxWithOuterwear: RuleContext = { ...ctx, outerwearAvailable };
   const needsOuterwear =
     outerwearAvailable &&
@@ -313,7 +323,7 @@ export function generateCandidates(
     outer: for (const base of baseCombinations(shuffled)) {
       if (excludeRecentlyWorn && base.some((item) => isRecentlyWorn(item, ctx.today))) continue;
 
-      const outerwearOptions: Array<RuleGarment | null> = needsOuterwear ? shuffled.outerwear : [null];
+      const outerwearOptions: Array<RuleGarment | null> = needsOuterwear ? admissibleOuterwear : [null];
 
       for (const outerwear of outerwearOptions) {
         if (excludeRecentlyWorn && outerwear !== null && isRecentlyWorn(outerwear, ctx.today)) continue;
