@@ -1,5 +1,5 @@
 import type { MessageKey } from '../i18n';
-import { slotOf, type Slot } from './catalog';
+import { GARMENT_FIELDS, slotOf, type GarmentField, type Slot } from './catalog';
 import type { GridItem } from './ClosetGrid';
 import type { Garment } from './garmentRepository';
 
@@ -24,6 +24,36 @@ export function reviewQueue(garments: readonly Garment[], now: number): Garment[
   return garments
     .filter((g) => g.reviewed_at === null && !isLivePending(g, now))
     .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+}
+
+/** The fields review always needs a value for; category is also required to confirm. */
+const BASIC_FIELDS: ReadonlySet<GarmentField> = new Set(['category', 'colors', 'formality', 'seasons']);
+
+function isEmptyBasic(g: Garment, field: GarmentField): boolean {
+  switch (field) {
+    case 'category':
+      return g.category === null;
+    case 'colors':
+      return g.colors.length === 0;
+    case 'formality':
+      return g.formality === null;
+    case 'seasons':
+      return g.seasons.length === 0;
+    default:
+      return false;
+  }
+}
+
+/**
+ * The fields review asks about, in field order: the ones the AI was unsure of plus any empty basic
+ * (category, colors, formality, seasons). When the AI never read the photo (failed, over quota or
+ * stale pending), the basics are always asked.
+ */
+export function fieldsToAsk(g: Garment, now: number): GarmentField[] {
+  const unread = g.extraction_status === 'failed' || g.extraction_status === 'over_quota' || isStalePending(g, now);
+  return GARMENT_FIELDS.filter(
+    (field) => g.uncertain_fields.includes(field) || (BASIC_FIELDS.has(field) && (unread || isEmptyBasic(g, field))),
+  );
 }
 
 /** Garments per slot; slots with none are absent, and uncategorized garments aren't counted. */

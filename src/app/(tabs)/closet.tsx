@@ -34,10 +34,10 @@ const CLOCK_TICK_MS = 30_000;
 // ChipGroup's chips are 36 pt tall with hitSlop up to the 44 pt minimum.
 const CHIP_SLOP = (layout.minHitTarget - 36) / 2;
 
-// NOTE: `/review` and `/garment/[id]` are added by Plan 3's Tasks 9-10 (P3-R3); until their route
-// files exist, typed routes doesn't list them. `/camera` (Task 8) exists now and is pushed as a
-// plain literal below. Ceiling: an unchecked path for the two still pending; upgrade path: once
-// each route exists, push its literal directly and narrow (then delete) this helper.
+// NOTE: `/garment/[id]` is added by Plan 3's Task 10 (P3-R3); until its route file exists, typed
+// routes doesn't list it. `/camera` and `/review` exist now and are pushed as plain literals below.
+// Ceiling: an unchecked path for the one still pending; upgrade path: once it exists, push its
+// literal directly and delete this helper.
 function pendingRoute(path: string): Href {
   return path as Href;
 }
@@ -94,7 +94,7 @@ function ReviewBanner({ count }: { count: number }): React.JSX.Element {
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={() => {
-        router.push(pendingRoute('/review'));
+        router.push('/review');
       }}
     >
       <Text style={styles.bannerText}>{label}</Text>

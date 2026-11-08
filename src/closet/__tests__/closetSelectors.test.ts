@@ -1,6 +1,6 @@
 import { translate, type MessageKey } from '../../i18n';
 import type { Garment } from '../garmentRepository';
-import { isStalePending, reviewQueue, slotCounts, toGridItems } from '../closetSelectors';
+import { fieldsToAsk, isStalePending, reviewQueue, slotCounts, toGridItems } from '../closetSelectors';
 import { garment } from '../../test/garmentFixture';
 
 const NOW = Date.parse('2026-11-08T12:00:00.000Z');
@@ -50,6 +50,40 @@ describe('reviewQueue', () => {
     ];
     reviewQueue(garments, NOW);
     expect(garments.map((g) => g.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('fieldsToAsk', () => {
+  const filled = {
+    category: 'jeans',
+    colors: ['navy'],
+    pattern: 'solid',
+    material: 'denim',
+    formality: 2,
+    seasons: ['spring', 'autumn'],
+    warmth: 2,
+    fit: 'regular',
+    occasions: ['home'],
+  } as const satisfies Partial<Garment>;
+
+  test('a done garment with every value set asks only its uncertain fields', () => {
+    const g = garment({ ...filled, colors: [...filled.colors], seasons: [...filled.seasons], occasions: [...filled.occasions], extraction_status: 'done', uncertain_fields: ['formality'] });
+    expect(fieldsToAsk(g, NOW)).toEqual(['formality']);
+  });
+
+  test('a done garment also asks the empty basics, in field order', () => {
+    const g = garment({ extraction_status: 'done', category: 'jeans', uncertain_fields: ['fit'] });
+    expect(fieldsToAsk(g, NOW)).toEqual(['colors', 'formality', 'seasons', 'fit']);
+  });
+
+  test('a failed garment always asks category, colors, formality and seasons', () => {
+    const g = garment({ ...filled, colors: [...filled.colors], seasons: [...filled.seasons], occasions: [...filled.occasions], extraction_status: 'failed' });
+    expect(fieldsToAsk(g, NOW)).toEqual(['category', 'colors', 'formality', 'seasons']);
+  });
+
+  test('a stale pending garment asks the same four', () => {
+    const g = garment({ extraction_status: 'pending', created_at: createdAgo(11 * MINUTE) });
+    expect(fieldsToAsk(g, NOW)).toEqual(['category', 'colors', 'formality', 'seasons']);
   });
 });
 
