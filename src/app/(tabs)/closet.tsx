@@ -1,5 +1,5 @@
 import * as ImagePicker from 'expo-image-picker';
-import { router, useIsFocused, type Href } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { Camera, ChevronRight, ImageIcon } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -33,14 +33,6 @@ const GALLERY_SELECTION_LIMIT = 30;
 const CLOCK_TICK_MS = 30_000;
 // ChipGroup's chips are 36 pt tall with hitSlop up to the 44 pt minimum.
 const CHIP_SLOP = (layout.minHitTarget - 36) / 2;
-
-// NOTE: `/garment/[id]` is added by Plan 3's Task 10 (P3-R3); until its route file exists, typed
-// routes doesn't list it. `/camera` and `/review` exist now and are pushed as plain literals below.
-// Ceiling: an unchecked path for the one still pending; upgrade path: once it exists, push its
-// literal directly and delete this helper.
-function pendingRoute(path: string): Href {
-  return path as Href;
-}
 
 const noop = (): void => undefined;
 
@@ -190,7 +182,7 @@ function RealCloset(): React.JSX.Element {
   );
 
   const onPressItem = useCallback((id: string) => {
-    router.push(pendingRoute(`/garment/${id}`));
+    router.push(`/garment/${id}`);
   }, []);
 
   const pickFromGallery = useCallback(async () => {

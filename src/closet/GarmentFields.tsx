@@ -27,6 +27,50 @@ export type FieldValues = Pick<
   'category' | 'colors' | 'pattern' | 'material' | 'formality' | 'seasons' | 'warmth' | 'fit' | 'occasions'
 >;
 
+/** The editable attributes of a stored garment. */
+export function fieldValuesOf(g: Garment): FieldValues {
+  const { category, colors: garmentColors, pattern, material, formality, seasons, warmth, fit, occasions } = g;
+  return { category, colors: garmentColors, pattern, material, formality, seasons, warmth, fit, occasions };
+}
+
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
+  // Order counts: the first color is the dominant one.
+  return a.length === b.length && a.every((entry, index) => entry === b.at(index));
+}
+
+/** Only the fields of `next` that differ from `stored`: the patch a save sends. */
+export function changedFields(stored: FieldValues, next: FieldValues): Partial<FieldValues> {
+  const patch: Partial<FieldValues> = {};
+  if (next.category !== stored.category) {
+    patch.category = next.category;
+  }
+  if (!sameList(next.colors, stored.colors)) {
+    patch.colors = next.colors;
+  }
+  if (next.pattern !== stored.pattern) {
+    patch.pattern = next.pattern;
+  }
+  if (next.material !== stored.material) {
+    patch.material = next.material;
+  }
+  if (next.formality !== stored.formality) {
+    patch.formality = next.formality;
+  }
+  if (!sameList(next.seasons, stored.seasons)) {
+    patch.seasons = next.seasons;
+  }
+  if (next.warmth !== stored.warmth) {
+    patch.warmth = next.warmth;
+  }
+  if (next.fit !== stored.fit) {
+    patch.fit = next.fit;
+  }
+  if (!sameList(next.occasions, stored.occasions)) {
+    patch.occasions = next.occasions;
+  }
+  return patch;
+}
+
 type Translate = (key: MessageKey, params?: Readonly<Record<string, string | number>>) => string;
 
 const MAX_COLORS = 3;
@@ -252,12 +296,16 @@ export function FieldEditor(props: {
    * the category itself, since the right answer may be in another slot (P3-R12).
    */
   narrowCategory?: boolean;
+  /** Every choice shown but not tappable (e.g. while the AI is still reading the photo). */
+  disabled?: boolean;
 }): React.JSX.Element {
-  const { field, values, onChange, clothingType, narrowCategory = true } = props;
+  const { field, values, onChange, clothingType, narrowCategory = true, disabled = false } = props;
   const { t } = useI18n();
+  const editor = editorProps(field, values, onChange, clothingType, narrowCategory, t);
   return (
     <ChipGroup
-      {...editorProps(field, values, onChange, clothingType, narrowCategory, t)}
+      {...editor}
+      options={disabled ? editor.options.map((option) => ({ ...option, disabled: true })) : editor.options}
       tone="accent"
       accessibilityLabel={t(`garment.field.${field}`)}
     />

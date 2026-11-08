@@ -1,25 +1,24 @@
 // Mockup 02 screen 3: the review queue. The AI has already filled in each garment; the user goes
 // through them one at a time and is only asked about what the AI doubted (`fieldsToAsk`). No tab
 // bar (the mockup's `.cta.nobar`): a root Stack screen registered inside the tabs guard (P3-R3).
-import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useIsFocused } from 'expo-router';
 import { Check } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { AccessibilityInfo, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 
 import { GARMENT_FIELDS, type ClothingType, type GarmentField } from '../closet/catalog';
 import { useCloset, usePendingPolling } from '../closet/ClosetProvider';
 import { fieldsToAsk, isStalePending, reviewQueue } from '../closet/closetSelectors';
-import { ConfirmedRow, FieldEditor, type FieldValues } from '../closet/GarmentFields';
-import { confirmReview, garmentPhotoPath, signedPhotoUrls, type Garment } from '../closet/garmentRepository';
+import { ConfirmedRow, FieldEditor, fieldValuesOf } from '../closet/GarmentFields';
+import { confirmReview, type Garment } from '../closet/garmentRepository';
+import { GarmentPhoto } from '../closet/GarmentPhoto';
 import { useNow } from '../closet/useNow';
 import { useI18n } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
 import { useClothingType } from '../profile/useClothingType';
 import { AnchoredCta } from '../ui/AnchoredCta';
-import { useBottomChrome } from '../ui/layout';
+import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { colors, gradients, radii, spacing } from '../ui/theme';
 
@@ -29,82 +28,6 @@ const ERROR_ROOM = 56;
 // Mockup order: the basics as confirmed rows, then the questions, then the finer details.
 const BASIC_FIELDS: readonly GarmentField[] = ['category', 'colors', 'seasons', 'formality'];
 const DETAIL_FIELDS: readonly GarmentField[] = GARMENT_FIELDS.filter((field) => !BASIC_FIELDS.includes(field));
-
-function valuesOf(g: Garment): FieldValues {
-  const { category, colors: garmentColors, pattern, material, formality, seasons, warmth, fit, occasions } = g;
-  return { category, colors: garmentColors, pattern, material, formality, seasons, warmth, fit, occasions };
-}
-
-/** A signed URL for the garment's full photo, or null until it is signed (or if signing failed). */
-function useFullPhotoUrl(g: Garment): string | null {
-  const path = garmentPhotoPath(g.user_id, g.id, 'full');
-  const [signed, setSigned] = useState<{ path: string; url: string } | null>(null);
-
-  useEffect(() => {
-    let current = true;
-    signedPhotoUrls([path]).then(
-      (urls) => {
-        const url = urls.get(path);
-        if (current && url !== undefined) {
-          setSigned({ path, url });
-        }
-      },
-      // Offline: the checkerboard stays empty and the fields still work.
-      () => undefined,
-    );
-    return () => {
-      current = false;
-    };
-  }, [path]);
-
-  return signed !== null && signed.path === path ? signed.url : null;
-}
-
-/** Mockup 02's `.garment`: a transparency checkerboard behind the cut-out photo. */
-function PhotoBox({ garment }: { garment: Garment }): React.JSX.Element {
-  const { t } = useI18n();
-  const url = useFullPhotoUrl(garment);
-  const source = useMemo(
-    () => (url === null ? null : { uri: url, cacheKey: `${garment.id}:full:${String(garment.photo_version)}` }),
-    [url, garment.id, garment.photo_version],
-  );
-  return (
-    <View style={styles.photo}>
-      <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Defs>
-          <Pattern id="checker" width={16} height={16} patternUnits="userSpaceOnUse">
-            <Rect width={16} height={16} fill="#ffffff" />
-            <Path d="M0 0h8v8H0zM8 8h8v8H8z" fill="#f1eef7" />
-          </Pattern>
-        </Defs>
-        <Rect width="100%" height="100%" fill="url(#checker)" />
-      </Svg>
-      {source === null ? null : (
-        <Image
-          source={source}
-          style={styles.photoImage}
-          cachePolicy="disk"
-          contentFit="contain"
-          transition={100}
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel={t('review.photo')}
-          accessibilityIgnoresInvertColors
-        />
-      )}
-    </View>
-  );
-}
-
-/**
- * Mockup 02's `.cta.nobar` fade reaches the screen's bottom edge. AnchoredCta's zone ends
- * `ctaBottom` above it, so fields scrolling under the buttons would show through that strip; this
- * fills it with the background's last color.
- */
-function CtaBackdrop(): React.JSX.Element {
-  const { ctaBottom } = useBottomChrome('none');
-  return <View style={[styles.ctaBackdrop, { height: ctaBottom }]} pointerEvents="none" />;
-}
 
 function ReviewCard(props: {
   garment: Garment;
@@ -121,7 +44,7 @@ function ReviewCard(props: {
   const { replaceLocal } = useCloset();
   // Fixed for this garment: answering a question doesn't turn it into a confirmed row mid-review.
   const [asked] = useState(() => new Set(fieldsToAsk(garment, now)));
-  const [values, setValues] = useState(() => valuesOf(garment));
+  const [values, setValues] = useState(() => fieldValuesOf(garment));
   const [editing, setEditing] = useState<ReadonlySet<GarmentField>>(() => new Set());
   const [error, setError] = useState<RequestError | null>(null);
   const [saving, setSaving] = useState(false);
@@ -187,7 +110,7 @@ function ReviewCard(props: {
           />
         </View>
         {notice === null ? null : <Text style={styles.notice}>{notice}</Text>}
-        <PhotoBox garment={garment} />
+        <GarmentPhoto garment={garment} />
         <View>{BASIC_FIELDS.filter((field) => !asked.has(field)).map(row)}</View>
         {GARMENT_FIELDS.filter((field) => asked.has(field)).map((field) => (
           <View key={field} style={styles.doubt}>
@@ -359,14 +282,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  photo: {
-    aspectRatio: 252 / 150,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  photoImage: {
-    flex: 1,
-  },
   editingRow: {
     gap: spacing.sm,
     paddingVertical: spacing.sm,
@@ -402,13 +317,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.error,
     fontSize: 14,
-  },
-  ctaBackdrop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: gradients.background[2],
   },
   caughtUp: {
     marginTop: spacing.xl,

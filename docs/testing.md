@@ -20,6 +20,36 @@ environment. `jest.setup.ts` mocks:
 Uses `@testing-library/react-native` v14: `await render(...)` and `await fireEvent...` (both are
 async in v14).
 
+The closet suites (Plan 3) render each screen directly, with the closet, upload queue, repository
+and profile seams mocked by `jest.mock`, and build garment rows with `src/test/garmentFixture.ts`:
+
+- `src/closet/__tests__/` — `catalog.test.ts` (the enums match `database.types.ts`, slots and the
+  per-clothing-type categories, every label translated), `closetSelectors.test.ts` (stale pending,
+  the review queue, the fields review asks about, slot counts, grid cells), `ClosetGrid.test.tsx`,
+  `GarmentFields.test.tsx` (each field's chips and what they store, a disabled editor,
+  `changedFields`), `garmentRepository.test.ts` (the queries and storage calls against a fake
+  client, error mapping, delete order), `ClosetProvider.test.tsx` (refresh, the kv offline copy,
+  re-signing, polling, late results after sign-out or a user switch, foreground and reconnect),
+  `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer) and
+  `ClosetScreen.test.tsx` (the goal card, slot chips, the review banner, the processing and failed
+  tiles, the gallery picker, opening a garment).
+- `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
+  enqueue, replacements, conditional saves), `runQueue.test.ts` (stages, resuming an interrupted
+  item, backoff, failing after 8 attempts or a permanent error, concurrency 2), `preparePhoto.test.ts`
+  (the resize arguments for portrait, landscape and small photos, one decode capped at 784 px with
+  the thumbnail built from it, WebP qualities, the cut-out or the source photo), `cutout.test.ts` (the native
+  module present, missing, or throwing) and `queueSteps.test.ts` (the real steps, the session check,
+  replacements).
+- `src/__tests__/camera.test.tsx` — the burst camera: permissions, the shutter and shot strip, Done,
+  and the Discard / Keep shooting confirm on Close and on a back gesture.
+- `src/__tests__/review.test.tsx` — the review queue: only the doubted fields are asked, Skip and
+  Confirm, the card stays pinned while polling reorders the queue, a save error by the buttons.
+- `src/__tests__/garment-detail.test.tsx` — the garment detail: a save sends only the changed field
+  and is disabled until something changed, a network error keeps the edit, the status saves at once
+  and reverts on error, delete confirms first and goes back (or to the closet with no history), a
+  failed delete keeps the screen, Replace photo queues the picked photo, editors are disabled while
+  the AI is still reading, and an unknown id shows "not found".
+
 ### `scripts`
 
 Tests for `scripts/**/*.test.ts` (repo tooling, e.g. `scripts/env-local.ts`), running under plain
@@ -35,7 +65,19 @@ only each function's `index.ts` touches Deno, and no test imports it. The `extra
 handler takes `fetch` as a dependency, so its tests use a fake `fetch` that routes by URL and method
 and records every call, and Jest fake timers drive the 30 s Claude timeout. Claude responses come
 from recorded-shape fixtures in `supabase/functions/_shared/__tests__/fixtures/`; the real API is
-never called. See `docs/ai.md`.
+never called. See `docs/ai.md`. To run only this project:
+`NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --selectProjects functions` (a path argument to
+`pnpm test` doesn't narrow it).
+
+- `supabase/functions/_shared/__tests__/extraction.test.ts` — the Claude request (the model, 600
+  `max_tokens`, the category enum limited to the clothing type, the image block, a system prompt
+  that ignores text in the image) and the response sanitizer: a refusal, `is_garment: false` or
+  non-JSON fails; only enum values survive, at most 3 colors, and a dropped value marks its field
+  uncertain.
+- `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
+  checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
+  after 30 s (`failed`), a garment no longer pending or missing, and logs that carry only the garment
+  id and an outcome word.
 
 ### `integration`
 
@@ -73,7 +115,7 @@ Supabase stack:
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with `pnpm db:start && pnpm env:local && pnpm test:int`
-when touching auth, RLS, or profile persistence; `--runInBand` because the suites share one
+when touching auth, RLS, profile or garment persistence, or the extraction function; `--runInBand` because the suites share one
 database and create/delete real `auth.users` rows.
 
 `integration/mockAnthropic.ts` is the mock Claude: `startMockAnthropic(port = 54499)` serves
@@ -113,6 +155,13 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `profiles_onboarding_clock.test.sql` — `onboarding_completed_at` is stamped from the server clock,
   not whatever the client sent.
 - `profiles_write_rules.test.sql` — `created_at` can't be changed by a client update.
+- `garments_rls.test.sql` — `public.garments`: each user sees, inserts, updates and deletes only
+  their own rows; anon has no access.
+- `garments_rules.test.sql` — the garments CHECKs (formality, warmth, colors, photo version) and
+  the column grants: a client inserts only `id` and its own `user_id`, and never updates
+  `extraction_status`, `wear_count` or `user_id`; `updated_at` moves on update.
+- `usage_quota.test.sql` — `consume_quota()`'s per-user, per-day counter and its limit, and that
+  clients can neither call it nor read `usage_counters`.
 - `garment_extraction_trigger.test.sql` — the garments insert trigger's shape and privileges, the
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing.
 

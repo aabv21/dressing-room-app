@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import { garment } from '../../test/garmentFixture';
-import { ConfirmedRow, FieldEditor, type FieldValues } from '../GarmentFields';
+import { changedFields, ConfirmedRow, FieldEditor, fieldValuesOf, type FieldValues } from '../GarmentFields';
 
 function valuesOf(overrides: Partial<FieldValues> = {}): FieldValues {
   const { category, colors, pattern, material, formality, seasons, warmth, fit, occasions } = garment(overrides);
@@ -165,5 +165,46 @@ describe('ConfirmedRow', () => {
 
     expect(screen.getByText('All year')).toBeOnTheScreen();
     expect(screen.getByText('Navy, Light blue')).toBeOnTheScreen();
+  });
+});
+
+describe('FieldEditor disabled', () => {
+  test('shows every choice but none can be tapped', async () => {
+    const onChange = jest.fn();
+    await render(
+      <FieldEditor field="pattern" values={valuesOf({ pattern: 'solid' })} onChange={onChange} clothingType="everything" disabled />,
+    );
+
+    expect(screen.getByRole('radio', { name: 'Solid' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Striped' })).toBeDisabled();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Striped' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('changedFields', () => {
+  const stored = valuesOf({ category: 'jeans', colors: ['navy', 'white'], pattern: 'solid', seasons: ['spring'] });
+
+  test('nothing changed gives an empty patch', () => {
+    expect(changedFields(stored, { ...stored, colors: ['navy', 'white'] })).toEqual({});
+  });
+
+  test('only the changed fields, with their new values', () => {
+    expect(changedFields(stored, { ...stored, pattern: 'striped', seasons: ['spring', 'summer'] })).toEqual({
+      pattern: 'striped',
+      seasons: ['spring', 'summer'],
+    });
+  });
+
+  test('a cleared value and a reordered color list both count as changes', () => {
+    // The first color is the dominant one, so the order matters.
+    expect(changedFields(stored, { ...stored, category: null, colors: ['white', 'navy'] })).toEqual({
+      category: null,
+      colors: ['white', 'navy'],
+    });
+  });
+
+  test('fieldValuesOf picks the nine attributes off a row', () => {
+    expect(fieldValuesOf(garment({ pattern: 'floral', status: 'lent' }))).toEqual(valuesOf({ pattern: 'floral' }));
   });
 });
