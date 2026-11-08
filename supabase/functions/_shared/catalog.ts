@@ -198,7 +198,7 @@ export const CATEGORY_SLOT: Record<GarmentCategory, Slot> = {
   accessory: 'accessory',
 };
 
-/** The UI palette hex for every garment color (exact values — see `global-constraints.md`). */
+/** The UI palette hex for every garment color (exact values; the app's swatches read them from here). */
 export const PALETTE_HEX: Record<GarmentColor, string> = {
   black: '#111111',
   white: '#ffffff',
@@ -222,8 +222,8 @@ export const PALETTE_HEX: Record<GarmentColor, string> = {
   silver: '#c0c0c0',
 };
 
-// Feminine-only and masculine-only categories (see `global-constraints.md`'s "Category
-// availability"); every other category is available to every clothing type.
+// Feminine-only and masculine-only categories; every other category is available to every
+// clothing type, and `everything` sees them all.
 const FEMININE_ONLY = new Set<GarmentCategory>(['blouse', 'skirt', 'dress', 'jumpsuit', 'heels', 'flats', 'leggings']);
 const MASCULINE_ONLY = new Set<GarmentCategory>(['tie']);
 

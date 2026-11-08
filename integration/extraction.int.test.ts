@@ -3,8 +3,8 @@
 // Attribute extraction end to end on the full local stack: a garment insert fires the
 // `garments_request_extraction` trigger, pg_net calls the `extract-attributes` Edge Function, the
 // function calls Claude (here `mockAnthropic.ts` on the host) and writes the result back. Every
-// failure (a 500, a refusal, no answer at all) still ends `pending`; a repeated insert of the same
-// id calls Claude once; and an exhausted daily quota never reaches Claude.
+// failure (a 500, a refusal, no answer at all) ends `failed`, never stuck `pending`; a repeated
+// insert of the same id calls Claude once; and an exhausted daily quota never reaches Claude.
 //
 // Needs the Edge Runtime: `pnpm db:start` (or `db:start:ci`, which keeps it) and `pnpm env:local`.
 

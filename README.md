@@ -33,7 +33,7 @@ pnpm test
 The app's accounts, profile and closet features need a running local Supabase stack:
 
 ```bash
-pnpm db:start   # starts Postgres, Auth, Storage, Studio and Mailpit in Docker (first run pulls images)
+pnpm db:start   # starts Postgres, Auth, Storage, Studio, Mailpit and the Edge Runtime in Docker (first run pulls images)
 pnpm env:local  # writes .env.local with the app's Supabase URL/anon key
 pnpm expo run:ios
 ```

@@ -100,15 +100,16 @@ Enums added here (exact values):
 **Slot (`top`, `bottom`, `one_piece`, `outerwear`, `shoes`, `bag`, `headwear`, `accessory`) is
 derived in TypeScript, not a database column or enum.** `supabase/functions/_shared/catalog.ts`'s
 `CATEGORY_SLOT`/`slotOf()` map every `garment_category` to its slot, and `categoriesFor(clothingType)`
-filters the catalog by the feminine-only/masculine-only category sets (see
-`global-constraints.md`'s "Category availability"). The app imports the same file through
+filters the catalog by the feminine-only/masculine-only category sets (`FEMININE_ONLY` and
+`MASCULINE_ONLY` in the same file). The app imports the same file through
 `src/closet/catalog.ts`'s re-export, so the UI and the extraction function never disagree about
 category/slot/color data; `src/closet/__tests__/catalog.test.ts` checks every tuple against the
 generated `Constants.public.Enums.*`.
 
 ### `public.usage_counters`
 
-Backs the extraction quota (100 per user per UTC day — see `global-constraints.md`'s "Numbers").
+Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
+`supabase/functions/extract-attributes/handler.ts`).
 `(user_id uuid references auth.users on delete cascade, day date, kind quota_kind, count integer
 not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has one
 value today (`extraction`); Plans 4–5 add more with `alter type … add value`. RLS is enabled with
@@ -147,8 +148,7 @@ not yet implemented, so a client delete removes nothing, and a profile row only 
 ### `public.garments`
 
 RLS is enabled with four policies for `authenticated`, all comparing `user_id = (select
-auth.uid())` (the `update` and `delete` policies only need `using`; `insert` and `update` also
-check column grants — see below):
+auth.uid())` (`insert` and `update` are also narrowed by column grants — see below):
 
 - `garments_select_own` — `select`
 - `garments_insert_own` — `insert`, with `with check`
@@ -386,8 +386,8 @@ discards both the user and its profile row — no cleanup step is needed.
   succeeds, another user's raises `42501`, and inserting `extraction_status` raises `42501`; a
   client can't update `extraction_status`, `wear_count` or `user_id`; an update leaves
   `created_at` unchanged and moves `updated_at`.
-- `usage_quota.test.sql` — `consume_quota` returns `true` up to `p_limit` and `false` after; a
-  different kind or user is tracked independently; `p_limit 0` always returns `false`; calling the
+- `usage_quota.test.sql` — `consume_quota` returns `true` up to `p_limit` and `false` after (and
+  stays refused for that user and kind); a different user is tracked independently; `p_limit 0` always returns `false`; calling the
   function or reading `usage_counters` directly as `authenticated` raises a policy error.
 - `garment_extraction_trigger.test.sql` — `garments_request_extraction` exists, fires only `after
   insert … for each row` and calls `request_garment_extraction()`, which is `security definer` and

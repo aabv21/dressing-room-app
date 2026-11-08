@@ -1,7 +1,8 @@
 -- public.consume_quota(): increments a per-user, per-day, per-kind counter up
 -- to p_limit and refuses further increments; a 0 limit always refuses; a
--- different kind or user is tracked independently; clients can neither call
--- the function nor read public.usage_counters directly.
+-- different user is tracked independently; clients can neither call the
+-- function nor read public.usage_counters directly. `quota_kind` has one value
+-- today, so per-kind independence waits for Plans 4–5's second kind.
 begin;
 
 create extension if not exists pgtap with schema extensions;
@@ -33,7 +34,7 @@ select is(
   'third call over the limit returns false'
 );
 
--- A different kind for the same user is independent (still has budget).
+-- Once exhausted, the same user and kind stays refused.
 select is(
   public.consume_quota('11111111-1111-1111-1111-111111111111', 'extraction', 2),
   false,
