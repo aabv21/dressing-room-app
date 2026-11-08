@@ -165,6 +165,15 @@ three have RLS enabled with **no policies at all** and `revoke all` from both `a
 writes them through a `security definer` function either; only `service_role` (the Edge Functions)
 ever touches them, bypassing RLS entirely as that role.
 
+NOTE: all three grow without bound. An expired degraded entry is overwritten only when the same
+key is asked for again, any other entry never expires, and nothing deletes old rows: a new day,
+occasion, closet edit or profile save writes new keys, and `weather_cache` gains a row per place
+and hour. At 4 users that's a few thousand small rows a month, with user deletion cascading the
+user-scoped two away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
+`delete from public.rating_cache where created_at < now() - interval '30 days'`, the same for
+`lucky_cache`, and `delete from public.weather_cache where hour < now() - interval '2 days'`), in
+an append-only migration.
+
 ### `public.usage_counters`
 
 Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
@@ -491,7 +500,7 @@ other garment that shared an outfit with it is unaffected (its own wear_count/la
 its own wears, not from what else was in the outfit).
 
 **P4-R6: logging a wear bumps `garments.updated_at` (confirmed empirically — see below), so neither
-the rating cache (Task 4) nor the lucky fingerprint (Task 5) may key on it.** The trigger's `update
+the rating cache (`rate-outfit`) nor the lucky fingerprint (`lucky-list`) may key on it.** The trigger's `update
 public.garments set wear_count = …, last_worn_at = …` is an ordinary `update` statement, which fires
 `garments_set_updated_at` (`public.set_updated_at()`, `before update on public.garments`) exactly
 like any other garment update — there is nothing wear-count-specific that would exempt it. A quick

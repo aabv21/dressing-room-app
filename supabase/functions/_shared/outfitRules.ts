@@ -2,8 +2,8 @@
 // for the rate-outfit and lucky-list Edge Functions.
 //
 // Runtime-neutral (only `catalog.ts` and `weather.ts` imported, nothing Deno- or Node-only) so
-// Jest exercises it under Node and the Edge Functions run it under Deno. Never calls the real
-// Open-Meteo or Jev services; see `global-constraints.md`.
+// Jest exercises it under Node and the Edge Functions run it under Deno. Pure functions over the
+// data they're given: no network, so no Open-Meteo or Jev calls.
 
 import {
   type GarmentCategory,
@@ -88,9 +88,10 @@ function isRecentlyWorn(item: RuleGarment, today: string): boolean {
 }
 
 /**
- * Month-and-hemisphere season, per `global-constraints.md`'s "Weather" rules. `lat` is the
- * user's current city latitude; `null` (no city, or a city that can't be geocoded) defaults to
- * the northern hemisphere.
+ * Month-and-hemisphere season: Dec–Feb is winter in the north and summer in the south, Mar–May
+ * spring in the north and autumn in the south, and so on. `lat` is the user's current city
+ * latitude; its sign picks the hemisphere, and `null` (no city, or a city that can't be geocoded)
+ * defaults to the northern one.
  */
 export function seasonOf(date: string, lat: number | null): Season {
   const month = Number(date.slice(5, 7));
@@ -163,7 +164,11 @@ function fitsAlone(item: RuleGarment, ctx: Pick<RuleContext, 'occasion' | 'seaso
   return true;
 }
 
-/** All of global-constraints.md's "Feeling lucky"/rating rule checks for one candidate outfit. */
+/**
+ * The rule checks for one candidate outfit, shared by feeling lucky and the swap search: every piece
+ * passes `fitsAlone`, a cold day has outerwear (when the closet has any), at most
+ * `MAX_NON_NEUTRAL_COLORS` non-neutral colors and at most one non-solid pattern.
+ */
 export function passesRules(outfit: Outfit, ctx: RuleContext): boolean {
   if (outfit.length === 0) return false;
 
@@ -221,7 +226,7 @@ export function preScore(outfit: Outfit, today: string): number {
   return score / pieces.length;
 }
 
-/** True when any piece in the outfit was worn within the last 7 days (inclusive). */
+/** True when any piece in the outfit was worn today or in the 6 days before (the same window as `isRecentlyWorn`). */
 export function wornThisWeek(outfit: Outfit, today: string): boolean {
   return outfit.some((item) => isRecentlyWorn(item, today));
 }

@@ -2,8 +2,8 @@
 // weather-code and temperature-band mappings, and the location cache key.
 //
 // Runtime-neutral (no imports, nothing Deno- or Node-only) so Jest exercises it under Node and
-// the Edge Function runs it under Deno. Never calls the real Open-Meteo service in tests; see
-// `global-constraints.md`.
+// the Edge Function runs it under Deno. It builds URLs and parses responses but never fetches, so
+// its tests never reach the real Open-Meteo service.
 
 export type WeatherBand = 'cold' | 'cool' | 'mild' | 'hot';
 
