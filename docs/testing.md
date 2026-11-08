@@ -35,7 +35,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   tiles, the gallery picker, opening a garment).
 - `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
   enqueue, replacements, conditional saves), `runQueue.test.ts` (stages, resuming an interrupted
-  item, backoff, failing after 8 attempts or a permanent error, concurrency 2), `preparePhoto.test.ts`
+  item, backoff, failing after 8 attempts or a permanent error, an attempt claimed before a stage
+  runs so a native crash still counts toward the 8, concurrency 2), `preparePhoto.test.ts`
   (the resize arguments for portrait, landscape and small photos, one decode capped at 784 px with
   the thumbnail built from it, WebP qualities, the cut-out or the source photo), `cutout.test.ts` (the native
   module present, missing, or throwing) and `queueSteps.test.ts` (the real steps, the session check,

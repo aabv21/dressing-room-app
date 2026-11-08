@@ -307,6 +307,79 @@ test('an item enqueued while a pass is running is committed by the same awaited 
   expect(store.all()).toHaveLength(0);
 });
 
+// A native crash (OOM in the cut-out or the image manipulator) kills the process mid-stage, so no
+// `catch` ever runs. Simulated here by a stage that never settles: whatever the store holds at
+// that point is exactly what the next launch would read back.
+describe('a stage that crashes the app', () => {
+  function never<T>(): Promise<T> {
+    return new Promise<T>(() => undefined);
+  }
+
+  test('persists a claimed attempt before prepare runs', async () => {
+    const store = createFakeStore([makeItem({ userId: 'crash-claim' })]);
+    const steps = createSteps();
+    steps.prepare.mockReturnValueOnce(never());
+
+    void runQueue('crash-claim', steps, store, () => 1_000);
+    await flushMicrotasks();
+
+    expect(steps.prepare).toHaveBeenCalledTimes(1);
+    const [claimed] = store.all();
+    expect(claimed?.stage).toBe('captured');
+    expect(claimed?.attempts).toBe(1);
+    expect(claimed?.nextAttemptAt).toBe(1_000 + backoffMs(1));
+    expect(claimed?.failed).toBe(false);
+  });
+
+  test('a crash during upload after a successful prepare keeps the claimed attempt', async () => {
+    const store = createFakeStore([makeItem({ userId: 'crash-upload' })]);
+    const steps = createSteps();
+    steps.upload.mockReturnValueOnce(never());
+
+    void runQueue('crash-upload', steps, store, () => 0);
+    await flushMicrotasks();
+
+    const [claimed] = store.all();
+    expect(claimed?.stage).toBe('prepared');
+    expect(claimed?.attempts).toBe(1);
+    expect(claimed?.nextAttemptAt).toBe(backoffMs(1));
+  });
+
+  test('8 crashed launches mark the item failed on the next launch without running it again', async () => {
+    let persisted = makeItem();
+    let clock = 0;
+    for (let launch = 1; launch <= 8; launch += 1) {
+      // Each launch is a fresh process: a new user key keeps this test's never-settling passes
+      // (the "crashed" ones) from being shared with the next launch through runQueue's in-flight map.
+      const userId = `crash-loop-${String(launch)}`;
+      const store = createFakeStore([{ ...persisted, userId }]);
+      const steps = createSteps();
+      steps.prepare.mockReturnValueOnce(never());
+      clock = persisted.nextAttemptAt;
+
+      void runQueue(userId, steps, store, () => clock);
+      await flushMicrotasks();
+
+      expect(steps.prepare).toHaveBeenCalledTimes(1);
+      const [claimed] = store.all();
+      if (claimed === undefined) throw new Error('the crashed item vanished');
+      expect(claimed.attempts).toBe(launch);
+      expect(claimed.failed).toBe(false);
+      persisted = claimed;
+    }
+
+    const store = createFakeStore([{ ...persisted, userId: 'crash-loop-9' }]);
+    const steps = createSteps();
+    const result = await runQueue('crash-loop-9', steps, store, () => persisted.nextAttemptAt);
+
+    expect(result).toEqual({ committed: 0, failed: 1, waiting: 0 });
+    expect(steps.prepare).not.toHaveBeenCalled();
+    const [item] = store.all();
+    expect(item?.attempts).toBe(8);
+    expect(item?.failed).toBe(true);
+  });
+});
+
 describe('backoffMs', () => {
   test('attempt 1 is 5000ms', () => {
     expect(backoffMs(1)).toBe(5_000);

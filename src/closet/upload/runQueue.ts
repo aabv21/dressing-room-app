@@ -135,14 +135,31 @@ async function runQueuePass(
   return { committed, failed, waiting };
 }
 
-/** Advances one item through every remaining stage. Returns whether it committed. */
+/**
+ * Advances one item through every remaining stage. Returns whether it committed.
+ *
+ * Each call is one attempt, and it is claimed (persisted as `attempts + 1` with its backoff)
+ * before any stage runs: a native crash or OOM in `prepare`, or a kill mid-upload, never reaches
+ * the `catch`, so without the claim the next launch would re-run the same item forever. Every stage
+ * save carries the claimed values forward, so one claim covers all three stages; a run that
+ * succeeds removes the item, so its claim never costs a later run anything, and a run that fails
+ * normally counts exactly once (the `catch` reuses the claim instead of adding another).
+ */
 async function advanceToCommit(
   item: QueueItem,
   steps: QueueSteps,
   store: QueueStoreApi,
   now: () => number,
 ): Promise<boolean> {
-  let current = item;
+  // Only a crashed run can leave an item at the limit without `failed` set: give up instead of
+  // running it a ninth time.
+  if (item.attempts >= MAX_ATTEMPTS) {
+    store.saveItem({ ...item, failed: true });
+    return false;
+  }
+  const attempts = item.attempts + 1;
+  let current: QueueItem = { ...item, attempts, nextAttemptAt: now() + backoffMs(attempts) };
+  store.saveItem(current);
   try {
     if (current.stage === 'captured') {
       const { fullUri, thumbUri } = await steps.prepare(current.sourceUri);
@@ -162,11 +179,9 @@ async function advanceToCommit(
     store.removeItem(current);
     return true;
   } catch (error) {
-    const attempts = current.attempts + 1;
     const permanent = error instanceof PermanentUploadError;
     const failedItem: QueueItem = {
       ...current,
-      attempts,
       nextAttemptAt: now() + backoffMs(attempts),
       failed: permanent || attempts >= MAX_ATTEMPTS,
     };
