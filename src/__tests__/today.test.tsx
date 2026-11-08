@@ -102,6 +102,8 @@ beforeEach(() => {
   mockedGetProfile.mockReset();
   mockedGetProfile.mockResolvedValue({ city_name: null } as Profile);
   kvRemove(KV_KEY);
+  kvRemove('outfit.worn.user-1');
+  kvRemove('today.lucky.user-1');
   appStateListeners = [];
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
     appStateListeners.push(listener);

@@ -17,6 +17,7 @@ import { formatWeather } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import type { LuckyOutfit } from '../../outfits/types';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
+import { useWornToday } from '../../outfits/wornToday';
 import { getProfile } from '../../profile/profileRepository';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
@@ -137,15 +138,16 @@ function Message({ children }: { children: string }): React.JSX.Element {
 
 /**
  * "I'll wear it" for Today's outfits, one at a time: the ref locks a second tap before the
- * re-render lands. `logged` and `wearError` are keyed by `<day>|<ids>`, so they belong to the
- * outfit they were for.
+ * re-render lands. Which outfits are logged comes from the shared worn-today record (the rating
+ * screen writes it too); `wearError` is keyed by `<day>|<ids>`, so it belongs to the outfit it was
+ * for.
  */
 function useWearLog(
   day: string,
   occasion: Occasion | null,
 ): {
   pending: boolean;
-  logged: ReadonlySet<string>;
+  isLogged: (garmentIds: readonly string[]) => boolean;
   wearError: { key: string; error: RequestError } | null;
   setWearError: (next: null) => void;
   wear: (worn: LuckyOutfit, key: string) => Promise<void>;
@@ -163,7 +165,7 @@ function useWearLog(
 
   const busy = useRef(false);
   const [pending, setPending] = useState(false);
-  const [logged, setLogged] = useState<ReadonlySet<string>>(() => new Set());
+  const { isWorn, markWorn } = useWornToday(day);
   const [wearError, setWearError] = useState<{ key: string; error: RequestError } | null>(null);
   // P4-R5: one id per outfit until its wear succeeds, kept across retries (also after trying another
   // outfit in between), so a lost response can't log it twice.
@@ -186,17 +188,17 @@ function useWearLog(
       setPending(false);
       if (outcome.ok) {
         wearIds.current.delete(key);
-        setLogged((previous) => new Set(previous).add(key));
+        markWorn(worn.garmentIds);
         void refresh();
       } else {
         setWearError({ key, error: outcome.error });
         AccessibilityInfo.announceForAccessibility(t(`outfit.error.${outcome.error}`));
       }
     },
-    [day, occasion, refresh, t],
+    [day, occasion, markWorn, refresh, t],
   );
 
-  return { pending, logged, wearError, setWearError, wear };
+  return { pending, isLogged: isWorn, wearError, setWearError, wear };
 }
 
 export default function TodayScreen(): React.JSX.Element {
@@ -210,7 +212,7 @@ export default function TodayScreen(): React.JSX.Element {
   const pieces = useMemo(() => outfit?.garmentIds.flatMap((id) => byId.get(id) ?? []) ?? [], [outfit, byId]);
   const shownKey = outfit === undefined ? null : `${lucky.day}|${outfitKey(outfit)}`;
 
-  const { pending, logged, wearError, setWearError, wear } = useWearLog(lucky.day, occasion);
+  const { pending, isLogged, wearError, setWearError, wear } = useWearLog(lucky.day, occasion);
 
   const weatherResolved = lucky.state === 'ready' || lucky.state === 'too_small';
   const cityWithoutWeather = useProfileCity(weatherResolved && lucky.weather === null);
@@ -255,7 +257,7 @@ export default function TodayScreen(): React.JSX.Element {
   } else if (outfit === undefined || shownKey === null) {
     body = <Message>{occasion === null ? t('today.empty') : t('today.empty.occasion')}</Message>;
   } else {
-    const isLogged = logged.has(shownKey);
+    const logged = isLogged(outfit.garmentIds);
     body = (
       <View style={styles.card}>
         <CardHeader
@@ -281,10 +283,10 @@ export default function TodayScreen(): React.JSX.Element {
       },
     };
     primary = {
-      label: isLogged ? t('outfit.logged') : t('outfit.wear'),
+      label: logged ? t('outfit.logged') : t('outfit.wear'),
       tone: 'commit',
-      ...(isLogged ? {} : { icon: Check }),
-      disabled: isLogged || pending,
+      ...(logged ? {} : { icon: Check }),
+      disabled: logged || pending,
       onPress: () => {
         void wear(outfit, shownKey);
       },

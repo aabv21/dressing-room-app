@@ -18,6 +18,7 @@ import { localDate, rateOutfit, type AiError } from '../outfits/aiClient';
 import { logWear, saveOutfit } from '../outfits/outfitRepository';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { pieceLabel } from '../outfits/outfitDisplay';
+import { useWornToday } from '../outfits/wornToday';
 import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
 import type { RatingReason, RatingResult } from '../outfits/types';
 import { AnchoredCta } from '../ui/AnchoredCta';
@@ -263,7 +264,10 @@ function RateOutfit({
   const busy = useRef(false);
   const [pending, setPending] = useState<'save' | 'wear' | null>(null);
   const [saved, setSaved] = useState(false);
-  const [logged, setLogged] = useState(false);
+  // Shared with Today, so an outfit logged on either screen (or before a restart) stays logged here.
+  const day = localDate();
+  const { isWorn, markWorn } = useWornToday(day);
+  const logged = isWorn(ids);
   const [actionError, setActionError] = useState<RequestError | null>(null);
   // P4-R5: one id per wear attempt, kept across a retry so a lost response can't log it twice.
   const wearId = useRef<string | null>(null);
@@ -295,14 +299,14 @@ function RateOutfit({
     async (score: number) => {
       const id = (wearId.current ??= randomUUID());
       const done = await run('wear', () =>
-        logWear({ wearId: id, garmentIds: ids, wornOn: localDate(), occasion, score }),
+        logWear({ wearId: id, garmentIds: ids, wornOn: day, occasion, score }),
       );
       if (done) {
-        setLogged(true);
+        markWorn(ids);
         void refresh();
       }
     },
-    [run, ids, occasion, refresh],
+    [run, ids, day, occasion, markWorn, refresh],
   );
 
   const trySwap = useCallback((fromId: string, toId: string) => {
@@ -310,7 +314,6 @@ function RateOutfit({
     // A different outfit: its own save, wear and rating.
     wearId.current = null;
     setSaved(false);
-    setLogged(false);
     setActionError(null);
     setRating({ kind: 'loading' });
     setIds((current) => current.map((id) => (id === fromId ? toId : id)));

@@ -7,7 +7,7 @@ import { router } from 'expo-router';
 
 import RateScreen from '../app/rate';
 import { I18nProvider } from '../i18n/I18nProvider';
-import { kvSet } from '../lib/kv';
+import { kvRemove, kvSet } from '../lib/kv';
 import type { Garment } from '../closet/garmentRepository';
 import { rateOutfit, type AiOutcome } from '../outfits/aiClient';
 import { logWear, saveOutfit } from '../outfits/outfitRepository';
@@ -24,6 +24,10 @@ const mockParams: { ids?: string; occasion?: string } = {};
 jest.mock('expo-router', () => ({
   router: { back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
+}));
+
+jest.mock('../auth/AuthProvider', () => ({
+  useAuth: () => ({ userId: 'user-1' }),
 }));
 
 const mockCloset: { garments: Garment[] } = { garments: [] };
@@ -95,6 +99,7 @@ beforeEach(() => {
   jest.mocked(router.back).mockClear();
   jest.mocked(router.replace).mockClear();
   mockRefresh.mockClear();
+  kvRemove('outfit.worn.user-1');
 });
 
 test('rates the outfit on mount and shows the score, label and AI confidence', async () => {
@@ -310,6 +315,23 @@ test('"I\'ll wear it" logs the wear with the score, then shows Logged ✓ and re
     score: 78,
   });
   expect(mockRefresh).toHaveBeenCalledTimes(1);
+});
+
+test('rating the same outfit again (Build: rate, wear, back, rate) opens as Logged ✓, in any id order', async () => {
+  mockedRate.mockReturnValue(ok(result()));
+  mockedLogWear.mockResolvedValue({ ok: true });
+  const first = await render(<RateScreen />);
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+  await screen.findByRole('button', { name: 'Logged ✓' });
+  await first.unmount();
+
+  mockParams.ids = `${HEELS},${TOP},${SKIRT}`;
+  await render(<RateScreen />);
+  await screen.findByText('78%');
+
+  expect(screen.getByRole('button', { name: 'Logged ✓' })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: "I'll wear it" })).toBeNull();
+  expect(mockedLogWear).toHaveBeenCalledTimes(1);
 });
 
 test('retrying a failed wear reuses the same wear id', async () => {
