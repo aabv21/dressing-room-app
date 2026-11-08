@@ -457,6 +457,7 @@ export const en = {
   'outfit.error.unknown': 'Something went wrong. Try again.',
 
   'today.weather.add': 'Add your city for the weather',
+  'today.weather.unavailable': 'Weather unavailable for {city}',
   'today.weather.hint': 'Change your city',
   'today.occasion': 'Occasion',
   'today.lucky': 'Feeling lucky',

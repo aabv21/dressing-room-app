@@ -459,6 +459,7 @@ export const es: Record<MessageKey, string> = {
   'outfit.error.unknown': 'Algo salió mal. Inténtalo de nuevo.',
 
   'today.weather.add': 'Agrega tu ciudad para el clima',
+  'today.weather.unavailable': 'Clima no disponible para {city}',
   'today.weather.hint': 'Cambiar tu ciudad',
   'today.occasion': 'Ocasión',
   'today.lucky': 'Con suerte',

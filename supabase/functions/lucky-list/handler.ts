@@ -116,12 +116,16 @@ const locationOf = (profile: ProfileRow | null): string | null =>
   locationKey({ name: profile?.city_name ?? null, lat: profile?.city_lat ?? null, lon: profile?.city_lon ?? null });
 
 /**
- * The cache key. The closet fingerprint hashes each garment's id and rating-relevant columns
- * (not `updated_at` or `last_worn_at`, which logging a wear bumps; ruling P4-R6), so wearing an
- * outfit doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit instead.
+ * The cache key. The closet fingerprint hashes each candidate garment's id and rating-relevant
+ * columns (not `updated_at` or `last_worn_at`, which logging a wear bumps; ruling P4-R6), so
+ * wearing an outfit doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit
+ * instead.
  */
 function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, input: LuckyInput): Promise<string> {
-  const fingerprint = [...garments]
+  // Only garments that can be candidates count (P4-R15): an upload still being read (no category
+  // yet) or a piece in the laundry or lent can't change today's list, so it doesn't change the key.
+  const fingerprint = garments
+    .filter((g) => g.category !== null && g.status === 'available')
     .sort(byId)
     .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status]);
   return sha256Hex(

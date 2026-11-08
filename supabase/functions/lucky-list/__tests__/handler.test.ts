@@ -604,6 +604,20 @@ describe('the lucky list', () => {
     expect(count(calls, 'jev')).toBe(30);
   });
 
+  test('a garment still being read (no category yet) or in the laundry does not change the key (P4-R15)', async () => {
+    const w = world();
+    await lucky(w);
+    w.garments = [
+      ...w.garments,
+      garment(900, null, { colors: [], pattern: null, formality: null, fit: null, warmth: null }),
+      garment(901, 'blouse', { status: 'laundry' }),
+    ];
+    const { calls } = await lucky(w);
+    expect(count(calls, 'jev')).toBe(0);
+    expect(count(calls, 'quota')).toBe(0);
+    expect(w.luckyCache.size).toBe(1);
+  });
+
   test('logging a wear keeps the cached list (P4-R6) but its outfits are no longer fresh this week', async () => {
     const w = world();
     const first = (await lucky(w)).body as OkBody;

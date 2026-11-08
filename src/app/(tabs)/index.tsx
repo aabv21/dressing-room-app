@@ -2,11 +2,12 @@
 // outfit with "Another" and "I'll wear it". The weather line opens the city modal; the card's
 // "How does it look?" chip opens the rating.
 import { randomUUID } from 'expo-crypto';
-import { router } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAuth } from '../../auth/AuthProvider';
 import { OCCASIONS, type Occasion } from '../../closet/catalog';
 import { useCloset } from '../../closet/ClosetProvider';
 import { useI18n } from '../../i18n';
@@ -16,6 +17,7 @@ import { formatWeather } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import type { LuckyOutfit } from '../../outfits/types';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
+import { getProfile } from '../../profile/profileRepository';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
@@ -24,12 +26,19 @@ import { colors, layout, radii, spacing } from '../../ui/theme';
 // Room for a message shown above the buttons, so it never covers the card's last row.
 const NOTICE_ROOM = 56;
 const CHIP_AI_HEIGHT = 28;
+const WEATHER_LINE_HEIGHT = 18;
+// The weather line is one short text row; the slop tops its tap area up to the 44 pt minimum.
+const WEATHER_SLOP = (layout.minHitTarget - WEATHER_LINE_HEIGHT) / 2;
 
 const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
 
-function WeatherLine({ text, prompt }: { text: string | null; prompt: boolean }): React.JSX.Element {
+/**
+ * The weather line under the title, which opens the city modal: the day's weather; with none, why
+ * (a city that gave no weather) or a prompt to add one; nothing while it's unknown.
+ */
+function WeatherLine({ text, action }: { text: string | null; action: boolean }): React.JSX.Element {
   const { t } = useI18n();
-  if (text === null && !prompt) {
+  if (text === null) {
     // Keeps the line's height while the weather is unknown, so the card doesn't jump.
     return <View style={styles.weatherLine} />;
   }
@@ -40,14 +49,40 @@ function WeatherLine({ text, prompt }: { text: string | null; prompt: boolean })
       onPress={() => {
         router.push('/city');
       }}
-      hitSlop={{ top: 12, bottom: 12, right: 12 }}
+      hitSlop={{ top: WEATHER_SLOP, bottom: WEATHER_SLOP, right: WEATHER_SLOP }}
       style={styles.weatherLine}
     >
-      <Text style={[styles.weatherText, text === null ? styles.weatherPrompt : null]}>
-        {text ?? t('today.weather.add')}
-      </Text>
+      <Text style={[styles.weatherText, action ? styles.weatherAction : null]}>{text}</Text>
     </Pressable>
   );
+}
+
+/**
+ * The profile's city name (null when there's none), read only while `needed` (the list came back
+ * without weather) and again when the screen regains focus, e.g. after the city modal; `undefined`
+ * until read. A failed read counts as no city, so the line still offers to set one.
+ */
+function useProfileCity(needed: boolean): string | null | undefined {
+  const { userId } = useAuth();
+  const focused = useIsFocused();
+  const [city, setCity] = useState<{ userId: string; name: string | null } | null>(null);
+  useEffect(() => {
+    if (!needed || !focused || userId === null) return undefined;
+    let current = true;
+    getProfile(userId).then(
+      (profile) => {
+        const name = profile?.city_name?.trim() ?? '';
+        if (current) setCity({ userId, name: name === '' ? null : name });
+      },
+      () => {
+        if (current) setCity({ userId, name: null });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [needed, focused, userId]);
+  return city !== null && city.userId === userId ? city.name : undefined;
 }
 
 function CardHeader({ onRate }: { onRate?: () => void }): React.JSX.Element {
@@ -130,8 +165,9 @@ function useWearLog(
   const [pending, setPending] = useState(false);
   const [logged, setLogged] = useState<ReadonlySet<string>>(() => new Set());
   const [wearError, setWearError] = useState<{ key: string; error: RequestError } | null>(null);
-  // P4-R5: one id per wear attempt of an outfit, kept across a retry so a lost response can't log twice.
-  const wearAttempt = useRef<{ key: string; id: string } | null>(null);
+  // P4-R5: one id per outfit until its wear succeeds, kept across retries (also after trying another
+  // outfit in between), so a lost response can't log it twice.
+  const wearIds = useRef(new Map<string, string>());
 
   const wear = useCallback(
     async (worn: LuckyOutfit, key: string) => {
@@ -139,14 +175,17 @@ function useWearLog(
       busy.current = true;
       setPending(true);
       setWearError(null);
-      if (wearAttempt.current?.key !== key) wearAttempt.current = { key, id: randomUUID() };
-      const { id } = wearAttempt.current;
+      let id = wearIds.current.get(key);
+      if (id === undefined) {
+        id = randomUUID();
+        wearIds.current.set(key, id);
+      }
       const outcome = await logWear({ wearId: id, garmentIds: worn.garmentIds, wornOn: day, occasion, score: null });
       busy.current = false;
       if (!mounted.current) return;
       setPending(false);
       if (outcome.ok) {
-        wearAttempt.current = null;
+        wearIds.current.delete(key);
         setLogged((previous) => new Set(previous).add(key));
         void refresh();
       } else {
@@ -173,8 +212,15 @@ export default function TodayScreen(): React.JSX.Element {
 
   const { pending, logged, wearError, setWearError, wear } = useWearLog(lucky.day, occasion);
 
-  const weatherText = formatWeather(lucky.weather, locale);
   const weatherResolved = lucky.state === 'ready' || lucky.state === 'too_small';
+  const cityWithoutWeather = useProfileCity(weatherResolved && lucky.weather === null);
+  let weatherText = formatWeather(lucky.weather, locale);
+  if (weatherText === null && weatherResolved && cityWithoutWeather !== undefined) {
+    weatherText =
+      cityWithoutWeather === null
+        ? t('today.weather.add')
+        : t('today.weather.unavailable', { city: cityWithoutWeather });
+  }
 
   const notice =
     wearError === null || wearError.key !== shownKey ? undefined : (
@@ -258,7 +304,7 @@ export default function TodayScreen(): React.JSX.Element {
             },
           })}
     >
-      <WeatherLine text={weatherText} prompt={weatherText === null && weatherResolved} />
+      <WeatherLine text={weatherText} action={lucky.weather === null} />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -286,14 +332,15 @@ export default function TodayScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   weatherLine: {
     alignSelf: 'flex-start',
-    minHeight: 18,
+    minHeight: WEATHER_LINE_HEIGHT,
+    justifyContent: 'center',
     marginTop: -2,
   },
   weatherText: {
     color: colors.muted,
     fontSize: 13,
   },
-  weatherPrompt: {
+  weatherAction: {
     color: colors.accentText,
     fontWeight: '700',
   },

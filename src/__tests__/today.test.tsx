@@ -11,6 +11,8 @@ import type { Garment } from '../closet/garmentRepository';
 import { kvGet, kvRemove } from '../lib/kv';
 import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
+import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
+import { getProfile, type Profile } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
 import { garment } from '../test/garmentFixture';
 
@@ -54,10 +56,13 @@ jest.mock('../outfits/outfitRepository', () => ({
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
 
+jest.mock('../profile/profileRepository', () => ({ getProfile: jest.fn() }));
+
 const mockedFetch = jest.mocked(fetchLuckyList);
 const mockedLogWear = jest.mocked(logWear);
 const mockedUuid = jest.mocked(randomUUID);
 const mockedPush = jest.mocked(router.push);
+const mockedGetProfile = jest.mocked(getProfile);
 
 const CLOSET: Garment[] = [
   garment({ id: TOP, category: 'blouse', colors: ['white'], extraction_status: 'done', wear_count: 9 }),
@@ -94,6 +99,8 @@ beforeEach(() => {
   mockedUuid.mockReturnValueOnce('wear-1').mockReturnValueOnce('wear-2');
   mockedPush.mockClear();
   mockRefresh.mockClear();
+  mockedGetProfile.mockReset();
+  mockedGetProfile.mockResolvedValue({ city_name: null } as Profile);
   kvRemove(KV_KEY);
   appStateListeners = [];
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
@@ -103,8 +110,27 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  jest.useRealTimers();
   jest.restoreAllMocks();
 });
+
+/** A fetch that stays pending until the returned `resolve` is called. */
+function deferred(response: LuckyResponse): { promise: Promise<AiOutcome<LuckyResponse>>; resolve: () => void } {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<AiOutcome<LuckyResponse>>((done) => {
+    resolve = () => {
+      done({ ok: true, result: response });
+    };
+  });
+  return { promise, resolve };
+}
+
+async function advance(ms: number): Promise<void> {
+  await act(async () => {
+    jest.advanceTimersByTime(ms);
+    await Promise.resolve();
+  });
+}
 
 describe('the lucky list', () => {
   test('renders the first outfit with its labels, wear counts, weather and the fresh line', async () => {
@@ -171,7 +197,8 @@ describe('the lucky list', () => {
     expect(mockedFetch).toHaveBeenLastCalledWith({ occasion: null, date: '2026-11-08' });
   });
 
-  test('a garment put in the laundry elsewhere hides its outfits at once and refetches the list', async () => {
+  test('a garment put in the laundry elsewhere hides its outfits at once and refetches after the debounce', async () => {
+    jest.useFakeTimers();
     mockedFetch.mockReturnValue(ok(list()));
     const view = await render(<TodayScreen />);
     await screen.findByText('Jeans · Blue');
@@ -180,9 +207,85 @@ describe('the lucky list', () => {
     mockCloset.garments = CLOSET.map((g) => (g.id === JEANS ? { ...g, status: 'laundry' } : g));
     await view.rerender(<TodayScreen />);
 
-    expect(await screen.findByText('Skirt · Camel')).toBeOnTheScreen();
+    expect(screen.getByText('Skirt · Camel')).toBeOnTheScreen();
     expect(screen.queryByText('Jeans · Blue')).toBeNull();
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    await advance(CLOSET_REFETCH_DELAY_MS);
     expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('nothing is fetched while the closet is loading, then exactly once when it has loaded', async () => {
+    mockCloset.status = 'loading';
+    mockCloset.garments = [];
+    mockedFetch.mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+
+    expect(screen.getByLabelText("Finding today's outfit…")).toBeOnTheScreen();
+    expect(mockedFetch).not.toHaveBeenCalled();
+
+    mockCloset.status = 'ready';
+    mockCloset.garments = CLOSET;
+    await view.rerender(<TodayScreen />);
+
+    expect(await screen.findByText('Jeans · Blue')).toBeOnTheScreen();
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('three quick closet changes make one refetch, after the debounce', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    for (const [index, name] of ['gray', 'black', 'red'].entries()) {
+      mockCloset.garments = [...CLOSET, garment({ id: `new-${String(index)}`, category: 'shirt', colors: [name as 'gray'] })];
+      await view.rerender(<TodayScreen />);
+      await advance(1_000);
+    }
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+
+    await advance(CLOSET_REFETCH_DELAY_MS);
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('an upload still being read (no category yet) does not refetch', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    mockCloset.garments = [...CLOSET, garment({ id: 'uploading', category: null })];
+    await view.rerender(<TodayScreen />);
+    await advance(CLOSET_REFETCH_DELAY_MS * 2);
+
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('a closet change while a fetch is in flight makes one follow-up fetch, never two at once', async () => {
+    jest.useFakeTimers();
+    const first = deferred(list());
+    mockedFetch.mockReturnValueOnce(first.promise).mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+
+    mockCloset.garments = CLOSET.map((g) => (g.id === SKIRT ? { ...g, colors: ['black'] } : g));
+    await view.rerender(<TodayScreen />);
+    await advance(CLOSET_REFETCH_DELAY_MS);
+    // The debounced refetch waits for the request in flight.
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+
+    // So does the occasion change.
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      first.resolve();
+      await Promise.resolve();
+    });
+    await screen.findByText('Jeans · Blue');
+    // One follow-up, with the latest inputs.
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+    expect(mockedFetch).toHaveBeenLastCalledWith({ occasion: 'office', date: '2026-11-08' });
   });
 
   test('a new wear count alone does not refetch', async () => {
@@ -283,6 +386,30 @@ describe("I'll wear it", () => {
     expect(screen.queryByText("Couldn't connect. Check your internet and try again.")).toBeNull();
   });
 
+  test("a lost wear for one outfit keeps its id after trying another one", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear
+      .mockResolvedValueOnce({ ok: false, error: 'network' })
+      .mockResolvedValueOnce({ ok: false, error: 'network' })
+      .mockResolvedValueOnce({ ok: true });
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+    await screen.findByText("Couldn't connect. Check your internet and try again.");
+    await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
+    await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
+    await screen.findByText("Couldn't connect. Check your internet and try again.");
+    await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
+    await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
+
+    expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
+    expect(mockedLogWear.mock.calls.map(([input]) => [input.wearId, input.garmentIds])).toEqual([
+      ['wear-1', FIRST.garmentIds],
+      ['wear-2', SECOND.garmentIds],
+      ['wear-1', FIRST.garmentIds],
+    ]);
+  });
+
   test('passes the chosen occasion to the wear', async () => {
     mockedFetch.mockReturnValue(ok(list()));
     mockedLogWear.mockResolvedValue({ ok: true });
@@ -314,11 +441,32 @@ describe('other states', () => {
     expect(mockedPush).toHaveBeenCalledWith('/city');
   });
 
+  test('a city that gave no weather says so, and tapping it opens the city modal', async () => {
+    mockedFetch.mockReturnValue(ok(list(undefined, null)));
+    mockedGetProfile.mockResolvedValue({ city_name: 'Atlantis' } as Profile);
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Weather unavailable for Atlantis' }));
+    expect(mockedPush).toHaveBeenCalledWith('/city');
+    expect(screen.queryByText('Add your city for the weather')).toBeNull();
+  });
+
+  test('with weather the profile is not read', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await screen.findByText(/24 °C, sunny/);
+    expect(mockedGetProfile).not.toHaveBeenCalled();
+  });
+
   test('tapping the weather line opens the city modal', async () => {
     mockedFetch.mockReturnValue(ok(list()));
     await render(<TodayScreen />);
 
-    await fireEvent.press(await screen.findByText(/24 °C, sunny/));
+    const line = await screen.findByRole('button', { name: /24 °C, sunny/ });
+    // One short text row, topped up to a 44 pt tap target.
+    expect(line).toHaveProp('hitSlop', expect.objectContaining({ top: 13, bottom: 13 }));
+    await fireEvent.press(line);
     expect(mockedPush).toHaveBeenCalledWith('/city');
   });
 

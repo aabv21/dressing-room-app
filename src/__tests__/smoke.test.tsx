@@ -5,6 +5,7 @@ jest.mock('../outfits/aiClient', () => require('../test/outfitClientsMock'));
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
 jest.mock('../outfits/outfitRepository', () => require('../test/outfitClientsMock'));
 jest.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
+jest.mock('../profile/profileRepository', () => ({ getProfile: jest.fn() }));
 // Rendered outside a navigator, so there's no focus state to read.
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useIsFocused: () => true }));
 

@@ -1,7 +1,7 @@
 // Today's "feeling lucky" list: `lucky-list`'s ranked outfits for the day and occasion, walked one
 // at a time with "Another", plus the day's occasion kept on the device.
 import { useIsFocused } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
@@ -67,7 +67,8 @@ export function useTodayOccasion(): [Occasion | null, (next: Occasion | null) =>
   const day = useLocalDay();
   const [choice, setChoice] = useState<{ key: string; occasion: Occasion | null } | null>(null);
   const key = `${userId ?? ''}|${day}`;
-  const occasion = choice?.key === key ? choice.occasion : readOccasion(userId, day);
+  const stored = useMemo(() => readOccasion(userId, day), [userId, day]);
+  const occasion = choice?.key === key ? choice.occasion : stored;
 
   const choose = useCallback(
     (next: Occasion | null) => {
@@ -82,13 +83,18 @@ export function useTodayOccasion(): [Occasion | null, (next: Occasion | null) =>
   return [occasion, choose];
 }
 
+/** How long closet changes settle before they refetch the list (P4-R15): an upload burst is one call. */
+export const CLOSET_REFETCH_DELAY_MS = 3_000;
+
 /**
- * The closet columns `lucky-list`'s cache fingerprint hashes (`lucky-list/handler.ts`; not wear
- * counts or `last_worn_at`, ruling P4-R6): a change here is one the server's list can reflect.
+ * `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): the candidate garments (a category
+ * and `available`, P4-R15) and their rating columns, not wear counts or `last_worn_at` (P4-R6). A
+ * change here is one the server's list can reflect.
  */
 function closetFingerprint(garments: readonly Garment[]): string {
   return JSON.stringify(
-    [...garments]
+    garments
+      .filter((g) => g.category !== null && g.status === 'available')
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status]),
   );
@@ -99,16 +105,19 @@ const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
 type Settled = { query: string; outcome: AiOutcome<LuckyResponse> };
 
 /**
- * Fetches the list on mount, when the occasion or the day changes, when the screen comes back into
- * focus (e.g. after the city modal) and when the closet changes in a way the list depends on (a
- * piece put in the laundry, deleted or edited elsewhere). The function's cache makes those
- * refetches cheap. A refetch keeps the shown outfit while it's still in the list; outfits with a
- * piece that's no longer available are hidden at once, before the refetch lands.
+ * Fetches the list once the closet has loaded (P4-R15: never against a closet still on its way),
+ * and again when the occasion or the day changes, when the screen comes back into focus (e.g. after
+ * the city modal), after `reload`, and 3 s after the closet last changed in a way the list depends
+ * on (a piece put in the laundry, deleted, edited or newly read elsewhere). At most one request is
+ * in flight: a trigger during one runs once after it, with the latest occasion and day. The
+ * function's cache makes refetches cheap. A refetch keeps the shown outfit while it's still in the
+ * list; outfits with a piece that's no longer available are hidden at once, before it lands.
  */
 export function useLuckyList(occasion: Occasion | null): LuckyList {
   const day = useLocalDay();
   const focused = useIsFocused();
   const { garments, status: closetStatus } = useCloset();
+  const closetReady = closetStatus !== 'loading';
   const fingerprint = useMemo(() => closetFingerprint(garments), [garments]);
   const query = `${day}|${occasion ?? ''}`;
 
@@ -116,21 +125,68 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
   // Bumped by `reload`: the effect below fetches again.
   const [attempt, setAttempt] = useState(0);
 
+  // The inputs the next request uses, so a queued one runs with the latest of them. Declared before
+  // the fetch effects, so it's up to date when they run in the same commit.
+  const latest = useRef({ occasion, day, query, fingerprint });
   useEffect(() => {
-    // Off screen (another tab, or a modal on top) nothing is fetched; coming back fetches again.
-    if (!focused) return undefined;
-    let current = true;
-    void fetchLuckyList({ occasion, date: day }).then((outcome) => {
-      if (!current) return;
-      // A failed refetch keeps the list already shown for this query.
-      setSettled((previous) =>
-        !outcome.ok && previous?.query === query && previous.outcome.ok ? previous : { query, outcome },
-      );
-    });
+    latest.current = { occasion, day, query, fingerprint };
+  });
+  const inFlight = useRef(false);
+  const queued = useRef(false);
+  // The closet fingerprint of the last request started; a newer one schedules a refetch.
+  const fetchedFingerprint = useRef<string | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
     return () => {
-      current = false;
+      mounted.current = false;
     };
-  }, [focused, query, occasion, day, fingerprint, attempt]);
+  }, []);
+
+  const run = useCallback(() => {
+    if (inFlight.current) {
+      queued.current = true;
+      return;
+    }
+    inFlight.current = true;
+    // Read through a call: a trigger can set it while the request is awaited.
+    const takeQueued = (): boolean => {
+      const value = queued.current;
+      queued.current = false;
+      return value;
+    };
+    void (async () => {
+      do {
+        const inputs = latest.current;
+        fetchedFingerprint.current = inputs.fingerprint;
+        const outcome = await fetchLuckyList({ occasion: inputs.occasion, date: inputs.day });
+        if (!mounted.current) return;
+        // A failed refetch keeps the list already shown for this query.
+        setSettled((previous) =>
+          !outcome.ok && previous?.query === inputs.query && previous.outcome.ok
+            ? previous
+            : { query: inputs.query, outcome },
+        );
+      } while (takeQueued());
+      inFlight.current = false;
+    })();
+  }, []);
+
+  // Right away: the first load, a new occasion or day, focus regained (off screen nothing is
+  // fetched) and `reload`.
+  useEffect(() => {
+    // `latest` already holds this render's inputs (its effect runs first).
+    if (focused && closetReady) run();
+  }, [focused, closetReady, query, attempt, run]);
+
+  // Closet changes, debounced.
+  useEffect(() => {
+    if (!focused || !closetReady || fingerprint === fetchedFingerprint.current) return undefined;
+    const timer = setTimeout(run, CLOSET_REFETCH_DELAY_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [focused, closetReady, fingerprint, run]);
 
   const outcome = settled?.query === query ? settled.outcome : null;
   const response = outcome?.ok === true ? outcome.result : null;
@@ -165,9 +221,6 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     state = 'error';
   } else if (outcome.result.kind === 'too_small') {
     state = 'too_small';
-  } else if (outfits.length === 0 && outcome.result.outfits.length > 0 && closetStatus === 'loading') {
-    // A first launch's closet is still on its way: the pieces can't be resolved yet.
-    state = 'loading';
   } else {
     state = 'ready';
   }
