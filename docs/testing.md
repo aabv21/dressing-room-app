@@ -150,7 +150,9 @@ builds a well-formed answer to every question in it (each Score at `level` of it
 composite score is `round(100 · level)`; each Noul at 0.02; each Choice `none`, using the
 `criteria` keys). `calls(path)` counts the calls on a path; `close()` drops hung connections.
 Until set, Jev answers every Score at its best level, the forecast is `MILD_FORECAST` (a dry 19 °C
-day, band `mild`) and geocoding finds Madrid.
+day, band `mild`) and geocoding finds Madrid. For a manual simulator check,
+`node integration/mockServices.ts --serve [--level <0..1>] [--temp <°C>]` keeps it running with
+every Jev answer at `level` (default 1) and, with `--temp`, a clear, dry day around that temperature.
 
 `integration/fixtures/garment.webp` is a 784 px, ~9 KB WebP of a garment silhouette, encoded once
 with sharp from `scripts/perf-fixtures.ts`'s `fixtureSvg` and committed.

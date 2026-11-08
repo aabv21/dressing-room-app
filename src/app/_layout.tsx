@@ -99,6 +99,8 @@ function Guards() {
         <Stack.Screen name="garment/[id]" />
         {/* Mockup 01 screen 3, pushed from Today and Build with the outfit's garment ids. */}
         <Stack.Screen name="rate" />
+        {/* Today's city: a sheet over the tabs, so closing it lands back on Today. */}
+        <Stack.Screen name="city" options={{ presentation: 'modal' }} />
       </Stack.Protected>
     </Stack>
   );

@@ -27,10 +27,22 @@ export function ChipGroup<T extends string>(props: {
   multiple?: boolean;
   tone?: 'commit' | 'accent';
   stretch?: boolean;
+  /** Default true; false keeps every chip on one line (inside a horizontal scroller). */
+  wrap?: boolean;
   accessibilityLabel?: string;
   testID?: string;
 }): React.JSX.Element {
-  const { options, selected, onChange, multiple = true, tone = 'commit', stretch = false, accessibilityLabel, testID } = props;
+  const {
+    options,
+    selected,
+    onChange,
+    multiple = true,
+    tone = 'commit',
+    stretch = false,
+    wrap = true,
+    accessibilityLabel,
+    testID,
+  } = props;
   const accent = tone === 'accent';
 
   function toggle(value: T): void {
@@ -44,7 +56,7 @@ export function ChipGroup<T extends string>(props: {
 
   return (
     <View
-      style={styles.wrap}
+      style={[styles.wrap, wrap ? null : styles.nowrap]}
       accessibilityRole={multiple ? undefined : 'radiogroup'}
       accessibilityLabel={accessibilityLabel}
       testID={testID}
@@ -90,6 +102,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     columnGap: 6,
     rowGap: layout.minHitTarget - CHIP_HEIGHT,
+  },
+  nowrap: {
+    flexWrap: 'nowrap',
   },
   chip: {
     minHeight: CHIP_HEIGHT,

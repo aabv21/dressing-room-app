@@ -8,6 +8,7 @@
 // container. One server answers all three, routed by path.
 
 import { createServer, type ServerResponse } from 'node:http';
+import { fileURLToPath } from 'node:url';
 
 import type { MockReply } from './mockAnthropic';
 
@@ -147,5 +148,49 @@ export function startMockServices(port = 54498): Promise<MockServices> {
           }),
       });
     });
+  });
+}
+
+function flagValue(argv: readonly string[], flag: string): number | undefined {
+  const index = argv.indexOf(flag);
+  if (index === -1) return undefined;
+  const value = Number(argv[index + 1]);
+  if (!Number.isFinite(value)) throw new Error(`${flag} needs a number`);
+  return value;
+}
+
+/**
+ * `node integration/mockServices.ts --serve [--level <0..1>] [--temp <°C>]`: keeps the mock running
+ * for a manual simulator check. Jev answers every question at `level` (default 1, so a composite
+ * of `round(100 · level)`); the forecast is `MILD_FORECAST`, or a clear, dry day around `temp`;
+ * geocoding finds Madrid. Stop it with Ctrl-C.
+ */
+async function serveFromCli(argv: readonly string[]): Promise<void> {
+  const level = flagValue(argv, '--level') ?? 1;
+  const temp = flagValue(argv, '--temp');
+  if (level < 0 || level > 1) throw new Error('--level must be between 0 and 1');
+  const mock = await startMockServices();
+  mock.jev((body) => ({ status: 200, body: jevAnswers(body, level) }));
+  if (temp !== undefined) {
+    mock.forecast({
+      status: 200,
+      body: {
+        current: { temperature_2m: temp, weather_code: 0 },
+        daily: { temperature_2m_max: [temp + 3], temperature_2m_min: [temp - 3], precipitation_probability_max: [0] },
+      },
+    });
+  }
+  console.log(`mock Jev and Open-Meteo on :54498 (level ${String(level)}${temp === undefined ? '' : `, ${String(temp)} °C`})`);
+  process.once('SIGINT', () => {
+    void mock.close().then(() => {
+      console.log(`served ${String(mock.calls(JEV_PATH))} Jev call(s)`);
+    });
+  });
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url) && process.argv.includes('--serve')) {
+  serveFromCli(process.argv).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   });
 }
