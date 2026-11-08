@@ -42,6 +42,13 @@ export type RuleContext = {
   season: Season;
   weather: WeatherSummary | null;
   today: string;
+  /**
+   * Whether the closet has any available outerwear at all. Defaults to `true` so existing
+   * callers (and `passesRules`'s pre-P4-R7 semantics) are unaffected; `generateCandidates` sets
+   * it from the actual closet. When `false`, a cold-weather outfit is allowed with no outerwear
+   * rather than making the lucky list empty for a user who owns none (ruling P4-R7).
+   */
+  outerwearAvailable?: boolean;
 };
 
 const NEUTRAL_COLORS = new Set<GarmentColor>(['black', 'white', 'gray', 'navy', 'beige', 'cream', 'camel', 'brown']);
@@ -69,6 +76,13 @@ function daysBetween(fromIso: string, toIso: string): number {
   const from = Date.parse(`${fromIso.slice(0, 10)}T00:00:00Z`);
   const to = Date.parse(`${toIso.slice(0, 10)}T00:00:00Z`);
   return Math.trunc((to - from) / MS_PER_DAY);
+}
+
+/** True when `item` was worn within the last `RECENT_WEAR_DAYS` days (inclusive of today, exclusive of day 7). */
+function isRecentlyWorn(item: RuleGarment, today: string): boolean {
+  if (item.last_worn_at === null) return false;
+  const days = daysBetween(item.last_worn_at, today);
+  return days >= 0 && days < RECENT_WEAR_DAYS;
 }
 
 /**
@@ -154,7 +168,7 @@ export function passesRules(outfit: Outfit, ctx: RuleContext): boolean {
     if (item.pattern !== null && item.pattern !== 'solid') nonSolidPatterns += 1;
   }
 
-  if (ctx.weather?.band === 'cold') {
+  if (ctx.weather?.band === 'cold' && (ctx.outerwearAvailable ?? true)) {
     const hasOuterwear = outfit.some((item) => item.category !== null && slotOf(item.category) === 'outerwear');
     if (!hasOuterwear) return false;
   }
@@ -179,11 +193,7 @@ export function preScore(outfit: Outfit, today: string): number {
 
 /** True when any piece in the outfit was worn within the last 7 days (inclusive). */
 export function wornThisWeek(outfit: Outfit, today: string): boolean {
-  return outfit.some((item) => {
-    if (item.last_worn_at === null) return false;
-    const days = daysBetween(item.last_worn_at, today);
-    return days >= 0 && days < RECENT_WEAR_DAYS;
-  });
+  return outfit.some((item) => isRecentlyWorn(item, today));
 }
 
 // --- Deterministic seeded shuffle (mulberry32 over a string hash) ---------------------------
@@ -286,7 +296,14 @@ export function generateCandidates(
     accessory: seededShuffle(groups.accessory, rng),
   };
 
-  const needsOuterwear = ctx.weather !== null && (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
+  // Hoisted out of the per-combination loop (P4-R7): computed once from the closet, not
+  // re-derived for every base combination.
+  const outerwearAvailable = shuffled.outerwear.length > 0;
+  const ctxWithOuterwear: RuleContext = { ...ctx, outerwearAvailable };
+  const needsOuterwear =
+    outerwearAvailable &&
+    ctx.weather !== null &&
+    (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
   const extras: Array<RuleGarment | null> = [null, ...shuffled.bag, ...shuffled.accessory];
 
   function buildOutfits(excludeRecentlyWorn: boolean, remaining: number): Outfit[] {
@@ -297,7 +314,6 @@ export function generateCandidates(
       if (excludeRecentlyWorn && base.some((item) => isRecentlyWorn(item, ctx.today))) continue;
 
       const outerwearOptions: Array<RuleGarment | null> = needsOuterwear ? shuffled.outerwear : [null];
-      if (needsOuterwear && outerwearOptions.length === 0) continue;
 
       for (const outerwear of outerwearOptions) {
         if (excludeRecentlyWorn && outerwear !== null && isRecentlyWorn(outerwear, ctx.today)) continue;
@@ -309,7 +325,7 @@ export function generateCandidates(
           if (outerwear !== null) outfit.push(outerwear);
           if (extra !== null) outfit.push(extra);
 
-          if (passesRules(outfit, ctx)) {
+          if (passesRules(outfit, ctxWithOuterwear)) {
             results.push(outfit);
             if (results.length >= remaining) break outer;
           }
@@ -323,10 +339,4 @@ export function generateCandidates(
   const withoutRecent = buildOutfits(true, limit);
   if (withoutRecent.length >= MIN_FALLBACK_CANDIDATES) return withoutRecent;
   return buildOutfits(false, limit);
-}
-
-function isRecentlyWorn(item: RuleGarment, today: string): boolean {
-  if (item.last_worn_at === null) return false;
-  const days = daysBetween(item.last_worn_at, today);
-  return days >= 0 && days < RECENT_WEAR_DAYS;
 }

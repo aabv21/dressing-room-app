@@ -151,6 +151,25 @@ describe('passesRules', () => {
     expect(passesRules(outfit, ctx)).toBe(true);
   });
 
+  test('rejects a cold outfit without outerwear when outerwearAvailable is true', () => {
+    const outfit = [garment({ category: 't_shirt' }), garment({ category: 'jeans' }), garment({ category: 'boots' })];
+    const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'cold' }), outerwearAvailable: true };
+    expect(passesRules(outfit, ctx)).toBe(false);
+  });
+
+  test('rejects a cold outfit without outerwear when outerwearAvailable is unset (defaults true)', () => {
+    const outfit = [garment({ category: 't_shirt' }), garment({ category: 'jeans' }), garment({ category: 'boots' })];
+    const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'cold' }) };
+    expect(ctx.outerwearAvailable).toBeUndefined();
+    expect(passesRules(outfit, ctx)).toBe(false);
+  });
+
+  test('accepts a cold outfit without outerwear when outerwearAvailable is false (P4-R7)', () => {
+    const outfit = [garment({ category: 't_shirt' }), garment({ category: 'jeans' }), garment({ category: 'boots' })];
+    const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'cold' }), outerwearAvailable: false };
+    expect(passesRules(outfit, ctx)).toBe(true);
+  });
+
   test('rejects formality 1 for event', () => {
     const outfit = [
       garment({ category: 't_shirt', formality: 1 }),
@@ -287,6 +306,16 @@ describe('wornThisWeek', () => {
     const outfit = [garment({ last_worn_at: null })];
     expect(wornThisWeek(outfit, TODAY)).toBe(false);
   });
+
+  test('exactly 7 days ago is not recent (the window is [0, 7))', () => {
+    const outfit = [garment({ last_worn_at: '2026-11-01T00:00:00Z' })];
+    expect(wornThisWeek(outfit, TODAY)).toBe(false);
+  });
+
+  test('6 days ago is still recent', () => {
+    const outfit = [garment({ last_worn_at: '2026-11-02T00:00:00Z' })];
+    expect(wornThisWeek(outfit, TODAY)).toBe(true);
+  });
 });
 
 describe('generateCandidates', () => {
@@ -373,5 +402,45 @@ describe('generateCandidates', () => {
     expect(result.length).toBeGreaterThan(0);
     const usedRecent = result.some((outfit) => outfit.some((item) => item.id === recentShoes.id));
     expect(usedRecent).toBe(true);
+  });
+
+  test('a cold day with no available outerwear in the closet still returns candidates, none with outerwear (P4-R7)', () => {
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'] }),
+      garment({ category: 'jeans', colors: ['navy'] }),
+      garment({ category: 'sneakers', colors: ['white'] }),
+    ];
+    const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'cold' }) };
+    const result = generateCandidates(closet, ctx, 'seed');
+    expect(result.length).toBeGreaterThan(0);
+    for (const outfit of result) {
+      expect(outfit.every((item) => item.category === null || item.category !== 'coat')).toBe(true);
+    }
+  });
+
+  test('a rainy, non-hot day with no available outerwear still returns candidates (P4-R7)', () => {
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'] }),
+      garment({ category: 'jeans', colors: ['navy'] }),
+      garment({ category: 'sneakers', colors: ['white'] }),
+    ];
+    const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'mild', rain: true }) };
+    const result = generateCandidates(closet, ctx, 'seed');
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  test('a rainy, non-hot day with outerwear available puts it in every candidate', () => {
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'] }),
+      garment({ category: 'jeans', colors: ['navy'] }),
+      garment({ category: 'sneakers', colors: ['white'] }),
+      garment({ category: 'coat', colors: ['black'] }),
+    ];
+    const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'mild', rain: true }) };
+    const result = generateCandidates(closet, ctx, 'seed');
+    expect(result.length).toBeGreaterThan(0);
+    for (const outfit of result) {
+      expect(outfit.some((item) => item.category === 'coat')).toBe(true);
+    }
   });
 });
