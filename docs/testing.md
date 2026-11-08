@@ -46,7 +46,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
 - `src/__tests__/camera.test.tsx` — the burst camera: permissions, the shutter and shot strip, Done,
   and the Discard / Keep shooting confirm on Close and on a back gesture.
 - `src/__tests__/review.test.tsx` — the review queue: only the doubted fields are asked, Skip and
-  Confirm, the card stays pinned while polling reorders the queue, a save error by the buttons.
+  Confirm, the card stays pinned while polling reorders the queue, a save error by the buttons, and
+  the caught-up button goes back (or to the closet with no history).
 - `src/__tests__/garment-detail.test.tsx` — the garment detail: a save sends only the changed field
   and is disabled until something changed, a network error keeps the edit, the status saves at once
   and reverts on error, delete confirms first and goes back (or to the closet with no history), a

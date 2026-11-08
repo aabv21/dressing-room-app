@@ -3,7 +3,7 @@
 // anchored CTA. A root Stack screen inside the tabs guard (P3-R3), so there's no tab bar.
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { useIsFocused, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronLeft, ImageIcon, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -14,6 +14,7 @@ import { isLivePending } from '../../closet/closetSelectors';
 import { changedFields, FieldEditor, fieldValuesOf, type FieldValues } from '../../closet/GarmentFields';
 import { GarmentPhoto } from '../../closet/GarmentPhoto';
 import { deleteGarment, updateGarment, type Garment } from '../../closet/garmentRepository';
+import { leaveToCloset } from '../../closet/leaveToCloset';
 import { useUploadQueue } from '../../closet/UploadQueueProvider';
 import { useNow } from '../../closet/useNow';
 import { formatWearCount, useI18n } from '../../i18n';
@@ -32,15 +33,6 @@ const STATUSES = Constants.public.Enums.garment_status;
 const CLOCK_TICK_MS = 30_000;
 // Room for a message shown above the buttons, so it never covers the last field.
 const ERROR_ROOM = 56;
-
-/** Back where the user came from; a deep link opens this screen with no history, so the closet. */
-function leave(): void {
-  if (router.canGoBack()) {
-    router.back();
-  } else {
-    router.replace('/closet');
-  }
-}
 
 type Failure = { action: 'save' | 'delete'; error: RequestError };
 
@@ -230,7 +222,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
             // Narrower than 44 pt so the title sits close to it; the slop keeps the 44 pt target.
             hitSlop={{ left: 8, right: 6 }}
             style={styles.backButton}
-            onPress={leave}
+            onPress={leaveToCloset}
           >
             <ChevronLeft size={22} color={colors.ink} />
           </Pressable>
@@ -321,7 +313,7 @@ function NotFound(): React.JSX.Element {
         <Text style={styles.notFoundTitle}>{t('garment.notFound.title')}</Text>
         <Text style={styles.notFoundBody}>{t('garment.notFound.body')}</Text>
       </View>
-      <AnchoredCta chrome="none" primary={{ label: t('garment.notFound.back'), tone: 'commit', onPress: leave }} />
+      <AnchoredCta chrome="none" primary={{ label: t('garment.notFound.back'), tone: 'commit', onPress: leaveToCloset }} />
     </LinearGradient>
   );
 }
@@ -335,7 +327,7 @@ export default function GarmentDetailScreen(): React.JSX.Element {
   // Navigates first, so the garment vanishing from the closet never flashes "not found" here.
   const onDeleted = useCallback(() => {
     setLeaving(true);
-    leave();
+    leaveToCloset();
     removeLocal(id);
   }, [id, removeLocal]);
 

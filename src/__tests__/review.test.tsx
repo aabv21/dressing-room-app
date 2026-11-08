@@ -10,7 +10,7 @@ import { confirmReview, type Garment } from '../closet/garmentRepository';
 import { garment } from '../test/garmentFixture';
 
 jest.mock('expo-router', () => ({
-  router: { back: jest.fn() },
+  router: { back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
   useIsFocused: jest.fn(() => true),
 }));
 
@@ -271,4 +271,15 @@ test("an empty queue shows the caught-up state, whose button goes back", async (
   expect(screen.getByText("You're all caught up")).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole('button', { name: 'Back to closet' }));
   expect(router.back).toHaveBeenCalled();
+  expect(router.replace).not.toHaveBeenCalled();
+});
+
+test('a deep-linked caught-up screen with no history lands on the closet', async () => {
+  jest.mocked(router.canGoBack).mockReturnValueOnce(false);
+  mockCloset.garments = [extracted('g-1', 1, { reviewed_at: '2026-11-08T12:30:00.000Z' })];
+  await render(<ReviewScreen />);
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Back to closet' }));
+  expect(router.replace).toHaveBeenCalledWith('/closet');
+  expect(router.back).not.toHaveBeenCalled();
 });

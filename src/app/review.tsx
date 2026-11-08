@@ -2,7 +2,7 @@
 // through them one at a time and is only asked about what the AI doubted (`fieldsToAsk`). No tab
 // bar (the mockup's `.cta.nobar`): a root Stack screen registered inside the tabs guard (P3-R3).
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useIsFocused } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
 import { AccessibilityInfo, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -13,6 +13,7 @@ import { fieldsToAsk, isStalePending, reviewQueue } from '../closet/closetSelect
 import { ConfirmedRow, FieldEditor, fieldValuesOf } from '../closet/GarmentFields';
 import { confirmReview, type Garment } from '../closet/garmentRepository';
 import { GarmentPhoto } from '../closet/GarmentPhoto';
+import { leaveToCloset } from '../closet/leaveToCloset';
 import { useNow } from '../closet/useNow';
 import { useI18n } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
@@ -173,9 +174,7 @@ function CaughtUp(): React.JSX.Element {
         primary={{
           label: t('review.done.back'),
           tone: 'commit',
-          onPress: () => {
-            router.back();
-          },
+          onPress: leaveToCloset,
         }}
       />
     </LinearGradient>
