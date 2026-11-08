@@ -47,6 +47,19 @@ describe('pieceLabel', () => {
 
     expect(pieceLabel(garment, (key) => translate('en', key))).toBe('Blouse · White');
   });
+
+  test('a piece with no category yet is the unnamed label plus its color', () => {
+    const garment = { category: null, colors: ['black' as const] };
+
+    expect(pieceLabel(garment, (key) => translate('en', key))).toBe(`${translate('en', 'garment.unnamed')} · Black`);
+  });
+
+  test('a piece with no colors is the category label alone', () => {
+    const garment = { category: 'jeans' as const, colors: [] };
+
+    expect(pieceLabel(garment, (key) => translate('en', key))).toBe('Jeans');
+    expect(pieceLabel({ category: null, colors: [] }, (key) => translate('es', key))).toBe(translate('es', 'garment.unnamed'));
+  });
 });
 
 describe('formatWeather', () => {

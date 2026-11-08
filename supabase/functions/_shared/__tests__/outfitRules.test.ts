@@ -336,6 +336,15 @@ describe('wornThisWeek', () => {
     const outfit = [garment({ last_worn_at: '2026-11-02T00:00:00Z' })];
     expect(wornThisWeek(outfit, TODAY)).toBe(true);
   });
+
+  test('the boundary is by calendar day: late on day 7 is not recent, late on day 6 is', () => {
+    expect(wornThisWeek([garment({ last_worn_at: '2026-11-01T23:59:59Z' })], TODAY)).toBe(false);
+    expect(wornThisWeek([garment({ last_worn_at: '2026-11-02T23:59:59Z' })], TODAY)).toBe(true);
+  });
+
+  test('worn today counts as this week', () => {
+    expect(wornThisWeek([garment({ last_worn_at: `${TODAY}T08:00:00Z` })], TODAY)).toBe(true);
+  });
 });
 
 describe('generateCandidates', () => {
@@ -501,6 +510,20 @@ describe('generateCandidates', () => {
     const result = generateCandidates(closet, MILD_CTX, 'seed');
     const usedRecent = result.some((outfit) => outfit.some((item) => item.id === recentShoes.id));
     expect(usedRecent).toBe(false);
+  });
+
+  test('an item worn exactly 7 days ago is not avoided, even with 3+ alternatives', () => {
+    const weekOldShoes = garment({ category: 'sneakers', colors: ['white'], last_worn_at: '2026-11-01T12:00:00Z' });
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'] }),
+      garment({ category: 'jeans', colors: ['navy'] }),
+      weekOldShoes,
+      garment({ category: 'boots', colors: ['brown'] }),
+      garment({ category: 'flats', colors: ['beige'] }),
+      garment({ category: 'loafers', colors: ['brown'] }),
+    ];
+    const result = generateCandidates(closet, MILD_CTX, 'seed');
+    expect(result.some((outfit) => outfit.some((item) => item.id === weekOldShoes.id))).toBe(true);
   });
 
   test('includes a recently-worn item when it is the only shoes', () => {

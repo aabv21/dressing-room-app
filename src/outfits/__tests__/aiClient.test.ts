@@ -50,6 +50,8 @@ describe('rateOutfit', () => {
     [503, 'unavailable'],
     [422, 'incomplete'],
     [404, 'not_found'],
+    // An expired or rejected session (the gateway's verify_jwt) isn't one of the functions' codes.
+    [401, 'unknown'],
     [500, 'unknown'],
     [400, 'unknown'],
   ] as const)('an HTTP %i response maps to %s', async (status, expected) => {
