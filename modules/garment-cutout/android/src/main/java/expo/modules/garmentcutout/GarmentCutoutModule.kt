@@ -4,9 +4,14 @@
 package expo.modules.garmentcutout
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
@@ -19,9 +24,15 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
+// A 48 MP photo would need ~192 MB per ARGB bitmap; the upload pipeline resizes to 784 px anyway.
+private const val MAX_SOURCE_SIDE = 2048
+
 class GarmentCutoutModule : Module() {
   private val context
     get() = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+
+  private val segmenterOptions
+    get() = SubjectSegmenterOptions.Builder().enableForegroundBitmap().build()
 
   override fun definition() = ModuleDefinition {
     Name("GarmentCutout")
@@ -31,14 +42,24 @@ class GarmentCutoutModule : Module() {
         ConnectionResult.SUCCESS
     }
 
-    // Runs on the module's background queue, so blocking on the ML Kit task is fine here.
+    // Runs on the module's background queue, so blocking on the Play services tasks is fine here.
     AsyncFunction("cutOut") { uri: String ->
-      val options = SubjectSegmenterOptions.Builder().enableForegroundBitmap().build()
-      val segmenter = SubjectSegmentation.getClient(options)
+      val segmenter = SubjectSegmentation.getClient(segmenterOptions)
       try {
-        // fromFilePath applies the EXIF rotation.
-        val image = InputImage.fromFilePath(context, Uri.parse(uri))
-        val result = Tasks.await(segmenter.process(image))
+        val moduleInstall = ModuleInstall.getClient(context)
+        if (!Tasks.await(moduleInstall.areModulesAvailable(segmenter)).areModulesAvailable()) {
+          // The manifest's install-time download hasn't finished (or was skipped): ask for it again
+          // without waiting, on a client of its own that outlives this call, and keep the original
+          // photo this time.
+          moduleInstall.installModules(
+            ModuleInstallRequest.newBuilder()
+              .addApi(SubjectSegmentation.getClient(segmenterOptions))
+              .build()
+          )
+          return@AsyncFunction null
+        }
+        val source = decodeCapped(Uri.parse(uri))
+        val result = Tasks.await(segmenter.process(InputImage.fromBitmap(source, 0)))
         val foreground = result.foregroundBitmap ?: return@AsyncFunction null
         val subject = cropToSubject(foreground) ?: return@AsyncFunction null
         writePng(subject)
@@ -52,25 +73,65 @@ class GarmentCutoutModule : Module() {
     }
   }
 
+  // Decodes at most MAX_SOURCE_SIDE px on the longest side (power-of-two sampling, never upscaled)
+  // and applies the EXIF orientation, so the bitmap is upright.
+  private fun decodeCapped(uri: Uri): Bitmap {
+    val resolver = context.contentResolver
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    // With inJustDecodeBounds, decodeStream returns null and only fills `bounds`.
+    val stream = resolver.openInputStream(uri) ?: throw CodedException("Could not open the image at $uri")
+    stream.use { BitmapFactory.decodeStream(it, null, bounds) }
+    val longest = maxOf(bounds.outWidth, bounds.outHeight)
+    if (longest <= 0) throw CodedException("Could not read the image at $uri")
+
+    var sampleSize = 1
+    while (longest / sampleSize > MAX_SOURCE_SIDE) sampleSize *= 2
+    val options = BitmapFactory.Options().apply {
+      inSampleSize = sampleSize
+      inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    val decoded = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+      ?: throw CodedException("Could not read the image at $uri")
+
+    val orientation = resolver.openInputStream(uri)?.use {
+      ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    } ?: ExifInterface.ORIENTATION_NORMAL
+    val matrix = exifMatrix(orientation) ?: return decoded
+    val upright = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+    if (upright !== decoded) decoded.recycle()
+    return upright
+  }
+
+  private fun exifMatrix(orientation: Int): Matrix? = when (orientation) {
+    ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> Matrix().apply { setScale(-1f, 1f) }
+    ExifInterface.ORIENTATION_ROTATE_180 -> Matrix().apply { setRotate(180f) }
+    ExifInterface.ORIENTATION_FLIP_VERTICAL -> Matrix().apply { setScale(1f, -1f) }
+    ExifInterface.ORIENTATION_TRANSPOSE -> Matrix().apply { setRotate(90f); postScale(-1f, 1f) }
+    ExifInterface.ORIENTATION_ROTATE_90 -> Matrix().apply { setRotate(90f) }
+    ExifInterface.ORIENTATION_TRANSVERSE -> Matrix().apply { setRotate(-90f); postScale(-1f, 1f) }
+    ExifInterface.ORIENTATION_ROTATE_270 -> Matrix().apply { setRotate(-90f) }
+    else -> null
+  }
+
   // foregroundBitmap keeps the source size with a transparent background; crop to the opaque
-  // pixels so the PNG matches iOS's croppedToInstancesExtent output. Null when nothing is opaque.
+  // pixels so the PNG matches iOS's croppedToInstancesExtent output. Scans one row at a time to
+  // keep memory flat. Null when nothing is opaque.
   private fun cropToSubject(bitmap: Bitmap): Bitmap? {
     val width = bitmap.width
     val height = bitmap.height
-    val pixels = IntArray(width * height)
-    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+    val row = IntArray(width)
     var left = width
     var top = height
     var right = -1
     var bottom = -1
     for (y in 0 until height) {
-      val row = y * width
+      bitmap.getPixels(row, 0, width, 0, y, width, 1)
       for (x in 0 until width) {
-        if (pixels[row + x] ushr 24 != 0) {
+        if (row[x] ushr 24 != 0) {
           if (x < left) left = x
           if (x > right) right = x
           if (y < top) top = y
-          if (y > bottom) bottom = y
+          bottom = y
         }
       }
     }

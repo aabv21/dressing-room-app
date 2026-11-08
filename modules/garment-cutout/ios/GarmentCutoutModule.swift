@@ -27,15 +27,16 @@ public class GarmentCutoutModule: Module {
 
 @available(iOS 17, *)
 private enum GarmentCutter {
+  // A 48 MP photo would need several hundred MB for the mask and the render; the upload pipeline
+  // resizes to 784 px anyway.
+  private static let maxSourceSide = 2048
+
   static func cutOut(uri: String) throws -> String? {
-    let sourceUrl = try fileUrl(from: uri)
-    // Applies the EXIF orientation so the mask and the output are upright.
-    guard let image = CIImage(contentsOf: sourceUrl, options: [.applyOrientationProperty: true]) else {
-      throw UnreadableImageException(uri)
-    }
+    let image = try decodeCapped(try fileUrl(from: uri), uri: uri)
 
     let request = VNGenerateForegroundInstanceMaskRequest()
-    let handler = VNImageRequestHandler(ciImage: image)
+    // The decoded image already has the EXIF orientation applied, so it is upright.
+    let handler = VNImageRequestHandler(cgImage: image)
     try handler.perform([request])
     guard let observation = request.results?.first, !observation.allInstances.isEmpty else {
       return nil
@@ -56,6 +57,23 @@ private enum GarmentCutter {
       throw PngEncodingException()
     }
     return try writePng(cgImage).absoluteString
+  }
+
+  // Decodes at most `maxSourceSide` px on the longest side (never upscaled), EXIF orientation applied.
+  private static func decodeCapped(_ url: URL, uri: String) throws -> CGImage {
+    let options: [CFString: Any] = [
+      kCGImageSourceThumbnailMaxPixelSize: maxSourceSide,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceShouldCacheImmediately: true,
+    ]
+    guard
+      let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else {
+      throw UnreadableImageException(uri)
+    }
+    return image
   }
 
   private static func fileUrl(from uri: String) throws -> URL {
