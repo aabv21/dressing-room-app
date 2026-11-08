@@ -48,6 +48,7 @@ export const en = {
   'camera.discard.discard': 'Discard',
   'camera.permission.denied': 'Dressing Room needs your camera to shoot garments. Allow access in Settings.',
   'camera.permission.openSettings': 'Open settings',
+  'camera.captureFailed': "Couldn't take that photo. Try again.",
 
   'screen.today': 'TODAY',
   'screen.closet': 'YOUR CLOSET',

@@ -50,6 +50,7 @@ export const es: Record<MessageKey, string> = {
   'camera.discard.discard': 'Descartar',
   'camera.permission.denied': 'Dressing Room necesita tu cámara para fotografiar prendas. Da acceso en Configuración.',
   'camera.permission.openSettings': 'Abrir configuración',
+  'camera.captureFailed': 'No se pudo tomar la foto. Inténtalo de nuevo.',
 
   'screen.today': 'HOY',
   'screen.closet': 'TU CLÓSET',

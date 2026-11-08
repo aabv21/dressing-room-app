@@ -4,7 +4,7 @@
 // through its permission/denied states and its own logic (shutter debounce, the running shot list,
 // Close's confirmation) — the real capture flow is an owner-session check (see AGENTS.md).
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { router } from 'expo-router';
+import { router, usePreventRemove } from 'expo-router';
 import { Check, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -62,22 +62,42 @@ function BurstCamera(): React.JSX.Element {
   const [uris, setUris] = useState<readonly string[]>([]);
   const capturing = useRef(false);
 
+  /**
+   * The Discard / Keep shooting choice, shared by the Close button and `usePreventRemove`'s
+   * blocked-removal callback below. `proceed` already includes disabling prevention before it
+   * navigates (`uris` is still non-empty at that instant, so skipping that would have the hook
+   * re-block its own caller's navigation with a second, redundant confirmation).
+   */
+  const confirmDiscard = useCallback(
+    (proceed: () => void) => {
+      Alert.alert(t('camera.discard.title'), t('camera.discard.message'), [
+        { text: t('camera.discard.keepShooting'), style: 'cancel' },
+        { text: t('camera.discard.discard'), style: 'destructive', onPress: proceed },
+      ]);
+    },
+    [t],
+  );
+
+  // I2: a hardware back press, the system back gesture, or (on iOS) swiping the modal away all
+  // bypass the Close button — `presentation: 'fullScreenModal'` falls back to a plain `modal` on
+  // Android, whose back gesture/button would otherwise leave with unsaved shots and skip the
+  // Discard confirmation entirely. `usePreventRemove` intercepts any such removal attempt while
+  // shots are pending; its callback's `repeat()` continues that specific blocked action (already
+  // preceded by the hook's own prevention-disabling, per its documented contract).
+  const disablePrevention = usePreventRemove(uris.length > 0, ({ repeat }) => {
+    confirmDiscard(repeat);
+  });
+
   const close = useCallback(() => {
     if (uris.length === 0) {
       router.back();
       return;
     }
-    Alert.alert(t('camera.discard.title'), t('camera.discard.message'), [
-      { text: t('camera.discard.keepShooting'), style: 'cancel' },
-      {
-        text: t('camera.discard.discard'),
-        style: 'destructive',
-        onPress: () => {
-          router.back();
-        },
-      },
-    ]);
-  }, [uris.length, t]);
+    confirmDiscard(() => {
+      disablePrevention();
+      router.back();
+    });
+  }, [uris.length, confirmDiscard, disablePrevention]);
 
   const shoot = useCallback(async () => {
     if (capturing.current || cameraRef.current === null) {
@@ -87,15 +107,23 @@ function BurstCamera(): React.JSX.Element {
     try {
       const picture = await cameraRef.current.takePictureAsync({ quality: JPEG_QUALITY });
       setUris((current) => [...current, picture.uri]);
+    } catch {
+      // Hardware/session error, or the device ran out of storage: keep the shots already taken
+      // and leave the shutter usable for the next attempt.
+      Alert.alert(t('camera.captureFailed'));
     } finally {
       capturing.current = false;
     }
-  }, []);
+  }, [t]);
 
   const done = useCallback(() => {
+    // Disables prevention first: `uris` is still non-empty at this instant, and without this the
+    // hook would intercept this very `router.back()` and pop an unwanted Discard confirmation
+    // right after a successful Done.
+    disablePrevention();
     enqueue(uris);
     router.back();
-  }, [enqueue, uris]);
+  }, [enqueue, uris, disablePrevention]);
 
   const count = uris.length;
   const countLabel = t(pluralKey('camera.count', count), { count });
