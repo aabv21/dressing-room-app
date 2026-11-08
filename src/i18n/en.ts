@@ -395,4 +395,11 @@ export const en = {
   'garment.warmth.1': 'Light',
   'garment.warmth.2': 'Medium',
   'garment.warmth.3': 'Warm',
+
+  'weather.condition.clear': 'sunny',
+  'weather.condition.cloudy': 'cloudy',
+  'weather.condition.fog': 'foggy',
+  'weather.condition.rain': 'rainy',
+  'weather.condition.snow': 'snowy',
+  'weather.condition.storm': 'stormy',
 } as const;

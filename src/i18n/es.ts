@@ -397,4 +397,11 @@ export const es: Record<MessageKey, string> = {
   'garment.warmth.1': 'Ligera',
   'garment.warmth.2': 'Media',
   'garment.warmth.3': 'Abrigada',
+
+  'weather.condition.clear': 'soleado',
+  'weather.condition.cloudy': 'nublado',
+  'weather.condition.fog': 'con niebla',
+  'weather.condition.rain': 'lluvioso',
+  'weather.condition.snow': 'con nieve',
+  'weather.condition.storm': 'tormenta',
 };
