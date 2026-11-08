@@ -358,6 +358,7 @@ export const es: Record<MessageKey, string> = {
   'garment.status.available': 'Disponible',
   'garment.status.laundry': 'En la lavandería',
   'garment.status.lent': 'Prestada',
+  'garment.status.donated': 'Donada',
 
   'garment.status': 'Estado',
   'garment.reading': 'Leyendo la foto…',

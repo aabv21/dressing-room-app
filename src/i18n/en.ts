@@ -356,6 +356,7 @@ export const en = {
   'garment.status.available': 'Available',
   'garment.status.laundry': 'In the laundry',
   'garment.status.lent': 'Lent out',
+  'garment.status.donated': 'Donated',
 
   'garment.status': 'Status',
   'garment.reading': 'Reading the photo…',

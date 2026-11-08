@@ -20,6 +20,7 @@ export function garment(overrides: Partial<Garment> = {}): Garment {
     photo_version: 1,
     wear_count: 0,
     last_worn_at: null,
+    pinned_on: null,
     reviewed_at: null,
     created_at: '2026-11-08T12:00:00.000Z',
     updated_at: '2026-11-08T12:00:00.000Z',

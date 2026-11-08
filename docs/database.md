@@ -73,6 +73,7 @@ desc)` backs the closet grid's per-user, newest-first query.
 | `photo_version`              | `smallint`                 | `not null default 1`; CHECK `>= 1`                                   |
 | `wear_count`                 | `integer`                  | `not null default 0`; CHECK `>= 0`; server/function-only (Plan 4)    |
 | `last_worn_at`                | `timestamptz`              | nullable; server/function-only (Plan 4)                             |
+| `pinned_on`                   | `date`                     | nullable; client-writable (Plan 5)                                   |
 | `created_at`, `updated_at`   | `timestamptz`              | `not null default now()`; kept/set by the same triggers as `profiles` |
 
 Enums added here (exact values):
@@ -92,7 +93,10 @@ Enums added here (exact values):
   `other`.
 - `garment_fit`: `fitted`, `regular`, `loose`, `oversized`.
 - `season`: `spring`, `summer`, `autumn`, `winter`.
-- `garment_status`: `available`, `laundry`, `lent`.
+- `garment_status`: `available`, `laundry`, `lent`, `donated` (`donated` added by `alter type …
+  add value` in `20261109000000_insights_account.sql`, Plan 5). A donated garment is hidden from the
+  closet grid, Build, review, slot counts, the goal card, colors, balance and the unused list, but
+  its past wears stay in the diary and stats history.
 - `extraction_status`: `pending`, `done`, `failed`, `over_quota`.
 - `garment_field`: `category`, `colors`, `pattern`, `material`, `formality`, `seasons`, `warmth`,
   `fit`, `occasions` — the subset of fields extraction can mark `uncertain_fields` for review.
@@ -152,40 +156,51 @@ happen yet. **Plan 5, which adds the diary undo, must delete the `wears` row(s) 
 existing `wears_delete_own` policy already allows that) and only then, if it ever deletes the
 outfit at all, delete `outfits` — never the other order.
 
-### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5)
 
-Server-only caches for the rating, feeling-lucky and weather Edge Functions; no client ever reads or
-writes them. `public.rating_cache` and `public.lucky_cache` share the same shape: `(user_id uuid
-references auth.users on delete cascade, cache_key text, result jsonb not null, created_at
-timestamptz not null default now())`, primary key `(user_id, cache_key)`. `public.weather_cache` is
-not user-scoped (weather is shared across users at the same place and hour): `(location_key text not
-null, hour timestamptz not null, payload jsonb not null)`, primary key `(location_key, hour)`. All
-three have RLS enabled with **no policies at all** and `revoke all` from both `anon` and
-`authenticated` — same "no API surface" pattern as `usage_counters` below, except nothing reads or
-writes them through a `security definer` function either; only `service_role` (the Edge Functions)
-ever touches them, bypassing RLS entirely as that role.
+Server-only caches for the rating, feeling-lucky, weather and For-you Edge Functions; no client ever
+reads or writes them. `public.rating_cache`, `public.lucky_cache` and `public.for_you_cache` share
+the same shape: `(user_id uuid references auth.users on delete cascade, cache_key text, result jsonb
+not null, created_at timestamptz not null default now())`, primary key `(user_id, cache_key)`.
+`public.weather_cache` is not user-scoped (weather is shared across users at the same place and
+hour): `(location_key text not null, hour timestamptz not null, payload jsonb not null)`, primary key
+`(location_key, hour)`. All four have RLS enabled with **no policies at all** and `revoke all` from
+both `anon` and `authenticated` — same "no API surface" pattern as `usage_counters` below, except
+nothing reads or writes them through a `security definer` function either; only `service_role` (the
+Edge Functions) ever touches them, bypassing RLS entirely as that role.
 
-NOTE: all three grow without bound. An expired degraded entry is overwritten only when the same
+NOTE: all four grow without bound. An expired degraded entry is overwritten only when the same
 key is asked for again, any other entry never expires, and nothing deletes old rows: a new day,
 occasion, closet edit or profile save writes new keys, and `weather_cache` gains a row per place
 and hour. At 4 users that's a few thousand small rows a month, with user deletion cascading the
-user-scoped two away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
+user-scoped three away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
 `delete from public.rating_cache where created_at < now() - interval '30 days'`, the same for
-`lucky_cache`, and `delete from public.weather_cache where hour < now() - interval '2 days'`), in
-an append-only migration.
+`lucky_cache` and `for_you_cache`, and `delete from public.weather_cache where hour < now() -
+interval '2 days'`), in an append-only migration.
+
+### `public.apple_tokens` (Plan 5)
+
+Server-only: one row per user who signed in with Apple, holding the refresh token account deletion
+revokes with Apple before removing the `auth.users` row. `(user_id uuid primary key references
+auth.users on delete cascade, refresh_token text not null, created_at timestamptz not null default
+now())`. RLS is enabled with **no policies at all** and `revoke all` from both `anon` and
+`authenticated` — same server-only pattern as the caches above; only `service_role` (the Apple
+sign-in and account-deletion Edge Functions) ever touches it.
 
 ### `public.usage_counters`
 
 Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
 `supabase/functions/extract-attributes/handler.ts`), the Plan 4 rating quota (50 per user per UTC
-day) and the Plan 4 feeling-lucky quota (10 per user per UTC day).
+day), the Plan 4 feeling-lucky quota (10 per user per UTC day) and the Plan 5 For-you quota (1 per
+user per UTC day, counting cache misses only).
 `(user_id uuid references auth.users on delete cascade, day date, kind quota_kind, count integer
-not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has three
-values: `extraction` (Plan 3), and `rating`/`lucky` (Plan 4, added by `alter type … add value` in
-`20261108120000_outfits_wears_caches.sql` — each `add value` is its own statement, and neither value
-is referenced anywhere else in that migration, so both commit in the same transaction as the rest of
-it; Postgres only forbids using a brand new enum value in the same transaction that added it, not
-adding several values together). RLS is enabled with **no policies at all** and `revoke all` from
+not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has four
+values: `extraction` (Plan 3), `rating`/`lucky` (Plan 4, added by `alter type … add value` in
+`20261108120000_outfits_wears_caches.sql`) and `for_you` (Plan 5, added the same way in
+`20261109000000_insights_account.sql` — each `add value` is its own statement, and the new value
+isn't referenced anywhere else in that migration, so it commits in the same transaction as the rest
+of it; Postgres only forbids using a brand new enum value in the same transaction that added it, not
+adding it). RLS is enabled with **no policies at all** and `revoke all` from
 both `anon` and `authenticated` — the table has no API surface of its own; every read and write goes
 through `public.consume_quota()`.
 
@@ -251,6 +266,10 @@ privileges), the client gets back only:
   whole statement, even if the row would otherwise be the caller's own — a column-privilege
   violation is checked before row filtering, so it fails the same way regardless of which row is
   targeted.
+- `grant update (pinned_on)` (Plan 5, `20261109000000_insights_account.sql`) — the client can also
+  set `pinned_on` on their own garment. Unused-for-6-months' "Wear it" sets it to tomorrow's local
+  date; `lucky-list` includes the garment in that day's outfits when any complete outfit with it
+  passes the rules. Nothing clears it automatically — the day simply passes.
 
 `created_at`/`updated_at` follow the same pair of trigger functions `profiles` uses:
 `garments_set_updated_at` (`public.set_updated_at()`) sets `updated_at = now()` before every
@@ -666,6 +685,18 @@ discards both the user and its profile row — no cleanup step is needed.
   roles, so an unrevoked insert path on either role can't pass silently); `consume_quota(A, 'rating',
   1)` returns `true` then `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though
   `'rating'` is exhausted for the same user — the two `quota_kind` values are tracked independently.
+- `insights_account.test.sql` (Plan 5) — the client can set their own `pinned_on` and `status =
+  'donated'` on `garments`; `authenticated` and `anon` can neither select nor insert
+  `apple_tokens`/`for_you_cache`; `consume_quota(A, 'for_you', 1)` returns `true` then `false`, same
+  independence as the other kinds; **the cascade assertion**, checked generically against
+  `pg_constraint`/`pg_attribute` rather than one hand-written assertion per table: every `public`
+  table with a `user_id` column (`profiles`, `garments`, `outfits`, `wears`, `usage_counters`,
+  `rating_cache`, `lucky_cache`, `for_you_cache`, `apple_tokens` — a second assertion pins this exact
+  set, so a future table quietly dropping or renaming `user_id` fails loudly instead of shrinking the
+  checked set) has a foreign key to `auth.users` with `confdeltype = 'c'` (`ON DELETE CASCADE`); and,
+  with a full fixture (a garment, an outfit, an outfit item, a wear, a usage counter and all three
+  user-scoped caches) built for a second user as `postgres` (bypassing RLS), deleting that
+  `auth.users` row leaves 0 matching rows in every one of those tables.
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.
