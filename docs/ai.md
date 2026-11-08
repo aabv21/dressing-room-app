@@ -369,12 +369,23 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
 3. The cache key hashes the date, the occasion, `locationKey(profile)`, `profile.updated_at` and a
    closet fingerprint: each garment's id and rating-relevant columns (category, colors, pattern,
    formality, fit, seasons, warmth, status; not `updated_at` or `last_worn_at`, which logging a
-   wear bumps), so an "I'll wear it" tap doesn't reshuffle the day's list. A hit recomputes each
-   outfit's `freshThisWeek` from the current wear dates and answers with the weather the list was
-   ranked for.
+   wear bumps), so an "I'll wear it" tap doesn't reshuffle the day's list. A hit keeps the list as
+   ranked but recomputes each outfit's `freshThisWeek` from the current wear dates, and answers
+   with this hour's weather (the stored one, validated, only when this hour's is unknown).
 4. Quota `lucky` 10 per UTC day (cache misses only).
-5. `generateCandidates` (at most 200, seed = user id + date; it decides from the closet whether
-   outerwear is available) → sorted by `preScore`, highest first → the top 30.
+5. `generateCandidates` (at most 200, seed = user id + date) → sorted by `preScore`, highest first
+   → the top 30, spread over the closet: at most 2 per base (the same pieces but the extra), and
+   no garment in more than 4 while other candidates remain (a second pass fills the 30 without
+   that cap, so a closet with one pair of shoes still gets a full list).
+   - Candidates are seeded random draws, not an enumeration: shoes, then top + bottom or a
+     one-piece (weighted by availability: half the tops and bottoms against the one-pieces),
+     outerwear when the weather calls for it and the closet has an admissible piece, and one
+     optional bag or accessory, where "none" weighs as much as every extra together. Duplicates
+     are dropped; drawing stops at 200 candidates or 4,000 draws. Pieces worn in the last 7 days
+     are avoided while at least 3 candidates survive without them.
+   - `preScore` is the mean over the base pieces (outerwear included, extras not) of the days since
+     last worn (never worn = 30, capped at 30) plus 5 for a neutral color, so adding a belt never
+     wins and a dress isn't behind separates for having fewer pieces.
 6. Each is rated with Jev (at most 5 at once; no Claude fallback), with unknown weather made
    neutral as in rate-outfit. Rated outfits are sorted by score, highest first; outfits whose
    rating failed follow in pre-score order with `score: null`.
@@ -392,7 +403,7 @@ candidates all fail the rules answers `outfits: []` (cached; the app shows an em
 | Cache hit (no quota, no Jev) | 200 cached list | `cached` |
 | Over the daily quota | 429 `over_quota` | `over_quota` |
 | Every candidate rated | 200 list, cached | `ranked` |
-| A rating failed or was cut by the budget | 200 list, cached degraded | `degraded` |
+| A rating failed or was cut by the budget, or the forecast failed | 200 list, cached degraded | `degraded` |
 | No candidate passes the rules | 200 `outfits: []`, cached | `empty` |
 | Loading garments or the profile, or the quota RPC, failed | 500 `internal` | `error` |
 

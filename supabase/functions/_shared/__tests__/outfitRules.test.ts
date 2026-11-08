@@ -282,12 +282,32 @@ describe('preScore', () => {
     expect(preScore(outfit, TODAY)).toBe(30);
   });
 
-  test('sums across every piece', () => {
+  test('averages across the base pieces, so a one-piece outfit is not behind for having fewer pieces (P4-R13)', () => {
     const outfit = [
       garment({ last_worn_at: null, colors: ['red'] }),
       garment({ category: 'jeans', last_worn_at: '2026-11-06T00:00:00Z', colors: ['navy'] }),
     ];
-    expect(preScore(outfit, TODAY)).toBe(30 + 2 + 5);
+    expect(preScore(outfit, TODAY)).toBe((30 + 2 + 5) / 2);
+    const dress = [garment({ category: 'dress', colors: ['black'] }), garment({ category: 'sneakers', colors: ['white'] })];
+    const separates = [...dress.slice(1), garment({ colors: ['black'] }), garment({ category: 'jeans', colors: ['navy'] })];
+    expect(preScore(dress, TODAY)).toBe(preScore(separates, TODAY));
+  });
+
+  test('an extra adds nothing, neutral or not (P4-R13)', () => {
+    const base = [garment({ colors: ['red'] }), garment({ category: 'jeans', colors: ['navy'] }), garment({ category: 'sneakers' })];
+    for (const extra of [garment({ category: 'belt', colors: ['black'] }), garment({ category: 'bag', colors: ['red'] }), garment({ category: 'hat' })]) {
+      expect(preScore([...base, extra], TODAY)).toBe(preScore(base, TODAY));
+    }
+  });
+
+  test('outerwear counts as a base piece', () => {
+    const base = [garment({ colors: ['red'] }), garment({ category: 'jeans', colors: ['red'] }), garment({ category: 'sneakers', colors: ['red'] })];
+    expect(preScore([...base, garment({ category: 'coat', colors: ['black'] })], TODAY)).toBe((30 * 4 + 5) / 4);
+  });
+
+  test('an outfit of extras only (a single swap candidate) scores those pieces', () => {
+    expect(preScore([garment({ category: 'belt', colors: ['black'], last_worn_at: '2026-11-06T00:00:00Z' })], TODAY)).toBe(2 + 5);
+    expect(preScore([], TODAY)).toBe(0);
   });
 });
 
@@ -378,6 +398,63 @@ describe('generateCandidates', () => {
     const elapsed = Date.now() - start;
     expect(result.length).toBeLessThanOrEqual(200);
     expect(elapsed).toBeLessThan(2000);
+  });
+
+  /** 10 tops, 8 bottoms, 5 shoes, 3 dresses and 4 extras, every one never worn. */
+  function varietyCloset(): RuleGarment[] {
+    const neutrals = ['white', 'black', 'gray', 'navy', 'beige'] as const;
+    const many = (category: RuleGarment['category'], count: number): RuleGarment[] =>
+      Array.from({ length: count }, (_, i) => garment({ category, colors: [neutrals[i % neutrals.length] ?? 'white'] }));
+    return [
+      ...many('t_shirt', 10),
+      ...many('jeans', 8),
+      ...many('sneakers', 5),
+      ...many('dress', 3),
+      ...many('belt', 2),
+      ...many('bag', 2),
+    ];
+  }
+
+  const slotIds = (outfits: readonly (readonly RuleGarment[])[], categories: readonly string[]): Set<string> =>
+    new Set(outfits.flatMap((outfit) => outfit.filter((item) => categories.includes(item.category ?? '')).map((item) => item.id)));
+
+  test('spreads over the closet: the first 30 candidates use many shoes and tops, and some dresses (P4-R13)', () => {
+    const first30 = generateCandidates(varietyCloset(), MILD_CTX, 'user1:2026-11-08').slice(0, 30);
+    expect(first30).toHaveLength(30);
+    expect(slotIds(first30, ['sneakers']).size).toBeGreaterThanOrEqual(3);
+    expect(slotIds(first30, ['t_shirt']).size).toBeGreaterThanOrEqual(5);
+    expect(first30.some((outfit) => outfit.some((item) => item.category === 'dress'))).toBe(true);
+  });
+
+  test('a one-piece is drawn in proportion to availability: about 3 / (9 + 3) of the candidates', () => {
+    const result = generateCandidates(varietyCloset(), MILD_CTX, 'seed');
+    const dresses = result.filter((outfit) => outfit.some((item) => item.category === 'dress')).length;
+    expect(result).toHaveLength(200);
+    expect(dresses).toBeGreaterThan(200 * 0.15);
+    expect(dresses).toBeLessThan(200 * 0.35);
+  });
+
+  test('"none" weighs as much as every extra together, and an outfit has at most one extra', () => {
+    const result = generateCandidates(varietyCloset(), MILD_CTX, 'seed');
+    const extrasPer = result.map((outfit) => outfit.filter((item) => item.category === 'belt' || item.category === 'bag').length);
+    expect(Math.max(...extrasPer)).toBe(1);
+    const without = extrasPer.filter((extras) => extras === 0).length;
+    expect(without).toBeGreaterThan(200 * 0.35);
+    expect(without).toBeLessThan(200 * 0.65);
+  });
+
+  test('candidates are distinct', () => {
+    const result = generateCandidates(varietyCloset(), MILD_CTX, 'seed');
+    const keys = result.map((outfit) => outfit.map((item) => item.id).sort().join(','));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test('a closet with fewer possible outfits than the limit returns each one once, after a bounded number of draws', () => {
+    const closet = [garment({ category: 't_shirt' }), garment({ category: 'jeans', colors: ['navy'] }), garment({ category: 'sneakers' })];
+    const start = Date.now();
+    const result = generateCandidates(closet, MILD_CTX, 'seed');
+    expect(result).toHaveLength(1);
+    expect(Date.now() - start).toBeLessThan(500);
   });
 
   test('excludes an item worn 2 days ago when 3+ alternatives exist', () => {

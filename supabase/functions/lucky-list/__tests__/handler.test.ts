@@ -397,6 +397,49 @@ describe('the lucky list', () => {
     }
   });
 
+  test('the 30 spread over the closet: 3+ shoes, 5+ tops or one-pieces, a dress, some without an extra, ≤ 2 per base (P4-R13)', async () => {
+    const w = world();
+    const { body } = await lucky(w);
+    const { outfits } = body as OkBody;
+    expect(outfits).toHaveLength(30);
+    const pieces = outfits.map((outfit) => piecesOf(w, outfit));
+    const idsIn = (slots: readonly Slot[]): Set<string> =>
+      new Set(pieces.flatMap((outfit) => outfit.filter((piece) => slots.includes(slotOf(piece.category ?? 'accessory'))).map((piece) => piece.id)));
+    expect(idsIn(['shoes']).size).toBeGreaterThanOrEqual(3);
+    expect(idsIn(['top', 'one_piece']).size).toBeGreaterThanOrEqual(5);
+    expect(pieces.some((outfit) => outfit.some((piece) => piece.category === 'dress'))).toBe(true);
+    const extras: readonly Slot[] = ['bag', 'headwear', 'accessory'];
+    const isExtra = (piece: RuleGarment): boolean => extras.includes(slotOf(piece.category ?? 'accessory'));
+    expect(pieces.some((outfit) => !outfit.some(isExtra))).toBe(true);
+    const perBase = new Map<string, number>();
+    for (const outfit of pieces) {
+      const key = outfit
+        .filter((piece) => !isExtra(piece))
+        .map((piece) => piece.id)
+        .sort()
+        .join(',');
+      perBase.set(key, (perBase.get(key) ?? 0) + 1);
+    }
+    expect(Math.max(...perBase.values())).toBeLessThanOrEqual(2);
+  });
+
+  test('a closet with one pair of shoes still fills the 30 (the per-piece cap gives way)', async () => {
+    const w = world({ garments: bigCloset().filter((row) => !['sneakers', 'loafers'].includes(String(row.category))) });
+    const { body } = await lucky(w);
+    expect((body as OkBody).outfits).toHaveLength(30);
+  });
+
+  test('the same user and date give the same candidate order on a recompute; another date another order (M3)', async () => {
+    const failing = (): World => world({ jev: () => json(500, {}) });
+    const order = async (date: string): Promise<string[][]> =>
+      ((await lucky(failing(), luckyRequest({ date, occasion: 'university' }))).body as OkBody).outfits.map(
+        (outfit) => outfit.garmentIds,
+      );
+    const first = await order(DATE);
+    expect(await order(DATE)).toEqual(first);
+    expect(await order('2026-11-10')).not.toEqual(first);
+  });
+
   test('Jev sees the outfit state without ids or measurements', async () => {
     const seen: unknown[] = [];
     const { calls } = await lucky(
@@ -418,6 +461,30 @@ describe('the lucky list', () => {
       expect(state).not.toContain('Madrid');
       expect(state).not.toContain('164');
     }
+  });
+
+  test('a hit answers with this hour\'s weather, keeping the list as ranked (I2)', async () => {
+    const w = world();
+    const first = (await lucky(w)).body as OkBody;
+    w.weather = { ...COOL, tempC: 9, condition: 'rain', rain: true };
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'jev')).toBe(0);
+    expect((body as OkBody).weather).toEqual({ tempC: 9, condition: 'rain', band: 'cool', rain: true });
+    expect((body as OkBody).outfits).toEqual(first.outfits);
+  });
+
+  test('a hit without this hour\'s weather falls back to the validated stored weather', async () => {
+    const w = world();
+    await lucky(w);
+    w.weather = null; // a weather_cache miss, and the forecast fails
+    const stored = await lucky(w);
+    expect((stored.body as OkBody).weather).toEqual(COOL);
+    for (const row of w.luckyCache.values()) {
+      row.result = { ...(row.result as Record<string, unknown>), weather: { tempC: 'warm', condition: 'clear', band: 'mild', rain: false } };
+    }
+    const invalid = await lucky(w);
+    expect(count(invalid.calls, 'jev')).toBe(0);
+    expect((invalid.body as OkBody).weather).toBeNull();
   });
 
   test('a second call hits the cache: no Jev, no quota, the same body', async () => {
@@ -604,6 +671,8 @@ describe('weather', () => {
     expect((body as OkBody).weather).toBeNull();
     expect((body as OkBody).outfits.length).toBeGreaterThan(0);
     expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
+    // Every rating succeeded; the degradation is the weather's alone (M2).
+    expect(outcomes()).toEqual([{ outcome: 'degraded' }]);
   });
 
   test('hot weather → no outerwear in any outfit', async () => {

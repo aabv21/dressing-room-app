@@ -1,7 +1,9 @@
 // The `lucky-list` Edge Function's request handler: the day's ranked "feeling lucky" outfits from
-// a signed-in user's closet. Rule-passing candidates come from a seeded shuffle (user id + date),
-// the 30 best pre-scored ones are rated with Jev and sorted by score; outfits whose rating failed
-// (or never started inside the time budget) follow in pre-score order with `score: null`.
+// a signed-in user's closet. Rule-passing candidates come from seeded random draws (user id +
+// date); the 30 best pre-scored ones, spread over the closet (at most 2 per base, and each
+// garment in at most 4 while others remain), are rated with Jev and sorted by score; outfits
+// whose rating failed (or never started inside the time budget) follow in pre-score order with
+// `score: null`.
 // Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node
 // and `index.ts` serves it under Deno.
 //
@@ -13,6 +15,7 @@
 import { OCCASIONS, type Occasion, type Slot } from '../_shared/catalog.ts';
 import { isRecord } from '../_shared/extraction.ts';
 import {
+  basePieces,
   generateCandidates,
   missingSlots,
   type Outfit,
@@ -38,6 +41,7 @@ import {
   ratingState,
   sha256Hex,
   userIdFromJwt,
+  weatherSummaryFrom,
 } from '../_shared/userContext.ts';
 import { locationKey, type WeatherSummary } from '../_shared/weather.ts';
 
@@ -69,6 +73,10 @@ type Outcome = 'cached' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_
 export const LUCKY_DAILY_LIMIT = 10;
 /** How many of the best pre-scored candidates are rated with Jev. */
 export const MAX_RANKED = 30;
+/** At most this many of the ranked outfits share the same base (the same pieces but the extra; P4-R13). */
+export const MAX_PER_BASE = 2;
+/** While enough other candidates remain, no garment is in more than this many of the ranked outfits. */
+export const MAX_PER_PIECE = 4;
 /** No Jev ranking call starts once this long has passed since the request arrived (ruling P4-R11). */
 export const RANK_BUDGET_MS = 15_000;
 const CACHE_VERSION = 1;
@@ -126,10 +134,17 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
 }
 
 /**
- * A cached list answered against today's closet: `freshThisWeek` from the current wear dates.
- * Null (a miss) when the entry isn't a well-formed list of this closet's garments.
+ * A cached list answered against today's closet and weather: `freshThisWeek` from the current
+ * wear dates, and this request's weather when it has one (else the validated stored one). The
+ * list itself stays as ranked. Null (a miss) when the entry isn't a well-formed list of this
+ * closet's garments.
  */
-function fromCache(cached: unknown, closet: ReadonlyMap<string, RuleGarment>, date: string): OkResponse | null {
+function fromCache(
+  cached: unknown,
+  closet: ReadonlyMap<string, RuleGarment>,
+  date: string,
+  current: WeatherSummary | null,
+): OkResponse | null {
   if (!isRecord(cached) || cached.kind !== 'ok' || !Array.isArray(cached.outfits)) return null;
   const outfits: LuckyOutfit[] = [];
   for (const entry of cached.outfits as unknown[]) {
@@ -144,9 +159,7 @@ function fromCache(cached: unknown, closet: ReadonlyMap<string, RuleGarment>, da
     }
     outfits.push({ garmentIds: pieces.map((piece) => piece.id), score, freshThisWeek: !wornThisWeek(pieces, date) });
   }
-  // The weather the list was ranked for, as stored by this function.
-  const weather = isRecord(cached.weather) ? (cached.weather as WeatherSummary) : null;
-  return { kind: 'ok', weather, outfits };
+  return { kind: 'ok', weather: current ?? weatherSummaryFrom(cached.weather), outfits };
 }
 
 type RankContext = {
@@ -187,13 +200,33 @@ async function rank(ctx: RankContext, candidates: readonly Outfit[]): Promise<{ 
   return { ranked, complete: unrated.length === 0 };
 }
 
-/** The best `MAX_RANKED` candidates by pre-score, ties in generation order. */
-function topByPreScore(candidates: readonly Outfit[], date: string): Outfit[] {
-  return candidates
+/**
+ * The `MAX_RANKED` candidates Jev rates: the best by pre-score (ties in generation order), with at
+ * most `MAX_PER_BASE` per base. A first pass also keeps every garment to `MAX_PER_PIECE` outfits,
+ * so the few freshest pieces can't fill the whole list; a second pass fills what's left without
+ * that cap (a closet with one pair of shoes still gets 30). Returned in pre-score order.
+ */
+function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
+  const sorted = candidates
     .map((outfit, index) => ({ outfit, index, pre: preScore(outfit, date) }))
-    .sort((a, b) => b.pre - a.pre || a.index - b.index)
-    .slice(0, MAX_RANKED)
-    .map(({ outfit }) => outfit);
+    .sort((a, b) => b.pre - a.pre || a.index - b.index);
+  const perBase = new Map<string, number>();
+  const perPiece = new Map<string, number>();
+  const chosen = new Set<number>();
+  for (const capPieces of [true, false]) {
+    for (const { outfit, index } of sorted) {
+      if (chosen.size >= MAX_RANKED) break;
+      if (chosen.has(index)) continue;
+      const base = basePieces(outfit).map((garment) => garment.id);
+      const baseKey = [...base].sort().join(',');
+      if ((perBase.get(baseKey) ?? 0) >= MAX_PER_BASE) continue;
+      if (capPieces && base.some((id) => (perPiece.get(id) ?? 0) >= MAX_PER_PIECE)) continue;
+      chosen.add(index);
+      perBase.set(baseKey, (perBase.get(baseKey) ?? 0) + 1);
+      for (const id of base) perPiece.set(id, (perPiece.get(id) ?? 0) + 1);
+    }
+  }
+  return sorted.filter(({ index }) => chosen.has(index)).map(({ outfit }) => outfit);
 }
 
 /** The cached list without the internal `degraded` marker. */
@@ -225,7 +258,7 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
 
     const key = await cacheKey(garments, profile, input);
     const closet = new Map(garments.map((garment) => [garment.id, garment]));
-    const hit = fromCache(await cacheGet(env, fetchFn, 'lucky_cache', userId, key), closet, input.date);
+    const hit = fromCache(await cacheGet(env, fetchFn, 'lucky_cache', userId, key), closet, input.date, weather);
     if (hit !== null) return reply('cached', 200, hit);
 
     if (!(await consumeQuota(env, fetchFn, userId, 'lucky', LUCKY_DAILY_LIMIT))) {
@@ -234,18 +267,21 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
 
     // `generateCandidates` sets `outerwearAvailable` from the closet itself (ruling P4-R7).
     const rules: RuleContext = { occasion: input.occasion, season: seasonOf(input.date, lat), weather, today: input.date };
-    const candidates = topByPreScore(generateCandidates(garments, rules, userId + input.date), input.date);
+    const candidates = selectForRanking(generateCandidates(garments, rules, userId + input.date), input.date);
     const { ranked, complete } = await rank(
       { env, fetch: fetchFn, rand: deps.rand ?? Math.random, profile, occasion: input.occasion, weather, rules, startedAt },
       candidates,
     );
     // A location that resolved to coordinates but got no forecast is a transient failure; no city
     // (or one that can't be geocoded) is not, and recomputing it hourly would only spend quota.
+    // NOTE: a geocode that times out for a typed city (no stored coordinates) looks like a city
+    // that can't be geocoded, so its weather-null list is cached for the day. Upgrade path: have
+    // `getLocalWeather` report why the weather is null (none, unknown city, upstream failure).
     const weatherFailed = weather === null && lat !== null && locationOf(profile) !== null;
     const result: CachedLucky = { kind: 'ok', weather, outfits: ranked, degraded: !complete || weatherFailed };
 
     await cachePut(env, fetchFn, 'lucky_cache', userId, key, result);
-    const outcome: Outcome = ranked.length === 0 ? 'empty' : complete ? 'ranked' : 'degraded';
+    const outcome: Outcome = result.degraded ? 'degraded' : ranked.length === 0 ? 'empty' : 'ranked';
     return reply(outcome, 200, withoutMarker(result));
   } catch {
     // The database itself failed (garments, profile or quota); nothing was ranked or cached.

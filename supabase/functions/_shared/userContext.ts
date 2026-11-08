@@ -258,17 +258,24 @@ function utcHour(now: Date): string {
   return hour.toISOString();
 }
 
-/** A `weather_cache.payload` (`{ weather, lat, lon }`), or null when it isn't one. */
-function cachedWeatherFrom(payload: unknown): { weather: WeatherSummary; lat: number } | null {
-  if (!isRecord(payload) || !isRecord(payload.weather)) return null;
-  const { tempC, condition, band, rain } = payload.weather;
-  const lat = numberOrNull(payload.lat);
+/** A stored `WeatherSummary` (picked field by field), or null when `value` isn't one. */
+export function weatherSummaryFrom(value: unknown): WeatherSummary | null {
+  if (!isRecord(value)) return null;
+  const { tempC, condition, band, rain } = value;
   const knownCondition = oneOf(WEATHER_CONDITIONS, condition);
   const knownBand = oneOf(WEATHER_BANDS, band);
-  if (typeof tempC !== 'number' || knownCondition === null || knownBand === null || typeof rain !== 'boolean' || lat === null) {
+  if (typeof tempC !== 'number' || !Number.isFinite(tempC) || knownCondition === null || knownBand === null || typeof rain !== 'boolean') {
     return null;
   }
-  return { weather: { tempC, condition: knownCondition, band: knownBand, rain }, lat };
+  return { tempC, condition: knownCondition, band: knownBand, rain };
+}
+
+/** A `weather_cache.payload` (`{ weather, lat, lon }`), or null when it isn't one. */
+function cachedWeatherFrom(payload: unknown): { weather: WeatherSummary; lat: number } | null {
+  if (!isRecord(payload)) return null;
+  const weather = weatherSummaryFrom(payload.weather);
+  const lat = numberOrNull(payload.lat);
+  return weather === null || lat === null ? null : { weather, lat };
 }
 
 async function readWeatherCache(

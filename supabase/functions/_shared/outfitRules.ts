@@ -185,16 +185,35 @@ export function passesRules(outfit: Outfit, ctx: RuleContext): boolean {
   return true;
 }
 
-/** Sum of (days since last worn, never-worn = 30, capped at 30) plus 5 per neutral-color piece. */
+/** The optional extras (`bag`, `headwear`, `accessory`): never required, so never part of an outfit's base. */
+export function isExtraSlot(slot: Slot): boolean {
+  return slot === 'bag' || slot === 'headwear' || slot === 'accessory';
+}
+
+/** The outfit without its optional extras: the required pieces plus any outerwear. */
+export function basePieces(outfit: Outfit): RuleGarment[] {
+  return outfit.filter((item) => item.category === null || !isExtraSlot(slotOf(item.category)));
+}
+
+/**
+ * The mean, over the outfit's base pieces, of (days since last worn, never-worn = 30, capped at
+ * 30) plus 5 for a piece with a neutral color. Extras don't count (ruling P4-R13), so adding a
+ * belt can't win, and a mean doesn't favor top + bottom over a one-piece for having one more
+ * piece. An outfit of extras only (rate-outfit's freshness of a single swap candidate) scores
+ * those pieces instead.
+ */
 export function preScore(outfit: Outfit, today: string): number {
+  const base = basePieces(outfit);
+  const pieces = base.length > 0 ? base : outfit;
+  if (pieces.length === 0) return 0;
   let score = 0;
-  for (const item of outfit) {
+  for (const item of pieces) {
     const daysSinceWorn =
       item.last_worn_at === null ? MAX_PRE_SCORE_DAYS : Math.min(MAX_PRE_SCORE_DAYS, daysBetween(item.last_worn_at, today));
     score += daysSinceWorn;
     if (item.colors.some((color) => NEUTRAL_COLORS.has(color))) score += 5;
   }
-  return score;
+  return score / pieces.length;
 }
 
 /** True when any piece in the outfit was worn within the last 7 days (inclusive). */
@@ -246,12 +265,11 @@ type SlotGroups = {
   onePiece: RuleGarment[];
   outerwear: RuleGarment[];
   shoes: RuleGarment[];
-  bag: RuleGarment[];
-  accessory: RuleGarment[];
+  extras: RuleGarment[];
 };
 
 function groupBySlot(garments: readonly RuleGarment[]): SlotGroups {
-  const groups: SlotGroups = { top: [], bottom: [], onePiece: [], outerwear: [], shoes: [], bag: [], accessory: [] };
+  const groups: SlotGroups = { top: [], bottom: [], onePiece: [], outerwear: [], shoes: [], extras: [] };
   for (const item of garments) {
     if (item.status !== 'available' || item.category === null) continue;
     const slot = slotOf(item.category);
@@ -260,30 +278,23 @@ function groupBySlot(garments: readonly RuleGarment[]): SlotGroups {
     else if (slot === 'one_piece') groups.onePiece.push(item);
     else if (slot === 'outerwear') groups.outerwear.push(item);
     else if (slot === 'shoes') groups.shoes.push(item);
-    else if (slot === 'bag') groups.bag.push(item);
-    else groups.accessory.push(item); // 'accessory' and 'headwear' share one optional extras slot.
+    else groups.extras.push(item); // bag, headwear and accessory share one optional extras slot.
   }
   return groups;
 }
 
-/** Yields every top+bottom/shoes and one_piece/shoes base combination, shuffled-list order, lazily. */
-function* baseCombinations(groups: SlotGroups): Generator<RuleGarment[]> {
-  for (const shoes of groups.shoes) {
-    for (const top of groups.top) {
-      for (const bottom of groups.bottom) {
-        yield [top, bottom, shoes];
-      }
-    }
-    for (const onePiece of groups.onePiece) {
-      yield [onePiece, shoes];
-    }
-  }
-}
+/** How many draws `generateCandidates` may make per candidate it is asked for. */
+const ATTEMPTS_PER_CANDIDATE = 20;
 
 /**
- * Builds rule-passing outfit candidates from the garments given, lazily from a seeded-shuffled
- * per-slot list so a large closet never materializes every combination before stopping at
- * `limit`. Adds outerwear when the weather calls for it, then at most one bag/accessory.
+ * Rule-passing outfit candidates from seeded random draws (ruling P4-R13), so the list spreads
+ * over the closet instead of exhausting one pair of shoes and one top first. Each draw picks
+ * shoes, then top + bottom or a one-piece (weighted by how many garments can fill each: half the
+ * tops and bottoms against the one-pieces), outerwear when the weather calls for it and the
+ * closet has an admissible piece (P4-R7), and an optional bag or accessory, where "none" weighs
+ * as much as all the extras together. Duplicates are dropped; drawing stops at `limit`
+ * candidates or `limit × 20` draws. Items worn in the last 7 days are avoided while at least 3
+ * candidates survive without them. Deterministic for a given seed and closet order.
  */
 export function generateCandidates(
   garments: readonly RuleGarment[],
@@ -293,61 +304,56 @@ export function generateCandidates(
 ): Outfit[] {
   const rng = mulberry32(hashString(seed));
   const groups = groupBySlot(garments);
-  const shuffled: SlotGroups = {
-    top: seededShuffle(groups.top, rng),
-    bottom: seededShuffle(groups.bottom, rng),
-    onePiece: seededShuffle(groups.onePiece, rng),
-    outerwear: seededShuffle(groups.outerwear, rng),
-    shoes: seededShuffle(groups.shoes, rng),
-    bag: seededShuffle(groups.bag, rng),
-    accessory: seededShuffle(groups.accessory, rng),
-  };
 
-  // Hoisted out of the per-combination loop (P4-R7): computed once from the closet, not
-  // re-derived for every base combination. "Available" means admissible for this context, not
-  // merely in the closet — an inadmissible-only coat (wrong formality/season) must behave the
-  // same as owning none, using the same `isAdmissible` check `passesRules` applies per piece
-  // (fix round 2: the formality/season gap in the first P4-R7 fix).
-  const admissibleOuterwear = shuffled.outerwear.filter((item) => isAdmissible(item, ctx));
+  // Computed once from the closet (P4-R7): "available" means admissible for this context, using
+  // the same `isAdmissible` check `passesRules` applies per piece, so an inadmissible-only coat
+  // behaves the same as owning none.
+  const admissibleOuterwear = groups.outerwear.filter((item) => isAdmissible(item, ctx));
   const outerwearAvailable = admissibleOuterwear.length > 0;
   const ctxWithOuterwear: RuleContext = { ...ctx, outerwearAvailable };
   const needsOuterwear =
     outerwearAvailable &&
     ctx.weather !== null &&
     (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
-  const extras: Array<RuleGarment | null> = [null, ...shuffled.bag, ...shuffled.accessory];
 
-  function buildOutfits(excludeRecentlyWorn: boolean, remaining: number): Outfit[] {
-    if (remaining <= 0) return [];
+  const pick = <T,>(items: readonly T[]): T | undefined => items.at(Math.floor(rng() * items.length));
+
+  function draw(excludeRecentlyWorn: boolean, remaining: number): Outfit[] {
+    const pool = (items: readonly RuleGarment[]): RuleGarment[] =>
+      excludeRecentlyWorn ? items.filter((item) => !isRecentlyWorn(item, ctx.today)) : [...items];
+    const shoes = pool(groups.shoes);
+    const tops = pool(groups.top);
+    const bottoms = pool(groups.bottom);
+    const onePieces = pool(groups.onePiece);
+    const outerwear = pool(admissibleOuterwear);
+    const extras = pool(groups.extras);
+    const pairWeight = tops.length > 0 && bottoms.length > 0 ? (tops.length + bottoms.length) / 2 : 0;
+    const totalWeight = pairWeight + onePieces.length;
+    if (remaining <= 0 || shoes.length === 0 || totalWeight === 0 || (needsOuterwear && outerwear.length === 0)) return [];
+
     const results: Outfit[] = [];
+    const seen = new Set<string>();
+    for (let attempt = 0; attempt < remaining * ATTEMPTS_PER_CANDIDATE && results.length < remaining; attempt += 1) {
+      const outfit: (RuleGarment | undefined)[] = [pick(shoes)];
+      if (rng() * totalWeight < pairWeight) outfit.push(pick(tops), pick(bottoms));
+      else outfit.push(pick(onePieces));
+      if (needsOuterwear) outfit.push(pick(outerwear));
+      // "none" weighs as much as every extra together.
+      if (extras.length > 0 && rng() < 0.5) outfit.push(pick(extras));
 
-    outer: for (const base of baseCombinations(shuffled)) {
-      if (excludeRecentlyWorn && base.some((item) => isRecentlyWorn(item, ctx.today))) continue;
-
-      const outerwearOptions: Array<RuleGarment | null> = needsOuterwear ? admissibleOuterwear : [null];
-
-      for (const outerwear of outerwearOptions) {
-        if (excludeRecentlyWorn && outerwear !== null && isRecentlyWorn(outerwear, ctx.today)) continue;
-
-        for (const extra of extras) {
-          if (excludeRecentlyWorn && extra !== null && isRecentlyWorn(extra, ctx.today)) continue;
-
-          const outfit: RuleGarment[] = [...base];
-          if (outerwear !== null) outfit.push(outerwear);
-          if (extra !== null) outfit.push(extra);
-
-          if (passesRules(outfit, ctxWithOuterwear)) {
-            results.push(outfit);
-            if (results.length >= remaining) break outer;
-          }
-        }
-      }
+      const pieces = outfit.filter((item) => item !== undefined);
+      const key = pieces
+        .map((item) => item.id)
+        .sort()
+        .join(',');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (passesRules(pieces, ctxWithOuterwear)) results.push(pieces);
     }
-
     return results;
   }
 
-  const withoutRecent = buildOutfits(true, limit);
+  const withoutRecent = draw(true, limit);
   if (withoutRecent.length >= MIN_FALLBACK_CANDIDATES) return withoutRecent;
-  return buildOutfits(false, limit);
+  return draw(false, limit);
 }
