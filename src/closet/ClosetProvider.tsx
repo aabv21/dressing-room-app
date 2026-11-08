@@ -23,7 +23,12 @@ interface ClosetContextValue {
   removeLocal: (id: string) => void;
 }
 
-type SignedThumb = { url: string; signedAt: number };
+/**
+ * `photoVersion` is the garment's `photo_version` the URL was signed for. A replaced photo keeps its
+ * storage path, so only a fresh signature (a new URL) gets past an HTTP or CDN cache of the old one;
+ * a thumbnail whose version no longer matches its row is re-signed at once, not after 50 minutes.
+ */
+type SignedThumb = { url: string; signedAt: number; photoVersion: number };
 type CachedCloset = { garments: Garment[]; thumbs: Record<string, SignedThumb> };
 
 const POLL_INTERVAL_MS = 5_000;
@@ -106,14 +111,18 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
       }
       const now = Date.now();
       const previous = latest.current.thumbs;
+      const current = (g: Garment, known: SignedThumb | undefined): known is SignedThumb =>
+        known !== undefined && known.photoVersion === g.photo_version;
       const toSign = listed.filter((g) => {
         const known = previous[g.id];
-        return known === undefined || now - known.signedAt > RESIGN_AFTER_MS;
+        return !current(g, known) || now - known.signedAt > RESIGN_AFTER_MS;
       });
+      // A thumbnail signed for an older photo is dropped rather than carried over: the grid's cache
+      // key already names the new version, and the old URL would cache the old photo under it.
       const nextThumbs: Record<string, SignedThumb> = {};
       for (const g of listed) {
         const known = previous[g.id];
-        if (known !== undefined) {
+        if (current(g, known)) {
           nextThumbs[g.id] = known;
         }
       }
@@ -128,7 +137,7 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
         for (const g of toSign) {
           const url = signed.get(garmentPhotoPath(userId, g.id, 'thumb'));
           if (url !== undefined) {
-            freshThumbs[g.id] = { url, signedAt: now };
+            freshThumbs[g.id] = { url, signedAt: now, photoVersion: g.photo_version };
           }
         }
         commit({ garments: latest.current.garments, thumbs: { ...latest.current.thumbs, ...freshThumbs } });

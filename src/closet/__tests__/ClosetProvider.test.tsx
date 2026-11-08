@@ -11,7 +11,7 @@ jest.mock('../garmentRepository', () => ({
   signedPhotoUrls: jest.fn(),
 }));
 
-import { act, render, screen } from '@testing-library/react-native';
+import { act, render, screen, waitFor } from '@testing-library/react-native';
 import * as Network from 'expo-network';
 import { useEffect } from 'react';
 import { AppState, Text, type AppStateStatus } from 'react-native';
@@ -226,6 +226,88 @@ test('replaceLocal and removeLocal update the list and the cache', async () => {
   expect(screen.getByTestId('ids')).toHaveTextContent('a:laundry');
   const parsed = JSON.parse(kvGet(CACHE_KEY) ?? '{}') as { garments: { id: string; status: string }[] };
   expect(parsed.garments).toEqual([expect.objectContaining({ id: 'a', status: 'laundry' })]);
+});
+
+/** Renders the provider and hands back its live context value, for calling `refresh` directly. */
+async function renderWithHandle(): Promise<{ current: () => ReturnType<typeof useCloset> }> {
+  let closet: ReturnType<typeof useCloset> | undefined;
+  function Grab(): React.JSX.Element {
+    const value = useCloset();
+    useEffect(() => {
+      closet = value;
+    });
+    return <Text testID="thumbs">{[...value.thumbUrls.entries()].map(([id, url]) => `${id}=${url}`).join(',')}</Text>;
+  }
+  await render(
+    <ClosetProvider>
+      <Grab />
+    </ClosetProvider>,
+  );
+  return {
+    current: () => {
+      if (closet === undefined) throw new Error('the provider never rendered');
+      return closet;
+    },
+  };
+}
+
+describe('a replaced photo (final review I3)', () => {
+  test('a refresh that returns a bumped photo_version re-signs that thumbnail at once', async () => {
+    let signing = 0;
+    mockedSign.mockImplementation((paths) => {
+      signing += 1;
+      return Promise.resolve(new Map(paths.map((path) => [path, `https://signed/${path}?token=${String(signing)}`])));
+    });
+    mockedList.mockResolvedValue([
+      garment({ id: 'a', extraction_status: 'done', photo_version: 1 }),
+      garment({ id: 'b', extraction_status: 'done', photo_version: 1 }),
+    ]);
+    const closet = await renderWithHandle();
+    await waitFor(() => {
+      expect(screen.getByTestId('thumbs')).toHaveTextContent(
+        'a=https://signed/user-1/a/thumb.webp?token=1,b=https://signed/user-1/b/thumb.webp?token=1',
+      );
+    });
+
+    mockedList.mockResolvedValue([
+      garment({ id: 'a', extraction_status: 'done', photo_version: 2, updated_at: '2026-11-08T12:05:00.000Z' }),
+      garment({ id: 'b', extraction_status: 'done', photo_version: 1 }),
+    ]);
+    await act(async () => {
+      await closet.current().refresh();
+    });
+
+    expect(mockedSign).toHaveBeenCalledTimes(2);
+    expect(mockedSign).toHaveBeenLastCalledWith(['user-1/a/thumb.webp']);
+    expect(closet.current().thumbUrls.get('a')).toBe('https://signed/user-1/a/thumb.webp?token=2');
+    expect(closet.current().thumbUrls.get('b')).toBe('https://signed/user-1/b/thumb.webp?token=1');
+  });
+
+  test('until the new version is signed, the old URL is not offered under the new version', async () => {
+    mockedList.mockResolvedValue([garment({ id: 'a', extraction_status: 'done', photo_version: 1 })]);
+    const closet = await renderWithHandle();
+    await waitFor(() => {
+      expect(screen.getByTestId('thumbs')).toHaveTextContent('a=https://signed/user-1/a/thumb.webp');
+    });
+
+    const signing = deferred<Map<string, string>>();
+    mockedSign.mockReturnValueOnce(signing.promise);
+    mockedList.mockResolvedValue([garment({ id: 'a', extraction_status: 'done', photo_version: 2 })]);
+    let refreshed: Promise<void> | undefined;
+    await act(async () => {
+      refreshed = closet.current().refresh();
+      await Promise.resolve();
+    });
+
+    // The grid's cache key is already `a:thumb:2`: the old URL there would cache the old photo under it.
+    expect(screen.getByTestId('thumbs')).toHaveTextContent('');
+
+    await act(async () => {
+      signing.resolve(new Map([['user-1/a/thumb.webp', 'https://signed/new']]));
+      await refreshed;
+    });
+    expect(screen.getByTestId('thumbs')).toHaveTextContent('a=https://signed/new');
+  });
 });
 
 describe('work in flight for a user who is gone (I1)', () => {

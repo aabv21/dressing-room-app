@@ -6,10 +6,15 @@ import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 import { useI18n } from '../i18n';
 import { garmentPhotoPath, signedPhotoUrls, type Garment } from './garmentRepository';
 
-/** A signed URL for the garment's full photo, or null until it is signed (or if signing failed). */
-function useFullPhotoUrl(g: Pick<Garment, 'id' | 'user_id'>): string | null {
+/**
+ * A signed URL for the garment's full photo, or null until it is signed (or if signing failed).
+ * Signed again whenever `photo_version` changes: a replaced photo keeps its storage path, so only a
+ * new signature (a new URL) gets past an HTTP or CDN cache that still holds the old photo.
+ */
+function useFullPhotoUrl(g: Pick<Garment, 'id' | 'user_id' | 'photo_version'>): string | null {
   const path = garmentPhotoPath(g.user_id, g.id, 'full');
-  const [signed, setSigned] = useState<{ path: string; url: string } | null>(null);
+  const version = g.photo_version;
+  const [signed, setSigned] = useState<{ path: string; version: number; url: string } | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -17,7 +22,7 @@ function useFullPhotoUrl(g: Pick<Garment, 'id' | 'user_id'>): string | null {
       (urls) => {
         const url = urls.get(path);
         if (current && url !== undefined) {
-          setSigned({ path, url });
+          setSigned({ path, version, url });
         }
       },
       // Offline: the checkerboard stays empty and the fields still work.
@@ -26,9 +31,9 @@ function useFullPhotoUrl(g: Pick<Garment, 'id' | 'user_id'>): string | null {
     return () => {
       current = false;
     };
-  }, [path]);
+  }, [path, version]);
 
-  return signed !== null && signed.path === path ? signed.url : null;
+  return signed !== null && signed.path === path && signed.version === version ? signed.url : null;
 }
 
 /**
