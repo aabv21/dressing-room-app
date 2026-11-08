@@ -37,6 +37,39 @@ const RESIGN_AFTER_MS = 50 * 60 * 1000;
 
 const ClosetContext = createContext<ClosetContextValue | undefined>(undefined);
 
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((entry, index) => Object.is(entry, b.at(index)));
+  }
+  return Object.is(a, b);
+}
+
+/** Whether two rows hold the same values (array columns compared element by element). */
+function sameGarment(a: Garment, b: Garment): boolean {
+  const other = new Map<string, unknown>(Object.entries(b));
+  const entries = Object.entries(a);
+  return entries.length === other.size && entries.every(([key, value]) => sameValue(value, other.get(key)));
+}
+
+/**
+ * `listed`, reusing the previous object for every row whose values didn't change, and `previous`
+ * itself when no row changed, so memoized grid cells don't re-render on a poll that found nothing.
+ */
+function mergeGarments(previous: Garment[], listed: Garment[]): Garment[] {
+  const byId = new Map(previous.map((g) => [g.id, g]));
+  const merged = listed.map((g) => {
+    const known = byId.get(g.id);
+    return known !== undefined && sameGarment(known, g) ? known : g;
+  });
+  return merged.length === previous.length && merged.every((g, index) => g === previous.at(index)) ? previous : merged;
+}
+
+function sameThumbs(a: Record<string, SignedThumb>, b: Record<string, SignedThumb>): boolean {
+  const other = new Map(Object.entries(b));
+  const entries = Object.entries(a);
+  return entries.length === other.size && entries.every(([key, thumb]) => other.get(key) === thumb);
+}
+
 function cacheKey(userId: string): string {
   return `closet.v1.${userId}`;
 }
@@ -126,8 +159,13 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
           nextThumbs[g.id] = known;
         }
       }
-      // Commit the list before signing, so a signing failure still shows the fresh rows.
-      commit({ garments: listed, thumbs: nextThumbs });
+      // Commit the list before signing, so a signing failure still shows the fresh rows. A poll
+      // that found nothing new commits nothing: no re-render and no rewrite of the kv copy.
+      const garmentsNext = mergeGarments(latest.current.garments, listed);
+      const thumbsNext = sameThumbs(previous, nextThumbs) ? previous : nextThumbs;
+      if (garmentsNext !== latest.current.garments || thumbsNext !== previous) {
+        commit({ garments: garmentsNext, thumbs: thumbsNext });
+      }
       if (toSign.length > 0 && userId !== null) {
         const signed = await signedPhotoUrls(toSign.map((g) => garmentPhotoPath(userId, g.id, 'thumb')));
         if (!isCurrent()) {

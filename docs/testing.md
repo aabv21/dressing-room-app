@@ -29,8 +29,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   `GarmentFields.test.tsx` (each field's chips and what they store, a disabled editor,
   `changedFields`), `garmentRepository.test.ts` (the queries and storage calls against a fake
   client, error mapping, delete order), `ClosetProvider.test.tsx` (refresh, the kv offline copy,
-  re-signing, a bumped `photo_version` re-signed at once, polling, late results after sign-out or a
-  user switch, foreground and reconnect),
+  re-signing, a bumped `photo_version` re-signed at once, a poll that found nothing new committing
+  nothing, polling, late results after sign-out or a user switch, foreground and reconnect),
   `GarmentPhoto.test.tsx` (the full photo signed once, and again for a new `photo_version`),
   `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer) and
   `ClosetScreen.test.tsx` (the goal card, slot chips, the review banner, the processing and failed

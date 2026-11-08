@@ -144,16 +144,16 @@ function RealCloset(): React.JSX.Element {
     ]);
   }, [t, retryFailed, discardFailed]);
 
-  let leadingTile: LeadingTile | undefined;
-  if (queue.pending > 0) {
-    leadingTile = { label: t(pluralKey('closet.processing', queue.pending), { count: queue.pending }) };
-  } else if (queue.failed > 0) {
-    leadingTile = {
-      label: t(pluralKey('closet.failed', queue.failed), { count: queue.failed }),
-      tone: 'error',
-      onPress: showFailedOptions,
-    };
-  }
+  const { pending, failed } = queue;
+  const leadingTile = useMemo<LeadingTile | undefined>(() => {
+    if (pending > 0) {
+      return { label: t(pluralKey('closet.processing', pending), { count: pending }) };
+    }
+    if (failed > 0) {
+      return { label: t(pluralKey('closet.failed', failed), { count: failed }), tone: 'error', onPress: showFailedOptions };
+    }
+    return undefined;
+  }, [pending, failed, t, showFailedOptions]);
 
   const header = (
     <View style={styles.header}>

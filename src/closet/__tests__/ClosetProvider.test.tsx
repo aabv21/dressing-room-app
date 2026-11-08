@@ -5,6 +5,11 @@ jest.mock('../../auth/AuthProvider', () => ({
 jest.mock('expo-network', () => ({
   addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
+// The real kv store (jest.setup.ts's in-memory fake), with `kvSet` wrapped so a test can count writes.
+jest.mock('../../lib/kv', () => {
+  const actual = jest.requireActual<typeof import('../../lib/kv')>('../../lib/kv');
+  return { ...actual, kvSet: jest.fn(actual.kvSet) };
+});
 jest.mock('../garmentRepository', () => ({
   garmentPhotoPath: (userId: string, garmentId: string, variant: string) => `${userId}/${garmentId}/${variant}.webp`,
   listGarments: jest.fn(),
@@ -19,10 +24,11 @@ import { AppState, Text, type AppStateStatus } from 'react-native';
 import { kvGet, kvRemove, kvSet } from '../../lib/kv';
 import { garment } from '../../test/garmentFixture';
 import { ClosetProvider, useCloset, usePendingPolling } from '../ClosetProvider';
-import { listGarments, signedPhotoUrls } from '../garmentRepository';
+import { listGarments, signedPhotoUrls, type Garment } from '../garmentRepository';
 
 const mockedList = jest.mocked(listGarments);
 const mockedSign = jest.mocked(signedPhotoUrls);
+const mockedKvSet = jest.mocked(kvSet);
 
 const CACHE_KEY = 'closet.v1.user-1';
 
@@ -307,6 +313,57 @@ describe('a replaced photo (final review I3)', () => {
       await refreshed;
     });
     expect(screen.getByTestId('thumbs')).toHaveTextContent('a=https://signed/new');
+  });
+});
+
+describe('a poll that finds nothing new (final review T7 M1)', () => {
+  test('writes no kv and keeps the same garments array and thumbnail map', async () => {
+    const rows = (): Garment[] => [
+      garment({ id: 'a', extraction_status: 'pending' }),
+      garment({ id: 'b', extraction_status: 'done', colors: ['navy'], seasons: ['winter'] }),
+    ];
+    mockedList.mockImplementation(() => Promise.resolve(rows()));
+    const closet = await renderWithHandle();
+    await waitFor(() => {
+      expect(closet.current().thumbUrls.size).toBe(2);
+    });
+    const before = closet.current();
+    mockedKvSet.mockClear();
+
+    await act(async () => {
+      await closet.current().refresh();
+    });
+
+    expect(mockedList).toHaveBeenCalledTimes(2);
+    expect(mockedKvSet).not.toHaveBeenCalled();
+    expect(closet.current().garments).toBe(before.garments);
+    expect(closet.current().thumbUrls).toBe(before.thumbUrls);
+  });
+
+  test('a changed row is committed while unchanged rows keep their identity', async () => {
+    mockedList.mockResolvedValue([
+      garment({ id: 'a', extraction_status: 'pending' }),
+      garment({ id: 'b', extraction_status: 'done' }),
+    ]);
+    const closet = await renderWithHandle();
+    await waitFor(() => {
+      expect(closet.current().thumbUrls.size).toBe(2);
+    });
+    const [, unchangedBefore] = closet.current().garments;
+    mockedKvSet.mockClear();
+
+    mockedList.mockResolvedValue([
+      garment({ id: 'a', extraction_status: 'done', category: 'jeans', updated_at: '2026-11-08T12:00:20.000Z' }),
+      garment({ id: 'b', extraction_status: 'done' }),
+    ]);
+    await act(async () => {
+      await closet.current().refresh();
+    });
+
+    expect(mockedKvSet).toHaveBeenCalledTimes(1);
+    const [changed, unchanged] = closet.current().garments;
+    expect(changed?.category).toBe('jeans');
+    expect(unchanged).toBe(unchangedBefore);
   });
 });
 
