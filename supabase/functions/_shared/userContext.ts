@@ -200,8 +200,11 @@ export async function loadProfile(env: FnEnv, fetchFn: FetchFn, auth: string): P
 
 // --- Garments ----------------------------------------------------------------------------------
 
-const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at';
-const GARMENT_STATUSES = ['available', 'laundry', 'lent'] as const satisfies readonly GarmentStatus[];
+const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at,pinned_on';
+const GARMENT_STATUSES = ['available', 'laundry', 'lent', 'donated'] as const satisfies readonly GarmentStatus[];
+
+/** `pinned_on`, read as a plain `YYYY-MM-DD` the way the lucky-list cache key and request dates are compared. */
+const pinnedOnOf = (value: unknown): string | null => (isIsoDate(value) ? value : null);
 
 function garmentFrom(row: unknown): RuleGarment {
   if (!isRecord(row) || typeof row.id !== 'string' || typeof row.updated_at !== 'string') {
@@ -221,6 +224,7 @@ function garmentFrom(row: unknown): RuleGarment {
     status,
     last_worn_at: stringOrNull(row.last_worn_at),
     updated_at: row.updated_at,
+    pinned_on: pinnedOnOf(row.pinned_on),
   };
 }
 

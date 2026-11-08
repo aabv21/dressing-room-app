@@ -33,6 +33,7 @@ function garment(overrides: Partial<RuleGarment> = {}): RuleGarment {
     status: 'available',
     last_worn_at: null,
     updated_at: '2026-01-01T00:00:00Z',
+    pinned_on: null,
     ...overrides,
   };
 }
@@ -234,6 +235,15 @@ describe('passesRules', () => {
   test('rejects a garment that is not available', () => {
     const outfit = [
       garment({ status: 'laundry' }),
+      garment({ category: 'jeans' }),
+      garment({ category: 'sneakers' }),
+    ];
+    expect(passesRules(outfit, MILD_CTX)).toBe(false);
+  });
+
+  test('rejects a donated garment', () => {
+    const outfit = [
+      garment({ status: 'donated' }),
       garment({ category: 'jeans' }),
       garment({ category: 'sneakers' }),
     ];
@@ -622,5 +632,79 @@ describe('generateCandidates', () => {
       expect(outfit.some((item) => item.id === admissibleCoat.id)).toBe(true);
       expect(outfit.some((item) => item.id === inadmissibleCoat.id)).toBe(false);
     }
+  });
+
+  test('a donated garment is never drawn into a candidate', () => {
+    const donatedShoes = garment({ category: 'sneakers', colors: ['white'], status: 'donated' });
+    const closet = [
+      garment({ category: 't_shirt', colors: ['white'] }),
+      garment({ category: 'jeans', colors: ['navy'] }),
+      donatedShoes,
+      garment({ category: 'boots', colors: ['brown'] }),
+    ];
+    const result = generateCandidates(closet, MILD_CTX, 'seed');
+    expect(result.length).toBeGreaterThan(0);
+    expect(result.some((outfit) => outfit.some((item) => item.id === donatedShoes.id))).toBe(false);
+  });
+
+  describe('pinnedId', () => {
+    /** 50 tops, 50 bottoms, 50 shoes, 50 bags, every one never worn, so nothing is excluded as recent. */
+    function hugeCloset(): RuleGarment[] {
+      const neutrals = ['white', 'black', 'gray', 'navy', 'beige'] as const;
+      const many = (category: RuleGarment['category'], count: number): RuleGarment[] =>
+        Array.from({ length: count }, (_, i) => garment({ category, colors: [neutrals[i % neutrals.length] ?? 'white'] }));
+      return [...many('t_shirt', 50), ...many('jeans', 50), ...many('sneakers', 50), ...many('bag', 50)];
+    }
+
+    test('a pinned top is found in at least one candidate on every one of 20 seeds (200-garment closet)', () => {
+      const closet = hugeCloset();
+      const pinned = closet[0];
+      if (pinned === undefined) throw new Error('setup');
+      for (let seed = 0; seed < 20; seed += 1) {
+        const result = generateCandidates(closet, MILD_CTX, `user:${String(seed)}`, 200, pinned.id);
+        expect(result.some((outfit) => outfit.some((item) => item.id === pinned.id))).toBe(true);
+      }
+    });
+
+    test('a pinned shoes garment (a required slot with many peers) is found on every one of 20 seeds', () => {
+      const closet = hugeCloset();
+      const pinned = closet.find((item) => item.category === 'sneakers');
+      if (pinned === undefined) throw new Error('setup');
+      for (let seed = 0; seed < 20; seed += 1) {
+        const result = generateCandidates(closet, MILD_CTX, `user:${String(seed)}`, 200, pinned.id);
+        expect(result.some((outfit) => outfit.some((item) => item.id === pinned.id))).toBe(true);
+      }
+    });
+
+    test('a pinned extra (drawn only about half the time) is found on every one of 20 seeds', () => {
+      const closet = hugeCloset();
+      const pinned = closet.find((item) => item.category === 'bag');
+      if (pinned === undefined) throw new Error('setup');
+      for (let seed = 0; seed < 20; seed += 1) {
+        const result = generateCandidates(closet, MILD_CTX, `user:${String(seed)}`, 200, pinned.id);
+        expect(result.some((outfit) => outfit.some((item) => item.id === pinned.id))).toBe(true);
+      }
+    });
+
+    test('null pinnedId (the default) behaves exactly as before: same candidates for the same seed', () => {
+      const closet = basicCloset();
+      const withoutArg = generateCandidates(closet, MILD_CTX, 'seed');
+      const withNull = generateCandidates(closet, MILD_CTX, 'seed', 200, null);
+      expect(withoutArg.map((outfit) => outfit.map((item) => item.id))).toEqual(
+        withNull.map((outfit) => outfit.map((item) => item.id)),
+      );
+    });
+
+    test('a pinned garment that passes no rule-passing outfit (wrong formality) yields no candidate containing it, but still returns the normal list', () => {
+      const closet = [
+        garment({ category: 't_shirt', formality: 1 }),
+        garment({ category: 'jeans', formality: 1 }),
+        garment({ category: 'sneakers', formality: 1 }),
+      ];
+      const tooFormal = garment({ category: 'blazer', formality: 5 });
+      const result = generateCandidates([...closet, tooFormal], { ...MILD_CTX, occasion: 'sport' }, 'seed', 200, tooFormal.id);
+      expect(result.length).toBeGreaterThan(0);
+      expect(result.some((outfit) => outfit.some((item) => item.id === tooFormal.id))).toBe(false);
+    });
   });
 });

@@ -18,7 +18,7 @@ import {
 import type { WeatherSummary } from './weather.ts';
 
 /** `public.garment_status`, not yet exported from `catalog.ts` (that enum lives only in SQL today). */
-export type GarmentStatus = 'available' | 'laundry' | 'lent';
+export type GarmentStatus = 'available' | 'laundry' | 'lent' | 'donated';
 
 /** The rating-relevant columns of a `garments` row that the outfit rules read. */
 export type RuleGarment = {
@@ -33,6 +33,8 @@ export type RuleGarment = {
   status: GarmentStatus;
   last_worn_at: string | null;
   updated_at: string;
+  /** Set by Unused-for-6-months' "Wear it" to tomorrow's local date; null otherwise. */
+  pinned_on: string | null;
 };
 
 export type Outfit = readonly RuleGarment[];
@@ -295,6 +297,22 @@ function groupBySlot(garments: readonly RuleGarment[]): SlotGroups {
 
 /** How many draws `generateCandidates` may make in total (both passes) per candidate it is asked for. */
 const ATTEMPTS_PER_CANDIDATE = 20;
+/** Every 4th draw forces `pinnedId` into its slot (1 in 4 draws is one eighth of a candidate's 20 attempts; see `generateCandidates`). */
+const PIN_ATTEMPT_STRIDE = 4;
+
+/**
+ * `items`, with `pinned` moved first when it's a member: `pick`'s index-0 fallback (an empty
+ * `rng()` draw never lands past the array) and the forced-pick stride in `generateCandidates`
+ * both read index 0, so this is the one place a "pick the pinned garment" attempt needs.
+ */
+function withPinnedFirst<T extends { id: string }>(items: readonly T[], pinnedId: string | null): readonly T[] {
+  if (pinnedId === null) return items;
+  const index = items.findIndex((item) => item.id === pinnedId);
+  if (index <= 0) return items;
+  const pinned = items.at(index);
+  if (pinned === undefined) return items;
+  return [pinned, ...items.slice(0, index), ...items.slice(index + 1)];
+}
 
 /**
  * Rule-passing outfit candidates from seeded random draws (ruling P4-R13), so the list spreads
@@ -308,12 +326,22 @@ const ATTEMPTS_PER_CANDIDATE = 20;
  * candidates or after `limit × 20` draws in total. Items worn in the last 7 days are avoided while
  * at least 3 candidates survive without them: that first pass may use half the draws, the
  * fallback pass the rest. Deterministic for a given seed and closet order.
+ *
+ * `pinnedId`, when given, also biases every `PIN_ATTEMPT_STRIDE`th draw to pick that garment for
+ * its own slot instead of a random one (lucky-list only asks for this on a pinned-for-today
+ * garment, which a plain seeded draw can otherwise miss across many seeds on a large closet — see
+ * the brief's 200-garment/20-seed check). The bias changes which garment a few draws use, not how
+ * many draws happen or how the rest of the outfit is picked, so it only shifts that garment's own
+ * odds, not the overall distribution. `lucky-list` still re-checks that at least one of the
+ * returned candidates actually contains the pin before treating it as pinned (the garment might
+ * not fit any rule-passing outfit at all).
  */
 export function generateCandidates(
   garments: readonly RuleGarment[],
   ctx: RuleContext,
   seed: string,
   limit = DEFAULT_CANDIDATE_LIMIT,
+  pinnedId: string | null = null,
 ): Outfit[] {
   const rng = mulberry32(hashString(seed));
   const groups = groupBySlot(garments);
@@ -329,12 +357,19 @@ export function generateCandidates(
     ctx.weather !== null &&
     (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
 
-  const pick = <T,>(items: readonly T[]): T | undefined => items.at(Math.floor(rng() * items.length));
+  const pick = <T extends { id: string }>(items: readonly T[], forcePinned: boolean): T | undefined => {
+    if (forcePinned && items[0]?.id === pinnedId) return items[0];
+    return items.at(Math.floor(rng() * items.length));
+  };
   let drawsLeft = limit * ATTEMPTS_PER_CANDIDATE;
+  let attemptCount = 0;
 
   function draw(excludeRecentlyWorn: boolean, remaining: number, maxDraws: number): Outfit[] {
-    const pool = (items: readonly RuleGarment[]): RuleGarment[] =>
-      items.filter((item) => fitsAlone(item, ctx) && !(excludeRecentlyWorn && isRecentlyWorn(item, ctx.today)));
+    const pool = (items: readonly RuleGarment[]): readonly RuleGarment[] =>
+      withPinnedFirst(
+        items.filter((item) => fitsAlone(item, ctx) && !(excludeRecentlyWorn && isRecentlyWorn(item, ctx.today))),
+        pinnedId,
+      );
     const shoes = pool(groups.shoes);
     const tops = pool(groups.top);
     const bottoms = pool(groups.bottom);
@@ -349,12 +384,14 @@ export function generateCandidates(
     const seen = new Set<string>();
     for (let attempt = 0; attempt < maxDraws && results.length < remaining; attempt += 1) {
       drawsLeft -= 1;
-      const outfit: (RuleGarment | undefined)[] = [pick(shoes)];
-      if (rng() * totalWeight < pairWeight) outfit.push(pick(tops), pick(bottoms));
-      else outfit.push(pick(onePieces));
-      if (needsOuterwear) outfit.push(pick(outerwear));
+      const forcePinned = pinnedId !== null && attemptCount % PIN_ATTEMPT_STRIDE === 0;
+      attemptCount += 1;
+      const outfit: (RuleGarment | undefined)[] = [pick(shoes, forcePinned)];
+      if (rng() * totalWeight < pairWeight) outfit.push(pick(tops, forcePinned), pick(bottoms, forcePinned));
+      else outfit.push(pick(onePieces, forcePinned));
+      if (needsOuterwear) outfit.push(pick(outerwear, forcePinned));
       // "none" weighs as much as every extra together.
-      if (extras.length > 0 && rng() < 0.5) outfit.push(pick(extras));
+      if (extras.length > 0 && rng() < 0.5) outfit.push(pick(extras, forcePinned));
 
       const pieces = outfit.filter((item) => item !== undefined);
       const key = pieces

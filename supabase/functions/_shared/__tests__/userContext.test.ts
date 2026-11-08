@@ -184,6 +184,7 @@ describe('loadProfile and loadGarments', () => {
       status: 'available',
       last_worn_at: null,
       updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: null,
       name: 'my jeans',
     };
     const { fetch, calls } = fakeFetch(() => json(200, [row]));
@@ -202,6 +203,70 @@ describe('loadProfile and loadGarments', () => {
   test('loadGarments throws on a database error', async () => {
     const { fetch } = fakeFetch(() => json(503, { message: 'unavailable' }));
     await expect(loadGarments(ENV, fetch, AUTH)).rejects.toThrow();
+  });
+
+  test('loadGarments accepts a donated garment (not yet excluded here; the rules exclude it)', async () => {
+    const row = {
+      id: GARMENT_A,
+      category: 'jeans',
+      colors: ['navy'],
+      pattern: 'solid',
+      formality: 2,
+      seasons: [],
+      warmth: 2,
+      fit: 'regular',
+      status: 'donated',
+      last_worn_at: null,
+      updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: null,
+    };
+    const { fetch } = fakeFetch(() => json(200, [row]));
+    const [garment] = await loadGarments(ENV, fetch, AUTH);
+    expect(garment?.status).toBe('donated');
+  });
+
+  test('loadGarments reads a valid pinned_on date', async () => {
+    const row = {
+      id: GARMENT_A,
+      category: 'jeans',
+      colors: ['navy'],
+      pattern: 'solid',
+      formality: 2,
+      seasons: [],
+      warmth: 2,
+      fit: 'regular',
+      status: 'available',
+      last_worn_at: null,
+      updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: '2026-11-09',
+    };
+    const { fetch } = fakeFetch(() => json(200, [row]));
+    const [garment] = await loadGarments(ENV, fetch, AUTH);
+    expect(garment?.pinned_on).toBe('2026-11-09');
+  });
+
+  test.each([
+    ['null', null],
+    ['not a date', 'soon'],
+    ['a datetime', '2026-11-09T00:00:00Z'],
+  ])('loadGarments reads pinned_on %s as null', async (_label, value) => {
+    const row = {
+      id: GARMENT_A,
+      category: 'jeans',
+      colors: ['navy'],
+      pattern: 'solid',
+      formality: 2,
+      seasons: [],
+      warmth: 2,
+      fit: 'regular',
+      status: 'available',
+      last_worn_at: null,
+      updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: value,
+    };
+    const { fetch } = fakeFetch(() => json(200, [row]));
+    const [garment] = await loadGarments(ENV, fetch, AUTH);
+    expect(garment?.pinned_on).toBeNull();
   });
 });
 

@@ -783,6 +783,88 @@ describe('weather', () => {
   });
 });
 
+describe('pinned garments', () => {
+  const pin = (w: Row[], id: string, date: string): Row[] =>
+    w.map((row) => (String(row.id) === id ? { ...row, pinned_on: date } : row));
+
+  test('a pin for today: every outfit in the list contains the pinned garment', async () => {
+    const w = world({ garments: pin(bigCloset(), idOf(5), DATE) });
+    const { body } = await lucky(w);
+    const { outfits } = body as OkBody;
+    expect(outfits.length).toBeGreaterThan(0);
+    for (const outfit of outfits) expect(outfit.garmentIds).toContain(idOf(5));
+  });
+
+  test('a pin for another date has no effect: the list is the same as with no pin', async () => {
+    const plain = (await lucky(world())).body as OkBody;
+    const w = world({ garments: pin(bigCloset(), idOf(5), '2026-11-09') });
+    const { body } = await lucky(w);
+    expect((body as OkBody).outfits.map((o) => o.garmentIds)).toEqual(plain.outfits.map((o) => o.garmentIds));
+  });
+
+  test('a pin on a garment in the laundry has no effect', async () => {
+    const w = world({
+      garments: pin(bigCloset(), idOf(5), DATE).map((row) => (String(row.id) === idOf(5) ? { ...row, status: 'laundry' } : row)),
+    });
+    const plain = (await lucky(world())).body as OkBody;
+    const { body } = await lucky(w);
+    // The pinned-but-unavailable piece is simply never a candidate; the rest of the closet is unchanged.
+    expect((body as OkBody).outfits.every((outfit) => !outfit.garmentIds.includes(idOf(5)))).toBe(true);
+    expect((body as OkBody).outfits.length).toBe(plain.outfits.length);
+  });
+
+  test('a pin with no complete rule-passing candidate gives the normal list', async () => {
+    // idOf(5) is a formality-2 t-shirt; pinning it for an "event" (formality 4-5) means no
+    // candidate the pin could qualify ever passes the rules, so the normal (unfiltered) list runs.
+    const unpinned = (await lucky(world(), luckyRequest({ date: DATE, occasion: 'event' }))).body as OkBody;
+    const w = world({ garments: pin(bigCloset(), idOf(5), DATE) });
+    const { body } = await lucky(w, luckyRequest({ date: DATE, occasion: 'event' }));
+    expect((body as OkBody).kind).toBe('ok');
+    expect((body as OkBody).outfits.map((o) => o.garmentIds)).toEqual(unpinned.outfits.map((o) => o.garmentIds));
+  });
+
+  test('pinning a garment changes the cache key: a pin after a cached miss recomputes', async () => {
+    const w = world();
+    await lucky(w);
+    w.garments = pin(w.garments, idOf(5), DATE);
+    const { calls } = await lucky(w);
+    expect(count(calls, 'jev')).toBeGreaterThan(0);
+    expect(w.luckyCache.size).toBe(2);
+  });
+
+  test('several pinned garments: any one of them qualifies a candidate', async () => {
+    const w = world({ garments: pin(pin(bigCloset(), idOf(5), DATE), idOf(10), DATE) });
+    const { body } = await lucky(w);
+    const { outfits } = body as OkBody;
+    expect(outfits.length).toBeGreaterThan(0);
+    for (const outfit of outfits) {
+      expect(outfit.garmentIds.includes(idOf(5)) || outfit.garmentIds.includes(idOf(10))).toBe(true);
+    }
+  });
+});
+
+describe('donated garments', () => {
+  test('a donated garment is never in the candidates or the list', async () => {
+    const w = world({
+      garments: bigCloset().map((row) => (String(row.id) === idOf(5) ? { ...row, status: 'donated' } : row)),
+    });
+    const { body } = await lucky(w);
+    const { outfits } = body as OkBody;
+    expect(outfits.length).toBeGreaterThan(0);
+    expect(outfits.every((outfit) => !outfit.garmentIds.includes(idOf(5)))).toBe(true);
+  });
+
+  test('a closet whose every shoe is donated is too_small', async () => {
+    const w = world({
+      garments: bigCloset().map((row) =>
+        ['sneakers', 'loafers', 'boots'].includes(String(row.category)) ? { ...row, status: 'donated' } : row,
+      ),
+    });
+    const { body } = await lucky(w);
+    expect((body as { kind: string }).kind).toBe('too_small');
+  });
+});
+
 describe('latency budget (P4-R11)', () => {
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });

@@ -335,7 +335,9 @@ user's JWT (`verify_jwt = true`). Garments and the profile are read with that JW
 the quota, `rating_cache` and `weather_cache` use the service role. The cache key hashes each
 garment's id and rating-relevant columns (category, colors, pattern, formality, fit, seasons,
 warmth, status; not `updated_at`, which logging a wear bumps), `profile.updated_at`, the occasion,
-the season, the weather band and rain.
+the season, the weather band and rain. `donated` is one more `status` the outfit rules already
+exclude (not `available`), so a donated garment is never a swap candidate, exactly like one in the
+laundry or lent out.
 
 | Case | Response | Logged outcome |
 | --- | --- | --- |
@@ -372,13 +374,16 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
 
 1. Load the garments and the profile, then the weather (also for a small closet: Today shows it).
 2. `missingSlots` non-empty → `{ kind: 'too_small', missing, weather }`, with no cache, quota or Jev.
+   `donated` is one more `status` the rules already exclude (not `available`), so a donated
+   garment counts towards no slot and is never a candidate, exactly like one in the laundry.
 3. The cache key hashes the date, the occasion, `locationKey(profile)`, `profile.updated_at` and a
    closet fingerprint: each garment's id and rating-relevant columns (category, colors, pattern,
-   formality, fit, seasons, warmth, status; not `updated_at` or `last_worn_at`, which logging a
-   wear bumps), so an "I'll wear it" tap doesn't reshuffle the day's list. A hit keeps the list as
-   ranked but recomputes each outfit's `freshThisWeek` from the current wear dates, and answers
-   with this hour's weather (the stored one, validated, only when this hour's is unknown). So on a
-   hit Today shows the current hour's weather next to a list ranked earlier in the day.
+   formality, fit, seasons, warmth, status, `pinned_on`; not `updated_at` or `last_worn_at`, which
+   logging a wear bumps), so an "I'll wear it" tap doesn't reshuffle the day's list, but a new
+   "Wear it" pin (Unused-for-6-months, task 5) does recompute it. A hit keeps the list as ranked
+   but recomputes each outfit's `freshThisWeek` from the current wear dates, and answers with this
+   hour's weather (the stored one, validated, only when this hour's is unknown). So on a hit Today
+   shows the current hour's weather next to a list ranked earlier in the day.
 4. Quota `lucky` 10 per UTC day (cache misses only).
 5. `generateCandidates` (at most 200, seed = user id + date) → sorted by `preScore`, highest first
    → the top 30, spread over the closet: at most 2 per base (the same pieces but the extra), and
@@ -401,6 +406,14 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
    - `preScore` is the mean over the base pieces (outerwear included, extras not) of the days since
      last worn (never worn = 30, capped at 30) plus 5 for a neutral color, so adding a belt never
      wins and a dress isn't behind separates for having fewer pieces.
+   - A garment whose `pinned_on` equals the request's date biases every fourth draw (within its
+     own slot) to pick it instead of a random peer, so it's reachable even on a 200-garment closet
+     where its unforced odds across 200 random draws would otherwise sometimes miss it over many
+     seeds; with several pins only the first (by id) seeds the draw this way, since the generator
+     takes one hint garment, but any pinned garment can still turn up unforced. After generation,
+     candidates are kept only when they contain a pinned garment, and only when at least one
+     generated candidate does — otherwise the pin is ignored (no complete candidate could ever
+     honor it: wrong season, formality, or the piece isn't `available`) and the normal list runs.
 6. Each is rated with Jev (at most 5 at once; no Claude fallback), with unknown weather made
    neutral as in rate-outfit. Rated outfits are sorted by score, highest first; outfits whose
    rating failed follow in pre-score order with `score: null`.
