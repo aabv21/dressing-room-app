@@ -2,8 +2,13 @@
 
 Every AI call runs server-side in a Supabase Edge Function; the app never holds a model API key.
 Model output is untrusted input: structured outputs and enums bound what a model can return, the
-function re-validates every value, and only enum values are ever stored. Functions log only a
-garment id and an outcome word, never photos, prompts or model output.
+function re-validates every value, and only enum values are ever stored. Functions log one line
+per call and never photos, the profile, garments, prompts or model output: `extract-attributes`
+logs the garment id and an outcome word; `rate-outfit` and `lucky-list` log only an outcome word.
+The outcome words are `cached`, `rated`, `fallback`, `over_quota`, `unavailable`, `invalid` and
+`error` for `rate-outfit`, and `cached`, `too_small`, `ranked`, `degraded`, `empty`, `over_quota`,
+`invalid` and `error` for `lucky-list` (each function's table below says when). Locally, every
+Claude, Jev and Open-Meteo call goes to a mock on the host (`docs/testing.md`'s `integration`).
 
 ## Garment attribute extraction
 

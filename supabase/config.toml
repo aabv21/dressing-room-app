@@ -416,11 +416,17 @@ deno_version = 2
 # Local-only values; the hosted project sets its own with `supabase secrets set`.
 # EXTRACT_WEBHOOK_SECRET must match the `extract_webhook_secret` Vault secret in
 # seed.sql. ANTHROPIC_BASE_URL points at integration/mockAnthropic.ts on the
-# host, so local runs never reach the real Claude API.
+# host, so local runs never reach the real Claude API. The TypeSafe (Jev) and
+# Open-Meteo URLs point at integration/mockServices.ts on the host for the same
+# reason: rate-outfit and lucky-list never reach the real services locally.
 [edge_runtime.secrets]
 EXTRACT_WEBHOOK_SECRET = "local-only-not-a-secret"
 ANTHROPIC_API_KEY = "local-only-not-a-key"
 ANTHROPIC_BASE_URL = "http://host.docker.internal:54499"
+TYPESAFE_API_KEY = "local-only-not-a-key"
+TYPESAFE_BASE_URL = "http://host.docker.internal:54498"
+OPEN_METEO_URL = "http://host.docker.internal:54498"
+OPEN_METEO_GEOCODING_URL = "http://host.docker.internal:54498"
 
 # Called by the garments insert webhook (pg_net), which authenticates with the
 # `x-webhook-secret` header checked inside the function, not with a user JWT.
