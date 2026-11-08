@@ -21,6 +21,7 @@ import {
   consumeQuota,
   type FnEnv,
   getLocalWeather,
+  isIsoDate,
   jevRating,
   loadGarments,
   loadProfile,
@@ -95,12 +96,6 @@ function json(status: number, body: unknown): Response {
 function reply(outcome: Outcome, status: number, body: unknown): Response {
   console.info(JSON.stringify({ outcome }));
   return json(status, body);
-}
-
-function isIsoDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 async function readInput(request: Request): Promise<RateInput | null> {
