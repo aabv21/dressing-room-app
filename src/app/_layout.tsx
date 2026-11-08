@@ -97,6 +97,8 @@ function Guards() {
         <Stack.Screen name="camera" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="review" />
         <Stack.Screen name="garment/[id]" />
+        {/* Mockup 01 screen 3, pushed from Today and Build with the outfit's garment ids. */}
+        <Stack.Screen name="rate" />
       </Stack.Protected>
     </Stack>
   );
