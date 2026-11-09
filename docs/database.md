@@ -666,8 +666,10 @@ inside them, never in `src/`.
   device; they never upload without that user's session, and run again if the account turns out to
   exist. Upgrade path: a `queue.purge.<uid>` sweep when the queue provider mounts.
 - **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
-  and `wears` with the caller's own token, so RLS applies, in pages of 1000 (`max_rows`), and drops
-  any row whose `user_id` isn't the caller's. Photo URLs are signed with the service role for 7 days,
+  and `wears` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
+  `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
+  caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still
+  reads every row. Photo URLs are signed with the service role for 7 days,
   only for `{uid}/{garmentId}/{full,thumb}.webp` paths built from the caller's own garments (a
   missing variant is `null`, and a garment with no photo at all is left out of `photos`). The answer
   is `{ exportedAt, profile, garments, outfits, wears, photos: [{ garmentId, full, thumb }] }`.
@@ -782,29 +784,29 @@ discards both the user and its profile row — no cleanup step is needed.
 - `outfits_wears.test.sql` — `log_wear` for A with 3 garments creates one outfit, 3 `outfit_items`
   and one wear (returning the caller-supplied wear id), and sets `wear_count`/`last_worn_at` on all
   3 garments; **calling it again with the same wear id is idempotent** (a retry after a lost
-  response must not log the wear twice): it returns the same id, logs no additional wear or
-  outfit, and the counts stay put; a second, distinct `log_wear` reusing 2 of the 3 garments bumps
-  those to `wear_count` 2 and moves `last_worn_at` to the later date; **A deleting that second wear as `authenticated` (not `postgres`)** restores both garments
-  to `wear_count` 1 and falls `last_worn_at` back to the remaining wear's date (not null, since each
-  is still in the first wear) — proving the `security definer` trigger fires correctly for a real
-  client-issued delete, not just one run as the table owner; deleting a garment's only remaining
-  wear drops its `last_worn_at` to null; `log_wear` by B referencing A's garment raises `42501`; a
-  single garment or a duplicate id raises `22023` for both `log_wear` and `save_outfit`; `save_outfit`
-  by A referencing B's garment raises `42501`; `save_outfit` stamps `saved_at`, creates no `wears`
-  row and never changes any garment's `wear_count`; B selecting A's outfits or wears returns 0 rows;
-  **B selecting A's `outfit_items` by `outfit_id` or by `garment_id` returns 0 rows** (asserted
-  directly against `outfit_items`, not through a join with `outfits` that would pass even under a
-  vacuous `using (true)` policy); **an authenticated `update` on `outfits`, `outfit_items` or
-  `wears` now raises `42501`** (a real privilege error, since update is revoked outright — see "RLS
-  and storage rules" above), and so does an authenticated `delete` on `outfits`/`outfit_items`;
-  **B deleting A's wear by id removes 0 rows** and leaves A's wear and counts unchanged;
-  **`log_wear` by B reusing A's wear id raises `23505`**, leaving A's wear A's and logging nothing
-  for B; deleting a
-  garment cascades its `outfit_items` rows. Also the cross-tenant direct-insert paths: B inserting a
-  `wears` row with their own `user_id` but A's `outfit_id` raises `42501` and leaves A's
-  `wear_count` unchanged; B inserting an `outfit_items` row into A's outfit (even naming B's own
-  garment) raises `42501`; B inserting an `outfit_items` row naming A's garment (even into B's own
-  outfit) raises `42501`.
+  response must not log the wear twice): it returns the same id, logs no additional wear or outfit,
+  and the counts stay put; a second, distinct `log_wear` reusing 2 of the 3 garments bumps those to
+  `wear_count` 2 and moves `last_worn_at` to the later date; **A deleting that second wear as
+  `authenticated` (not `postgres`)** restores both garments to `wear_count` 1 and falls
+  `last_worn_at` back to the remaining wear's date (not null, since each is still in the first wear)
+  — proving the `security definer` trigger fires correctly for a real client-issued delete, not just
+  one run as the table owner; deleting a garment's only remaining wear drops its `last_worn_at` to
+  null; `log_wear` by B referencing A's garment raises `42501`; a single garment or a duplicate id
+  raises `22023` for both `log_wear` and `save_outfit`; `save_outfit` by A referencing B's garment
+  raises `42501`; `save_outfit` stamps `saved_at`, creates no `wears` row and never changes any
+  garment's `wear_count`; B selecting A's outfits or wears returns 0 rows; **B selecting A's
+  `outfit_items` by `outfit_id` or by `garment_id` returns 0 rows** (asserted directly against
+  `outfit_items`, not through a join with `outfits` that would pass even under a vacuous
+  `using (true)` policy); **an authenticated `update` on `outfits`, `outfit_items` or `wears` now raises
+  `42501`** (a real privilege error, since update is revoked outright — see "RLS and storage rules"
+  above), and so does an authenticated `delete` on `outfits`/`outfit_items`; **B deleting A's wear
+  by id removes 0 rows** and leaves A's wear and counts unchanged; **`log_wear` by B reusing A's
+  wear id raises `23505`**, leaving A's wear A's and logging nothing for B; deleting a garment
+  cascades its `outfit_items` rows. Also the cross-tenant direct-insert paths: B inserting a `wears`
+  row with their own `user_id` but A's `outfit_id` raises `42501` and leaves A's `wear_count`
+  unchanged; B inserting an `outfit_items` row into A's outfit (even naming B's own garment) raises
+  `42501`; B inserting an `outfit_items` row naming A's garment (even into B's own outfit) raises
+  `42501`.
 - `ai_caches.test.sql` — `authenticated` and `anon` can neither select nor insert
   `rating_cache`/`lucky_cache`/`weather_cache` (select and insert are both checked for **both**
   roles, so an unrevoked insert path on either role can't pass silently); `consume_quota(A, 'rating',
@@ -835,15 +837,17 @@ Docker.
 The hosted project is on Supabase's free tier, which has no downloadable backups, so the owner's Mac
 takes one every night with `pnpm backup` (`scripts/backup.ts`), scheduled by launchd. Backups hold
 real family data. They are written only to `~/dressing-room-backups/`, never inside this repository,
-and never to GitHub, whose Actions artifacts aren't private on a public repo. The script refuses a
-`BACKUP_DIR` inside the repository.
+and never to GitHub, whose Actions artifacts aren't private on a public repo. `BACKUP_DIR` must be a
+folder of its own: the script refuses one inside the repository, and also the home folder or the
+filesystem root, since each run tightens the folder to `0700`.
 
 ### What a backup holds
 
 Each run writes `~/dressing-room-backups/<UTC time>/`, for example `2026-11-09T03-30-00Z/`:
 
-- `schema.sql`: `pnpm exec supabase db dump --db-url "$BACKUP_DB_URL"`, the schema of the
-  project's own schemas (`public`), as it was at backup time.
+- `schema.sql`: `pnpm exec supabase db dump --db-url <BACKUP_DB_URL without its password>`, with
+  the password in `PGPASSWORD`: the schema of the project's own schemas (`public`), as it was at
+  backup time.
 - `data.sql`: the same command with `--data-only --use-copy`, which holds the rows of `public`,
   `auth` (users, identities, sessions) and `storage.objects`. It leaves out `storage.buckets`, since
   the `garments` bucket row comes from a migration and would collide on restore. It also leaves out
@@ -869,8 +873,8 @@ object's download), the run exits 1 and leaves its `.partial` folder for inspect
 new download after the first one fails, and it deletes no complete backup. Each run starts by
 deleting `.partial` folders more than 7 days old, judged by the time in their name. It also logs
 the newest complete backup's name and age, so even a failing job's log shows how old the last good
-backup is. The log has outcome words only: the database URL,
-its password and the service-role key are redacted. The password never reaches a command line,
+backup is. The log has outcome words only: the database URL, its password and the service-role key
+are redacted. The password never reaches a command line,
 where `ps` would show it: the dump gets `BACKUP_DB_URL` without it and the password in
 `PGPASSWORD`.
 
@@ -879,7 +883,8 @@ the function secrets. Those are set by hand (see `AGENTS.md`'s "Local backend").
 
 ### Setup (owner's Mac)
 
-The dump runs `pg_dump` in Docker, so OrbStack must be running when the job fires.
+The dump runs `pg_dump` in Docker, so OrbStack must be running when the job fires at 03:30: set
+it to open at login.
 
 1. Put the settings in a file only you can read, outside the repo, for example
    `~/.config/dressing-room/backup.env` (`chmod 600`):
@@ -892,7 +897,9 @@ The dump runs `pg_dump` in Docker, so OrbStack must be running when the job fire
    ```
 
    `BACKUP_DB_URL` is the session pooler's connection string (Dashboard → Connect → Session
-   pooler), since the free tier's direct connection is IPv6 only. Percent-encode the password.
+   pooler), since the free tier's direct connection is IPv6 only. Percent-encode the password's
+   special characters (`@` as `%40`, `%` as `%25`, `/` as `%2F`); a URL that doesn't parse, or a
+   password that isn't valid percent-encoding, is refused with that hint and never echoed.
 
 2. Run it once by hand: `node --env-file="$HOME/.config/dressing-room/backup.env" scripts/backup.ts`.
    It prints `backup: complete <UTC time>`.
@@ -928,7 +935,8 @@ You need `psql`. Install it with `brew install libpq`, which is keg-only, so put
 
 No secret goes on a command line, where `ps` would show it. The database URL has no password, since
 `psql` reads it from `PGPASSWORD`. `curl` reads the key headers from stdin (`-K-`), and `printf` is
-a shell builtin, not a process. Run this from the repository root, in zsh or bash:
+a shell builtin, not a process. Steps 1 to 3 are chained with `&&`, so a failed check, a `psql` error
+or a failed upload stops everything after it. Run this from the repository root, in zsh or bash:
 
 ```bash
 BACKUP=~/dressing-room-backups/<UTC time>
@@ -937,21 +945,20 @@ SUPABASE_URL='https://<ref>.supabase.co'
 read -rs PGPASSWORD && export PGPASSWORD   # the target database's password
 read -rs SERVICE_KEY                       # the target's service-role key
 
-# 1. Check the backup first: every size and sha256 in manifest.json. Stop if it reports a problem.
-node scripts/backup.ts --verify "$BACKUP"
-
+# 1. Check the backup first: every size and sha256 in manifest.json.
 # 2. The rows, in one transaction. Any error rolls the whole restore back.
-psql --single-transaction --variable ON_ERROR_STOP=1 --quiet \
-  --dbname "$TARGET_DB_URL" --file "$BACKUP/data.sql"
-
 # 3. The photos. data.sql already restored their storage.objects rows; this uploads the bytes over
 #    them, and stops at the first upload that fails.
-(cd "$BACKUP/garments" && find . -type f -print0 | while IFS= read -r -d '' f; do
-  printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SERVICE_KEY" "$SERVICE_KEY" |
-    curl -K- -fsS -o /dev/null -X POST -H 'x-upsert: true' -H 'content-type: image/webp' \
-      --data-binary "@$f" "$SUPABASE_URL/storage/v1/object/garments/${f#./}" ||
-    { echo "photo upload failed: ${f#./}" >&2; exit 1; }
-done) && echo 'photos restored'
+# Each step runs only if the one before it succeeded.
+node scripts/backup.ts --verify "$BACKUP" &&
+  psql --single-transaction --variable ON_ERROR_STOP=1 --quiet \
+    --dbname "$TARGET_DB_URL" --file "$BACKUP/data.sql" &&
+  (cd "$BACKUP/garments" && find . -type f -print0 | while IFS= read -r -d '' f; do
+    printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SERVICE_KEY" "$SERVICE_KEY" |
+      curl -K- -fsS -o /dev/null -X POST -H 'x-upsert: true' -H 'content-type: image/webp' \
+        --data-binary "@$f" "$SUPABASE_URL/storage/v1/object/garments/${f#./}" ||
+      { echo "photo upload failed: ${f#./}" >&2; exit 1; }
+  done) && echo 'restore complete'
 
 # 4. Spot-check row counts against the source.
 psql --dbname "$TARGET_DB_URL" -Atc "select 'auth.users', count(*) from auth.users
