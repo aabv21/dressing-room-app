@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
   pinned: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.positive,
+    color: colors.positiveText,
   },
   statusNote: {
     fontSize: 12,

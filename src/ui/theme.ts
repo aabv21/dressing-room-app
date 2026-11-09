@@ -17,6 +17,9 @@ export const colors = {
   // Mockup 01 screen 3's reason marks: `.ok` (✓) and `.warn` (!).
   positive: '#16a34a',
   warning: '#e11d48',
+  // `positive` is for icons (3:1 is enough there); as text it falls short of 4.5:1 on white, so
+  // green text uses this deeper shade.
+  positiveText: '#15803d',
 } as const;
 
 /** Mockup 03's selected-card halo (`box-shadow: 0 0 0 3px rgba(124,58,237,.12)`). */
