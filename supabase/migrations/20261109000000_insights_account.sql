@@ -72,5 +72,3 @@ comment on table public.apple_tokens is
 alter table public.apple_tokens enable row level security;
 
 revoke all on public.apple_tokens from anon, authenticated;
-
-revoke truncate, trigger, references on public.apple_tokens from anon, authenticated;
