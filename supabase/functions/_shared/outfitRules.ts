@@ -329,19 +329,21 @@ function withPinnedFirst<T extends { id: string }>(items: readonly T[], pinnedId
  *
  * `pinnedIds`, when given, also biases every `PIN_ATTEMPT_STRIDE`th draw to pick one of them for
  * its own slot instead of a random one — lucky-list asks for this on the garments pinned for
- * today (see "Unused for 6 months" and "Wear it" in `global-constraints.md`), which a plain
- * seeded draw can otherwise miss across many seeds on a large closet. Only the pinned garments
- * that pass `fitsAlone` for this context are rotated through the forced attempts (one per attempt,
- * round-robin); an inadmissible pin (wrong season, formality, or an outerwear piece on a hot day)
- * never claims a forced attempt, so it can't starve an admissible sibling pin out of them. An
- * admissible pinned garment is also exempt from the 7-day recent-wear exclusion in the first pass
- * (a wear logged between the "Wear it" tap and the pinned day shouldn't silently drop the pin),
- * and a pinned outerwear piece is still tried on forced attempts even when the weather doesn't
- * call for outerwear (`passesRules` allows outerwear any day; it only requires it when cold). The
- * bias changes which garment a few draws use, not how many draws happen or how the rest of the
- * outfit is picked, so it only shifts the pinned garments' own odds, not the overall distribution.
- * `lucky-list` still re-checks that at least one of the returned candidates actually contains a
- * pin before treating it as pinned (a pinned garment might not fit any rule-passing outfit at all).
+ * today. "Wear it" on the "Unused for 6 months" list (spec §3.6) pins a garment for tomorrow, and
+ * that day's lucky list should include it whenever a complete outfit with it passes the rules; a
+ * plain seeded draw can otherwise miss it across many seeds on a large closet. Only the pinned
+ * garments that pass `fitsAlone` for this context are rotated through the forced attempts (one
+ * per attempt, round-robin); an inadmissible pin (wrong season, formality, or an outerwear piece
+ * on a hot day) never claims a forced attempt, so it can't starve an admissible sibling pin out
+ * of them. An admissible pinned garment is also exempt from the 7-day recent-wear exclusion in
+ * the first pass (a wear logged between the "Wear it" tap and the pinned day shouldn't silently
+ * drop the pin), and a pinned outerwear piece is still tried on forced attempts even when the
+ * weather doesn't call for outerwear (`passesRules` allows outerwear any day; it only requires it
+ * when cold). The bias changes which garment a few draws use, not how many draws happen or how
+ * the rest of the outfit is picked, so it only shifts the pinned garments' own odds, not the
+ * overall distribution. `lucky-list` still re-checks that at least one of the returned candidates
+ * actually contains a pin before treating it as pinned (a pinned garment might not fit any
+ * rule-passing outfit at all).
  */
 export function generateCandidates(
   garments: readonly RuleGarment[],
