@@ -1,0 +1,127 @@
+import { useEffect } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+
+import { colors, layout, spacing } from '../theme';
+
+const GROW_DURATION_MS = 450;
+const LABEL_WIDTH = 92;
+const VALUE_WIDTH = 28;
+const BAR_HEIGHT = 9;
+// The visible track is mockup-thin (9pt); hitSlop tops the row's tap area up to the 44pt minimum.
+const ROW_HEIGHT = 32;
+const VERTICAL_SLOP = (layout.minHitTarget - ROW_HEIGHT) / 2;
+
+export type HorizontalBarRow = { id: string; label: string; value: number; valueLabel: string };
+
+function Bar({ pct, color }: { pct: number; color: string }) {
+  const reducedMotion = useReducedMotion();
+  const width = useSharedValue(reducedMotion ? pct : 0);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      width.value = pct;
+      return;
+    }
+    width.value = withTiming(pct, { duration: GROW_DURATION_MS });
+    // Re-run only when the target percentage changes; `width` and `reducedMotion` are stable
+    // across the component's lifetime for a given row.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pct]);
+
+  return (
+    <View style={styles.track}>
+      <Animated.View style={[styles.fill, { backgroundColor: color, width: `${String(width.value)}%` }]} />
+    </View>
+  );
+}
+
+/**
+ * Mockup 04's "Lo que más usas" bars: one accent hue, a thin track growing in on mount (skipped
+ * under reduced motion), label left / value right. Each row is a button; the selected one shows
+ * `detail` beneath it (the mockup's floating tip, flattened to an inline line for touch).
+ */
+export function HorizontalBars(props: {
+  rows: readonly HorizontalBarRow[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  detail?: string;
+  color?: string;
+}): React.JSX.Element {
+  const { rows, selectedId, onSelect, detail, color = colors.accent } = props;
+  const max = Math.max(1, ...rows.map((row) => row.value));
+
+  return (
+    <View style={styles.list}>
+      {rows.map((row) => {
+        const isSelected = row.id === selectedId;
+        const pct = (row.value / max) * 100;
+        return (
+          <View key={row.id}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`${row.label}, ${row.valueLabel}`}
+              hitSlop={{ top: VERTICAL_SLOP, bottom: VERTICAL_SLOP, left: 0, right: 0 }}
+              onPress={() => {
+                onSelect(row.id);
+              }}
+              style={styles.row}
+            >
+              <Text style={styles.label} numberOfLines={1}>
+                {row.label}
+              </Text>
+              <Bar pct={pct} color={color} />
+              <Text style={styles.value} numberOfLines={1}>
+                {row.valueLabel}
+              </Text>
+            </Pressable>
+            {isSelected && detail !== undefined ? <Text style={styles.detail}>{detail}</Text> : null}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  list: {
+    gap: spacing.xs + 2,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm - 2,
+    minHeight: ROW_HEIGHT,
+  },
+  label: {
+    width: LABEL_WIDTH,
+    fontSize: 12,
+    color: colors.ink,
+  },
+  track: {
+    flex: 1,
+    height: BAR_HEIGHT,
+    borderRadius: BAR_HEIGHT / 2,
+    backgroundColor: colors.track,
+    overflow: 'hidden',
+  },
+  fill: {
+    height: BAR_HEIGHT,
+    borderRadius: BAR_HEIGHT / 2,
+  },
+  value: {
+    width: VALUE_WIDTH,
+    textAlign: 'right',
+    fontSize: 12,
+    color: colors.muted,
+    fontVariant: ['tabular-nums'],
+  },
+  detail: {
+    fontSize: 11,
+    color: colors.muted,
+    marginTop: -2,
+    marginBottom: spacing.xs,
+    marginLeft: LABEL_WIDTH + spacing.sm - 2,
+  },
+});
