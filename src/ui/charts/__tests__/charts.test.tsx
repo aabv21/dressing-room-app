@@ -58,6 +58,17 @@ describe('HorizontalBars', () => {
     expect(screen.queryByText('21 wears')).toBeNull();
   });
 
+  test('without onSelect the rows are read-only, each one labeled', async () => {
+    await render(<HorizontalBars rows={rows} />);
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.getByLabelText('Straight jeans, 21')).toBeOnTheScreen();
+  });
+
+  test('valueWidth widens the value column', async () => {
+    await render(<HorizontalBars rows={rows} onSelect={jest.fn()} valueWidth={62} />);
+    expect(screen.getByText('30')).toHaveStyle({ width: 62 });
+  });
+
   // Regression test for C1 (review round 1): `Bar` used to read its reanimated shared value
   // straight into a plain style object during render. `withTiming`'s write happens on the UI
   // thread and never triggers a React re-render, so on a real device every bar stayed frozen at

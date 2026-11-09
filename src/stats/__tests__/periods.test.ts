@@ -1,4 +1,4 @@
-import { addDays, monthGrid, periodRange } from '../periods';
+import { addDays, daysBetween, monthGrid, periodRange } from '../periods';
 
 describe('addDays', () => {
   test('shifts a day string forward and backward across month and year boundaries', () => {
@@ -50,5 +50,18 @@ describe('monthGrid', () => {
     // 31 March 2026 is a Tuesday, so it's not the last day in its grid row (Monday-first).
     const index = grid.findIndex((cell) => cell.day === '2026-03-31');
     expect(index % 7).toBe(1);
+  });
+});
+
+describe('daysBetween', () => {
+  test('counts calendar days from the first to the second', () => {
+    expect(daysBetween('2026-11-07', '2026-11-08')).toBe(1);
+    expect(daysBetween('2026-11-08', '2026-11-08')).toBe(0);
+    expect(daysBetween('2026-10-25', '2026-11-08')).toBe(14);
+  });
+
+  test('crosses a year end and a DST change without drift', () => {
+    expect(daysBetween('2025-12-31', '2026-01-01')).toBe(1);
+    expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2);
   });
 });

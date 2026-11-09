@@ -51,17 +51,20 @@ function Bar({ id, pct, color }: { id: string; pct: number; color: string }) {
 
 /**
  * Mockup 04's "Lo que más usas" bars: one accent hue, a thin track growing in on mount (skipped
- * under reduced motion), label left / value right. Each row is a button; the selected one shows
- * `detail` beneath it (the mockup's floating tip, flattened to an inline line for touch).
+ * under reduced motion), label left / value right. With `onSelect` each row is a button and the
+ * selected one shows `detail` beneath it (the mockup's floating tip, flattened to an inline line
+ * for touch); without it the rows are read-only (mockup 04's "Balance del clóset").
+ * `valueWidth` widens the value column for spelled-out values ("21 wears").
  */
 export function HorizontalBars(props: {
   rows: readonly HorizontalBarRow[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
   detail?: string;
   color?: string;
+  valueWidth?: number;
 }): React.JSX.Element {
-  const { rows, selectedId, onSelect, detail, color = colors.accent } = props;
+  const { rows, selectedId = null, onSelect, detail, color = colors.accent, valueWidth = VALUE_WIDTH } = props;
   const max = Math.max(1, ...rows.map((row) => row.value));
 
   return (
@@ -69,25 +72,38 @@ export function HorizontalBars(props: {
       {rows.map((row) => {
         const isSelected = row.id === selectedId;
         const pct = (row.value / max) * 100;
+        const content = (
+          <>
+            <Text style={styles.label} numberOfLines={1}>
+              {row.label}
+            </Text>
+            <Bar id={row.id} pct={pct} color={color} />
+            <Text style={[styles.value, { width: valueWidth }]} numberOfLines={1}>
+              {row.valueLabel}
+            </Text>
+          </>
+        );
+        const accessibilityLabel = `${row.label}, ${row.valueLabel}`;
+        if (onSelect === undefined) {
+          return (
+            <View key={row.id} accessible accessibilityLabel={accessibilityLabel} style={styles.row}>
+              {content}
+            </View>
+          );
+        }
         return (
           <View key={row.id}>
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ selected: isSelected }}
-              accessibilityLabel={`${row.label}, ${row.valueLabel}`}
+              accessibilityLabel={accessibilityLabel}
               hitSlop={{ top: VERTICAL_SLOP, bottom: VERTICAL_SLOP, left: 0, right: 0 }}
               onPress={() => {
                 onSelect(row.id);
               }}
               style={styles.row}
             >
-              <Text style={styles.label} numberOfLines={1}>
-                {row.label}
-              </Text>
-              <Bar id={row.id} pct={pct} color={color} />
-              <Text style={styles.value} numberOfLines={1}>
-                {row.valueLabel}
-              </Text>
+              {content}
             </Pressable>
             {isSelected && detail !== undefined ? <Text style={styles.detail}>{detail}</Text> : null}
           </View>
@@ -124,7 +140,6 @@ const styles = StyleSheet.create({
     borderRadius: BAR_HEIGHT / 2,
   },
   value: {
-    width: VALUE_WIDTH,
     textAlign: 'right',
     fontSize: 12,
     color: colors.muted,

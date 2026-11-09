@@ -2,18 +2,18 @@
 // garments and wears already in memory, with no I/O and no AI cost (design spec §3.6).
 
 import { PALETTE_HEX, slotOf, type GarmentColor } from '../closet/catalog';
+import { COUNTED_COLORS, isActive } from '../closet/closetSelectors';
 import type { Garment } from '../closet/garmentRepository';
 import { addDays, periodRange, type Period } from './periods';
 import type { WearWithItems } from './wearsRepository';
 
 const SIX_MONTHS_DAYS = 182;
 const TOP_COLORS = 5;
-const MAX_COLORS_PER_GARMENT = 3;
 const MOST_WORN_LIMIT = 5;
 
 /** Garments that count anywhere in Stats, Build, the goal card, colors, balance and the unused list. */
 export function activeGarments(garments: readonly Garment[]): Garment[] {
-  return garments.filter((g) => g.status !== 'donated');
+  return garments.filter(isActive);
 }
 
 /** Ties within a stat are broken by this label — garments have no name, so category stands in for one. */
@@ -122,7 +122,7 @@ export function colorShares(garments: readonly Garment[]): ColorShare[] {
   const active = activeGarments(garments);
   const counts = new Map<GarmentColor, number>();
   for (const g of active) {
-    for (const color of g.colors.slice(0, MAX_COLORS_PER_GARMENT)) {
+    for (const color of g.colors.slice(0, COUNTED_COLORS)) {
       counts.set(color, (counts.get(color) ?? 0) + 1);
     }
   }

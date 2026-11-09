@@ -25,6 +25,11 @@ export function addDays(day: string, n: number): string {
   return toDayString(new Date(toUtcDate(day).getTime() + n * DAY_MS));
 }
 
+/** Calendar days from `from` to `to` (negative when `to` is earlier). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((toUtcDate(to).getTime() - toUtcDate(from).getTime()) / DAY_MS);
+}
+
 /** The inclusive `[from, to]` local-day range for `period`, ending on `today`. */
 export function periodRange(period: Period, today: string): { from: string; to: string } {
   if (period === 'week') {
