@@ -42,7 +42,7 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 | Upload queue | Phone | `src/closet/upload/`: a SQLite queue that takes each photo through prepare, upload and commit, saving the stage reached before the next starts. Two items at a time, backoff from 5 s doubling to 10 min, 8 attempts. |
 | `garment-cutout` | Phone | A local native module: iOS 17+ Vision foreground masks and Android ML Kit subject segmentation remove the photo's background. Without it, the original photo is kept. |
 | Auth | Supabase | Email and password (8 characters or more), Sign in with Apple and Sign in with Google through native ID tokens, and a 6-digit password-reset code by email. |
-| Postgres 17 | Supabase | Profiles, garments, outfits, wears, the daily quota counters, the AI result caches and the Apple refresh tokens. RLS on every table. Garment writes are narrowed by column grants; the app writes outfits and wears through the `log_wear` and `save_outfit` RPCs, and RLS limits any direct insert, or a wear's delete, to the caller's own rows. |
+| Postgres 17 | Supabase | Profiles, garments, outfits, wears, the daily quota counters, the AI result caches and the Apple refresh tokens. RLS on every table. Garment writes are narrowed by column grants; the app creates outfits and wears through the `log_wear` and `save_outfit` RPCs, and RLS limits any direct insert, or a wear's delete, to the caller's own rows. |
 | Storage | Supabase | The private `garments` bucket: `{user id}/{garment id}/full.webp` and `thumb.webp`, 2 MiB at most per object, with folder policies that match RLS. |
 | `extract-attributes` | Edge Function | Called by the garment insert trigger through `pg_net`, with a shared secret header. Sends the photo to Claude and writes back enum-only attributes and the fields Claude doubted. |
 | `rate-outfit` | Edge Function | Rates a built outfit with Jev, falls back to Claude, and searches a swap for a weak outfit. |
@@ -196,7 +196,7 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
   Edge Functions' secrets and in owner scripts.
 - **Isolation.** Every client table has RLS policies on the caller's own rows
   (`(select auth.uid())`), and Storage's folder policies do the same for photos. Column grants stop
-  the client from writing `extraction_status`, `wear_count` or `user_id`. The app writes outfits
+  the client from writing `extraction_status`, `wear_count` or `user_id`. The app creates outfits
   and wears only through `log_wear` and `save_outfit`; a client can still insert into `outfits`,
   `outfit_items` and `wears`, or delete a wear, directly, but RLS limits that to its own rows, so
   the worst it can do is leave its own data inconsistent, never touch another user's
@@ -231,8 +231,8 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 The app is sized for the owner's family, about 4 users, on Supabase's free tier. These are the
 limits it would meet first:
 
-- **Supabase free tier.** The spec planned on 500 MB of database, 1 GB of storage and 5 GB of
-  egress, and the family needs about 100 MB of photos. Thumbnails download once into expo-image's
+- **Supabase free tier.** At the time of writing it allows 500 MB of database, 1 GB of storage and
+  5 GB of egress, and the family needs about 100 MB of photos. Thumbnails download once into expo-image's
   disk cache. Free projects pause after a week without use. The upgrade is Supabase Pro.
 - **Cache tables.** `rating_cache`, `lucky_cache` and `weather_cache` are never pruned; at 4 users
   that's a few thousand small rows a month. The upgrade is a scheduled `pg_cron` cleanup.
@@ -254,8 +254,8 @@ Costs, from [`ai.md`](ai.md)'s "Quota and cost":
 | Open-Meteo | free, no key |
 | Supabase | free tier |
 
-Typical use fits the spec's $1-a-month ceiling. The quotas bound the spend but don't enforce that
-ceiling, so the owner session sets spend caps or alerts with Anthropic and TypeSafe.
+Typical use fits a $1-a-month target. The quotas bound the spend but don't enforce that
+target, so the owner session sets spend caps or alerts with Anthropic and TypeSafe.
 
 ## Design decisions and their trade-offs
 
@@ -282,7 +282,7 @@ ceiling, so the owner session sets spend caps or alerts with Anthropic and TypeS
 - **Templates and fallbacks everywhere a model can fail.** Extraction falls back to manual review,
   the rating to Claude, the lucky list to the pre-score, and For you's lines to templates.
 - **A nightly backup on the owner's Mac, over a cloud copy.** The free tier has no downloadable
-  backups, and the data is family data, so it stays local and encrypted at rest with FileVault.
+  backups, and the data is family data, so it stays local, encrypted at rest when FileVault is on.
 
 ## Regenerating the diagrams
 

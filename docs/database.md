@@ -45,7 +45,7 @@ every client write is an update — see [Writing a profile](#writing-a-profile-u
 - `occasion`: `office`, `university`, `going_out`, `home`, `event`, `sport`.
 - `app_language`: `en`, `es`.
 
-Weight is never collected — there is no column for it, by design (see the spec's privacy stance).
+Weight is never collected — there is no column for it, by design: nothing in the app needs it.
 
 ### `public.garments`
 

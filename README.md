@@ -50,7 +50,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 - Build: pick an outfit piece by piece (top and bottom or a one-piece, shoes, and optional outerwear and an accessory) from the garments that are available, filtered by category, then ask "How does it look?".
 - Rating: a 0–100 score with a label, the AI's confidence, short reasons, and for a weak outfit a one-tap swap of its weakest piece; save the outfit or log it as worn. Jev rates it, with Claude as a fallback marked "estimated". Locally mock Jev and Open-Meteo services answer; nothing calls the real APIs until the owner sets the hosted keys.
 - For you: 3–5 staples your closet is missing, ranked by how many new outfits each opens with what you own and how well it suits your body and style, each with a short line and a "Search in stores" button that opens a web search in your language. The last ideas stay readable offline. A low rating with no swap links here ("Missing something?").
-- Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome, such as the tab bar, anchored buttons, the score ring and calendar cells, stops between 1.2× and 1.6×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
+- Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome, such as the tab bar, anchored buttons, the score ring and calendar cells, stops between 1.2× and 1.5×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
 - Jev calibration: `pnpm calibrate export|collect|eval` turns hand-labeled saved outfits into an agreement report (Spearman's ρ, band accuracy, a confusion matrix) with suggested weights, bands and confidence aggregate. Real labels stay in gitignored files.
 - Nightly hosted backup: `pnpm backup` dumps the database and downloads every photo with a sha256 manifest to the owner's Mac, keeping the newest 14, with a tested restore.
 - Release config: `eas.json` profiles for development, internal preview and store builds, each reading the app's public `EXPO_PUBLIC_*` values from its EAS environment, and EAS Submit to TestFlight and the Play internal track.
@@ -86,8 +86,7 @@ pnpm env:local    # writes .env.local with the app's Supabase URL and anon key
 pnpm expo run:ios # builds the dev client and opens it in the simulator (keeps Metro running)
 ```
 
-Local sign-up confirmations and password-reset codes are caught by Mailpit at
-`http://127.0.0.1:54424` instead of being emailed. `pnpm db:stop` stops the stack when you're done.
+Local sign-up confirmations and password-reset codes are caught by Mailpit at `http://127.0.0.1:54424` instead of being emailed. `pnpm db:stop` stops the stack when you're done.
 
 Nothing local calls a real AI or weather API. To see the AI features in the simulator, keep the mocks running in other terminals:
 
