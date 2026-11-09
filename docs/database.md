@@ -817,18 +817,128 @@ discards both the user and its profile row — no cleanup step is needed.
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.
 
-## Local backup and restore
+## Hosted backups
 
-Not exercised by CI or the automated test suites — this is a manual procedure for local
-development. Dump **outside the repo** — a local DB dump can contain real account data from manual
-testing and must never land in git history:
+The hosted project is on Supabase's free tier, which has no downloadable backups, so the owner's Mac
+takes one every night with `pnpm backup` (`scripts/backup.ts`), scheduled by launchd. Backups hold
+real family data. They are written only to `~/dressing-room-backups/`, never inside this repository,
+and never to GitHub, whose Actions artifacts aren't private on a public repo. The script refuses a
+`BACKUP_DIR` inside the repository.
+
+### What a backup holds
+
+Each run writes `~/dressing-room-backups/<UTC time>/`, for example `2026-11-09T03-30-00Z/`:
+
+- `schema.sql`: `pnpm exec supabase db dump --db-url "$BACKUP_DB_URL"`, the schema of the
+  project's own schemas (`public`), as it was at backup time.
+- `data.sql`: the same command with `--data-only --use-copy`, which holds the rows of `public`,
+  `auth` (users, identities, sessions) and `storage.objects`. It leaves out `storage.buckets`, since
+  the `garments` bucket row comes from a migration and would collide on restore. It also leaves out
+  Storage's vector tables, which the `postgres` role can't write and this project doesn't use, and
+  pg_net's transient queue and responses. The dump starts with `SET session_replication_role =
+  replica`, so no trigger fires on restore: no signup profile, no extraction request, and no
+  second wear count.
+- `garments/<user id>/<garment id>/{full,thumb}.webp`: every object in the `garments` bucket,
+  listed and downloaded with the service role through Storage's REST API.
+- `manifest.json`: `createdAt`, plus each file's `path`, `size` and `sha256`.
+
+A run writes into `<UTC time>.partial/` and renames it only once every step has succeeded. It then
+deletes all but the newest 14 complete backups. If any step fails (the dump, a refused key, or one
+object's download), the run exits 1, leaves its `.partial` folder for inspection and deletes
+nothing. Delete old `.partial` folders by hand. The log has outcome words only: the database URL,
+its password and the service-role key are redacted.
+
+The backup doesn't hold the Vault secrets (`extract_attributes_url`, `extract_webhook_secret`) or
+the function secrets. Those are set by hand (see `AGENTS.md`'s "Local backend").
+
+### Setup (owner's Mac)
+
+The dump runs `pg_dump` in Docker, so OrbStack must be running when the job fires.
+
+1. Put the settings in a file only you can read, outside the repo, for example
+   `~/.config/dressing-room/backup.env` (`chmod 600`):
+
+   ```bash
+   BACKUP_DB_URL=postgresql://postgres.<ref>:<percent-encoded password>@<pooler host>:5432/postgres
+   SUPABASE_URL=https://<ref>.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<service-role key>
+   # BACKUP_DIR=~/dressing-room-backups   (the default)
+   ```
+
+   `BACKUP_DB_URL` is the session pooler's connection string (Dashboard → Connect → Session
+   pooler), since the free tier's direct connection is IPv6 only. Percent-encode the password.
+
+2. Run it once by hand: `node --env-file="$HOME/.config/dressing-room/backup.env" scripts/backup.ts`.
+   It prints `backup: complete <UTC time>`.
+
+3. Schedule it. Copy `scripts/launchd/com.aabv21.dressing-room-backup.plist.example` to
+   `~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist` and replace the `/ABSOLUTE/PATH`
+   placeholders. Use a stable `node` path (not a per-shell fnm path), and put `node`, `pnpm` and
+   `docker` on the plist's `PATH`. Then load it:
+
+   ```bash
+   plutil -lint ~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist
+   launchctl kickstart -p gui/$(id -u)/com.aabv21.dressing-room-backup   # one run now
+   tail ~/Library/Logs/dressing-room-backup.log
+   ```
+
+   The job runs at 03:30 every day. If the Mac was asleep, it runs when the Mac wakes. If the log
+   shows `EPERM` or `Operation not permitted` for the repository path, macOS is blocking launchd's
+   `node` from `~/Documents`. Give that `node` binary Full Disk Access, or run the job from a clone
+   outside `~/Documents`.
+
+### Restore
+
+Restore into a database that already has the migrations: a fresh local stack (`pnpm db:reset`), or
+a new hosted project after `pnpm exec supabase link --project-ref <ref>` and
+`pnpm exec supabase db push`. `schema.sql` is the record of the schema at backup time. Compare it
+with the migrations if they may have changed since then. Don't apply it on top of them.
 
 ```bash
-pnpm exec supabase db dump --local -f ~/dressing-room-backup.sql   # schema + data, local DB only
+BACKUP=~/dressing-room-backups/<UTC time>
+
+# 1. The rows, in one transaction; any error rolls the whole restore back.
+psql --single-transaction --variable ON_ERROR_STOP=1 --quiet \
+  --dbname "$TARGET_DB_URL" --file "$BACKUP/data.sql"
+
+# 2. The photos. data.sql already restored their storage.objects rows; upload the bytes over them.
+(cd "$BACKUP/garments" && find . -type f | while read -r f; do
+  curl -fsS -o /dev/null -X POST "$SUPABASE_URL/storage/v1/object/garments/${f#./}" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H "x-upsert: true" -H "content-type: image/webp" --data-binary "@$f"
+done)
+
+# 3. Spot-check row counts against the source.
+psql --dbname "$TARGET_DB_URL" -Atc "select 'auth.users', count(*) from auth.users
+  union all select 'profiles', count(*) from public.profiles
+  union all select 'garments', count(*) from public.garments
+  union all select 'storage.objects', count(*) from storage.objects
+  union all select 'outfits', count(*) from public.outfits
+  union all select 'outfit_items', count(*) from public.outfit_items
+  union all select 'wears', count(*) from public.wears
+  union all select 'sum(wear_count)', coalesce(sum(wear_count), 0) from public.garments"
 ```
 
-To restore into a fresh local stack: `pnpm db:reset` (migrations + seed) and then replay any data
-you need from the dump with `psql "$SUPABASE_DB_URL" -f ~/dressing-room-backup.sql`, or pass
-`--data-only` to `db dump` if you only want rows back on top of an already-migrated schema. This is
-a local convenience, not a production backup strategy — Supabase Cloud projects get point-in-time
-recovery from the platform itself.
+`TARGET_DB_URL`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are the target's. Locally that's
+`SUPABASE_DB_URL`, `EXPO_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from `.env.local`
+(`pnpm env:local`). On a hosted target, set the Vault and function secrets again afterwards.
+
+This procedure was tested against the local stack. Two fictional `@example.com` users had 6 garments,
+12 photos, 2 outfits and 4 wears. The steps were `pnpm backup` with the local URLs and a `BACKUP_DIR`
+outside the repo, then `pnpm db:reset`, then the three steps above. The restored counts matched the
+source, and so did content digests of `garments`, `profiles`, `wears`, `auth.users` and
+`storage.objects`. Every downloaded photo matched its `manifest.json` sha256, and a restored user
+could sign in with their password and read their 3 garments through RLS.
+
+### Local dump
+
+To keep a copy of the local database while developing, run the same script against the local
+stack, with a `BACKUP_DIR` outside the repo, since manual testing can leave real account data in it.
+Restore it with the steps above:
+
+```bash
+set -a; source .env.local; set +a
+BACKUP_DB_URL="$SUPABASE_DB_URL" SUPABASE_URL="$EXPO_PUBLIC_SUPABASE_URL" \
+  BACKUP_DIR=~/dressing-room-local-backups pnpm backup
+```

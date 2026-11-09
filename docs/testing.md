@@ -134,6 +134,18 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
   `TYPESAFE_API_KEY` and `TYPESAFE_BASE_URL` when every call failed) and the owner-only (0600)
   mode of a rewritten local file. The CLI runs with the Supabase and
   TypeSafe keys blanked, so it can't reach either; nothing calls a real service.
+- `scripts/__tests__/backup.test.ts` — the hosted backup. The helpers come first: the UTC folder
+  name, rotation (the newest 14 kept, never a `.partial` or a foreign name), manifest entries, log
+  redaction, and the env (`~/` expansion, missing variables named, a relative or in-repo
+  `BACKUP_DIR` refused). `runBackup` runs in a temp folder with a fake command runner for the two
+  `pnpm exec supabase db dump` calls and a fake Storage `fetch`. A complete run checks the files,
+  `manifest.json`, the rename, the rotation, and owner-only folders, also with an empty bucket and
+  past a full list page. Halfway failures cover a failed schema or data dump, a refused list, a
+  500 or 404 on one object, `fetch` throwing, an unsafe object name, a missing `pnpm`, and an
+  existing `.partial`. Each exits non-zero, leaves only its `.partial` and rotates nothing, and no
+  log line holds the database URL, its password or the service-role key. The real dump, restore
+  and photo upload are checked by hand against the local stack (`docs/database.md`'s "Hosted
+  backups").
 
 ### `functions`
 

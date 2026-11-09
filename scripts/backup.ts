@@ -1,0 +1,341 @@
+// scripts/backup.ts
+//
+// `pnpm backup` (`node scripts/backup.ts`): a local export of the hosted project, run on the owner's
+// Mac by launchd (see `docs/database.md`'s "Hosted backups"). The free tier has no downloadable
+// backups, so this script takes one:
+//
+//   1. `schema.sql` and `data.sql` from `pnpm exec supabase db dump --db-url $BACKUP_DB_URL` (the
+//      repo's own CLI, which runs pg_dump in Docker). The data dump covers `public`, `auth` and
+//      `storage`'s object rows.
+//   2. Every object in the `garments` bucket, under `garments/<path>`, read with the service role
+//      through Storage's REST API.
+//   3. `manifest.json`: each file's path, size and sha256.
+//
+// Everything is written to `<BACKUP_DIR>/<UTC timestamp>.partial/`, renamed to `<UTC timestamp>/`
+// only once complete; then all but the newest `KEEP_BACKUPS` complete backups are deleted. A run
+// that fails at any step exits 1 and leaves its `.partial` folder for inspection, and never
+// rotates. Logs carry outcome words only: secrets and connection strings are redacted.
+//
+// Env: BACKUP_DB_URL (the hosted connection string, percent-encoded), SUPABASE_URL,
+// SUPABASE_SERVICE_ROLE_KEY, and optionally BACKUP_DIR (default `~/dressing-room-backups`, never
+// inside this repository).
+
+import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { isRecord } from '../supabase/functions/_shared/extraction.ts';
+import { mapLimit, serviceHeaders } from '../supabase/functions/_shared/userContext.ts';
+
+const REPO_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const BUCKET = 'garments';
+
+/** How many complete backups rotation keeps. */
+export const KEEP_BACKUPS = 14;
+/** Storage's list page size. */
+export const LIST_PAGE = 1000;
+/** Folder listings and downloads in flight at once. */
+const CONCURRENCY = 4;
+/** Each Storage request's limit, so a stalled connection fails the run instead of hanging it. */
+const FETCH_TIMEOUT_MS = 60_000;
+/** Each dump's limit. */
+const DUMP_TIMEOUT_MS = 30 * 60_000;
+/**
+ * Tables left out of the data dump, so it restores on top of the migrations as `postgres`: the
+ * bucket row is created by a migration (restoring it would collide), the `postgres` role can't
+ * write Storage's vector tables (this project uses none), and pg_net's queue and responses are
+ * transient.
+ */
+const DATA_DUMP_EXCLUDE = [
+  'storage.buckets',
+  'storage.buckets_vectors',
+  'storage.vector_indexes',
+  'net.http_request_queue',
+  'net._http_response',
+].join(',');
+
+/** A complete backup's folder name: `backupDirName`'s shape. */
+const BACKUP_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
+
+export type ManifestEntry = { path: string; size: number; sha256: string };
+
+export type BackupConfig = { dbUrl: string; supabaseUrl: string; serviceRoleKey: string; backupRoot: string };
+
+export type CommandResult = { code: number; stderr: string };
+
+/** Runs `command` with `args` from the repository root, resolving with its exit code and stderr. */
+export type RunCommand = (command: string, args: readonly string[]) => Promise<CommandResult>;
+
+export type BackupDeps = {
+  config: BackupConfig;
+  now: Date;
+  run: RunCommand;
+  fetch: typeof fetch;
+  log: (line: string) => void;
+};
+
+/** `now` in UTC as `YYYY-MM-DDTHH-mm-ssZ` (a file-name-safe ISO time, which sorts by age). */
+export function backupDirName(now: Date): string {
+  return `${now.toISOString().slice(0, 19).replace(/:/g, '-')}Z`;
+}
+
+/**
+ * The complete backups in `existing` (folder names) to delete so the newest `keep` remain, newest
+ * first. A `.partial` folder or any other name is never returned.
+ */
+export function rotate(existing: readonly string[], keep: number): string[] {
+  const complete = existing.filter((name) => BACKUP_NAME.test(name)).sort((a, b) => b.localeCompare(a));
+  return complete.slice(Math.max(0, keep));
+}
+
+export function manifestEntry(path: string, bytes: Uint8Array): ManifestEntry {
+  return { path, size: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') };
+}
+
+/** `text` with every non-empty secret and any Postgres connection string replaced. */
+export function redact(text: string, secrets: readonly string[]): string {
+  let out = text;
+  for (const secret of secrets.filter((value) => value.length > 0)) out = out.split(secret).join('[redacted]');
+  return out.replace(/postgres(?:ql)?:\/\/\S+/g, '[database url]');
+}
+
+const listOf = (names: readonly string[]): string =>
+  names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
+
+/**
+ * The run's settings from `env`, or why they're unusable. BACKUP_DIR may start with `~/`; it must
+ * be absolute otherwise, and never inside `repoRoot`, since backups hold personal data.
+ */
+export function backupConfigFrom(
+  env: Readonly<Record<string, string | undefined>>,
+  home: string,
+  repoRoot: string,
+): BackupConfig | { error: string } {
+  const { BACKUP_DB_URL: dbUrl = '', SUPABASE_URL: supabaseUrl = '', SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey = '' } = env;
+  const required = { BACKUP_DB_URL: dbUrl, SUPABASE_URL: supabaseUrl, SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey };
+  const missing = Object.entries(required)
+    .filter(([, value]) => value === '')
+    .map(([name]) => name);
+  if (missing.length > 0) return { error: `missing ${listOf(missing)} in the environment` };
+
+  const dir = env.BACKUP_DIR ?? '';
+  let backupRoot: string;
+  if (dir === '') backupRoot = join(home, 'dressing-room-backups');
+  else if (dir === '~' || dir.startsWith('~/')) backupRoot = resolve(home, dir.slice(2));
+  else if (isAbsolute(dir)) backupRoot = resolve(dir);
+  else return { error: 'BACKUP_DIR must be an absolute path or start with ~/' };
+
+  const fromRepo = relative(resolve(repoRoot), backupRoot);
+  if (fromRepo === '' || (fromRepo !== '..' && !fromRepo.startsWith(`..${sep}`) && !isAbsolute(fromRepo))) {
+    return { error: 'BACKUP_DIR must be outside the repository: backups hold personal data' };
+  }
+
+  return { dbUrl, supabaseUrl: supabaseUrl.replace(/\/+$/, ''), serviceRoleKey, backupRoot };
+}
+
+/** A failed step; its message is logged after redaction. */
+class StepError extends Error {}
+
+/** An error's message, also for errors from another realm (Node's fs errors under Jest's VM modules). */
+function messageOf(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+    return error.message;
+  }
+  return String(error);
+}
+
+/** The last few meaningful stderr lines of a failed dump, without the CLI's upgrade notice. */
+function stderrTail(stderr: string): string {
+  const lines = stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !/new version of Supabase CLI|recommend updating regularly/.test(line));
+  return lines.slice(-5).join(' | ');
+}
+
+async function dump(deps: BackupDeps, what: string, extraArgs: readonly string[], file: string): Promise<void> {
+  const args = ['exec', 'supabase', 'db', 'dump', '--db-url', deps.config.dbUrl, ...extraArgs, '-f', file];
+  const result = await deps.run('pnpm', args);
+  if (result.code !== 0) throw new StepError(`${what} dump failed (exit ${String(result.code)}): ${stderrTail(result.stderr)}`);
+  deps.log(`backup: ${what} dump ok`);
+}
+
+const storageUrl = (config: BackupConfig, route: string): string => `${config.supabaseUrl}/storage/v1/${route}`;
+
+/** An object path as a URL path, each segment encoded. */
+const encodePath = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
+
+/** A name Storage returned for one level: one plain path segment that can't leave its folder. */
+const isSafeSegment = (name: string): boolean =>
+  name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
+
+/** The files and folders one level under `prefix` (`''` for the bucket root, else ending in `/`). */
+async function listLevel(deps: BackupDeps, prefix: string): Promise<{ files: string[]; folders: string[] }> {
+  const files: string[] = [];
+  const folders: string[] = [];
+  for (let offset = 0; ; offset += LIST_PAGE) {
+    const response = await deps.fetch(storageUrl(deps.config, `object/list/${BUCKET}`), {
+      method: 'POST',
+      headers: { ...serviceHeaders(deps.config), 'content-type': 'application/json' },
+      body: JSON.stringify({ prefix, limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new StepError(`storage list failed: HTTP ${String(response.status)}`);
+    const page: unknown = await response.json();
+    if (!Array.isArray(page)) throw new StepError('storage list failed: not an array');
+    for (const entry of page as unknown[]) {
+      if (!isRecord(entry) || typeof entry.name !== 'string' || !isSafeSegment(entry.name)) {
+        throw new StepError('storage list failed: unexpected entry');
+      }
+      // Storage lists a folder as an entry with a null id.
+      if (entry.id === null) folders.push(`${prefix}${entry.name}/`);
+      else files.push(`${prefix}${entry.name}`);
+    }
+    if (page.length < LIST_PAGE) return { files, folders };
+  }
+}
+
+/** Every object path under `prefix`, at any depth. */
+async function listObjects(deps: BackupDeps, prefix: string): Promise<string[]> {
+  const { files, folders } = await listLevel(deps, prefix);
+  const nested = await mapLimit(folders, CONCURRENCY, (folder) => listObjects(deps, folder));
+  return [...files, ...nested.flat()];
+}
+
+/** Downloads `path` into `<dir>/garments/<path>`; any non-2xx answer, a 404 included, fails the run. */
+async function downloadObject(deps: BackupDeps, dir: string, path: string): Promise<ManifestEntry> {
+  const response = await deps.fetch(storageUrl(deps.config, `object/${BUCKET}/${encodePath(path)}`), {
+    headers: serviceHeaders(deps.config),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new StepError(`storage download failed: HTTP ${String(response.status)}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const relativePath = `${BUCKET}/${path}`;
+  const file = join(dir, ...relativePath.split('/'));
+  // `file` is under this run's own folder: every segment passed `isSafeSegment`.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  await mkdir(dirname(file), { recursive: true });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  await writeFile(file, bytes);
+  return manifestEntry(relativePath, bytes);
+}
+
+/** The manifest entry of a file already written under `dir`. */
+async function entryOf(dir: string, relativePath: string): Promise<ManifestEntry> {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  return manifestEntry(relativePath, new Uint8Array(await readFile(join(dir, relativePath))));
+}
+
+/** The secrets a log line must never show: the key, the DB URL and its password (encoded and not). */
+function secretsOf(config: BackupConfig): string[] {
+  const secrets = [config.serviceRoleKey, config.dbUrl];
+  try {
+    const password = new URL(config.dbUrl).password;
+    secrets.push(password, decodeURIComponent(password));
+  } catch {
+    // Not a parseable URL: the connection-string pattern still covers it.
+  }
+  return secrets;
+}
+
+/** Takes one backup (see the module comment); resolves with the process exit code. */
+export async function runBackup(deps: BackupDeps): Promise<number> {
+  const { backupRoot } = deps.config;
+  const name = backupDirName(deps.now);
+  const partial = join(backupRoot, `${name}.partial`);
+  const secrets = secretsOf(deps.config);
+  let created = false;
+  try {
+    // The root holds personal data: owner-only. `backupRoot` comes from the owner's own env.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await mkdir(backupRoot, { recursive: true, mode: 0o700 });
+    // Not recursive: a folder left by another run in the same second fails here.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await mkdir(partial, { mode: 0o700 });
+    created = true;
+
+    await dump(deps, 'schema', [], join(partial, 'schema.sql'));
+    await dump(deps, 'data', ['--data-only', '--use-copy', '-x', DATA_DUMP_EXCLUDE], join(partial, 'data.sql'));
+
+    const paths = await listObjects(deps, '');
+    const objects = await mapLimit(paths, CONCURRENCY, (path) => downloadObject(deps, partial, path));
+    deps.log(`backup: ${String(objects.length)} storage objects ok`);
+
+    const files = [
+      await entryOf(partial, 'schema.sql'),
+      await entryOf(partial, 'data.sql'),
+      ...objects.sort((a, b) => a.path.localeCompare(b.path)),
+    ];
+    const manifest = { createdAt: deps.now.toISOString(), files };
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await writeFile(join(partial, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await rename(partial, join(backupRoot, name));
+  } catch (error) {
+    const left = created ? `; ${name}.partial left for inspection` : '';
+    deps.log(`backup: failed: ${redact(messageOf(error), secrets)}${left}`);
+    return 1;
+  }
+  deps.log(`backup: complete ${name}`);
+
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    const stale = rotate(await readdir(backupRoot), KEEP_BACKUPS);
+    for (const old of stale) {
+      await rm(join(backupRoot, old), { recursive: true, force: true });
+    }
+    if (stale.length > 0) deps.log(`backup: rotated ${String(stale.length)} old backups`);
+  } catch (error) {
+    deps.log(`backup: complete, but rotation failed: ${redact(messageOf(error), secrets)}`);
+    return 1;
+  }
+  return 0;
+}
+
+/** Spawns `command` from the repository root, so `pnpm exec supabase` is this repo's CLI. */
+const runCommand: RunCommand = (command, args) =>
+  new Promise((resolveResult, reject) => {
+    const child = spawn(command, args, { cwd: REPO_ROOT, stdio: ['ignore', 'ignore', 'pipe'], timeout: DUMP_TIMEOUT_MS });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => {
+      stderr = (stderr + chunk).slice(-16_384);
+    });
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      resolveResult({ code: code ?? 1, stderr: signal === null ? stderr : `${stderr}\nstopped by ${signal}` });
+    });
+  });
+
+async function main(): Promise<number> {
+  const config = backupConfigFrom(process.env, homedir(), REPO_ROOT);
+  if ('error' in config) {
+    console.error(`backup: ${config.error}`);
+    return 1;
+  }
+  return runBackup({
+    config,
+    now: new Date(),
+    run: runCommand,
+    fetch: globalThis.fetch,
+    log: (line) => {
+      console.log(`${new Date().toISOString()} ${line}`);
+    },
+  });
+}
+
+/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
+function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
+  return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
+}
+
+// Guard the entry point so importing this module (e.g. from tests) has no side effects.
+if (isEntryPoint(import.meta.url, process.argv[1])) {
+  void main().then((code) => {
+    process.exitCode = code;
+  });
+}

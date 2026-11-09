@@ -80,6 +80,7 @@
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
     "env:local": "node scripts/env-local.ts",
     "check:supply-chain": "node scripts/check-supply-chain.ts",
-    "calibrate": "node scripts/calibrate.ts"
+    "calibrate": "node scripts/calibrate.ts",
+    "backup": "node scripts/backup.ts"
   }
 }

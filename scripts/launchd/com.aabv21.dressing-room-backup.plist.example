@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The nightly hosted backup (scripts/backup.ts). Copy to
+  ~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist, replace every /ABSOLUTE/PATH
+  placeholder, and load it as docs/database.md's "Hosted backups" describes. The secrets stay in
+  the env file (chmod 600), never in this plist.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aabv21.dressing-room-backup</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/ABSOLUTE/PATH/TO/node</string>
+    <string>--env-file=/ABSOLUTE/PATH/TO/HOME/.config/dressing-room/backup.env</string>
+    <string>/ABSOLUTE/PATH/TO/dressing-room-app/scripts/backup.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/ABSOLUTE/PATH/TO/dressing-room-app</string>
+
+  <!-- launchd's PATH is minimal: the dump needs node and pnpm, and the Supabase CLI needs docker. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/ABSOLUTE/PATH/TO/node/bin:/ABSOLUTE/PATH/TO/HOME/.orbstack/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <!-- Every day at 03:30; a run missed while the Mac slept starts when it wakes. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/ABSOLUTE/PATH/TO/HOME/Library/Logs/dressing-room-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/ABSOLUTE/PATH/TO/HOME/Library/Logs/dressing-room-backup.log</string>
+</dict>
+</plist>
