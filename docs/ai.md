@@ -719,6 +719,18 @@ own: a stalled read can still exceed it, as in the other functions.
 NOTE: a city typed without coordinates isn't geocoded, so its season is the northern one (wrong for
 a southern-hemisphere user who typed a city). Upgrade path: `getLocalWeather`'s geocoded latitude.
 
+### On the device
+
+The For you tab (`src/app/(tabs)/for-you.tsx`, `src/outfits/useForYou.ts`) calls the function with
+the app's current language whenever the tab gains focus or the language changes, one request at a
+time: a second call while the first is still ranking would miss the cache too and get a 429. Each
+good answer is kept in kv `forYou.ideas.<userId>`, one per language, and shown at once on the next
+cold start, offline (with a note) and over the quota (with the quota note). A card's line is
+Claude's, or its template key (`forYou.line.*`) rendered through i18n; "Search in stores" opens
+`https://www.google.com/search?q=<encoded searchQuery>&hl=<language>` in the system browser. The
+rating screen links to For you ("Missing something?") when the score is under 70 and no swap is
+shown.
+
 ### Cost
 
 Per cache miss: at most 10 Jev requests and 1 Claude request.

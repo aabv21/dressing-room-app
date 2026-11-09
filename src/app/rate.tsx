@@ -37,6 +37,8 @@ const MAX_PIECES = 6;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Room for a message shown above the buttons, so it never covers the outfit's last piece.
 const NOTICE_ROOM = 56;
+/** Below this score with no swap shown, the rating points to For you. */
+const FOR_YOU_BELOW = 70;
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -156,6 +158,29 @@ function SwapCard({
   );
 }
 
+/**
+ * Mockup 01 screen 3's "Missing something? → For you": a low score with no swap to offer (none
+ * beat it, or the fallback rater searched none) points to the pieces the closet lacks.
+ */
+function ForYouLink(): React.JSX.Element {
+  const { t } = useI18n();
+  const label = `${t('rate.forYou')} ${t('rate.forYou.link')}`;
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={label}
+      onPress={() => {
+        router.push('/for-you');
+      }}
+      style={styles.forYouLink}
+    >
+      <Text style={styles.forYouText}>
+        {t('rate.forYou')} <Text style={styles.forYouAccent}>{t('rate.forYou.link')}</Text>
+      </Text>
+    </Pressable>
+  );
+}
+
 function ResultBody({
   result,
   pieces,
@@ -179,6 +204,7 @@ function ResultBody({
   const { swap } = result;
   const from = swap === null ? undefined : byId.get(swap.fromId);
   const to = swap === null ? undefined : byId.get(swap.toId);
+  const swapShown = swap !== null && from !== undefined && to !== undefined;
   return (
     <>
       <ScoreRing score={result.score} caption={t(`rating.label.${result.label}`)} />
@@ -194,7 +220,7 @@ function ResultBody({
           ))}
         </View>
       )}
-      {swap !== null && from !== undefined && to !== undefined ? (
+      {swapShown ? (
         <SwapCard
           from={from}
           to={to}
@@ -205,6 +231,7 @@ function ResultBody({
         />
       ) : null}
       {result.noBetterSwap ? <Text style={styles.noBetterSwap}>{t('rate.noBetterSwap')}</Text> : null}
+      {result.score < FOR_YOU_BELOW && !swapShown ? <ForYouLink /> : null}
       {pieces.length === 0 ? null : (
         <View style={styles.card}>
           <OutfitStack garments={pieces} thumbUrls={thumbUrls} compact />
@@ -544,6 +571,22 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 13,
     textAlign: 'center',
+  },
+  forYouLink: {
+    alignSelf: 'center',
+    minHeight: layout.minHitTarget,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    marginVertical: -spacing.sm,
+  },
+  forYouText: {
+    color: colors.muted,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  forYouAccent: {
+    color: colors.accentText,
+    fontWeight: '700',
   },
   card: {
     backgroundColor: 'rgba(255,255,255,0.75)',

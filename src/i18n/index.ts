@@ -81,7 +81,8 @@ export type PluralBase =
   | 'closet.reviewBanner'
   | 'camera.count'
   | 'stats.kpi.streak'
-  | 'diary.outfits';
+  | 'diary.outfits'
+  | 'forYou.outfits';
 
 /** `{base}.one` for exactly 1, otherwise `{base}.other` — the same en/es rule as `formatWearCount`. */
 export function pluralKey(base: PluralBase, count: number): MessageKey {
