@@ -476,7 +476,7 @@ export function cacheFresh(row: CacheRow, now: number, maxAgeMs: number = Number
  * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
  * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
  * unknown), so a better answer is tried again; any other result expires only after `maxAgeMs`
- * (never by default; ruling P4-R12). The marker is returned as stored; callers strip it before
+ * (never by default). The marker is returned as stored; callers strip it before
  * answering.
  */
 export async function cacheGet(

@@ -706,7 +706,7 @@ describe('swaps', () => {
   });
 });
 
-describe('degraded results (P4-R12)', () => {
+describe('degraded results', () => {
   const lowShoes = (): Response => json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes')));
   const minutesAgo = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
   const age = (w: World, minutes: number): void => {
@@ -815,7 +815,7 @@ describe('a cached swap is re-checked (M1)', () => {
   });
 });
 
-describe('latency budget (P4-R11)', () => {
+describe('latency budget', () => {
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
   });

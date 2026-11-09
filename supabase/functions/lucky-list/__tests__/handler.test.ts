@@ -397,7 +397,7 @@ describe('the lucky list', () => {
     }
   });
 
-  test('the 30 spread over the closet: 3+ shoes, 5+ tops or one-pieces, a dress, some without an extra, ≤ 2 per base (P4-R13)', async () => {
+  test('the 30 spread over the closet: 3+ shoes, 5+ tops or one-pieces, a dress, some without an extra, ≤ 2 per base', async () => {
     const w = world();
     const { body } = await lucky(w);
     const { outfits } = body as OkBody;
@@ -540,7 +540,7 @@ describe('the lucky list', () => {
     }
   });
 
-  test('a hit answers with this hour\'s weather, keeping the list as ranked (I2)', async () => {
+  test('a hit answers with this hour\'s weather, keeping the list as ranked', async () => {
     const w = world();
     const first = (await lucky(w)).body as OkBody;
     w.weather = { ...COOL, tempC: 9, condition: 'rain', rain: true };
@@ -604,7 +604,7 @@ describe('the lucky list', () => {
     expect(count(calls, 'jev')).toBe(30);
   });
 
-  test('a garment still being read (no category yet) or in the laundry does not change the key (P4-R15)', async () => {
+  test('a garment still being read (no category yet) or in the laundry does not change the key', async () => {
     const w = world();
     await lucky(w);
     w.garments = [
@@ -618,7 +618,7 @@ describe('the lucky list', () => {
     expect(w.luckyCache.size).toBe(1);
   });
 
-  test('logging a wear keeps the cached list (P4-R6) but its outfits are no longer fresh this week', async () => {
+  test('logging a wear keeps the cached list but its outfits are no longer fresh this week', async () => {
     const w = world();
     const first = (await lucky(w)).body as OkBody;
     const worn = first.outfits[0]?.garmentIds ?? [];
@@ -689,7 +689,7 @@ describe('the lucky list', () => {
     expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
   });
 
-  test('a degraded entry is served for an hour, then recomputed (P4-R12)', async () => {
+  test('a degraded entry is served for an hour, then recomputed', async () => {
     const w = world({ jev: () => json(500, {}) });
     await lucky(w);
     const within = await lucky(w);
@@ -738,7 +738,7 @@ describe('weather', () => {
     const states: JevState[] = [];
     const w = world({
       profile: NO_CITY,
-      // Jev claims the outfit is unsafe for the weather; with no weather that is ignored (P4-R9/R10).
+      // Jev claims the outfit is unsafe for the weather; with no weather that is ignored (weather is neutral when unknown).
       jev: (state) => {
         states.push(state);
         return json(200, jevAt(0.9, { unsafe: 0.95 }));
@@ -840,7 +840,7 @@ describe('pinned garments', () => {
     }
   });
 
-  // --- I1: a pinned outerwear piece is included on days the weather doesn't require it ----------
+  // --- a pinned outerwear piece is included on days the weather doesn't require it --------------
 
   test('a pinned jacket on a mild day (the default COOL weather, outerwear not required): every outfit contains it', async () => {
     // bigCloset's two jackets are ids 31 and 32.
@@ -859,7 +859,7 @@ describe('pinned garments', () => {
     for (const outfit of outfits) expect(outfit.garmentIds).toContain(idOf(31));
   });
 
-  // --- I2: "Wear it" (a pin for tomorrow) must not invalidate today's cached list -----------------
+  // --- "Wear it" (a pin for tomorrow) must not invalidate today's cached list ---------------------
 
   test('a pin for tomorrow keeps today\'s cache entry a hit', async () => {
     const w = world();
@@ -904,7 +904,7 @@ describe('donated garments', () => {
   });
 });
 
-describe('latency budget (P4-R11)', () => {
+describe('latency budget', () => {
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
   });

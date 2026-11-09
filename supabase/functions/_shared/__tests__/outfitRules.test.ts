@@ -165,7 +165,7 @@ describe('passesRules', () => {
     expect(passesRules(outfit, ctx)).toBe(false);
   });
 
-  test('accepts a cold outfit without outerwear when outerwearAvailable is false (P4-R7)', () => {
+  test('accepts a cold outfit without outerwear when outerwearAvailable is false', () => {
     const outfit = [garment({ category: 't_shirt' }), garment({ category: 'jeans' }), garment({ category: 'boots' })];
     const ctx: RuleContext = { ...MILD_CTX, weather: weather({ band: 'cold' }), outerwearAvailable: false };
     expect(passesRules(outfit, ctx)).toBe(true);
@@ -292,7 +292,7 @@ describe('preScore', () => {
     expect(preScore(outfit, TODAY)).toBe(30);
   });
 
-  test('averages across the base pieces, so a one-piece outfit is not behind for having fewer pieces (P4-R13)', () => {
+  test('averages across the base pieces, so a one-piece outfit is not behind for having fewer pieces', () => {
     const outfit = [
       garment({ last_worn_at: null, colors: ['red'] }),
       garment({ category: 'jeans', last_worn_at: '2026-11-06T00:00:00Z', colors: ['navy'] }),
@@ -303,7 +303,7 @@ describe('preScore', () => {
     expect(preScore(dress, TODAY)).toBe(preScore(separates, TODAY));
   });
 
-  test('an extra adds nothing, neutral or not (P4-R13)', () => {
+  test('an extra adds nothing, neutral or not', () => {
     const base = [garment({ colors: ['red'] }), garment({ category: 'jeans', colors: ['navy'] }), garment({ category: 'sneakers' })];
     for (const extra of [garment({ category: 'belt', colors: ['black'] }), garment({ category: 'bag', colors: ['red'] }), garment({ category: 'hat' })]) {
       expect(preScore([...base, extra], TODAY)).toBe(preScore(base, TODAY));
@@ -437,7 +437,7 @@ describe('generateCandidates', () => {
   const slotIds = (outfits: readonly (readonly RuleGarment[])[], categories: readonly string[]): Set<string> =>
     new Set(outfits.flatMap((outfit) => outfit.filter((item) => categories.includes(item.category ?? '')).map((item) => item.id)));
 
-  test('spreads over the closet: the first 30 candidates use many shoes and tops, and some dresses (P4-R13)', () => {
+  test('spreads over the closet: the first 30 candidates use many shoes and tops, and some dresses', () => {
     const first30 = generateCandidates(varietyCloset(), MILD_CTX, 'user1:2026-11-08').slice(0, 30);
     expect(first30).toHaveLength(30);
     expect(slotIds(first30, ['sneakers']).size).toBeGreaterThanOrEqual(3);
@@ -545,7 +545,7 @@ describe('generateCandidates', () => {
     expect(usedRecent).toBe(true);
   });
 
-  test('a cold day with no available outerwear in the closet still returns candidates, none with outerwear (P4-R7)', () => {
+  test('a cold day with no available outerwear in the closet still returns candidates, none with outerwear', () => {
     const closet = [
       garment({ category: 't_shirt', colors: ['white'] }),
       garment({ category: 'jeans', colors: ['navy'] }),
@@ -559,7 +559,7 @@ describe('generateCandidates', () => {
     }
   });
 
-  test('a rainy, non-hot day with no available outerwear still returns candidates (P4-R7)', () => {
+  test('a rainy, non-hot day with no available outerwear still returns candidates', () => {
     const closet = [
       garment({ category: 't_shirt', colors: ['white'] }),
       garment({ category: 'jeans', colors: ['navy'] }),
@@ -707,7 +707,7 @@ describe('generateCandidates', () => {
       expect(result.some((outfit) => outfit.some((item) => item.id === tooFormal.id))).toBe(false);
     });
 
-    // --- I1: a pinned outerwear piece is included on days the weather doesn't require it --------
+    // --- a pinned outerwear piece is included on days the weather doesn't require it ------------
 
     test('a pinned jacket on a mild day (outerwear not required) is reachable: at least one candidate contains it', () => {
       const neutrals = ['white', 'black', 'gray', 'navy', 'beige'] as const;

@@ -126,8 +126,8 @@ reset role;
 
 -- The cascade assertion: every public table with a user_id column has an FK
 -- to auth.users with ON DELETE CASCADE (confdeltype = 'c'). Checked generically
--- against pg_constraint so it covers exactly the tables the brief names,
--- rather than repeating one hand-written assertion per table.
+-- against pg_constraint so it covers every user-owned table, rather than
+-- repeating one hand-written assertion per table.
 -- Aggregated into a plain text[] with array_agg (not pgTAP's results_eq,
 -- whose refcursor-diffing path hits "could not determine which collation to
 -- use" comparing pg_class.relname's name type against a text[] literal) and
@@ -159,9 +159,10 @@ select is(
   'every public table with a user_id column has an ON DELETE CASCADE FK to auth.users'
 );
 
--- Pin this to the exact table list the brief names, so a future table that
--- drops its user_id column (or renames it) can't silently shrink this set
--- without the test file changing too.
+-- Pin this to the exact list of tables docs/database.md lists as cascading
+-- from auth.users, so a future table that drops its user_id column (or
+-- renames it) can't silently shrink this set without the test file changing
+-- too.
 select is(
   (
     select array_agg(rel.relname::text order by rel.relname)
@@ -175,7 +176,7 @@ select is(
       and not att.attisdropped
   ),
   array['apple_tokens', 'for_you_cache', 'garments', 'lucky_cache', 'outfits', 'profiles', 'rating_cache', 'usage_counters', 'wears']::text[],
-  'the set of public tables with a user_id column matches the brief''s list'
+  'the set of public tables with a user_id column is the expected list'
 );
 
 -- Deleting a user with garments, wears and caches leaves 0 rows for that user

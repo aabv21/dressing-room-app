@@ -47,10 +47,10 @@ export type RuleContext = {
   /**
    * Whether the closet has at least one outerwear piece admissible for this context (available,
    * in-season, in the occasion's formality range — not merely present in the closet). Defaults
-   * to `true` so existing callers (and `passesRules`'s pre-P4-R7 semantics) are unaffected;
-   * `generateCandidates` sets it from the actual closet. When `false`, a cold-weather outfit is
-   * allowed with no outerwear rather than making the lucky list empty for a user who owns none,
-   * or whose only coat doesn't fit today's occasion or season (ruling P4-R7).
+   * to `true` so existing callers (and `passesRules`'s original "cold requires outerwear"
+   * semantics) are unaffected; `generateCandidates` sets it from the actual closet. When `false`,
+   * a cold-weather outfit is allowed with no outerwear rather than making the lucky list empty for
+   * a user who owns none, or whose only coat doesn't fit today's occasion or season.
    */
   outerwearAvailable?: boolean;
 };
@@ -209,10 +209,9 @@ export function basePieces(outfit: Outfit): RuleGarment[] {
 
 /**
  * The mean, over the outfit's base pieces, of (days since last worn, never-worn = 30, capped at
- * 30) plus 5 for a piece with a neutral color. Extras don't count (ruling P4-R13), so adding a
- * belt can't win, and a mean doesn't favor top + bottom over a one-piece for having one more
- * piece. An outfit of extras only (rate-outfit's freshness of a single swap candidate) scores
- * those pieces instead.
+ * 30) plus 5 for a piece with a neutral color. Extras don't count, so adding a belt can't win,
+ * and a mean doesn't favor top + bottom over a one-piece for having one more piece. An outfit of
+ * extras only (rate-outfit's freshness of a single swap candidate) scores those pieces instead.
  */
 export function preScore(outfit: Outfit, today: string): number {
   const base = basePieces(outfit);
@@ -315,15 +314,15 @@ function withPinnedFirst<T extends { id: string }>(items: readonly T[], pinnedId
 }
 
 /**
- * Rule-passing outfit candidates from seeded random draws (ruling P4-R13), so the list spreads
- * over the closet instead of exhausting one pair of shoes and one top first. Each draw picks
- * shoes, then top + bottom or a one-piece (weighted by how many garments can fill each: half the
- * tops and bottoms against the one-pieces), outerwear when the weather calls for it and the
- * closet has an admissible piece (P4-R7), and an optional bag or accessory, where "none" weighs
- * as much as all the extras together. Each slot's pool holds only pieces that pass the per-piece
- * rules (`fitsAlone`), so a few admissible garments in a large closet are always reachable and a
- * draw can only fail on colors or patterns. Duplicates are dropped; drawing stops at `limit`
- * candidates or after `limit × 20` draws in total. Items worn in the last 7 days are avoided while
+ * Rule-passing outfit candidates from seeded random draws, so the list spreads over the closet
+ * instead of exhausting one pair of shoes and one top first. Each draw picks shoes, then top +
+ * bottom or a one-piece (weighted by how many garments can fill each: half the tops and bottoms
+ * against the one-pieces), outerwear when the weather calls for it and the closet has an
+ * admissible piece (a closet without one still gets candidates), and an optional bag or
+ * accessory, where "none" weighs as much as all the extras together. Each slot's pool holds only
+ * pieces that pass the per-piece rules (`fitsAlone`), so a few admissible garments in a large
+ * closet are always reachable and a draw can only fail on colors or patterns. Duplicates are
+ * dropped; drawing stops at `limit` candidates or after `limit × 20` draws in total. Items worn in the last 7 days are avoided while
  * at least 3 candidates survive without them: that first pass may use half the draws, the
  * fallback pass the rest. Deterministic for a given seed and closet order.
  *
@@ -355,7 +354,7 @@ export function generateCandidates(
   const rng = mulberry32(hashString(seed));
   const groups = groupBySlot(garments);
 
-  // Computed once from the closet (P4-R7): "available" means admissible for this context, using
+  // Computed once from the closet: "available" means admissible for this context, using
   // the same `isAdmissible` check `passesRules` applies per piece, so an inadmissible-only coat
   // behaves the same as owning none.
   const admissibleOuterwear = groups.outerwear.filter((item) => isAdmissible(item, ctx));
@@ -418,7 +417,7 @@ export function generateCandidates(
       attemptCount += 1;
       const pinnedId = forcedPin?.id ?? null;
 
-      // I1: a pinned outerwear piece is tried even when the weather doesn't call for outerwear —
+      // A pinned outerwear piece is tried even when the weather doesn't call for outerwear —
       // `passesRules` allows outerwear on any day, it only requires it when cold.
       const drawOuterwear = needsOuterwear || (pinnedId !== null && outerwearPinIds.has(pinnedId));
 

@@ -54,7 +54,7 @@ export type RatingResult = {
 /**
  * What `rating_cache` stores: the result plus an internal marker, stripped before answering. A
  * degraded result (a Claude estimate, or a swap search that was skipped or failed) is served from
- * the cache for an hour only (ruling P4-R12; see `cacheGet`).
+ * the cache for an hour only, so a better result is tried again soon (see `cacheGet`).
  */
 type CachedRating = RatingResult & { degraded: boolean };
 
@@ -62,7 +62,10 @@ type Outcome = 'cached' | 'rated' | 'fallback' | 'over_quota' | 'unavailable' | 
 
 export const RATING_DAILY_LIMIT = 50;
 export const MAX_SWAP_CANDIDATES = 8;
-/** No swap rating starts once this long has passed since the request arrived (ruling P4-R11). */
+/**
+ * No swap rating starts once this long has passed since the request arrived, so the answer lands
+ * inside the app's function deadline.
+ */
 export const SWAP_BUDGET_MS = 15_000;
 const MIN_GARMENTS = 2;
 const MAX_GARMENTS = 6;
@@ -122,7 +125,8 @@ async function readInput(request: Request): Promise<RateInput | null> {
 
 /**
  * The cache key: each garment's rating-relevant columns (not `updated_at`, which logging a wear
- * bumps; ruling P4-R6), the profile version, the occasion, the season and the weather bucket.
+ * bumps, so a wear would otherwise spend the quota again), the profile version, the occasion, the
+ * season and the weather bucket.
  */
 function cacheKey(outfit: readonly RuleGarment[], ctx: RatingContext): Promise<string> {
   const items = [...outfit]
