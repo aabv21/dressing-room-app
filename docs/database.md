@@ -161,8 +161,9 @@ rows first and only then the `outfits` row — never the other order.
 
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5)
 
-Server-only caches for the rating, feeling-lucky, weather and For-you Edge Functions; no client ever
-reads or writes them. `public.rating_cache`, `public.lucky_cache` and `public.for_you_cache` share
+Server-only caches for the `rate-outfit`, `lucky-list` and `for-you` Edge Functions (the first two
+share `weather_cache` through `_shared/userContext.ts`'s weather helper); no client ever reads or
+writes them. `public.rating_cache`, `public.lucky_cache` and `public.for_you_cache` share
 the same shape: `(user_id uuid references auth.users on delete cascade, cache_key text, result jsonb
 not null, created_at timestamptz not null default now())`, primary key `(user_id, cache_key)`.
 `public.weather_cache` is not user-scoped (weather is shared across users at the same place and
@@ -213,8 +214,8 @@ through `public.consume_quota()`.
 
 `public.consume_quota(p_user_id uuid, p_kind public.quota_kind, p_limit integer) returns boolean` is
 `security definer` with `set search_path = ''`, `execute` revoked from `public`, `anon` and
-`authenticated`, and granted only to `service_role` — only the extraction function calls it, never
-a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
+`authenticated`, and granted only to `service_role` — only the Edge Functions call it (extraction,
+rating, lucky list and For you), never a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
 `(p_user_id, today in UTC, p_kind)`, incrementing `count` only `where count < p_limit`, and returns
 whether a row was actually written (an `on conflict … do update … where …` whose `where` excludes
 the conflicting row makes `returning` produce no row, not a row holding `false` — the function
@@ -337,7 +338,7 @@ merely "a convenience."
 RLS is enabled with **zero policies** on all five, and `revoke all on <table> from anon,
 authenticated` — same "no RLS-mediated access path at all" pattern as `usage_counters` below, except
 nothing reads or writes them through a `security definer` function either: only `service_role`
-(the rating, lucky, weather and For-you Edge Functions for the caches; `apple-token` and
+(`rate-outfit`, `lucky-list` and `for-you` for the caches; `apple-token` and
 `delete-account` for `apple_tokens`) ever touches them, bypassing RLS entirely as that role. A
 direct `select`/`insert`/`update`/`delete` from `authenticated` or `anon` is rejected by the table
 grant revoke before RLS is even consulted.
@@ -455,8 +456,8 @@ definer`) is deliberate: the actual inserts into `outfits`, `outfit_items` and `
 calling role, so they're still gated by those tables' own insert policies — the function doesn't
 bypass RLS, it just saves the client three round trips and the chance of a half-written outfit.
 
-**Idempotent on `p_wear_id`** (Review Focus 5: double-tapping "I'll wear it", or retrying after a
-lost response, must log exactly one wear). The app generates `p_wear_id` once per tap
+**Idempotent on `p_wear_id`** (double-tapping "I'll wear it", or retrying after a lost response,
+must log exactly one wear). The app generates `p_wear_id` once per tap
 (client-side, a plain random uuid) and sends the same value on every retry of that same tap.
 
 1. `select id from public.wears where id = p_wear_id` — if a row comes back, the wear already
