@@ -1,13 +1,14 @@
 /** @jest-environment node */
 // scripts/__tests__/calibration.test.ts
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { GARMENT_CATEGORIES, GARMENT_COLORS, SLOTS } from '../../supabase/functions/_shared/catalog.ts';
 import {
+  composeRating,
   type DimensionScores,
   RATING_CONFIG,
   RATING_DIMENSIONS,
@@ -15,7 +16,6 @@ import {
   type RatingDimension,
   type RatingState,
   withHardFailures,
-  composeRating,
 } from '../../supabase/functions/_shared/rating.ts';
 import {
   collectAnswers,
@@ -23,6 +23,7 @@ import {
   exportEntries,
   fetchExportRows,
   formatReport,
+  frozenWeightsNote,
   type LabelEntry,
   mergeEntries,
   parseAnswersFile,
@@ -436,6 +437,16 @@ describe('runEval', () => {
     expect(stdout).toMatch(/confidenceAggregate: '(mean|min)'/);
     expect(stdout).toContain('`weather_fit` is held at its current weight');
     expect(stdout).not.toContain('NaN');
+  });
+
+  it('derives the frozen-weights note from the frozen and total dimension counts', () => {
+    expect(frozenWeightsNote(['weather_fit'], 8)).toBe(
+      "`weather_fit` is held at its current weight: the calibration outfits carry no weather, so its answer is always neutral and its weight can't be learned from them. The other 7 weights share the rest.",
+    );
+    expect(frozenWeightsNote(['weather_fit', 'occasion_fit'], 8)).toBe(
+      "`weather_fit` and `occasion_fit` are held at their current weights: the calibration outfits carry no weather, so their answers are always neutral and their weights can't be learned from them. The other 6 weights share the rest.",
+    );
+    expect(frozenWeightsNote([], 8)).toBeNull();
   });
 
   it('flags a suggested great band that moves', () => {

@@ -148,8 +148,18 @@ function confusionTable(confusion: Confusion): string[] {
 }
 
 /** The Markdown report `eval` prints. */
+/** Why `frozen` keep their weights, with the verb and the movable count derived; null if none is frozen. */
+export function frozenWeightsNote(frozen: readonly string[], total: number): string | null {
+  if (frozen.length === 0) return null;
+  const names = frozen.map((dimension) => `\`${dimension}\``);
+  const list = names.length === 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
+  const one = frozen.length === 1;
+  return `${list} ${one ? 'is held at its current weight' : 'are held at their current weights'}: the calibration outfits carry no weather, so ${one ? 'its answer is' : 'their answers are'} always neutral and ${one ? 'its weight' : 'their weights'} can't be learned from them. The other ${String(total - frozen.length)} weights share the rest.`;
+}
+
 export function formatReport(report: CalibrationReport, config: RatingConfig): string {
   const { suggested } = report;
+  const frozenNote = frozenWeightsNote(FROZEN_DIMENSIONS, RATING_DIMENSIONS.length);
   const labelers = Object.entries(report.labelers)
     .map(([labeler, count]) => `${labeler} ${String(count)}`)
     .join(', ');
@@ -177,8 +187,7 @@ export function formatReport(report: CalibrationReport, config: RatingConfig): s
         `| \`${dimension}\` | ${weight(currentWeights, dimension)} | ${weight(suggestedWeights, dimension)} |`,
     ),
     '',
-    `${FROZEN_DIMENSIONS.map((dimension) => `\`${dimension}\``).join(', ')} is held at its current weight: the calibration outfits carry no weather, so its answer is always neutral and its weight can't be learned from them. The other 7 weights share the rest.`,
-    '',
+    ...(frozenNote === null ? [] : [frozenNote, '']),
     '## Bands',
     '',
     '| Band | Current | Suggested |',
