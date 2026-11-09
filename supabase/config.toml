@@ -442,6 +442,10 @@ verify_jwt = true
 [functions.lucky-list]
 verify_jwt = true
 
+# Called by signed-in users like rate-outfit; reads the closet and the profile with that token.
+[functions.for-you]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54427

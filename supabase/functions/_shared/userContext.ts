@@ -1,7 +1,7 @@
-// What the user-called outfit functions (`rate-outfit`, `lucky-list`) share: who is calling, the
-// caller's profile and garments (read with the caller's own token, so RLS applies), today's
-// weather (cached per location and UTC hour), the daily quota, the result caches (service role),
-// the Jev and Claude calls with their timeouts, and a concurrency-limited map.
+// What the user-called AI functions (`rate-outfit`, `lucky-list`, `for-you`) share: who is
+// calling, the caller's profile and garments (read with the caller's own token, so RLS applies),
+// today's weather (cached per location and UTC hour), the daily quota, the result caches (service
+// role), the Jev and Claude calls with their timeouts, and a concurrency-limited map.
 //
 // Runtime-neutral: every effect goes through the injected `fetch`, and only web-standard globals
 // (`crypto.subtle`, `atob`, `TextEncoder`, `AbortController`) are used, so Jest drives it under
@@ -389,7 +389,7 @@ export async function consumeQuota(
   env: FnEnv,
   fetchFn: FetchFn,
   userId: string,
-  kind: 'rating' | 'lucky',
+  kind: 'rating' | 'lucky' | 'for_you',
   limit: number,
 ): Promise<boolean> {
   const allowed = await restJson(fetchFn, `${env.supabaseUrl}/rest/v1/rpc/consume_quota`, {
@@ -400,25 +400,22 @@ export async function consumeQuota(
   return allowed === true;
 }
 
-export type ResultCache = 'rating_cache' | 'lucky_cache';
+export type ResultCache = 'rating_cache' | 'lucky_cache' | 'for_you_cache';
 
 /** How long a result marked `degraded: true` (a fallback, a skipped or failed step) is served from the cache. */
 export const DEGRADED_TTL_MS = 60 * 60 * 1000;
 
-/**
- * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
- * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
- * unknown), so a better answer is tried again; any other result never expires (ruling P4-R12).
- * The marker is returned as stored; callers strip it before answering.
- */
-export async function cacheGet(
+/** A stored cache row: the result as stored (marker included) and its `created_at` in ms, null when unreadable. */
+export type CacheRow = { result: unknown; createdAt: number | null };
+
+/** The stored row for `key` whatever its age, or null on a miss or any error. */
+export async function cacheRead(
   env: FnEnv,
   fetchFn: FetchFn,
   table: ResultCache,
   userId: string,
   key: string,
-  now: number = Date.now(),
-): Promise<unknown> {
+): Promise<CacheRow | null> {
   try {
     const rows = await restRows(
       fetchFn,
@@ -427,14 +424,43 @@ export async function cacheGet(
     );
     const [row] = rows;
     if (!isRecord(row) || row.result === undefined || row.result === null) return null;
-    if (isRecord(row.result) && row.result.degraded === true) {
-      const createdAt = typeof row.created_at === 'string' ? Date.parse(row.created_at) : Number.NaN;
-      if (Number.isNaN(createdAt) || now - createdAt > DEGRADED_TTL_MS) return null;
-    }
-    return row.result;
+    const createdAt = typeof row.created_at === 'string' ? Date.parse(row.created_at) : Number.NaN;
+    return { result: row.result, createdAt: Number.isNaN(createdAt) ? null : createdAt };
   } catch {
     return null;
   }
+}
+
+/**
+ * True when a row still counts as a hit: no older than `maxAgeMs`, and no older than
+ * `DEGRADED_TTL_MS` when its result is marked `degraded: true`. A row of unknown age is fresh only
+ * when neither limit applies to it.
+ */
+export function cacheFresh(row: CacheRow, now: number, maxAgeMs: number = Number.POSITIVE_INFINITY): boolean {
+  const degraded = isRecord(row.result) && row.result.degraded === true;
+  const limit = Math.min(maxAgeMs, degraded ? DEGRADED_TTL_MS : Number.POSITIVE_INFINITY);
+  if (limit === Number.POSITIVE_INFINITY) return true;
+  return row.createdAt !== null && now - row.createdAt <= limit;
+}
+
+/**
+ * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
+ * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
+ * unknown), so a better answer is tried again; any other result expires only after `maxAgeMs`
+ * (never by default; ruling P4-R12). The marker is returned as stored; callers strip it before
+ * answering.
+ */
+export async function cacheGet(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  table: ResultCache,
+  userId: string,
+  key: string,
+  now: number = Date.now(),
+  maxAgeMs: number = Number.POSITIVE_INFINITY,
+): Promise<unknown> {
+  const row = await cacheRead(env, fetchFn, table, userId, key);
+  return row !== null && cacheFresh(row, now, maxAgeMs) ? row.result : null;
 }
 
 /**
