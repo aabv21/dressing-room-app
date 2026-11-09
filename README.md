@@ -63,9 +63,10 @@ See [`AGENTS.md`](./AGENTS.md) for the full command list and conventions.
 
 ### Owner setup
 
-Two things need the owner before the hosted app works end to end:
+Three things need the owner before the hosted app works end to end:
 
 - Rebuild the dev client (`pnpm expo run:ios` / `pnpm expo run:android`): `garment-cutout` is a local native module and `expo-sharing` (data export) has native code, so an older dev client fails to load the Profile tab.
 - Set the hosted secrets, the `APPLE_*` ones included (without them, account deletion can't revoke Sign in with Apple).
+- Run `eas init`, then `eas build` and `eas submit` against [`eas.json`](./eas.json)'s profiles, to put a build on TestFlight and the Play internal track.
 
 The full checklist is [`AGENTS.md`](./AGENTS.md)'s "Owner session".
