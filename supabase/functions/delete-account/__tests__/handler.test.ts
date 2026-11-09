@@ -185,6 +185,8 @@ afterEach(() => {
 
 const kinds = (steps: readonly Step[]): string[] => steps.map((step) => step.kind);
 const removed = (steps: readonly Step[]): string[] => steps.flatMap((step) => (step.kind === 'remove' ? step.paths : []));
+/** The steps up to the user deletion: step 1's sweep, before the final one. */
+const untilDeletion = (steps: readonly Step[]): Step[] => steps.slice(0, steps.findIndex((step) => step.kind === 'deleteUser'));
 
 describe('delete-account', () => {
   test('removes every object under the caller, revokes Apple, then deletes the user, in that order', async () => {
@@ -201,7 +203,8 @@ describe('delete-account', () => {
     const order = kinds(steps).filter((kind) => kind !== 'list');
     expect(order).toEqual(['whoami', 'remove', 'token', 'revoke', 'deleteUser']);
     expect(steps[0]).toEqual({ kind: 'whoami' });
-    expect(steps.findLastIndex((step) => step.kind === 'list')).toBeLessThan(steps.findIndex((step) => step.kind === 'remove'));
+    const sweep = untilDeletion(steps);
+    expect(sweep.findLastIndex((step) => step.kind === 'list')).toBeLessThan(sweep.findIndex((step) => step.kind === 'remove'));
     expect(steps.find((step) => step.kind === 'revoke')).toEqual({ kind: 'revoke', token: 'refresh-user' });
     expect(steps.find((step) => step.kind === 'deleteUser')).toEqual({ kind: 'deleteUser', id: USER_ID });
     expect(state.users.has(USER_ID)).toBe(false);
@@ -217,7 +220,7 @@ describe('delete-account', () => {
 
     expect(response.status).toBe(200);
     expect(REMOVE_CHUNK).toBe(1000);
-    const userFolderPages = steps.filter((step) => step.kind === 'list' && step.prefix === `${USER_ID}/`);
+    const userFolderPages = untilDeletion(steps).filter((step) => step.kind === 'list' && step.prefix === `${USER_ID}/`);
     expect(userFolderPages.map((step) => (step.kind === 'list' ? step.offset : -1))).toEqual([0, 1000]);
     const chunks = steps.flatMap((step) => (step.kind === 'remove' ? [step.paths.length] : []));
     expect(chunks).toEqual([1000, 1000, 2]);
@@ -238,7 +241,7 @@ describe('delete-account', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'deleted' });
-    expect(kinds(steps).at(-1)).toBe('deleteUser');
+    expect(kinds(steps).filter((kind) => kind !== 'list').at(-1)).toBe('deleteUser');
     expect(state.users.has(USER_ID)).toBe(false);
   });
 
@@ -321,6 +324,45 @@ describe('delete-account', () => {
     expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'remove']);
   });
 
+  test('sweeps the folder once more after deleting the user, removing a photo uploaded meanwhile', async () => {
+    // Another device (or a still-valid token) uploads after step 1's listing, before the user is gone.
+    const late = `${USER_ID}/${garmentId(42)}/full.webp`;
+    const state: World = world({
+      deleteUser: () => {
+        state.objects.add(late);
+        state.users.delete(USER_ID);
+        state.tokens.delete(USER_ID);
+        return json(200, {});
+      },
+    });
+    const { fetch: fetchFn, steps } = fakeFetch(state);
+
+    const response = await handleDeleteAccount(request(), { env: ENV, apple, fetch: fetchFn, now: () => NOW });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'deleted' });
+    expect(state.objects.has(late)).toBe(false);
+    expect([...state.objects].every((path) => path.startsWith(`${OTHER_ID}/`))).toBe(true);
+    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'remove']);
+  });
+
+  test('a failed sweep after deleting the user still answers deleted', async () => {
+    const state: World = world({
+      deleteUser: () => {
+        state.users.delete(USER_ID);
+        state.failList = true;
+        return json(200, {});
+      },
+    });
+    const { fetch: fetchFn, steps } = fakeFetch(state);
+
+    const response = await handleDeleteAccount(request(), { env: ENV, apple, fetch: fetchFn, now: () => NOW });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'deleted' });
+    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list']);
+  });
+
   test.each([
     ['GoTrue’s 403 user_not_found', () => json(403, { code: 403, error_code: 'user_not_found', msg: 'gone' })],
     ['a 404 with user_not_found', () => json(404, { code: 404, error_code: 'user_not_found', msg: 'User not found' })],
@@ -373,8 +415,9 @@ describe('delete-account', () => {
     expect(LIST_CONCURRENCY).toBe(5);
     expect(state.listPeak).toBeGreaterThan(1);
     expect(state.listPeak).toBeLessThanOrEqual(LIST_CONCURRENCY);
-    expect(steps.filter((step) => step.kind === 'list')).toHaveLength(41);
-    expect(steps.findLastIndex((step) => step.kind === 'list')).toBeLessThan(steps.findIndex((step) => step.kind === 'remove'));
+    const sweep = untilDeletion(steps);
+    expect(sweep.filter((step) => step.kind === 'list')).toHaveLength(41);
+    expect(sweep.findLastIndex((step) => step.kind === 'list')).toBeLessThan(sweep.findIndex((step) => step.kind === 'remove'));
     expect(removed(steps)).toHaveLength(80);
   });
 

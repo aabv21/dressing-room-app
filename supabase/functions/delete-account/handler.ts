@@ -10,6 +10,9 @@
 //   3. The auth user is deleted (`DELETE /auth/v1/admin/users/{id}`); every public table cascades
 //      from `auth.users`, `apple_tokens` included. A 404 means a concurrent attempt deleted it
 //      first, so the folder is swept again, as in step 0.
+//   4. Once this call has deleted the user, the folder is swept one last time, best effort: another
+//      device (or a token that is still valid) can upload between steps 1 and 3, because the
+//      storage insert policy only checks the folder's uid. A failed sweep never changes the answer.
 // Steps 1–3 use the service role. Safe to retry: a failure in step 0, 1 or 3 answers 500 with the
 // user still there, so a retry starts over with whatever is left; once the user is gone, a retry
 // (the caller's token is still valid until it expires) sweeps the folder at step 0 and answers
@@ -183,6 +186,11 @@ export async function handleDeleteAccount(request: Request, deps: DeleteAccountD
     }
   } catch {
     return reply('error', 500, { error: 'internal' }, revoke);
+  }
+  try {
+    await sweepStorage(env, fetchFn, userId);
+  } catch {
+    // Best effort: the user is gone either way, and a retry (step 0) sweeps again.
   }
   return reply('deleted', 200, { outcome: 'deleted' }, revoke);
 }

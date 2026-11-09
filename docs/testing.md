@@ -134,8 +134,9 @@ never called. See `docs/ai.md`. To run only this project:
 - `supabase/functions/delete-account/__tests__/handler.test.ts` — the order (photos, Apple revoke,
   user), paging and chunks, the caller check (only `user_not_found` means already deleted), a
   retry after the user is gone sweeping only the caller's folder (photos that landed while the
-  answer was lost), a 404 from the user deletion sweeping again, failures answering 500 so the app
-  retries, and logs with outcome words only.
+  answer was lost), a 404 from the user deletion sweeping again, the final best-effort sweep after
+  the deletion (a photo uploaded meanwhile is removed; a failed sweep still answers `deleted`),
+  failures answering 500 so the app retries, and logs with outcome words only.
 
 ### `integration`
 

@@ -591,6 +591,10 @@ inside them, never in `src/`.
      `profiles`, `garments` (and through them `outfit_items`), `outfits`, `wears`,
      `usage_counters`, `rating_cache`, `lucky_cache`, `for_you_cache` and `apple_tokens` all
      reference `auth.users` with `on delete cascade` (pinned by `insights_account.test.sql`).
+  4. once this call has deleted the user, sweeps `garments/{uid}/` one last time, best effort:
+     another device (or a token that is still valid) can upload between steps 1 and 3, because the
+     storage insert policy only checks the folder's uid. A failed final sweep still answers
+     `deleted`; a retry sweeps again at step 0.
 
   Safe to retry: a failed caller check, listing, removal or user deletion answers 500 with the user
   still there, so the next attempt starts over with whatever is left; once the user is gone, a retry
