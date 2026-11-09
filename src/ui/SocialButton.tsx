@@ -68,6 +68,8 @@ export function SocialButton(props: {
 const styles = StyleSheet.create({
   button: {
     minHeight: layout.ctaHeight,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -95,7 +97,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.ink,
   },
+  // Wraps inside the pill at large text sizes instead of spilling past its edges.
   googleLabel: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontWeight: '700',
     fontSize: 14,
     color: colors.ink,

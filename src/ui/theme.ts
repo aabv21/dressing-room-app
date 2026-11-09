@@ -67,6 +67,8 @@ export const textScale = {
   overlay: 1.3,
   // Decorative emoji beside text, which would otherwise take the width the text needs.
   emoji: 1.3,
+  // The Welcome headline: a 900-weight hero breaks its longest word mid-word past this on a phone.
+  hero: 2,
 } as const;
 
 export const layout = {

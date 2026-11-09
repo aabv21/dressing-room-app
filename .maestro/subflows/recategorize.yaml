@@ -8,6 +8,8 @@ appId: com.aabv21.dressingroom
     element: ${CATEGORY}
     direction: DOWN
     timeout: 10000
+# A tap while the scroll still settles can miss the chip.
+- waitForAnimationToEnd
 - tapOn: ${CATEGORY}
 - extendedWaitUntil:
     visible:
