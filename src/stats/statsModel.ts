@@ -16,9 +16,12 @@ export function activeGarments(garments: readonly Garment[]): Garment[] {
   return garments.filter(isActive);
 }
 
-/** Ties within a stat are broken by this label — garments have no name, so category stands in for one. */
+/**
+ * Ties within a stat are broken by what the row shows: garments have no name, and a row reads
+ * "category · first color", so two pieces of one category still sort by their shown color.
+ */
 function sortKey(garment: Garment): string {
-  return garment.category ?? '';
+  return `${garment.category ?? ''}|${garment.colors[0] ?? ''}`;
 }
 
 export type Kpis = { wornPct: number; outfits: number; avgScore: number | null; streak: number };

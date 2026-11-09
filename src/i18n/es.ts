@@ -92,7 +92,7 @@ export const es: Record<MessageKey, string> = {
   'stats.balance.outerwear': 'Encima',
   'stats.balance.tip': 'Dato:',
   'stats.balance.insight.top': 'con una prenda de arriba más que combine, pasarías de {from} a {to} outfits posibles.',
-  'stats.balance.insight.bottom': 'con un pantalón más que combine, pasarías de {from} a {to} outfits posibles.',
+  'stats.balance.insight.bottom': 'con una prenda de abajo más que combine, pasarías de {from} a {to} outfits posibles.',
   'stats.balance.insight.shoes': 'con un par de zapatos más que combine, pasarías de {from} a {to} outfits posibles.',
   'stats.balance.forYou': '→ Para ti',
   'stats.unused.title': 'Sin usar en 6 meses',

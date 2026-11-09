@@ -20,7 +20,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.85)',
     borderWidth: 1,
     borderColor: '#ffffff',
-    borderRadius: radii.cell,
+    borderRadius: radii.cell + 2,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.sm,
   },

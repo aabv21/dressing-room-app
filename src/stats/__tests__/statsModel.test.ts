@@ -151,6 +151,16 @@ describe('mostWorn', () => {
     expect(result.map((r) => r.garment.id)).toEqual([jeans.id, shirt.id, tShirt.id, belt.id, boots.id]);
   });
 
+  test('a tie within one category is broken by the shown first color', () => {
+    const white = garment({ category: 'jeans', colors: ['white'] });
+    const black = garment({ category: 'jeans', colors: ['black'] });
+    const wears = [wear({ garmentIds: [white.id] }), wear({ garmentIds: [black.id] })];
+
+    const result = mostWorn([white, black], wears);
+
+    expect(result.map((r) => r.garment.id)).toEqual([black.id, white.id]);
+  });
+
   test('excludes donated garments even if worn in the period', () => {
     const donated = garment({ status: 'donated', category: 'jeans' });
     const wears = [wear({ garmentIds: [donated.id] })];
@@ -218,6 +228,22 @@ describe('slotBalance', () => {
     ];
     const balance = slotBalance(garments);
     expect(balance.insight).toEqual({ slot: 'shoes', from: 6, to: 12 });
+  });
+
+  test('a three-way tie picks top', () => {
+    // top=1, bottom=1, shoes=1 → possible 1; each +1 gives 2.
+    const garments = [garment({ category: 't_shirt' }), garment({ category: 'jeans' }), garment({ category: 'sneakers' })];
+    expect(slotBalance(garments).insight).toEqual({ slot: 'top', from: 1, to: 2 });
+  });
+
+  test('a top and bottom tie picks top', () => {
+    // top=1, bottom=1, shoes=2 → possible 2; +1 top or bottom gives 4, +1 shoes gives 3.
+    const garments = [
+      garment({ category: 't_shirt' }),
+      garment({ category: 'jeans' }),
+      ...Array.from({ length: 2 }, () => garment({ category: 'sneakers' })),
+    ];
+    expect(slotBalance(garments).insight).toEqual({ slot: 'top', from: 2, to: 4 });
   });
 
   test('no insight when no +1 would add outfits (possible stays at 0)', () => {
