@@ -8,6 +8,7 @@ import { useI18n } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
 import { ChipGroup } from '../ui/ChipGroup';
 import { OptionCard } from '../ui/OptionCard';
+import { useLargeText } from '../ui/layout';
 import { Silhouette } from '../ui/Silhouette';
 import { TextField } from '../ui/TextField';
 import { colors, layout, selectionRing, spacing } from '../ui/theme';
@@ -119,6 +120,9 @@ export function BodySection({
   unsetHeight?: 'default' | 'notSet';
 }): React.JSX.Element {
   const { t, locale } = useI18n();
+  // At the largest text sizes each body type takes a full row, so no label breaks mid-word.
+  const largeText = useLargeText();
+  const cellStyle = largeText ? [styles.cell, styles.cellFullRow] : styles.cell;
   const clothing = value.clothingType ?? 'everything';
   const silhouettes = silhouettesFor(clothing);
   const heightCm = value.heightCm ?? defaultHeightFor(value.clothingType);
@@ -184,7 +188,7 @@ export function BodySection({
               onPress={() => {
                 onChange({ bodyType: selected ? null : type });
               }}
-              style={[styles.cell, selected ? styles.cellOn : null]}
+              style={[cellStyle, selected ? styles.cellOn : null]}
               testID={`body-${type}`}
             >
               <Silhouette type={type} selected={selected} />
@@ -198,7 +202,7 @@ export function BodySection({
           onPress={() => {
             setHelperOpen((open) => !open);
           }}
-          style={styles.cell}
+          style={cellStyle}
           testID="body-helper"
         >
           <Text style={styles.helperLabel}>{t('onboarding.body.helper')}</Text>
@@ -252,7 +256,7 @@ export function BodySection({
       ) : null}
 
       <View style={styles.card}>
-        <View style={styles.heightRow}>
+        <View style={styles.heightRow} testID="body-height-row">
           <Text style={styles.muted}>{t('onboarding.body.height')}</Text>
           <Text style={[styles.heightValue, heightNotSet ? styles.heightNotSet : null]} testID="body-height-value">
             {heightNotSet ? t('onboarding.body.heightUnset') : t('onboarding.body.heightValue', { meters })}
@@ -561,6 +565,9 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     borderRadius: 14,
   },
+  cellFullRow: {
+    flexBasis: '100%',
+  },
   cellOn: {
     borderColor: colors.accent,
     boxShadow: selectionRing,
@@ -604,10 +611,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  // Wraps the value under the label when a large text size leaves no room for both.
   heightRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    columnGap: spacing.sm,
   },
   muted: {
     color: colors.muted,

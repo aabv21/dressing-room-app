@@ -17,6 +17,7 @@ import { HorizontalBars } from '../ui/charts/HorizontalBars';
 import { KpiTile } from '../ui/charts/KpiTile';
 import { ProportionBar } from '../ui/charts/ProportionBar';
 import { ChipGroup } from '../ui/ChipGroup';
+import { useLargeText } from '../ui/layout';
 import { colors, layout, radii, spacing } from '../ui/theme';
 import type { GarmentColor } from './catalog';
 import { useCloset } from './ClosetProvider';
@@ -113,8 +114,11 @@ function UnusedRow({
   const wearLabel = t('stats.unused.wear');
   const donateLabel = t('stats.unused.donate');
   const away = garment.status === 'laundry' || garment.status === 'lent' ? garment.status : null;
-  return (
-    <View style={styles.unusedRow}>
+  // At the largest text sizes the label gets its own line and the buttons wrap under it, so none
+  // of them is pushed off the card.
+  const largeText = useLargeText();
+  const head = (
+    <>
       <View style={styles.thumb}>
         {thumbUri === undefined ? null : (
           <Image
@@ -125,10 +129,15 @@ function UnusedRow({
           />
         )}
       </View>
-      <Text style={styles.unusedLabel} numberOfLines={1}>
+      <Text style={styles.unusedLabel} {...(largeText ? {} : { numberOfLines: 1 })}>
         {label}
       </Text>
-      <View style={styles.minis}>
+    </>
+  );
+  return (
+    <View style={largeText ? styles.unusedRowStacked : styles.unusedRow} testID={`unused-row-${garment.id}`}>
+      {largeText ? <View style={styles.unusedHead}>{head}</View> : head}
+      <View style={[styles.minis, largeText ? styles.minisWrap : null]} testID={`unused-minis-${garment.id}`}>
         {/* "Wear it" only where lucky-list will use the pin; a laundry or lent piece shows why not. */}
         {!canPin(garment) ? (
           away === null ? null : (
@@ -572,6 +581,16 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: layout.minHitTarget,
   },
+  unusedRowStacked: {
+    flexDirection: 'column',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  unusedHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   thumb: {
     width: THUMB_SIZE,
     height: THUMB_SIZE,
@@ -595,6 +614,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs + 2,
   },
+  minisWrap: {
+    flexWrap: 'wrap',
+    rowGap: spacing.sm,
+  },
   mini: {
     minHeight: MINI_HEIGHT,
     justifyContent: 'center',
@@ -610,11 +633,13 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   pinned: {
+    flexShrink: 1,
     fontSize: 12,
     fontWeight: '700',
     color: colors.positiveText,
   },
   statusNote: {
+    flexShrink: 1,
     fontSize: 12,
     fontWeight: '600',
     color: colors.muted,
