@@ -11,7 +11,7 @@ A digital closet and AI outfit rater, built with Expo and Supabase.
 - English and Spanish UI, picked from the device language (anything else falls back to English), with an in-app override.
 - Accounts: email/password sign-up and sign-in, Sign in with Google and Sign in with Apple (iOS), and a 6-digit password-reset code sent by email.
 - A three-step onboarding flow (clothing type, body measurements, style and occasions) with a skip action on all but the first step, backed by a Postgres profile row protected by row-level security.
-- An editable Profile tab (clothing, body, style sections) sharing its form with onboarding, plus the language override, sign-out and a Privacy section: body data is visible only to you and the AI only gets ranges; "Export my data" shares a JSON file of your profile, garments, outfits, wears and 7-day photo links; "Delete account" (two confirms) removes your photos, revokes Sign in with Apple and deletes your account and every row, then clears this phone's copy of your data and signs you out. If the answer is lost, uploads stay paused and the app checks at the next launch whether the account is gone; it never deletes without your tap.
+- An editable Profile tab (clothing, body, style sections) sharing its form with onboarding, plus the language override, sign-out and a Privacy section: body data is visible only to you and the AI only gets ranges; "Export my data" shares a JSON file of your profile, garments, outfits, wears and 7-day photo links; "Delete account" (two confirms) removes your photos, revokes Sign in with Apple (once the owner sets the Apple key) and deletes your account and every row, then clears this phone's copy of your data (its saved data, data exports and cached photos) and signs you out. If the answer is lost, uploads stay paused and the app checks at the next launch whether the account is gone; it never deletes without your tap.
 - A Closet tab with a virtualized three-column grid (FlashList + expo-image), a "Your 10 favorites" goal card and slot filter chips.
 - Stats (Closet tab): week, month or 6 months of how much of your closet you wear, outfits logged, the average outfit score and your streak; what you wear most, your colors (tap one to filter the closet), the closet balance with how many more outfits one piece would open, and what you haven't worn in 6 months, with "Wear it" (in tomorrow's suggestions) and "Donate".
 - Diary (Closet tab): a month calendar with each worn day's outfit; tap a day for its pieces, occasion and score, or delete a wear.
@@ -60,3 +60,12 @@ EXPO_PUBLIC_PERF_FIXTURES_URL=http://127.0.0.1:8787 pnpm expo run:ios
 On a physical iPhone, use the LAN URL `perf:serve` prints for the Wi-Fi the phone is on, and allow Local Network access when iOS asks.
 
 See [`AGENTS.md`](./AGENTS.md) for the full command list and conventions.
+
+### Owner setup
+
+Two things need the owner before the hosted app works end to end:
+
+- Rebuild the dev client (`pnpm expo run:ios` / `pnpm expo run:android`): `garment-cutout` is a local native module and `expo-sharing` (data export) has native code, so an older dev client fails to load the Profile tab.
+- Set the hosted secrets, the `APPLE_*` ones included (without them, account deletion can't revoke Sign in with Apple).
+
+The full checklist is [`AGENTS.md`](./AGENTS.md)'s "Owner session".

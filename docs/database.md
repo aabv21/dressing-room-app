@@ -618,16 +618,21 @@ inside them, never in `src/`.
   (`reauth`), and signs out locally, keeping the queue and the kv entries (the marker turns
   `reauth`). Signing in doesn't finish anything by itself: the check below sees the account still
   there and removes the marker, and the user taps "Delete account" again. On a deletion the app
-  clears the queue, signs out locally and clears every kv key under the user's id, the marker
-  included.
+  clears the queue, signs out locally, clears every kv key under the user's id (the marker
+  included) and refuses that user's later kv writes for the rest of the process, so a request still
+  in flight can't write them back; then it removes the data exports from the cache directory and
+  clears expo-image's memory and disk caches. Either sign-out happens only while the stored session
+  is still that user's (or there is none): an answer that arrives after another account signed in
+  never signs it out, and the Profile tab's Sign out is disabled while a deletion runs.
   Any other failure (network, a 500, a gateway 502/504) may come after the server already deleted
   the user, so the marker stays: the user stays signed in, is told the deletion couldn't be
   confirmed and that photo uploads are paused, and can tap again.
 
   While the marker exists that user's queue never runs. The marker holds its state and the time it
   was written (`deleting:<ms>` / `reauth:<ms>`). Any value whose state is `deleting` or `reauth`
-  counts, whatever its time; a missing, malformed or future time is stamped anew at the next check,
-  so the window below starts over instead of being skipped.
+  counts, whatever its time; a missing or malformed time, or one more than the settle window in the
+  future, is stamped anew at the next check, so the window below starts over instead of being
+  skipped.
   A launch, sign-in, return to the foreground or reconnect with the marker present only asks Auth,
   with that session's token, whether the account still exists, and never deletes anything without a
   tap: `user_not_found` gets the same local cleanup and sign-out as a confirmed deletion; the same

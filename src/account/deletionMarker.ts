@@ -24,7 +24,10 @@ const PREFIX = 'account.deleting.';
  */
 export const DELETION_SETTLE_MS = 10 * 60 * 1000;
 
-/** `markedAt` is null when the written time can't be trusted (missing, malformed or in the future). */
+/**
+ * `markedAt` is null when the written time can't be trusted: missing, malformed, or more than the
+ * settle window in the future.
+ */
 type Marker = { state: DeletionState; markedAt: number | null };
 
 /**

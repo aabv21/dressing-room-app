@@ -30,12 +30,13 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   `changedFields`), `garmentRepository.test.ts` (the queries and storage calls against a fake
   client, error mapping, delete order), `ClosetProvider.test.tsx` (refresh, the kv offline copy,
   re-signing, a bumped `photo_version` re-signed at once, a poll that found nothing new committing
-  nothing, polling, late results after sign-out or a user switch, foreground and reconnect),
+  nothing, polling, late results after sign-out or a user switch, a re-sign that lands after the
+  account's deletion leaving no kv copy, foreground and reconnect),
   `GarmentPhoto.test.tsx` (the full photo signed once, and again for a new `photo_version`),
   `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer,
   `pause` waiting for the queue and keeping its photos, `clear`, `resume` with and without a run,
-  and an unconfirmed deletion marker blocking every run and only verified once on mount, never
-  deleted and with no Alert) and
+  and an unconfirmed deletion marker blocking every run and only verified on mount, foreground and
+  reconnect, never deleted and with no Alert) and
   `ClosetScreen.test.tsx` (the goal card, slot chips, the review banner, the processing and failed
   tiles, the gallery picker, opening a garment).
 - `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
@@ -76,32 +77,40 @@ The Profile tab's Privacy section (data export and account deletion):
   `forgetInterruptedDeletions` dropping a `deleting` account's data and marker while keeping a
   `reauth` one's and the active user's own.
 - `src/account/__tests__/deletionFlow.test.ts` — `runDeletion`: the marker is written before the
-  pause; deleted clears the queue, signs out and drops the data and marker, and a failing queue
-  clear or kv cleanup still signs out; `reauth` keeps the queue and data, marks `reauth` (not when
-  supabase-js's own sign-out already dropped the data) and signs out; `network` and `unknown` both
-  keep the marker and the blocked queue; a second call while one runs is `busy`; the messages.
-  `confirmPendingDeletion` never calls `deleteAccount`: `gone` gets the confirmed deletion's local
-  cleanup and sign-out, `exists` removes the marker and runs the queue, `unknown` keeps both.
+  pause; deleted clears the queue, signs out, drops the data and marker and clears the device files,
+  and a failing queue clear or kv cleanup still signs out; a per-user kv write after the cleanup is
+  refused; `reauth` keeps the queue and data, marks `reauth` (not when supabase-js's own sign-out
+  already dropped the data) and signs out; neither answer signs out another account that signed in
+  meanwhile; `network` and `unknown` both keep the marker and the blocked queue; a second call while
+  one runs is `busy`; the messages. `confirmPendingDeletion` never calls `deleteAccount`: `gone`
+  gets the confirmed deletion's local cleanup and sign-out; `exists` within the 10-minute settle
+  window of the marker stays pending, and past it removes the marker and runs the queue; a marker
+  whose time can't be trusted (missing, malformed, or more than the settle window in the future) is
+  stamped anew and stays pending, so the window starts over; `unknown` keeps both.
 - `src/auth/__tests__/AuthProvider.test.tsx` (its interrupted-deletion part) — a session lost while
   a deletion is marked `deleting` drops that account's kv data; a `reauth` one keeps it; another
   user signing in drops a `deleting` account's kv data and keeps their own marker for their
-  session's check.
+  session's check; that account signing in again can write its kv data again.
 - `src/account/__tests__/forgetAccount.test.ts` — every kv key under the user's id goes (each day's
   `today.occasion.<id>.<date>` too), with the onboarding status and pending language save; another
-  account's keys and the device's language preference stay.
+  account's keys and the device's language preference stay; the user's later writes are refused
+  (also the id-less onboarding and language entries), and lifted once that account signs in again.
 - `src/auth/__tests__/signOutLocally.test.ts` — against a real supabase-js client and a fake
   `fetch`: a deleted user's valid token (`user_not_found`), an expired token whose refresh is
   refused (`refresh_token_not_found`), and offline with an expired token (the stored session is
-  cleared directly) all end in SIGNED_OUT with nothing left in storage.
+  cleared directly) all end in SIGNED_OUT with nothing left in storage; `storedSessionUserId`.
 - `src/__tests__/profile-privacy.test.tsx` — through the real route tree: the section's note and
   buttons; Export replaces earlier exports in the cache directory and opens the share sheet as
   `public.json`, no share sheet on the device has its own message, and a failed export, file write
   or share shows the export message; a second Delete or an Export while the delete confirms are
-  open does nothing, and two "Delete forever" presses delete once; Delete's two confirms (cancel at either does nothing), the
-  upload queue paused before the function and cleared only after a deletion, then the local
-  sign-out, the kv cleanup and the queue resumed; a failed deletion keeps the session, the queued
-  photos and the data and can be retried; `reauth` shows "Sign in again, then delete your account
-  again to finish." and signs out locally, keeping the queued photos and the data.
+  open does nothing, and two "Delete forever" presses delete once; Delete's two confirms (cancel at
+  either does nothing), the upload queue paused before the function and cleared only after a
+  deletion, then the local sign-out, the kv cleanup, the exports and image caches removed and the
+  queue resumed; a failed deletion keeps the session, the queued photos and the data and can be
+  retried; `reauth` shows "Sign in again, then delete your account again to finish." and signs out
+  locally, keeping the queued photos and the data; Sign out is disabled while an export or a
+  deletion runs, and a late `reauth` after another account signed in neither signs it out nor
+  alerts it.
 
 ### `scripts`
 
