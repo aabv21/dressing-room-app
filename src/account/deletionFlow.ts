@@ -1,4 +1,4 @@
-import { signOutLocally } from '../auth/authService';
+import { signOutLocally, storedSessionUserId } from '../auth/authService';
 import type { MessageKey } from '../i18n';
 import { deleteAccount, verifyAccount } from './accountClient';
 import type { AccountError } from './accountClient';
@@ -19,10 +19,28 @@ export type DeletionResult = 'deleted' | 'reauth' | AccountError | 'busy';
 const running = new Set<string>();
 
 /**
- * The device side of a confirmed deletion: clears the queue, signs out locally, drops the
- * account's kv data and refuses any later write of it (a request still in flight: a closet
- * re-sign, For you, the lucky list), then removes the data exports and the image caches. Each
- * step runs on its own, so a failing one never skips the rest.
+ * Whether the device's session is still `userId`'s, or there is none: a deletion's late answer
+ * must never sign out, or speak to, another account that signed in meanwhile.
+ */
+export function sessionStillFor(userId: string): boolean {
+  try {
+    const current = storedSessionUserId();
+    return current === null || current === userId;
+  } catch {
+    // Unreadable storage: assume another account, so nobody is signed out by mistake.
+    return false;
+  }
+}
+
+async function signOutIfStill(userId: string): Promise<void> {
+  if (sessionStillFor(userId)) await signOutLocally();
+}
+
+/**
+ * The device side of a confirmed deletion: clears the queue, signs out locally (unless another
+ * account is signed in by now), drops the account's kv data and refuses any later write of it
+ * (a request still in flight), then removes the data exports and the image caches. Each step runs
+ * on its own, so a failing one never skips the rest.
  */
 async function finishLocally(userId: string, queue: QueueControl): Promise<void> {
   try {
@@ -30,7 +48,7 @@ async function finishLocally(userId: string, queue: QueueControl): Promise<void>
   } catch {
     // The rows stay but never run: the marker blocks the queue until the cleanup below.
   }
-  await signOutLocally();
+  await signOutIfStill(userId);
   try {
     forgetAccountOnDevice(userId);
   } catch {
@@ -79,7 +97,7 @@ export async function runDeletion(userId: string, queue: QueueControl): Promise<
       } catch {
         // Left as `deleting`: the sign-out below then drops the device data instead.
       }
-      await signOutLocally();
+      await signOutIfStill(userId);
       queue.resume({ run: false });
       return 'reauth';
     }

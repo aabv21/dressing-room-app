@@ -28,11 +28,15 @@ function SectionHeading({ children }: { children: string }): React.JSX.Element {
   );
 }
 
-/** "Account": the signed-in email and Sign out. */
-function AccountSection(): React.JSX.Element {
+/**
+ * "Account": the signed-in email and Sign out. Sign out waits while an export or a deletion runs,
+ * so a deletion's late answer can't land on the next account to sign in.
+ */
+function AccountSection({ privacyBusy }: { privacyBusy: boolean }): React.JSX.Element {
   const { t } = useI18n();
   const { email } = useAuth();
   const signOut = useSignOut();
+  const disabled = signOut.signingOut || privacyBusy;
   return (
     <>
       <SectionHeading>{t('profile.section.account')}</SectionHeading>
@@ -47,10 +51,10 @@ function AccountSection(): React.JSX.Element {
         ) : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: signOut.signingOut, busy: signOut.signingOut }}
-          disabled={signOut.signingOut}
+          accessibilityState={{ disabled, busy: signOut.signingOut }}
+          disabled={disabled}
           onPress={signOut.signOut}
-          style={[styles.signOut, signOut.signingOut ? styles.disabled : null]}
+          style={[styles.signOut, disabled ? styles.disabled : null]}
         >
           <LogOut size={16} color={colors.ink} />
           <Text style={styles.signOutLabel}>{t('auth.signOut')}</Text>
@@ -69,9 +73,8 @@ function AccountSection(): React.JSX.Element {
  * "Privacy": what happens to body data, then "Export my data" (a JSON file through the share
  * sheet) and the destructive "Delete account" (two confirms). Both stay disabled while either runs.
  */
-function PrivacySection(): React.JSX.Element {
+function PrivacySection({ exporting, deleting }: ReturnType<typeof usePrivacyActions>): React.JSX.Element {
   const { t } = useI18n();
-  const { exporting, deleting } = usePrivacyActions();
   const busy = exporting.busy || deleting.busy;
   return (
     <>
@@ -110,6 +113,17 @@ function PrivacySection(): React.JSX.Element {
           ) : null,
         )}
       </View>
+    </>
+  );
+}
+
+/** Account and Privacy, which share the Privacy actions' busy state. */
+function AccountAndPrivacy(): React.JSX.Element {
+  const privacy = usePrivacyActions();
+  return (
+    <>
+      <AccountSection privacyBusy={privacy.exporting.busy || privacy.deleting.busy} />
+      <PrivacySection {...privacy} />
     </>
   );
 }
@@ -284,8 +298,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         <SectionHeading>{t('profile.section.style')}</SectionHeading>
         <StyleSection value={draft} onChange={edit} />
         <LanguageSection onSave={saveLanguage} />
-        <AccountSection />
-        <PrivacySection />
+        <AccountAndPrivacy />
         {saveError !== undefined ? (
           <Text style={styles.error} accessibilityLiveRegion="polite">
             {t(saveError)}
@@ -363,8 +376,7 @@ export default function ProfileScreen() {
       ) : (
         <ActivityIndicator style={styles.spinner} color={colors.accent} accessibilityLabel={t('onboarding.loading')} />
       )}
-      <AccountSection />
-      <PrivacySection />
+      <AccountAndPrivacy />
     </Screen>
   );
 }

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { clearPersistedAuth, supabase } from '../lib/supabase';
+import { clearPersistedAuth, readStoredSession, supabase } from '../lib/supabase';
 import type { Database } from '../lib/database.types';
 import { toAuthErrorKey } from './errors';
 import type { AuthErrorKey } from './errors';
@@ -148,4 +148,13 @@ export async function signOutLocally(client: Client = supabase, clearStoredAuth:
   }
   clearStoredAuth();
   await signOutWithScope(client, 'local');
+}
+
+/**
+ * The user of the session this device has stored, or null without one: read from storage, with no
+ * request. A flow that outlives its screen (an account deletion) checks it before signing out or
+ * speaking, so it never acts on another account that signed in meanwhile.
+ */
+export function storedSessionUserId(read: () => { userId: string } | null = readStoredSession): string | null {
+  return read()?.userId ?? null;
 }

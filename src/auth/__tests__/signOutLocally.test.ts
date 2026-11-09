@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 
 import type { Database } from '../../lib/database.types';
 import { authStorageKeyFor, clearPersistedAuthIn } from '../../lib/storedSession';
-import { signOutLocally } from '../emailAuth';
+import { signOutLocally, storedSessionUserId } from '../emailAuth';
 
 const SUPABASE_URL = 'http://127.0.0.1:54421';
 const STORAGE_KEY = authStorageKeyFor(SUPABASE_URL);
@@ -110,4 +110,11 @@ test('offline, a sign-out supabase-js cannot finish clears the stored session di
   expect(outcome?.clearStoredAuth).toHaveBeenCalledTimes(1);
   expect(outcome?.events).toContain('SIGNED_OUT');
   expect([...(outcome?.storage.items.keys() ?? ['unfinished'])]).toEqual([]);
+});
+
+describe('storedSessionUserId', () => {
+  test("is the stored session's user, or null without one", () => {
+    expect(storedSessionUserId(() => ({ userId: 'user-1' }))).toBe('user-1');
+    expect(storedSessionUserId(() => null)).toBeNull();
+  });
 });

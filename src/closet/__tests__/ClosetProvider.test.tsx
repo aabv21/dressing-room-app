@@ -12,7 +12,10 @@ jest.mock('../../lib/kv', () => {
 });
 jest.mock('../../account/accountClient', () => ({ deleteAccount: jest.fn(), verifyAccount: jest.fn() }));
 jest.mock('../../account/deviceFiles', () => ({ forgetDeviceFiles: jest.fn(() => Promise.resolve()) }));
-jest.mock('../../auth/authService', () => ({ signOutLocally: jest.fn(() => Promise.resolve()) }));
+jest.mock('../../auth/authService', () => ({
+  signOutLocally: jest.fn(() => Promise.resolve()),
+  storedSessionUserId: jest.fn(() => null),
+}));
 jest.mock('../garmentRepository', () => ({
   garmentPhotoPath: (userId: string, garmentId: string, variant: string) => `${userId}/${garmentId}/${variant}.webp`,
   listGarments: jest.fn(),

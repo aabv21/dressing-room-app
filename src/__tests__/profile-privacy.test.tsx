@@ -89,6 +89,7 @@ jest.mock('../auth/authService', () => ({
   signInWithGoogle: jest.fn(),
   signOut: jest.fn(() => Promise.resolve({ ok: true })),
   signOutLocally: jest.fn(() => Promise.resolve()),
+  storedSessionUserId: jest.fn(() => null),
 }));
 
 const mockImageCache = { clearMemoryCache: jest.fn(() => Promise.resolve(true)), clearDiskCache: jest.fn(() => Promise.resolve(true)) };
@@ -129,7 +130,7 @@ import { deleteAccount, exportData } from '../account/accountClient';
 import type { DataExport } from '../account/accountClient';
 import { deletionState } from '../account/deletionMarker';
 import { useAuth } from '../auth/AuthProvider';
-import { signOut, signOutLocally } from '../auth/authService';
+import { signOut, signOutLocally, storedSessionUserId } from '../auth/authService';
 import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../lib/kv';
 import { getProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
@@ -140,6 +141,7 @@ const mockedDeleteAccount = jest.mocked(deleteAccount);
 const mockedExportData = jest.mocked(exportData);
 const mockedShare = jest.mocked(Sharing.shareAsync);
 const mockedSignOutLocally = jest.mocked(signOutLocally);
+const mockedSessionUser = jest.mocked(storedSessionUserId);
 
 const USER_ID = '0b7f6d7e-1111-4c4c-9a9a-000000000001';
 const USER_KEYS = [
@@ -221,6 +223,7 @@ beforeEach(() => {
     onboardingComplete: true,
     refreshProfile: jest.fn(() => Promise.resolve(true)),
   });
+  mockedSessionUser.mockReturnValue(null);
   // A deletion refuses the user's later writes for the process; each test starts from a live account.
   allowUserKeys(USER_ID);
   for (const key of USER_KEYS) kvSet(key, 'x');
@@ -240,6 +243,29 @@ test('shows the privacy note, Export my data and a destructive Delete account', 
 });
 
 describe('Export my data', () => {
+  test('Sign out waits while an export runs', async () => {
+    let finish: (value: { ok: true; result: DataExport }) => void = () => undefined;
+    mockedExportData.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await openProfile();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Export my data' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Sign out' })).toBeDisabled();
+    });
+
+    await act(async () => {
+      finish({ ok: true, result: EXPORT });
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
+    });
+  });
+
   test('replaces earlier exports in the cache directory and opens the share sheet', async () => {
     mockedExportData.mockResolvedValue({ ok: true, result: EXPORT });
     mockCacheNames.push('dressing-room-export-2026-11-01.json', 'other.json');
@@ -456,6 +482,35 @@ describe('Delete account', () => {
     await waitFor(() => {
       expect(mockedShare).toHaveBeenCalledTimes(1);
     });
+  });
+
+  test('Sign out waits while a deletion runs, and a late answer never signs out or alerts the next account', async () => {
+    let finish: (value: { ok: false; error: 'reauth' }) => void = () => undefined;
+    mockedDeleteAccount.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await openProfile();
+
+    await confirmBoth();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeDisabled();
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign out' }));
+    expect(jest.mocked(signOut)).not.toHaveBeenCalled();
+
+    // Another account signs in on this device before the answer arrives.
+    mockedSessionUser.mockReturnValue('0b7f6d7e-2222-4c4c-9a9a-000000000002');
+    await act(async () => {
+      finish({ ok: false, error: 'reauth' });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockQueue.resume).toHaveBeenCalledWith({ run: false });
+    });
+    expect(mockedSignOutLocally).not.toHaveBeenCalled();
+    // Only the two confirms: no reauth alert for the other account.
+    expect(alertSpy).toHaveBeenCalledTimes(2);
   });
 
   async function confirmBothAgain(): Promise<void> {

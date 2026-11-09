@@ -1,8 +1,11 @@
 jest.mock('../accountClient', () => ({ deleteAccount: jest.fn(), verifyAccount: jest.fn() }));
-jest.mock('../../auth/authService', () => ({ signOutLocally: jest.fn(() => Promise.resolve()) }));
+jest.mock('../../auth/authService', () => ({
+  signOutLocally: jest.fn(() => Promise.resolve()),
+  storedSessionUserId: jest.fn(() => null),
+}));
 jest.mock('../deviceFiles', () => ({ forgetDeviceFiles: jest.fn(() => Promise.resolve()) }));
 
-import { signOutLocally } from '../../auth/authService';
+import { signOutLocally, storedSessionUserId } from '../../auth/authService';
 import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
 import { deleteAccount, verifyAccount } from '../accountClient';
 import { confirmPendingDeletion, DELETION_SETTLE_MS, deletionMessage, runDeletion } from '../deletionFlow';
@@ -12,6 +15,7 @@ import { forgetDeviceFiles } from '../deviceFiles';
 const mockedDeleteAccount = jest.mocked(deleteAccount);
 const mockedSignOutLocally = jest.mocked(signOutLocally);
 const mockedVerifyAccount = jest.mocked(verifyAccount);
+const mockedSessionUser = jest.mocked(storedSessionUserId);
 const mockedForgetFiles = jest.mocked(forgetDeviceFiles);
 
 const USER = '0b7f6d7e-1111-4c4c-9a9a-000000000001';
@@ -28,6 +32,7 @@ function fakeQueue() {
 beforeEach(() => {
   jest.clearAllMocks();
   for (const key of kvKeys()) kvRemove(key);
+  mockedSessionUser.mockReturnValue(null);
   // A deletion refuses the user's later writes for the process; each test starts from a live account.
   allowUserKeys(USER);
   kvSet(`closet.v1.${USER}`, 'x');
@@ -71,7 +76,34 @@ test("a per-user write that lands after the cleanup is refused, so the deleted u
   expect(kvKeys()).toEqual([]);
 });
 
-test('a failing queue clear or kv cleanup still signs out (M2)', async () => {
+test('a deletion that ends after another account signed in never signs that account out', async () => {
+  let finish: (value: { ok: true }) => void = () => undefined;
+  mockedDeleteAccount.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const pending = runDeletion(USER, fakeQueue());
+  await Promise.resolve();
+  mockedSessionUser.mockReturnValue('another-user');
+  finish({ ok: true });
+
+  expect(await pending).toBe('deleted');
+  expect(mockedSignOutLocally).not.toHaveBeenCalled();
+  // The deleted account's data still goes.
+  expect(kvGet(`closet.v1.${USER}`)).toBeNull();
+});
+
+test('a reauth answer after another account signed in never signs that account out', async () => {
+  mockedDeleteAccount.mockResolvedValue({ ok: false, error: 'reauth' });
+  mockedSessionUser.mockReturnValue('another-user');
+
+  expect(await runDeletion(USER, fakeQueue())).toBe('reauth');
+
+  expect(mockedSignOutLocally).not.toHaveBeenCalled();
+});
+
+test('a failing queue clear or kv cleanup still signs out', async () => {
   const queue = fakeQueue();
   queue.clear.mockImplementation(() => {
     throw new Error('sqlite');

@@ -9,7 +9,7 @@ import type { MessageKey } from '../i18n';
 import { useI18n } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
 import { exportData, exportFileName } from './accountClient';
-import { deletionMessage, runDeletion } from './deletionFlow';
+import { deletionMessage, runDeletion, sessionStillFor } from './deletionFlow';
 import { removeExports } from './deviceFiles';
 
 type Action = { run: () => void; busy: boolean; error: MessageKey | undefined };
@@ -36,7 +36,8 @@ function useMounted(): { readonly current: boolean } {
  *
  * "Delete account": two confirms, then `runDeletion` (see `deletionFlow.ts`). A deletion lands on
  * Welcome; `reauth` shows its message in an Alert, since the local sign-out takes this screen
- * away; any other failure keeps the user here with a message.
+ * away (unless another account has signed in by then); any other failure keeps the user here
+ * with a message. Profile's Sign out stays disabled while either flow is busy.
  */
 export function usePrivacyActions(): { exporting: Action; deleting: Action } {
   const { t } = useI18n();
@@ -95,6 +96,9 @@ export function usePrivacyActions(): { exporting: Action; deleting: Action } {
     active.current = false;
     const message = deletionMessage(result);
     if (result === 'reauth' && message !== undefined) {
+      // An app-wide Alert, since the local sign-out takes this screen away; never shown to another
+      // account that signed in while the request was out.
+      if (!sessionStillFor(userId)) return;
       Alert.alert(t(message));
       announceForAccessibility(t(message));
       return;
