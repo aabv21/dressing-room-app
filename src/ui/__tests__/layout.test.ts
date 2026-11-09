@@ -1,4 +1,5 @@
 import { renderHook } from '@testing-library/react-native';
+import { Dimensions } from 'react-native';
 
 import { LARGE_TEXT_FONT_SCALE, useBottomChrome, useLargeText } from '../layout';
 import { layout } from '../theme';
@@ -31,6 +32,13 @@ describe('useBottomChrome', () => {
 
     expect(result.current.tabBarBottom).toBe(0 + layout.tabBarGap);
     expect(result.current.ctaBottom).toBe(result.current.tabBarBottom + layout.tabBarHeight + layout.ctaGap);
+  });
+});
+
+describe('the Jest default text size', () => {
+  test('is the standard one, so a large-text test has to ask for it (jest.setup.ts)', () => {
+    expect(Dimensions.get('window').fontScale).toBe(1);
+    expect(Dimensions.get('screen').fontScale).toBe(1);
   });
 });
 

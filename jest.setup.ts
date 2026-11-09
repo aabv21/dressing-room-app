@@ -1,3 +1,5 @@
+import { Dimensions } from 'react-native';
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import; see https://jestjs.io/docs/jest-object#jestmockmodulename-factory-options
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 jest.mock('expo-localization', () => ({ getLocales: () => [{ languageTag: 'en-US', languageCode: 'en' }] }));
@@ -20,4 +22,11 @@ jest.mock('expo-sqlite/kv-store', () => {
       getAllKeysSync: (): string[] => [...store.keys()],
     },
   };
+});
+
+// React Native's Jest preset reports a font scale of 2, so every suite would render the large-text
+// layouts; default to the standard text size and let a large-text test mock it explicitly.
+Dimensions.set({
+  window: { ...Dimensions.get('window'), fontScale: 1 },
+  screen: { ...Dimensions.get('screen'), fontScale: 1 },
 });

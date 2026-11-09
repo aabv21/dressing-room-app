@@ -34,7 +34,7 @@ jest.mock('../closet/ClosetProvider', () => ({
   }),
 }));
 
-// The device's text size (iOS Dynamic Type, Android font scale). Jest's own default is 2.
+// The device's text size (iOS Dynamic Type, Android font scale).
 const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,

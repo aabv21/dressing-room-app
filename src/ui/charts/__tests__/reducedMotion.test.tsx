@@ -19,7 +19,7 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 
-// At the default text size, so the ring has its default 112 pt geometry (Jest's own fontScale is 2).
+// At the default text size, so the ring has its default 112 pt geometry.
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
   __esModule: true,
   default: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
