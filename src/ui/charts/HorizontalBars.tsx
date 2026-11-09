@@ -1,6 +1,11 @@
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { useReducedMotion, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { colors, layout, spacing } from '../theme';
 
@@ -14,9 +19,17 @@ const VERTICAL_SLOP = (layout.minHitTarget - ROW_HEIGHT) / 2;
 
 export type HorizontalBarRow = { id: string; label: string; value: number; valueLabel: string };
 
-function Bar({ pct, color }: { pct: number; color: string }) {
+function Bar({ id, pct, color }: { id: string; pct: number; color: string }) {
   const reducedMotion = useReducedMotion();
   const width = useSharedValue(reducedMotion ? pct : 0);
+
+  // `width` is a shared value: mutating `.value` runs on the UI thread and never triggers a
+  // React re-render, so the growing width has to be read inside a worklet (`useAnimatedStyle`)
+  // rather than baked into a plain style object read once at mount. The explicit deps array is
+  // reanimated's documented fallback for when the Babel plugin can't statically detect which
+  // shared values a worklet reads (harmless, and belt-and-suspenders here). Declared before the
+  // effect below so it subscribes to `width` before anything has a chance to write to it.
+  const fillStyle = useAnimatedStyle(() => ({ width: `${String(width.value)}%` }), [width]);
 
   useEffect(() => {
     if (reducedMotion) {
@@ -31,7 +44,7 @@ function Bar({ pct, color }: { pct: number; color: string }) {
 
   return (
     <View style={styles.track}>
-      <Animated.View style={[styles.fill, { backgroundColor: color, width: `${String(width.value)}%` }]} />
+      <Animated.View testID={`bar-fill-${id}`} style={[styles.fill, { backgroundColor: color }, fillStyle]} />
     </View>
   );
 }
@@ -71,7 +84,7 @@ export function HorizontalBars(props: {
               <Text style={styles.label} numberOfLines={1}>
                 {row.label}
               </Text>
-              <Bar pct={pct} color={color} />
+              <Bar id={row.id} pct={pct} color={color} />
               <Text style={styles.value} numberOfLines={1}>
                 {row.valueLabel}
               </Text>

@@ -57,6 +57,30 @@ describe('HorizontalBars', () => {
     await render(<HorizontalBars rows={rows} selectedId={null} onSelect={jest.fn()} detail="21 wears" />);
     expect(screen.queryByText('21 wears')).toBeNull();
   });
+
+  // Regression test for C1 (review round 1): `Bar` used to read its reanimated shared value
+  // straight into a plain style object during render. `withTiming`'s write happens on the UI
+  // thread and never triggers a React re-render, so on a real device every bar stayed frozen at
+  // its first-render width (0%, since reduced motion is off by default) — only `useAnimatedStyle`
+  // re-evaluates the width worklet. This needs `useAnimatedStyle`'s mock to actually re-invoke the
+  // style factory (see src/test/reanimatedMock.ts); the old hand-rolled mock's synchronous
+  // `withTiming` hid the bug because it returned the target value immediately, so a plain style
+  // read during the same render already saw the final width.
+  test("a bar fill settles at its row's percentage of the max value", async () => {
+    const maxRows = [
+      { id: 'max', label: 'Max row', value: 30, valueLabel: '30' },
+      { id: 'half', label: 'Half row', value: 15, valueLabel: '15' },
+    ];
+    await render(<HorizontalBars rows={maxRows} selectedId={null} onSelect={jest.fn()} />);
+    const maxFill = screen.getByTestId('bar-fill-max');
+    const halfFill = screen.getByTestId('bar-fill-half');
+    const maxStyle = maxFill.props.style as { width?: string }[] | { width?: string };
+    const halfStyle = halfFill.props.style as { width?: string }[] | { width?: string };
+    const maxWidth = Array.isArray(maxStyle) ? maxStyle.find((s) => s.width !== undefined)?.width : maxStyle.width;
+    const halfWidth = Array.isArray(halfStyle) ? halfStyle.find((s) => s.width !== undefined)?.width : halfStyle.width;
+    expect(maxWidth).toBe('100%');
+    expect(halfWidth).toBe('50%');
+  });
 });
 
 describe('ProportionBar', () => {
