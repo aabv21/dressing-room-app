@@ -338,7 +338,7 @@ test('saveItem no-ops when the row has moved on to a different source_uri', asyn
   expect(listed?.stage).toBe('captured');
 });
 
-test('removeItem no-ops (and deletes nothing) when the row has moved on to a different source_uri', async () => {
+test('removeItem leaves the replacement row and its files alone when the row has moved on to a different source_uri', async () => {
   // A worker finishing a run it started before a replacement landed must not delete the
   // replacement's row or files — only its own (already-renamed-away) source_uri still matches.
   const { enqueuePhotos, enqueueReplacement, removeItem, listQueue } = await loadQueueStore();
@@ -353,6 +353,34 @@ test('removeItem no-ops (and deletes nothing) when the row has moved on to a dif
   const [listed] = listQueue('user-1');
   expect(listed?.garmentId).toBe(replacement.garmentId);
   expect(listed?.sourceUri).toBe(replacement.sourceUri);
+  expect(mockFiles.has(replacement.sourceUri)).toBe(true);
+});
+
+test('a stale worker finishing after a replacement removes its own snapshot files', async () => {
+  // enqueueReplacement keeps a mid-run item's files for the worker to clean up; the worker's
+  // removeItem then matches no row, and must still delete the files named in its own snapshot.
+  const { enqueuePhotos, enqueueReplacement, listQueue, removeItem, saveItem } = await loadQueueStore();
+  registerSourceFile('file:///cache/a.jpg');
+  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const uploaded: QueueItem = {
+    ...first,
+    stage: 'uploaded',
+    fullUri: 'file:///document/uploads/full.webp',
+    thumbUri: 'file:///document/uploads/thumb.webp',
+  };
+  registerSourceFile(uploaded.fullUri as string);
+  registerSourceFile(uploaded.thumbUri as string);
+  saveItem(uploaded);
+
+  registerSourceFile('file:///cache/a2.jpg');
+  const replacement = enqueueReplacement('user-1', first.garmentId, 'file:///cache/a2.jpg');
+
+  removeItem(uploaded);
+
+  expect(mockFiles.has(uploaded.sourceUri)).toBe(false);
+  expect(mockFiles.has(uploaded.fullUri as string)).toBe(false);
+  expect(mockFiles.has(uploaded.thumbUri as string)).toBe(false);
+  expect(listQueue('user-1').map((item) => item.sourceUri)).toEqual([replacement.sourceUri]);
   expect(mockFiles.has(replacement.sourceUri)).toBe(true);
 });
 
