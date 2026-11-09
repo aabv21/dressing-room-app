@@ -448,13 +448,17 @@ const styles = StyleSheet.create({
   body: {
     gap: spacing.sm + 2,
   },
+  // At a large text size the month title wraps between its arrows and the count goes under it,
+  // so the next arrow never leaves the screen.
   monthRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
   monthNav: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
@@ -467,6 +471,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
   },
   monthTitle: {
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: '800',
     color: colors.ink,
@@ -547,11 +552,13 @@ const styles = StyleSheet.create({
     padding: spacing.sm + 4,
     gap: spacing.sm,
   },
+  // Wraps the occasion and score under the day when a large text size leaves no room for both.
   wearHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    gap: spacing.sm,
+    columnGap: spacing.sm,
   },
   wearTitle: {
     flexShrink: 1,

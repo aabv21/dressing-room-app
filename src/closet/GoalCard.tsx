@@ -47,11 +47,13 @@ const styles = StyleSheet.create({
     gap: 9,
     boxShadow: '0px 6px 18px rgba(60,30,120,0.08)',
   },
+  // Wraps the progress under the title when a large text size leaves no room for both.
   row: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    gap: spacing.sm,
+    columnGap: spacing.sm,
   },
   title: {
     flexShrink: 1,

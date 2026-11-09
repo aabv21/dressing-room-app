@@ -140,6 +140,10 @@ describe('month view', () => {
 
     expect(mockedListWears).toHaveBeenCalledWith('2026-10-01', '2026-10-31');
     expect(screen.getByRole('header', { name: 'October 2026' })).toBeOnTheScreen();
+    // At a large text size the month title wraps between its arrows, and the count goes under it.
+    expect(screen.getByRole('header', { name: 'October 2026' })).toHaveStyle({ flexShrink: 1 });
+    expect(screen.getByRole('header', { name: 'October 2026' }).parent).toHaveStyle({ flexShrink: 1 });
+    expect(screen.getByRole('header', { name: 'October 2026' }).parent?.parent).toHaveStyle({ flexWrap: 'wrap' });
     // Five Monday-first weeks: Sep 28 – Nov 1, no trailing week of November only. The other months'
     // days are hidden from screen readers.
     expect(screen.getAllByTestId(/^diary-cell-/, hidden)).toHaveLength(35);
@@ -214,6 +218,8 @@ describe('day detail', () => {
     const today = wearCard('w-28');
     expect(within(today).getByText('Wednesday 28')).toBeOnTheScreen();
     expect(within(today).getByText('Office · 78%')).toBeOnTheScreen();
+    // At a large text size the occasion and score wrap under the day instead of squeezing it.
+    expect(within(today).getByText('Wednesday 28').parent).toHaveStyle({ flexWrap: 'wrap' });
     for (const id of OFFICE_OUTFIT) {
       expect(within(today).getByTestId(`outfit-piece-${id}`)).toBeOnTheScreen();
     }

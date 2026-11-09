@@ -227,6 +227,12 @@ describe('stats', () => {
     expect(screen.queryByRole('button', { name: 'Clear the White filter' })).not.toBeOnTheScreen();
   });
 
+  test("a card's title and its aside wrap onto two lines at a large text size, never squeezing the title out", async () => {
+    await openStats();
+    const header = screen.getByRole('header', { name: 'Your colors' }).parent;
+    expect(header).toHaveStyle({ flexWrap: 'wrap' });
+  });
+
   test('balance shows the slot counts, and the insight opens For you', async () => {
     await openStats();
 

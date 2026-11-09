@@ -62,6 +62,8 @@ export const textScale = {
   ring: 1.2,
   // Calendar day numbers, inside square day cells.
   calendar: 1.3,
+  // Decorative emoji beside text, which would otherwise take the width the text needs.
+  emoji: 1.3,
 } as const;
 
 export const layout = {

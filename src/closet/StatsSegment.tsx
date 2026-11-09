@@ -517,11 +517,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     boxShadow: '0 6px 18px rgba(60, 30, 120, 0.06)',
   },
+  // Wraps the aside under the title when a large text size leaves no room for both.
   cardHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    gap: spacing.sm,
+    columnGap: spacing.sm,
   },
   cardTitle: {
     flexShrink: 1,

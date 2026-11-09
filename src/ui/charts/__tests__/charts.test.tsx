@@ -215,6 +215,14 @@ describe('KpiTile', () => {
     expect(screen.getByText('of your closet worn this month')).toBeOnTheScreen();
   });
 
+  test('beside another tile at the default text size, a full row at a large one', async () => {
+    await render(<KpiTile value="62%" label="outfits logged" />);
+    expect(screen.getByLabelText('62% outfits logged')).toHaveStyle({ flexBasis: '48%' });
+    mockWindow.fontScale = 2;
+    await screen.rerender(<KpiTile value="62%" label="outfits logged" />);
+    expect(screen.getByLabelText('62% outfits logged')).toHaveStyle({ flexBasis: '100%' });
+  });
+
   test('a screen reader reads the value and its label as one element', async () => {
     await render(<KpiTile value="62%" label="of your closet worn this month" />);
     expect(screen.getByLabelText('62% of your closet worn this month')).toHaveProp('accessible', true);

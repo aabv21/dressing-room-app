@@ -49,7 +49,7 @@ function PieceRow({
         )}
       </View>
       <View style={styles.text}>
-        <Text style={styles.label} numberOfLines={1}>
+        <Text style={styles.label} numberOfLines={2}>
           {label}
         </Text>
         <Text style={styles.wears}>{wears}</Text>
