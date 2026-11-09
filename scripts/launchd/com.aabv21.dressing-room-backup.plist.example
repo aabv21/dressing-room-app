@@ -21,6 +21,10 @@
   <key>WorkingDirectory</key>
   <string>/ABSOLUTE/PATH/TO/dressing-room-app</string>
 
+  <!-- 63 is octal 077: everything the job creates is owner-only (a backup is credential material). -->
+  <key>Umask</key>
+  <integer>63</integer>
+
   <!-- launchd's PATH is minimal: the dump needs node and pnpm, and the Supabase CLI needs docker. -->
   <key>EnvironmentVariables</key>
   <dict>

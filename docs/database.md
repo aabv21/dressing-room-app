@@ -842,10 +842,21 @@ Each run writes `~/dressing-room-backups/<UTC time>/`, for example `2026-11-09T0
   listed and downloaded with the service role through Storage's REST API.
 - `manifest.json`: `createdAt`, plus each file's `path`, `size` and `sha256`.
 
+A backup is credential material, not only personal data. `auth.users` holds bcrypt password
+hashes, `auth.sessions` and `auth.refresh_tokens` hold live refresh tokens, and
+`public.apple_tokens` holds Sign in with Apple refresh tokens in plaintext. So every file is `0600`
+and every folder `0700`. The script runs under `umask 077`, the plist sets `Umask` 63 (`077`), and
+each run re-tightens the backup root to `0700`. Keep FileVault on. Time Machine copies
+`~/dressing-room-backups` too, so back up to an encrypted Time Machine disk, or exclude the folder
+with `tmutil addexclusion ~/dressing-room-backups`.
+
 A run writes into `<UTC time>.partial/` and renames it only once every step has succeeded. It then
 deletes all but the newest 14 complete backups. If any step fails (the dump, a refused key, or one
-object's download), the run exits 1, leaves its `.partial` folder for inspection and deletes
-nothing. Delete old `.partial` folders by hand. The log has outcome words only: the database URL,
+object's download), the run exits 1 and leaves its `.partial` folder for inspection. It starts no
+new download after the first one fails, and it deletes no complete backup. Each run starts by
+deleting `.partial` folders more than 7 days old, judged by the time in their name. It also logs
+the newest complete backup's name and age, so even a failing job's log shows how old the last good
+backup is. The log has outcome words only: the database URL,
 its password and the service-role key are redacted. The password never reaches a command line,
 where `ps` would show it: the dump gets `BACKUP_DB_URL` without it and the password in
 `PGPASSWORD`.
@@ -897,21 +908,39 @@ a new hosted project after `pnpm exec supabase link --project-ref <ref>` and
 `pnpm exec supabase db push`. `schema.sql` is the record of the schema at backup time. Compare it
 with the migrations if they may have changed since then. Don't apply it on top of them.
 
+You need `psql`. Install it with `brew install libpq`, which is keg-only, so put
+`$(brew --prefix libpq)/bin` on `PATH`. For a local target without it, run
+`docker exec -i supabase_db_dressing-room-app psql -U postgres -d postgres --single-transaction
+--variable ON_ERROR_STOP=1 --quiet < "$BACKUP/data.sql"` instead of step 2.
+
+No secret goes on a command line, where `ps` would show it. The database URL has no password, since
+`psql` reads it from `PGPASSWORD`. `curl` reads the key headers from stdin (`-K-`), and `printf` is
+a shell builtin, not a process. Run this from the repository root, in zsh or bash:
+
 ```bash
 BACKUP=~/dressing-room-backups/<UTC time>
+TARGET_DB_URL='postgresql://postgres.<ref>@<pooler host>:5432/postgres'   # no password in it
+SUPABASE_URL='https://<ref>.supabase.co'
+read -rs PGPASSWORD && export PGPASSWORD   # the target database's password
+read -rs SERVICE_KEY                       # the target's service-role key
 
-# 1. The rows, in one transaction; any error rolls the whole restore back.
+# 1. Check the backup first: every size and sha256 in manifest.json. Stop if it reports a problem.
+node scripts/backup.ts --verify "$BACKUP"
+
+# 2. The rows, in one transaction. Any error rolls the whole restore back.
 psql --single-transaction --variable ON_ERROR_STOP=1 --quiet \
   --dbname "$TARGET_DB_URL" --file "$BACKUP/data.sql"
 
-# 2. The photos. data.sql already restored their storage.objects rows; upload the bytes over them.
-(cd "$BACKUP/garments" && find . -type f | while read -r f; do
-  curl -fsS -o /dev/null -X POST "$SUPABASE_URL/storage/v1/object/garments/${f#./}" \
-    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-    -H "x-upsert: true" -H "content-type: image/webp" --data-binary "@$f"
-done)
+# 3. The photos. data.sql already restored their storage.objects rows; this uploads the bytes over
+#    them, and stops at the first upload that fails.
+(cd "$BACKUP/garments" && find . -type f -print0 | while IFS= read -r -d '' f; do
+  printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SERVICE_KEY" "$SERVICE_KEY" |
+    curl -K- -fsS -o /dev/null -X POST -H 'x-upsert: true' -H 'content-type: image/webp' \
+      --data-binary "@$f" "$SUPABASE_URL/storage/v1/object/garments/${f#./}" ||
+    { echo "photo upload failed: ${f#./}" >&2; exit 1; }
+done) && echo 'photos restored'
 
-# 3. Spot-check row counts against the source.
+# 4. Spot-check row counts against the source.
 psql --dbname "$TARGET_DB_URL" -Atc "select 'auth.users', count(*) from auth.users
   union all select 'profiles', count(*) from public.profiles
   union all select 'garments', count(*) from public.garments
@@ -922,16 +951,19 @@ psql --dbname "$TARGET_DB_URL" -Atc "select 'auth.users', count(*) from auth.use
   union all select 'sum(wear_count)', coalesce(sum(wear_count), 0) from public.garments"
 ```
 
-`TARGET_DB_URL`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are the target's. Locally that's
-`SUPABASE_DB_URL`, `EXPO_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from `.env.local`
-(`pnpm env:local`). On a hosted target, set the Vault and function secrets again afterwards.
+For a local target, `TARGET_DB_URL` is `postgresql://postgres@127.0.0.1:54422/postgres`, with
+`PGPASSWORD=postgres` (a local-only value). `SUPABASE_URL` is `http://127.0.0.1:54421`, and
+`SERVICE_KEY` is `SUPABASE_SERVICE_ROLE_KEY` from `.env.local` (`pnpm env:local`). On a hosted
+target, set the Vault and function secrets again afterwards.
 
-This procedure was tested against the local stack. Two fictional `@example.com` users had 6 garments,
-12 photos, 2 outfits and 4 wears. The steps were `pnpm backup` with the local URLs and a `BACKUP_DIR`
-outside the repo, then `pnpm db:reset`, then the three steps above. The restored counts matched the
-source, and so did content digests of `garments`, `profiles`, `wears`, `auth.users` and
-`storage.objects`. Every downloaded photo matched its `manifest.json` sha256, and a restored user
-could sign in with their password and read their 3 garments through RLS.
+This procedure was tested against the local stack, as written above, in zsh. Two fictional
+`@example.com` users had 6 garments, 12 photos, 2 outfits and 4 wears. The steps were `pnpm backup`
+with the local URLs and a `BACKUP_DIR` outside the repo, then `pnpm db:reset`, then steps 1 to 4,
+with the two `read`s replaced by assignments. The restored counts matched the source, and so did
+content digests of `garments`, `profiles`, `wears`, `auth.users` and `storage.objects`. Every
+downloaded photo matched its `manifest.json` sha256, and a restored user could sign in with their
+password and read their 3 garments through RLS. A tampered photo made step 1 fail, and an upload to
+a wrong URL stopped step 3 at the first photo.
 
 ### Local dump
 

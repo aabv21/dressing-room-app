@@ -2,7 +2,7 @@
 // scripts/__tests__/backup.test.ts
 /* eslint-disable security/detect-non-literal-fs-filename -- every path is under this test's own mkdtemp folder. */
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +10,7 @@ import {
   backupConfigFrom,
   type BackupConfig,
   backupDirName,
+  DOWNLOAD_CONCURRENCY,
   KEEP_BACKUPS,
   LIST_PAGE,
   manifestEntry,
@@ -17,6 +18,8 @@ import {
   rotate,
   runBackup,
   type RunCommand,
+  stalePartials,
+  verifyBackup,
 } from '../backup.ts';
 
 const DB_PASSWORD = 'hunter2-db-password';
@@ -72,6 +75,30 @@ describe('rotate', () => {
 
   test('keeps 14 by default', () => {
     expect(KEEP_BACKUPS).toBe(14);
+  });
+});
+
+describe('stalePartials', () => {
+  test('returns the .partial folders more than `maxAgeDays` old, by their embedded time', () => {
+    const now = new Date('2026-11-09T03:30:07Z');
+    const names = [
+      '2026-11-01T03-30-06Z.partial', // 8 days and 1 s old
+      '2026-11-02T03-30-06Z.partial', // 7 days and 1 s old
+      '2026-11-02T03-30-07Z.partial', // exactly 7 days old: kept
+      '2026-11-02T03-30-08Z.partial', // just under 7 days: kept
+      '2026-11-09T03-30-07Z.partial', // this run's time
+      '2026-10-01T03-30-00Z', // a complete backup, never a partial
+      'backup.log',
+      'old.partial',
+      '2026-02-30T03-30-00Z.partial', // not a real day
+      '2026-13-45T99-99-99Z.partial', // not a real time
+    ];
+
+    expect(stalePartials(names, now, 7)).toEqual(['2026-11-01T03-30-06Z.partial', '2026-11-02T03-30-06Z.partial']);
+  });
+
+  test('returns nothing for an empty folder', () => {
+    expect(stalePartials([], NOW, 7)).toEqual([]);
   });
 });
 
@@ -137,6 +164,15 @@ describe('backupConfigFrom', () => {
     const url = 'postgres://postgres@127.0.0.1:54322/postgres';
 
     expect(backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot)).toMatchObject({ dbUrl: url, dbPassword: '' });
+  });
+
+  test('asks to percent-encode a password that is not valid percent-encoding, without echoing it', () => {
+    const config = backupConfigFrom({ ...env, BACKUP_DB_URL: 'postgresql://postgres:pa%zz100%@db.example.com/postgres' }, home, repoRoot);
+
+    expect(config).toEqual({
+      error: "BACKUP_DB_URL's password is not valid percent-encoding: percent-encode its special characters (@ as %40, % as %25, / as %2F)",
+    });
+    expect(JSON.stringify(config)).not.toContain('pa%zz');
   });
 
   test('refuses a DB URL that is not a Postgres URL, without echoing it', () => {
@@ -209,6 +245,8 @@ type FetchOptions = {
   listStatus?: number;
   /** Extra names returned at the bucket's top level. */
   extraTopLevel?: readonly { name: string; id: string | null }[];
+  /** The most entries one list page returns, whatever `limit` asks (a server with a smaller cap). */
+  pageCap?: number;
 };
 
 /** A fake Storage API over `objects`: the one-level list (folders with a null id) and downloads. */
@@ -233,7 +271,7 @@ function fakeFetch(options: FetchOptions, requests: { url: string; auth: string 
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([name, id]) => ({ name, id }));
       if (body.prefix === '') entries.push(...(options.extraTopLevel ?? []));
-      return Response.json(entries.slice(body.offset, body.offset + body.limit));
+      return Response.json(entries.slice(body.offset, body.offset + Math.min(body.limit, options.pageCap ?? body.limit)));
     }
     if (url.startsWith(downloadPrefix) && (init?.method ?? 'GET') === 'GET') {
       const path = url.slice(downloadPrefix.length).split('/').map(decodeURIComponent).join('/');
@@ -253,9 +291,9 @@ const OBJECTS = new Map<string, Uint8Array>([
   ['22222222-2222-4222-8222-222222222222/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/full.webp', bytesOf('full-2')],
 ]);
 
-/** 15 complete backups from October, oldest first, plus a stale .partial and a log file. */
+/** 15 complete backups from October, oldest first, plus a 4-day-old .partial and a log file. */
 const OLD_BACKUPS = Array.from({ length: 15 }, (_, i) => `2026-10-${String(i + 1).padStart(2, '0')}T03-30-00Z`);
-const STALE_PARTIAL = '2026-10-31T03-30-00Z.partial';
+const RECENT_PARTIAL = '2026-11-05T03-30-00Z.partial';
 
 let root: string;
 let logs: string[];
@@ -263,7 +301,7 @@ let config: BackupConfig;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'backup-'));
-  for (const name of [...OLD_BACKUPS, STALE_PARTIAL]) await mkdir(join(root, name));
+  for (const name of [...OLD_BACKUPS, RECENT_PARTIAL]) await mkdir(join(root, name));
   await writeFile(join(root, 'backup.log'), 'old log\n');
   logs = [];
   config = {
@@ -294,7 +332,7 @@ function expectNoSecretsLogged(): void {
 /** The failed run left its `.partial` directory, made no complete backup, and rotated nothing. */
 async function expectFailedRunLeftOnlyPartial(): Promise<void> {
   const names = (await readdir(root)).sort();
-  expect(names).toEqual([...OLD_BACKUPS, STALE_PARTIAL, `${NAME}.partial`, 'backup.log'].sort());
+  expect(names).toEqual([...OLD_BACKUPS, RECENT_PARTIAL, `${NAME}.partial`, 'backup.log'].sort());
 }
 
 test('a complete run writes the dumps, every object and the manifest, renames the .partial and keeps the newest 14', async () => {
@@ -352,10 +390,70 @@ test('a complete run writes the dumps, every object and the manifest, renames th
     manifestEntry('data.sql', bytesOf('COPY data;\n')),
     ...[...OBJECTS].map(([path, bytes]) => ({ path: `garments/${path}`, size: bytes.length, sha256: sha256(bytes) })),
   ]);
-  // 15 old + this one = 16 complete: the two oldest go; the stale .partial and the log stay.
+  // 15 old + this one = 16 complete: the two oldest go; the recent .partial and the log stay.
   const names = (await readdir(root)).sort();
-  expect(names).toEqual([...OLD_BACKUPS.slice(2), NAME, STALE_PARTIAL, 'backup.log'].sort());
+  expect(names).toEqual([...OLD_BACKUPS.slice(2), NAME, RECENT_PARTIAL, 'backup.log'].sort());
+  expect(logs).toContain('backup: newest complete backup is 2026-10-15T03-30-00Z, 25.0 days old');
   expectNoSecretsLogged();
+});
+
+test('every file of a backup is owner-only (0600) and every folder 0700', async () => {
+  const code = await runBackup({ config, now: NOW, run: fakeRun([]), fetch: fakeFetch({ objects: OBJECTS }, []), log });
+
+  expect(code).toBe(0);
+  const modes = new Map<string, number>();
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      modes.set(path, (await stat(path)).mode & 0o777);
+      if (entry.isDirectory()) await walk(path);
+    }
+  };
+  await walk(join(root, NAME));
+  // schema.sql, data.sql, manifest.json and 3 photos; garments/, 2 user folders and 2 garment folders.
+  expect(modes.size).toBe(11);
+  for (const [path, mode] of modes) {
+    expect({ path, mode }).toEqual({ path, mode: (await stat(path)).isDirectory() ? 0o700 : 0o600 });
+  }
+  expect((await stat(root)).mode & 0o777).toBe(0o700);
+  expect((await stat(join(root, NAME))).mode & 0o777).toBe(0o700);
+});
+
+test('an existing backup root is tightened to 0700', async () => {
+  const loose = join(root, 'loose');
+  await mkdir(loose, { mode: 0o755 });
+
+  const code = await runBackup({
+    config: { ...config, backupRoot: loose },
+    now: NOW,
+    run: fakeRun([]),
+    fetch: fakeFetch({ objects: OBJECTS }, []),
+    log,
+  });
+
+  expect(code).toBe(0);
+  expect((await stat(loose)).mode & 0o777).toBe(0o700);
+  expect(logs).toContain('backup: no complete backup yet');
+});
+
+test('deletes .partial folders older than 7 days at the start of every run, even one that then fails', async () => {
+  const stale = '2026-10-31T03-30-00Z.partial';
+  await mkdir(join(root, stale));
+  await writeFile(join(root, stale, 'data.sql'), 'COPY data;\n');
+
+  const code = await runBackup({
+    config,
+    now: NOW,
+    run: fakeRun([], () => true),
+    fetch: fakeFetch({ objects: OBJECTS }, []),
+    log,
+  });
+
+  expect(code).not.toBe(0);
+  await expectFailedRunLeftOnlyPartial();
+  expect(logs).toContain('backup: deleted 1 stale .partial folder');
+  // The age of the newest good backup shows in a failed run's log too.
+  expect(logs).toContain('backup: newest complete backup is 2026-10-15T03-30-00Z, 25.0 days old');
 });
 
 test('no spawned command line carries the database password, decoded or percent-encoded', async () => {
@@ -400,6 +498,75 @@ test('lists past a full page of objects', async () => {
 
   expect(code).toBe(0);
   expect(await readdir(join(root, NAME, 'garments', user))).toHaveLength(LIST_PAGE + 1);
+});
+
+test('keeps paging until an empty page, also when the server caps pages below the limit', async () => {
+  const user = '44444444-4444-4444-8444-444444444444';
+  const five = new Map(Array.from({ length: 5 }, (_, i) => [`${user}/${String(i)}.webp`, bytesOf(String(i))]));
+
+  const code = await runBackup({ config, now: NOW, run: fakeRun([]), fetch: fakeFetch({ objects: five, pageCap: 2 }, []), log });
+
+  expect(code).toBe(0);
+  expect((await readdir(join(root, NAME, 'garments', user))).sort()).toEqual(['0.webp', '1.webp', '2.webp', '3.webp', '4.webp']);
+});
+
+test('starts no new download after the first one fails', async () => {
+  const user = '55555555-5555-4555-8555-555555555555';
+  const many = new Map(Array.from({ length: 20 }, (_, i) => [`${user}/${String(i).padStart(2, '0')}.webp`, bytesOf(String(i))]));
+  const requests: { url: string; auth: string | null }[] = [];
+
+  const code = await runBackup({
+    config,
+    now: NOW,
+    run: fakeRun([]),
+    fetch: fakeFetch({ objects: many, failDownload: { path: `${user}/00.webp`, status: 500 } }, requests),
+    log,
+  });
+
+  expect(code).not.toBe(0);
+  const downloads = requests.filter((request) => request.url.startsWith(`${SUPABASE_URL}/storage/v1/object/garments/`));
+  // Only the ones already in flight when the first failed: at most one per worker.
+  expect(downloads.length).toBeLessThanOrEqual(DOWNLOAD_CONCURRENCY);
+  expect(downloads.length).toBeLessThan(many.size);
+});
+
+describe('verifyBackup', () => {
+  async function completeBackup(): Promise<string> {
+    const code = await runBackup({ config, now: NOW, run: fakeRun([]), fetch: fakeFetch({ objects: OBJECTS }, []), log });
+    expect(code).toBe(0);
+    return join(root, NAME);
+  }
+  const [firstPhoto = ''] = OBJECTS.keys();
+
+  test('a complete backup verifies', async () => {
+    expect(await verifyBackup(await completeBackup())).toEqual({ files: 5, problems: [] });
+  });
+
+  test('names a changed file and a missing one', async () => {
+    const dir = await completeBackup();
+    await writeFile(join(dir, 'garments', firstPhoto), 'tampered');
+    await unlink(join(dir, 'data.sql'));
+
+    expect(await verifyBackup(dir)).toEqual({
+      files: 5,
+      problems: ['data.sql: missing', `garments/${firstPhoto}: size or sha256 differs`],
+    });
+  });
+
+  test('refuses a manifest path that would leave the backup folder', async () => {
+    const dir = await completeBackup();
+    await writeFile(join(dir, 'manifest.json'), JSON.stringify({ files: [{ path: '../outside', size: 0, sha256: '' }] }));
+
+    expect(await verifyBackup(dir)).toEqual({ files: 1, problems: ['../outside: unsafe path'] });
+  });
+
+  test('a missing or malformed manifest is one problem', async () => {
+    const dir = await completeBackup();
+    await writeFile(join(dir, 'manifest.json'), '{"files": "nope"}');
+
+    expect(await verifyBackup(dir)).toEqual({ files: 0, problems: ['manifest.json is missing or malformed'] });
+    expect(await verifyBackup(join(root, 'no-such-backup'))).toEqual({ files: 0, problems: ['manifest.json is missing or malformed'] });
+  });
 });
 
 describe('a run that fails halfway exits non-zero, leaves only its .partial and rotates nothing', () => {

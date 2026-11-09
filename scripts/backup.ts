@@ -14,17 +14,22 @@
 // Everything is written to `<BACKUP_DIR>/<UTC timestamp>.partial/`, renamed to `<UTC timestamp>/`
 // only once complete; then all but the newest `KEEP_BACKUPS` complete backups are deleted. A run
 // that fails at any step exits 1 and leaves its `.partial` folder for inspection, and never
-// rotates. Logs carry outcome words only: secrets and connection strings are redacted. The database
-// password never reaches a command line (where `ps` shows it): the dump gets the URL without it and
-// the password in `PGPASSWORD`.
+// rotates; each run starts by deleting `.partial` folders over `STALE_PARTIAL_DAYS` old and logging
+// the age of the newest complete backup. A backup is credential material (password hashes, refresh
+// tokens), so every file is 0600 and every folder 0700. Logs carry outcome words only: secrets and
+// connection strings are redacted. The database password never reaches a command line (where `ps`
+// shows it): the dump gets the URL without it and the password in `PGPASSWORD`.
 //
 // Env: BACKUP_DB_URL (the hosted connection string, percent-encoded), SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY, and optionally BACKUP_DIR (default `~/dressing-room-backups`, never
 // inside this repository).
+//
+// `node scripts/backup.ts --verify <backup folder>` recomputes every size and sha256 in the
+// folder's `manifest.json` and exits 1 on any difference (run it before a restore).
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -40,7 +45,10 @@ export const KEEP_BACKUPS = 14;
 /** Storage's list page size. */
 export const LIST_PAGE = 1000;
 /** Folder listings and downloads in flight at once. */
-const CONCURRENCY = 4;
+export const DOWNLOAD_CONCURRENCY = 4;
+/** A `.partial` folder older than this is deleted at the start of the next run. */
+const STALE_PARTIAL_DAYS = 7;
+const DAY_MS = 86_400_000;
 /** Each Storage request's limit, so a stalled connection fails the run instead of hanging it. */
 const FETCH_TIMEOUT_MS = 60_000;
 /** Each dump's limit. */
@@ -61,6 +69,8 @@ const DATA_DUMP_EXCLUDE = [
 
 /** A complete backup's folder name: `backupDirName`'s shape. */
 const BACKUP_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
+/** An unfinished run's folder: a backup name plus `.partial`. */
+const PARTIAL_NAME = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z\.partial$/;
 
 export type ManifestEntry = { path: string; size: number; sha256: string };
 
@@ -104,6 +114,29 @@ export function rotate(existing: readonly string[], keep: number): string[] {
   return complete.slice(Math.max(0, keep));
 }
 
+/**
+ * The `.partial` folders in `names` whose embedded UTC time is more than `maxAgeDays` before `now`.
+ * Complete backups, other names and impossible times are never returned.
+ */
+export function stalePartials(names: readonly string[], now: Date, maxAgeDays: number): string[] {
+  return names.filter((name) => {
+    const match = PARTIAL_NAME.exec(name);
+    if (match === null) return false;
+    const [, day = '', hours = '', minutes = '', seconds = ''] = match;
+    const time = new Date(`${day}T${hours}:${minutes}:${seconds}Z`);
+    // A time that doesn't round-trip (2026-02-30) isn't one this script wrote.
+    if (Number.isNaN(time.getTime()) || `${backupDirName(time)}.partial` !== name) return false;
+    return now.getTime() - time.getTime() > maxAgeDays * DAY_MS;
+  });
+}
+
+/** A complete backup name's time; null for any other name. */
+function timeOfBackup(name: string): Date | null {
+  if (!BACKUP_NAME.test(name)) return null;
+  const time = new Date(`${name.slice(0, 13)}:${name.slice(14, 16)}:${name.slice(17, 19)}Z`);
+  return Number.isNaN(time.getTime()) ? null : time;
+}
+
 export function manifestEntry(path: string, bytes: Uint8Array): ManifestEntry {
   return { path, size: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') };
 }
@@ -118,18 +151,27 @@ export function redact(text: string, secrets: readonly string[]): string {
 const listOf = (names: readonly string[]): string =>
   names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
 
-/** `url` split into the URL without its password and the decoded password; null when it isn't a Postgres URL. */
-function splitDbUrl(url: string): { dbUrl: string; dbPassword: string } | null {
+/** `url` split into the URL without its password and the decoded password, or why it can't be. */
+function splitDbUrl(url: string): { dbUrl: string; dbPassword: string } | { error: string } {
   let parsed: URL;
   try {
     parsed = new URL(url);
-    if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') return null;
-    const dbPassword = decodeURIComponent(parsed.password);
-    parsed.password = '';
-    return { dbUrl: parsed.href, dbPassword };
   } catch {
-    return null;
+    parsed = new URL('invalid:');
   }
+  if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') {
+    return { error: 'BACKUP_DB_URL must be a postgresql:// connection string' };
+  }
+  let dbPassword: string;
+  try {
+    dbPassword = decodeURIComponent(parsed.password);
+  } catch {
+    return {
+      error: "BACKUP_DB_URL's password is not valid percent-encoding: percent-encode its special characters (@ as %40, % as %25, / as %2F)",
+    };
+  }
+  parsed.password = '';
+  return { dbUrl: parsed.href, dbPassword };
 }
 
 /**
@@ -149,7 +191,7 @@ export function backupConfigFrom(
     .map(([name]) => name);
   if (missing.length > 0) return { error: `missing ${listOf(missing)} in the environment` };
   const db = splitDbUrl(fullDbUrl);
-  if (db === null) return { error: 'BACKUP_DB_URL must be a postgresql:// connection string' };
+  if ('error' in db) return db;
 
   const dir = env.BACKUP_DIR ?? '';
   let backupRoot: string;
@@ -191,6 +233,9 @@ async function dump(deps: BackupDeps, what: string, extraArgs: readonly string[]
   const env: Record<string, string> = deps.config.dbPassword === '' ? {} : { PGPASSWORD: deps.config.dbPassword };
   const result = await deps.run('pnpm', args, env);
   if (result.code !== 0) throw new StepError(`${what} dump failed (exit ${String(result.code)}): ${stderrTail(result.stderr)}`);
+  // The CLI creates the file; make it owner-only whatever the umask was.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  await chmod(file, 0o600);
   deps.log(`backup: ${what} dump ok`);
 }
 
@@ -203,11 +248,15 @@ const encodePath = (path: string): string => path.split('/').map(encodeURICompon
 const isSafeSegment = (name: string): boolean =>
   name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
 
-/** The files and folders one level under `prefix` (`''` for the bucket root, else ending in `/`). */
+/**
+ * The files and folders one level under `prefix` (`''` for the bucket root, else ending in `/`),
+ * paged until an empty page: a short page alone doesn't prove the end, since the server may cap a
+ * page below `LIST_PAGE`.
+ */
 async function listLevel(deps: BackupDeps, prefix: string): Promise<{ files: string[]; folders: string[] }> {
   const files: string[] = [];
   const folders: string[] = [];
-  for (let offset = 0; ; offset += LIST_PAGE) {
+  for (let offset = 0; ; ) {
     const response = await deps.fetch(storageUrl(deps.config, `object/list/${BUCKET}`), {
       method: 'POST',
       headers: { ...serviceHeaders(deps.config), 'content-type': 'application/json' },
@@ -217,6 +266,8 @@ async function listLevel(deps: BackupDeps, prefix: string): Promise<{ files: str
     if (!response.ok) throw new StepError(`storage list failed: HTTP ${String(response.status)}`);
     const page: unknown = await response.json();
     if (!Array.isArray(page)) throw new StepError('storage list failed: not an array');
+    if (page.length === 0) return { files, folders };
+    offset += page.length;
     for (const entry of page as unknown[]) {
       if (!isRecord(entry) || typeof entry.name !== 'string' || !isSafeSegment(entry.name)) {
         throw new StepError('storage list failed: unexpected entry');
@@ -225,22 +276,21 @@ async function listLevel(deps: BackupDeps, prefix: string): Promise<{ files: str
       if (entry.id === null) folders.push(`${prefix}${entry.name}/`);
       else files.push(`${prefix}${entry.name}`);
     }
-    if (page.length < LIST_PAGE) return { files, folders };
   }
 }
 
 /** Every object path under `prefix`, at any depth. */
 async function listObjects(deps: BackupDeps, prefix: string): Promise<string[]> {
   const { files, folders } = await listLevel(deps, prefix);
-  const nested = await mapLimit(folders, CONCURRENCY, (folder) => listObjects(deps, folder));
+  const nested = await mapLimit(folders, DOWNLOAD_CONCURRENCY, (folder) => listObjects(deps, folder));
   return [...files, ...nested.flat()];
 }
 
 /** Downloads `path` into `<dir>/garments/<path>`; any non-2xx answer, a 404 included, fails the run. */
-async function downloadObject(deps: BackupDeps, dir: string, path: string): Promise<ManifestEntry> {
+async function downloadObject(deps: BackupDeps, dir: string, path: string, stop: AbortSignal): Promise<ManifestEntry> {
   const response = await deps.fetch(storageUrl(deps.config, `object/${BUCKET}/${encodePath(path)}`), {
     headers: serviceHeaders(deps.config),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: AbortSignal.any([stop, AbortSignal.timeout(FETCH_TIMEOUT_MS)]),
   });
   if (!response.ok) throw new StepError(`storage download failed: HTTP ${String(response.status)}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -248,10 +298,37 @@ async function downloadObject(deps: BackupDeps, dir: string, path: string): Prom
   const file = join(dir, ...relativePath.split('/'));
   // `file` is under this run's own folder: every segment passed `isSafeSegment`.
   // eslint-disable-next-line security/detect-non-literal-fs-filename
-  await mkdir(dirname(file), { recursive: true });
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   // eslint-disable-next-line security/detect-non-literal-fs-filename
-  await writeFile(file, bytes);
+  await writeFile(file, bytes, { mode: 0o600 });
   return manifestEntry(relativePath, bytes);
+}
+
+/**
+ * Downloads every path, `DOWNLOAD_CONCURRENCY` at a time. After the first failure no download
+ * starts and the ones in flight are aborted; the first error is thrown.
+ */
+async function downloadAll(deps: BackupDeps, dir: string, paths: readonly string[]): Promise<ManifestEntry[]> {
+  const stop = new AbortController();
+  const entries: ManifestEntry[] = [];
+  const failures: unknown[] = [];
+  const queue = paths.values();
+  const worker = async (): Promise<void> => {
+    for (const path of queue) {
+      if (stop.signal.aborted) return;
+      try {
+        entries.push(await downloadObject(deps, dir, path, stop.signal));
+      } catch (error) {
+        failures.push(error);
+        stop.abort();
+        return;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, paths.length) }, worker));
+  // The first failure is the cause; the rest are usually aborts it triggered.
+  if (failures.length > 0) throw failures[0];
+  return entries;
 }
 
 /** The manifest entry of a file already written under `dir`. */
@@ -267,6 +344,28 @@ const secretsOf = (config: BackupConfig): string[] => [
   encodeURIComponent(config.dbPassword),
 ];
 
+/**
+ * Deletes the `.partial` folders over `STALE_PARTIAL_DAYS` old and logs the newest complete
+ * backup's age, so even a failing run's log says how old the last good backup is.
+ */
+async function tidyAndReport(deps: BackupDeps): Promise<void> {
+  const { backupRoot } = deps.config;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  const names = await readdir(backupRoot);
+  const stale = stalePartials(names, deps.now, STALE_PARTIAL_DAYS);
+  for (const old of stale) await rm(join(backupRoot, old), { recursive: true, force: true });
+  if (stale.length > 0) deps.log(`backup: deleted ${String(stale.length)} stale .partial folder${stale.length === 1 ? '' : 's'}`);
+
+  const newest = names.filter((name) => timeOfBackup(name) !== null).sort().at(-1);
+  const time = newest === undefined ? null : timeOfBackup(newest);
+  if (newest === undefined || time === null) {
+    deps.log('backup: no complete backup yet');
+  } else {
+    const days = (deps.now.getTime() - time.getTime()) / DAY_MS;
+    deps.log(`backup: newest complete backup is ${newest}, ${days.toFixed(1)} days old`);
+  }
+}
+
 /** Takes one backup (see the module comment); resolves with the process exit code. */
 export async function runBackup(deps: BackupDeps): Promise<number> {
   const { backupRoot } = deps.config;
@@ -275,9 +374,13 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
   const secrets = secretsOf(deps.config);
   let created = false;
   try {
-    // The root holds personal data: owner-only. `backupRoot` comes from the owner's own env.
+    // The root holds personal data: owner-only, also when it already existed with looser modes.
+    // `backupRoot` comes from the owner's own env.
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     await mkdir(backupRoot, { recursive: true, mode: 0o700 });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    await chmod(backupRoot, 0o700);
+    await tidyAndReport(deps);
     // Not recursive: a folder left by another run in the same second fails here.
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     await mkdir(partial, { mode: 0o700 });
@@ -287,7 +390,7 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
     await dump(deps, 'data', ['--data-only', '--use-copy', '-x', DATA_DUMP_EXCLUDE], join(partial, 'data.sql'));
 
     const paths = await listObjects(deps, '');
-    const objects = await mapLimit(paths, CONCURRENCY, (path) => downloadObject(deps, partial, path));
+    const objects = await downloadAll(deps, partial, paths);
     deps.log(`backup: ${String(objects.length)} storage objects ok`);
 
     const files = [
@@ -297,7 +400,7 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
     ];
     const manifest = { createdAt: deps.now.toISOString(), files };
     // eslint-disable-next-line security/detect-non-literal-fs-filename
-    await writeFile(join(partial, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    await writeFile(join(partial, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     await rename(partial, join(backupRoot, name));
@@ -320,6 +423,46 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
     return 1;
   }
   return 0;
+}
+
+const isManifestEntry = (value: unknown): value is ManifestEntry =>
+  isRecord(value) && typeof value.path === 'string' && typeof value.size === 'number' && typeof value.sha256 === 'string';
+
+/**
+ * Recomputes every size and sha256 that `<dir>/manifest.json` lists. `problems` names each file
+ * that is missing or differs; a missing or malformed manifest, or a path that would leave `dir`, is
+ * a problem too.
+ */
+export async function verifyBackup(dir: string): Promise<{ files: number; problems: string[] }> {
+  let entries: ManifestEntry[];
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    const manifest: unknown = JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8'));
+    if (!isRecord(manifest) || !Array.isArray(manifest.files)) throw new Error('malformed');
+    const files = manifest.files as unknown[];
+    if (!files.every(isManifestEntry)) throw new Error('malformed');
+    entries = files;
+  } catch {
+    return { files: 0, problems: ['manifest.json is missing or malformed'] };
+  }
+  const problems: string[] = [];
+  for (const entry of entries) {
+    if (!entry.path.split('/').every(isSafeSegment)) {
+      problems.push(`${entry.path}: unsafe path`);
+      continue;
+    }
+    let bytes: Uint8Array;
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      bytes = new Uint8Array(await readFile(join(dir, ...entry.path.split('/'))));
+    } catch {
+      problems.push(`${entry.path}: missing`);
+      continue;
+    }
+    const actual = manifestEntry(entry.path, bytes);
+    if (actual.size !== entry.size || actual.sha256 !== entry.sha256) problems.push(`${entry.path}: size or sha256 differs`);
+  }
+  return { files: entries.length, problems };
 }
 
 /**
@@ -349,7 +492,22 @@ const runCommand: RunCommand = (command, args, env) =>
     });
   });
 
-async function main(): Promise<number> {
+async function verifyCommand(dir: string | undefined): Promise<number> {
+  if (dir === undefined || dir === '') {
+    console.error('usage: node scripts/backup.ts --verify <backup folder>');
+    return 1;
+  }
+  const { files, problems } = await verifyBackup(resolve(dir));
+  for (const problem of problems) console.error(`verify: ${problem}`);
+  console.log(`verify: ${String(files)} files, ${String(problems.length)} problems`);
+  return problems.length === 0 ? 0 : 1;
+}
+
+async function main(args: readonly string[]): Promise<number> {
+  // Everything this process creates is owner-only (the dump files are written by the CLI child,
+  // which inherits this umask).
+  process.umask(0o077);
+  if (args[0] === '--verify') return verifyCommand(args[1]);
   const config = backupConfigFrom(process.env, homedir(), REPO_ROOT);
   if ('error' in config) {
     console.error(`backup: ${config.error}`);
@@ -373,7 +531,7 @@ function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boole
 
 // Guard the entry point so importing this module (e.g. from tests) has no side effects.
 if (isEntryPoint(import.meta.url, process.argv[1])) {
-  void main().then((code) => {
+  void main(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
   });
 }
