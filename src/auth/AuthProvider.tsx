@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { forgetInterruptedDeletions } from '../account/deletionMarker';
 import { useLocalePreference } from '../i18n/I18nProvider';
 import type { LocalePreference } from '../i18n/I18nProvider';
+import { allowUserKeys } from '../lib/kv';
 import { readStoredSession, startAuthAutoRefresh, supabase } from '../lib/supabase';
 import { getProfile, saveProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
@@ -178,6 +179,9 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setUserId(nextUserId);
       setEmail(nextEmail);
       if (userChanged) {
+        // A session for this account means it still exists: an earlier cleanup of an interrupted
+        // deletion stops refusing its kv writes.
+        allowUserKeys(nextUserId);
         forgetOtherAccounts(nextUserId);
         try {
           forgetInterruptedDeletions(nextUserId);

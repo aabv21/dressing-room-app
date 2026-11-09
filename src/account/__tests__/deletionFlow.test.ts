@@ -2,7 +2,7 @@ jest.mock('../accountClient', () => ({ deleteAccount: jest.fn(), verifyAccount: 
 jest.mock('../../auth/authService', () => ({ signOutLocally: jest.fn(() => Promise.resolve()) }));
 
 import { signOutLocally } from '../../auth/authService';
-import { kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
+import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
 import { deleteAccount, verifyAccount } from '../accountClient';
 import { confirmPendingDeletion, DELETION_SETTLE_MS, deletionMessage, runDeletion } from '../deletionFlow';
 import { deletionState, markDeletion } from '../deletionMarker';
@@ -25,6 +25,8 @@ function fakeQueue() {
 beforeEach(() => {
   jest.clearAllMocks();
   for (const key of kvKeys()) kvRemove(key);
+  // A deletion refuses the user's later writes for the process; each test starts from a live account.
+  allowUserKeys(USER);
   kvSet(`closet.v1.${USER}`, 'x');
   kvSet(`outfit.worn.${USER}`, 'x');
 });
@@ -45,6 +47,24 @@ test('a deletion marks it before pausing, then clears the queue, signs out and d
   expect(mockedSignOutLocally).toHaveBeenCalledTimes(1);
   expect(kvKeys()).toEqual([]);
   expect(queue.resume).toHaveBeenCalledWith({ run: false });
+});
+
+test("a per-user write that lands after the cleanup is refused, so the deleted user's keys stay gone", async () => {
+  mockedDeleteAccount.mockResolvedValue({ ok: true });
+
+  expect(await runDeletion(USER, fakeQueue())).toBe('deleted');
+  // Late answers: a closet re-sign, For you, the lucky list, a logged wear, the day's occasion.
+  for (const key of [
+    `closet.v1.${USER}`,
+    `forYou.ideas.${USER}`,
+    `today.lucky.${USER}`,
+    `outfit.worn.${USER}`,
+    `today.occasion.${USER}.2026-11-09`,
+  ]) {
+    kvSet(key, 'late');
+  }
+
+  expect(kvKeys()).toEqual([]);
 });
 
 test('a failing queue clear or kv cleanup still signs out (M2)', async () => {

@@ -27,7 +27,7 @@ jest.mock('../../profile/profileRepository', () => ({
 }));
 
 import { I18nProvider, useLocalePreference } from '../../i18n/I18nProvider';
-import { kvGet, kvRemove, kvSet } from '../../lib/kv';
+import { allowUserKeys, kvGet, kvRemove, kvSet } from '../../lib/kv';
 import { AuthProvider, useAuth } from '../AuthProvider';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -587,8 +587,30 @@ describe('an account deletion under way when the session ends', () => {
   const DELETED = 'user-deleted';
 
   afterEach(() => {
+    allowUserKeys(DELETED);
     kvRemove(`account.deleting.${DELETED}`);
     kvRemove(`closet.v1.${DELETED}`);
+  });
+
+  test('that account signing in again (it still exists) can write its kv data again', async () => {
+    await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: DELETED } });
+    });
+    kvSet(`account.deleting.${DELETED}`, 'deleting');
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+    // A late write after the cleanup is refused.
+    kvSet(`closet.v1.${DELETED}`, 'late');
+    expect(kvGet(`closet.v1.${DELETED}`)).toBeNull();
+
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: DELETED } });
+    });
+    kvSet(`closet.v1.${DELETED}`, 'x');
+
+    expect(kvGet(`closet.v1.${DELETED}`)).toBe('x');
   });
 
   test("a session lost while the deletion is marked (supabase-js's own sign-out) drops that account's data", async () => {

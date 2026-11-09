@@ -10,6 +10,8 @@ jest.mock('../../lib/kv', () => {
   const actual = jest.requireActual<typeof import('../../lib/kv')>('../../lib/kv');
   return { ...actual, kvSet: jest.fn(actual.kvSet) };
 });
+jest.mock('../../account/accountClient', () => ({ deleteAccount: jest.fn(), verifyAccount: jest.fn() }));
+jest.mock('../../auth/authService', () => ({ signOutLocally: jest.fn(() => Promise.resolve()) }));
 jest.mock('../garmentRepository', () => ({
   garmentPhotoPath: (userId: string, garmentId: string, variant: string) => `${userId}/${garmentId}/${variant}.webp`,
   listGarments: jest.fn(),
@@ -21,6 +23,8 @@ import * as Network from 'expo-network';
 import { useEffect } from 'react';
 import { AppState, Text, type AppStateStatus } from 'react-native';
 
+import { deleteAccount } from '../../account/accountClient';
+import { runDeletion } from '../../account/deletionFlow';
 import { kvGet, kvRemove, kvSet } from '../../lib/kv';
 import { garment } from '../../test/garmentFixture';
 import { ClosetProvider, useCloset, usePendingPolling } from '../ClosetProvider';
@@ -498,5 +502,35 @@ describe('refresh on foreground and reconnect (I2)', () => {
 
     expect(appStateRemove).toHaveBeenCalledTimes(1);
     expect(networkRemove).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('an account deleted while its closet work is in flight', () => {
+  test('a re-sign that resolves after the deletion finished leaves no closet copy behind', async () => {
+    const GONE = 'user-gone';
+    mockAuth.current = { status: 'signedIn', userId: GONE };
+    mockedList.mockResolvedValueOnce([garment({ id: 'g1', user_id: GONE, extraction_status: 'done' })]);
+    const signing = deferred<Map<string, string>>();
+    mockedSign.mockReturnValueOnce(signing.promise);
+    jest.mocked(deleteAccount).mockResolvedValue({ ok: true });
+    await renderProvider();
+    await waitFor(() => {
+      expect(mockedSign).toHaveBeenCalledTimes(1);
+    });
+
+    // The deletion's device cleanup runs while the provider still believes its user is signed in.
+    const queue = { pause: jest.fn(() => Promise.resolve()), clear: jest.fn(), resume: jest.fn() };
+    await act(async () => {
+      expect(await runDeletion(GONE, queue)).toBe('deleted');
+    });
+    expect(kvGet(`closet.v1.${GONE}`)).toBeNull();
+
+    await act(async () => {
+      signing.resolve(new Map([[`${GONE}/g1/thumb.webp`, 'https://signed/late']]));
+      await Promise.resolve();
+    });
+
+    expect(mockedKvSet).toHaveBeenCalledWith(`closet.v1.${GONE}`, expect.any(String));
+    expect(kvGet(`closet.v1.${GONE}`)).toBeNull();
   });
 });

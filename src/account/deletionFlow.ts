@@ -19,7 +19,9 @@ const running = new Set<string>();
 
 /**
  * The device side of a confirmed deletion: clears the queue, signs out locally and drops the
- * account's device data, each step on its own so a failing one never skips the sign-out.
+ * account's device data, each step on its own so a failing one never skips the sign-out. The kv
+ * cleanup also refuses any later write for this user, so a request still in flight (a closet
+ * re-sign, For you, the lucky list) can't write it back.
  */
 async function finishLocally(userId: string, queue: QueueControl): Promise<void> {
   try {
@@ -27,7 +29,6 @@ async function finishLocally(userId: string, queue: QueueControl): Promise<void>
   } catch {
     // The rows stay but never run: the marker blocks the queue until the cleanup below.
   }
-  // Signed out before the kv cleanup, so no provider of this user writes its cache back.
   await signOutLocally();
   try {
     forgetAccountOnDevice(userId);

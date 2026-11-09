@@ -116,7 +116,7 @@ import type { DataExport } from '../account/accountClient';
 import { deletionState } from '../account/deletionMarker';
 import { useAuth } from '../auth/AuthProvider';
 import { signOut, signOutLocally } from '../auth/authService';
-import { kvGet, kvKeys, kvRemove, kvSet } from '../lib/kv';
+import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../lib/kv';
 import { getProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
 
@@ -207,6 +207,8 @@ beforeEach(() => {
     onboardingComplete: true,
     refreshProfile: jest.fn(() => Promise.resolve(true)),
   });
+  // A deletion refuses the user's later writes for the process; each test starts from a live account.
+  allowUserKeys(USER_ID);
   for (const key of USER_KEYS) kvSet(key, 'x');
 });
 
