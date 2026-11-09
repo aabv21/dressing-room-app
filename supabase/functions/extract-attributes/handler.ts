@@ -88,7 +88,7 @@ function serviceRequest(deps: ExtractDeps, path: string, init: RequestInit = {})
       apikey: serviceRoleKey,
       authorization: `Bearer ${serviceRoleKey}`,
       ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
-      ...(init.method === 'PATCH' ? { prefer: 'return=minimal' } : {}),
+      ...Object.fromEntries(new Headers(init.headers)),
     },
   });
 }
@@ -189,16 +189,19 @@ async function extract(deps: ExtractDeps, garment: Garment): Promise<WriteBack> 
   }
 }
 
-async function writeBack(deps: ExtractDeps, garmentId: string, patch: Record<string, unknown>): Promise<void> {
+/** Returns whether the guarded write matched the garment. */
+async function writeBack(deps: ExtractDeps, garmentId: string, patch: Record<string, unknown>): Promise<boolean> {
   // The `pending` filter makes a duplicate webhook delivery a no-op instead of a second write, and
   // the `reviewed_at` one keeps a review saved while Claude was answering (the app sends a garment
   // to review after 10 minutes by the device's clock) from being overwritten by the model's guesses.
-  const filter = `id=eq.${garmentId}&extraction_status=eq.pending&reviewed_at=is.null`;
-  const response = await serviceRequest(deps, `/rest/v1/garments?${filter}`, {
+  const filter = `id=eq.${garmentId}&extraction_status=eq.pending&reviewed_at=is.null&select=id`;
+  const rows = await serviceJson(deps, `/rest/v1/garments?${filter}`, {
     method: 'PATCH',
+    headers: { prefer: 'return=representation' },
     body: JSON.stringify(patch),
   });
-  if (!response.ok) throw new UpstreamError(`PATCH HTTP ${String(response.status)}`);
+  if (!Array.isArray(rows)) throw new UpstreamError('PATCH: not an array');
+  return rows.length > 0;
 }
 
 export async function handleExtract(request: Request, deps: ExtractDeps): Promise<Response> {
@@ -216,8 +219,7 @@ export async function handleExtract(request: Request, deps: ExtractDeps): Promis
       outcome = 'skipped';
     } else {
       const result = await extract(deps, garment);
-      await writeBack(deps, garmentId, result.patch);
-      outcome = result.outcome;
+      outcome = (await writeBack(deps, garmentId, result.patch)) ? result.outcome : 'skipped';
     }
   } catch {
     // The database itself failed (loading or writing back). The garment may stay `pending`; the app

@@ -39,7 +39,7 @@ const DEFAULT_ROUTES: Record<RouteName, Handler> = {
   profile: () => json(200, [{ clothing_type: 'masculine' }]),
   storage: () => new Response(IMAGE, { status: 200, headers: { 'content-type': 'image/webp' } }),
   claude: () => json(200, fixture('claude-ok')),
-  patch: () => new Response(null, { status: 204 }),
+  patch: () => json(200, [{ id: GARMENT_ID }]),
 };
 
 function routeOf(method: string, url: URL): RouteName {
@@ -189,6 +189,9 @@ describe('extraction', () => {
     expect(patch?.url).toContain('extraction_status=eq.pending');
     // A review saved while the extraction ran (a device clock ahead, or a slow model) is never overwritten.
     expect(patch?.url).toContain('reviewed_at=is.null');
+    // The write returns the ids it matched, so a write that matched nothing is reported as skipped.
+    expect(patch?.url).toContain('select=id');
+    expect(patch?.headers.get('prefer')).toBe('return=representation');
     expect(patchBody(calls)).toEqual({
       category: 'jeans',
       colors: ['navy', 'light_blue'],
@@ -318,6 +321,28 @@ describe('extraction', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'skipped' });
     expect(calls.map((call) => call.route)).toEqual(['garment']);
+  });
+
+  test('a garment reviewed while Claude was answering is skipped: the guarded write matched no row', async () => {
+    const { fetch, calls } = fakeFetch({ patch: () => json(200, []) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'skipped' });
+    expect(calls.at(-1)?.route).toBe('patch');
+    expect(infoSpy.mock.calls).toEqual([[JSON.stringify({ garment_id: GARMENT_ID, outcome: 'skipped' })]]);
+  });
+
+  test('an over-quota write that matched no row is skipped too', async () => {
+    const { fetch } = fakeFetch({ rpc: () => json(200, false), patch: () => json(200, []) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+    expect(await response.json()).toEqual({ outcome: 'skipped' });
+  });
+
+  test('a write-back answer that is not an array answers 500', async () => {
+    const { fetch } = fakeFetch({ patch: () => json(200, { id: GARMENT_ID }) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+    expect(response.status).toBe(500);
   });
 
   test('a garment that does not exist is skipped', async () => {
