@@ -171,14 +171,17 @@ both `anon` and `authenticated` — same "no API surface" pattern as `usage_coun
 nothing reads or writes them through a `security definer` function either; only `service_role` (the
 Edge Functions) ever touches them, bypassing RLS entirely as that role.
 
-NOTE: all four grow without bound. An expired degraded entry is overwritten only when the same
-key is asked for again, any other entry never expires, and nothing deletes old rows: a new day,
-occasion, closet edit or profile save writes new keys, and `weather_cache` gains a row per place
-and hour. At 4 users that's a few thousand small rows a month, with user deletion cascading the
-user-scoped three away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
+`for_you_cache` holds one row per user: each new entry deletes the user's rows under every other key
+once it is written (best effort, so a failed delete can leave an older row until the next write).
+
+NOTE: the other three grow without bound. An expired degraded entry is overwritten only when the
+same key is asked for again, any other entry never expires, and nothing deletes old rows: a new
+day, occasion, closet edit or profile save writes new keys, and `weather_cache` gains a row per
+place and hour. At 4 users that's a few thousand small rows a month, with user deletion cascading
+the user-scoped two away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
 `delete from public.rating_cache where created_at < now() - interval '30 days'`, the same for
-`lucky_cache` and `for_you_cache`, and `delete from public.weather_cache where hour < now() -
-interval '2 days'`), in an append-only migration.
+`lucky_cache`, and `delete from public.weather_cache where hour < now() - interval '2 days'`), in
+an append-only migration.
 
 ### `public.apple_tokens` (Plan 5)
 
@@ -328,12 +331,13 @@ part), so this is a self-inflicted data-integrity gap, never a cross-tenant one 
 it's the reason `log_wear()`/`save_outfit()` are documented as the only intended path rather than
 merely "a convenience."
 
-### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache`, `public.apple_tokens` (Plan 5)
 
-RLS is enabled with **zero policies** on all three, and `revoke all on <table> from anon,
+RLS is enabled with **zero policies** on all five, and `revoke all on <table> from anon,
 authenticated` — same "no RLS-mediated access path at all" pattern as `usage_counters` below, except
 nothing reads or writes them through a `security definer` function either: only `service_role`
-(the rating/lucky/weather Edge Functions) ever touches them, bypassing RLS entirely as that role. A
+(the rating, lucky, weather and For-you Edge Functions for the caches; `apple-token` and
+`delete-account` for `apple_tokens`) ever touches them, bypassing RLS entirely as that role. A
 direct `select`/`insert`/`update`/`delete` from `authenticated` or `anon` is rejected by the table
 grant revoke before RLS is even consulted.
 
@@ -488,7 +492,7 @@ can — see the garments column grants above) and `execute` is revoked from `pub
   belonging to the same user as the wear** (`g.user_id = new.user_id`) gets `wear_count =
   wear_count + 1`, and `last_worn_at` moves forward to the wear's `worn_on` if that's later than
   what's stored (`greatest(coalesce(last_worn_at, worn_on), worn_on)`, so a `null` `last_worn_at`
-  is always replaced). This also bumps `updated_at` on every affected garment — see the P4-R6 note
+  is always replaced). This also bumps `updated_at` on every affected garment — see the note
   below, "Logging a wear bumps garments.updated_at," before keying any cache on that column.
 - **On delete:** every garment referenced by the deleted wear's outfit **and belonging to the same
   user as the wear** (`g.user_id = old.user_id`) gets `wear_count = greatest(wear_count - 1, 0)`
@@ -521,7 +525,7 @@ on delete cascade` from `outfit_items`), but the trigger is on `wears`, not `out
 other garment that shared an outfit with it is unaffected (its own wear_count/last_worn_at came from
 its own wears, not from what else was in the outfit).
 
-**P4-R6: logging a wear bumps `garments.updated_at` (confirmed empirically — see below), so neither
+**Logging a wear bumps `garments.updated_at` (confirmed empirically — see below), so neither
 the rating cache (`rate-outfit`) nor the lucky fingerprint (`lucky-list`) may key on it.** The trigger's `update
 public.garments set wear_count = …, last_worn_at = …` is an ordinary `update` statement, which fires
 `garments_set_updated_at` (`public.set_updated_at()`, `before update on public.garments`) exactly
@@ -750,10 +754,10 @@ discards both the user and its profile row — no cleanup step is needed.
   its row.
 - `outfits_wears.test.sql` — `log_wear` for A with 3 garments creates one outfit, 3 `outfit_items`
   and one wear (returning the caller-supplied wear id), and sets `wear_count`/`last_worn_at` on all
-  3 garments; **calling it again with the same wear id is idempotent** (P4-R5): it returns the same
-  id, logs no additional wear or outfit, and the counts stay put; a second, distinct `log_wear`
-  reusing 2 of the 3 garments bumps those to `wear_count` 2 and moves `last_worn_at` to the later
-  date; **A deleting that second wear as `authenticated` (not `postgres`)** restores both garments
+  3 garments; **calling it again with the same wear id is idempotent** (a retry after a lost
+  response must not log the wear twice): it returns the same id, logs no additional wear or
+  outfit, and the counts stay put; a second, distinct `log_wear` reusing 2 of the 3 garments bumps
+  those to `wear_count` 2 and moves `last_worn_at` to the later date; **A deleting that second wear as `authenticated` (not `postgres`)** restores both garments
   to `wear_count` 1 and falls `last_worn_at` back to the remaining wear's date (not null, since each
   is still in the first wear) — proving the `security definer` trigger fires correctly for a real
   client-issued delete, not just one run as the table owner; deleting a garment's only remaining
