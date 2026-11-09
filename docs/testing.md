@@ -111,6 +111,9 @@ The Profile tab's Privacy section (data export and account deletion):
   locally, keeping the queued photos and the data; Sign out is disabled while an export or a
   deletion runs, and a late `reauth` after another account signed in neither signs it out nor
   alerts it.
+- `src/lib/__tests__/e2eLaunch.test.ts` — the Maestro launch check: `-e2e 1` in the user defaults
+  is an end-to-end launch (anything else, or no native settings module, isn't), and only then are
+  LogBox's toasts hidden.
 
 ### `scripts`
 
@@ -155,6 +158,13 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
   `BACKUP_DB_URL` that isn't a Postgres URL is refused without being echoed. The real dump, restore
   and photo upload are checked by hand against the local stack (`docs/database.md`'s "Hosted
   backups").
+- `scripts/__tests__/e2e.test.ts` — `pnpm e2e`'s pure parts: the fresh `e2e-<epoch ms>@example.com`
+  address, `JAVA_HOME` (an existing one kept, Homebrew's `openjdk@17` used when it's unset or empty,
+  a message naming `brew install openjdk@17` when there's neither), the `maestro` and
+  `simctl addmedia` arguments, the booted simulators read from `simctl list -j` and the one picked
+  (the only booted one, or `E2E_SIMULATOR` by UDID or name; several booted with none named is an
+  error), the stack check (`supabase status -o json` failed, unreadable or without an API URL, and
+  `.env.local` pointing the app elsewhere), and `integration/mockServices.ts`'s weak-piece Jev mode.
 
 ### `functions`
 
@@ -318,6 +328,84 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 See `docs/database.md` for how these tests impersonate a user and create test rows without a real
 JWT.
 
+## End-to-end flows (Maestro)
+
+`pnpm e2e` (`scripts/e2e.ts`) runs the three Maestro flows in `.maestro/flows/` on an iOS
+simulator, against the local stack and the mocks, as a fresh user:
+
+1. `onboarding-closet-lucky.yaml` — sign up, onboarding, four garments from the gallery, review,
+   "I'll wear it" on Today's "feeling lucky" outfit, and the wear in Stats.
+2. `build-rate-swap.yaml` — Build an outfit around the T-shirt, rate it, "Try the swap".
+3. `delete-account.yaml` — delete the account (both confirms), land on Welcome, and fail to sign
+   in with it.
+
+They share one account, created by the first and deleted by the last, so `.maestro/config.yaml`
+runs them in that order and stops at the first failure. Each run signs up as
+`e2e-<epoch ms>@example.com`, so a run that failed halfway (and left its user behind) never
+collides with the next. Flows wait on visible text with `extendedWaitUntil`, never a fixed sleep.
+The text is English: the simulator's locale, which `launchApp`'s `clearState` falls back to.
+
+### Prerequisites
+
+- **Maestro and Java 17.** `brew install maestro openjdk@17`. Both are machine tools, not repo
+  dependencies. `openjdk@17` is keg-only, so it isn't on `PATH`. `pnpm e2e` uses `JAVA_HOME` when
+  it's set; when it isn't, it uses `/opt/homebrew/opt/openjdk@17` (its `bin` first on `PATH`), and
+  it fails with a message when neither exists. To run `maestro` by hand, set it in that shell:
+
+  ```bash
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+  export PATH="$JAVA_HOME/bin:$PATH"
+  ```
+
+- **A booted iOS simulator with the dev build** (`pnpm ios` once; rebuild after native changes)
+  **and Metro running** on `:8081`. With several simulators booted, name one:
+  `E2E_SIMULATOR=<udid or name> pnpm e2e`.
+- **The local stack:** `pnpm db:start`, then `pnpm env:local` (the app must point at it; the script
+  checks).
+- **Ports 54498 and 54499 free.** The script starts the mocks itself and stops them at the end.
+
+### What the script does
+
+1. Checks Java, Maestro, the simulator and the installed app, Metro, and the local stack, failing
+   with what to run instead of timing out in a flow.
+2. Starts `node integration/mockServices.ts --serve --weak t_shirt` and
+   `node integration/mockAnthropic.ts --serve ok`, and waits for each to print that it's listening.
+3. Copies the fictional photos in `.maestro/fixtures/` to a temporary folder and adds them to the
+   simulator's library with `xcrun simctl addmedia <udid>`. The copy is needed because the
+   simulator's media bridge can't open files under `~/Documents`, and `addmedia` then hangs
+   instead of failing. The photos go in on every run, so the library grows by four each time; the
+   flow picks the four newest.
+4. Runs `maestro --device <udid> test --config .maestro/config.yaml .maestro/flows` with `EMAIL`
+   and `PASSWORD` passed to the flows, then stops the mocks and exits with Maestro's status.
+
+### How the flows drive the app
+
+- **Extraction.** The mock Claude reads every photo as navy jeans (`claude-ok.json`), so review
+  keeps the first as jeans and turns the others into a T-shirt, a shirt and sneakers through each
+  card's Category row (`.maestro/subflows/recategorize.yaml`). Which photo gets which category
+  depends on upload order, so a thumbnail may not match its label; the mock never looks at it.
+  There's no cut-out on the simulator (no Vision), so each garment keeps its original photo.
+- **The swap.** `--weak t_shirt` makes the mock Jev score any outfit holding the T-shirt at 40 and
+  name the top as its weakest piece; every other outfit scores at the best level. A rating of the
+  T-shirt outfit then offers the shirt, and the swapped outfit "Looks great".
+- **Sign-up.** Email confirmation is off locally (`[auth.email].enable_confirmations = false`), so
+  "Create account" signs in at once and no Mailpit step is needed. The password field is switched
+  to plain text before typing, since typing into a secure field can drop characters.
+- **Dev warnings.** Every `launchApp` passes `-e2e 1`. iOS puts it in the app's user defaults, and
+  in a dev build `src/lib/e2eLaunch.ts` then hides LogBox's warning toasts. They sit over the
+  anchored CTAs, so a tap there would open the debugger instead of pressing the button.
+- **Fixtures.** `node scripts/e2e.ts fixtures` regenerates the four JPEGs with `sharp`, drawn from
+  `scripts/perf-fixtures.ts`'s garment shapes on a plain background. They're fictional, never
+  real photos.
+
+### Why CI doesn't run it
+
+There's no reliable simulator or emulator job yet: a macOS runner with a simulator, a dev build
+and the local stack in Docker is slow and flaky, and the Linux runner has no iOS simulator. So
+`pnpm e2e` runs locally before a release and after changes to the flows it covers. The flows are
+iOS only for now. On Android, `addmedia` becomes `adb push` plus a media scan, and the launch
+argument needs another channel (see the NOTE in `src/lib/e2eLaunch.ts`).
+
 ## Which tests need Docker
 
 | Command        | Needs Docker (local Supabase) | Needs `.env.local` |
@@ -325,6 +413,7 @@ JWT.
 | `pnpm test`     | no                              | no                    |
 | `pnpm db:test`  | yes                             | no (connects directly) |
 | `pnpm test:int` | yes                             | yes (`pnpm env:local` first) |
+| `pnpm e2e`      | yes, plus a simulator and Metro | yes (`pnpm env:local` first) |
 
 `pnpm typecheck`, `pnpm lint`, and `pnpm test` need nothing beyond `pnpm install`.
 

@@ -1,0 +1,43 @@
+# Build an outfit around the T-shirt, rate it and take the swap the rating offers. `pnpm e2e` runs
+# the mock Jev with `--weak t_shirt`: any outfit with the T-shirt scores 40 and names the top as
+# its weakest piece, so the rating offers the shirt (which scores 100) instead.
+# Runs after onboarding-closet-lucky.yaml, signed in as the same user.
+appId: com.aabv21.dressingroom
+---
+- launchApp:
+    stopApp: true
+    arguments:
+      "-e2e": "1"
+- extendedWaitUntil:
+    visible: "Build"
+    timeout: 60000
+- tapOn: "Build"
+- extendedWaitUntil:
+    visible: "Top, Pick one"
+    timeout: 15000
+- tapOn: "T-shirt, .*"
+- extendedWaitUntil:
+    visible: "Top, T-shirt.*"
+    timeout: 5000
+- tapOn: "Bottom, Pick one"
+- tapOn: "Jeans, .*"
+- extendedWaitUntil:
+    visible: "Bottom, Jeans.*"
+    timeout: 5000
+- tapOn: "Shoes, Pick one"
+- tapOn: "Sneakers, .*"
+- extendedWaitUntil:
+    visible: "Shoes, Sneakers.*"
+    timeout: 5000
+- tapOn: "How does it look\\?"
+
+# The rating: a low score, and the swap.
+- extendedWaitUntil:
+    visible: "Try the swap"
+    timeout: 60000
+- assertVisible: "Try: swap T-shirt.* for Shirt.*"
+- tapOn: "Try the swap"
+- extendedWaitUntil:
+    visible: "Looks great"
+    timeout: 60000
+- assertNotVisible: "Try the swap"

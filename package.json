@@ -82,6 +82,7 @@
     "env:local": "node scripts/env-local.ts",
     "check:supply-chain": "node scripts/check-supply-chain.ts",
     "calibrate": "node scripts/calibrate.ts",
-    "backup": "node scripts/backup.ts"
+    "backup": "node scripts/backup.ts",
+    "e2e": "node scripts/e2e.ts"
   }
 }

@@ -49,6 +49,11 @@ Local signup confirmations and password-reset codes are caught by Mailpit at
 See [`AGENTS.md`](./AGENTS.md)'s "Local backend" section and [`docs/database.md`](./docs/database.md)
 for the schema, and [`docs/testing.md`](./docs/testing.md) for how the backend is tested.
 
+End-to-end flows (Maestro, iOS simulator): with the stack and Metro running and the dev build on a
+booted simulator, `pnpm e2e` signs up a fresh user and walks through onboarding, the gallery,
+review, Today, Stats, Build, the rating's swap and account deletion. It needs Maestro and Java 17
+(`brew install maestro openjdk@17`); see [`docs/testing.md`](./docs/testing.md)'s "End-to-end flows".
+
 Closet grid with performance fixtures (iOS simulator):
 
 ```bash
