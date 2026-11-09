@@ -8,8 +8,11 @@
 // and `index.ts` serves it under Deno.
 //
 // Garments and the profile are read with the caller's own token (RLS applies); the quota and
-// `for_you_cache` use the service role. Logs carry only an outcome word, never garments, the
-// profile, ideas, prompts or model output. See `docs/ai.md`'s "For you".
+// `for_you_cache` use the service role. Each new entry replaces the user's older ones, so the cache
+// holds one entry per user. Once the daily quota is spent, a miss answers `stale` with the newest
+// entry still worth showing (`staleAnswer`) and 429 only when there's none. Logs carry only an
+// outcome word, never garments, the profile, ideas, prompts or model output. See `docs/ai.md`'s
+// "For you".
 
 import {
   type ClothingType,
@@ -26,6 +29,7 @@ import {
   fitCandidates,
   finalRank,
   type ForYouIdea,
+  ownsArchetype,
   parseFit,
   parseLines,
   rankByGain,
@@ -37,8 +41,10 @@ import { type RuleGarment, seasonOf } from '../_shared/outfitRules.ts';
 import type { Language } from '../_shared/searchTerms.ts';
 import {
   cacheFresh,
+  cachePrune,
   cachePut,
   cacheRead,
+  cacheReadNewest,
   CLAUDE_TIMEOUT_MS,
   consumeQuota,
   type FnEnv,
@@ -78,7 +84,7 @@ type OkResponse = Extract<ForYouResponse, { kind: 'ok' }>;
 /**
  * What `for_you_cache` stores: the response plus an internal marker, stripped before answering. A
  * degraded answer (a failed or skipped Jev fit, or a template line where Claude's is missing) is
- * served from the cache for an hour only (ruling P4-R12; see `cacheFresh`).
+ * served from the cache for an hour only, so a better answer is tried again soon (see `cacheFresh`).
  */
 type CachedForYou = OkResponse & { degraded: boolean };
 
@@ -89,7 +95,10 @@ export const FOR_YOU_DAILY_LIMIT = 1;
 export const FOR_YOU_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Fewer wardrobe garments (categorized, not donated) than this answer `too_small`, with no quota or model call. */
 export const MIN_GARMENTS = 3;
-/** No Jev fit call starts once this long has passed since the request arrived (as lucky-list's, P4-R11). */
+/**
+ * No Jev fit call starts once this long has passed since the request arrived (as lucky-list's), so
+ * the slow calls can't push the answer past the app's deadline.
+ */
 export const FIT_BUDGET_MS = 15_000;
 /**
  * The Claude lines call must finish this long after the request arrived: its timeout is what's left,
@@ -127,8 +136,8 @@ const byId = (a: RuleGarment, b: RuleGarment): number => (a.id < b.id ? -1 : a.i
 
 /**
  * For you looks at the wardrobe, not at today: a garment in the laundry or lent out is still the
- * user's, so it owns its archetype and combines in the gain like an available one (ruling P5-R9).
- * Only a donated garment is out.
+ * user's, so it owns its archetype and combines in the gain like an available one, and a laundry
+ * toggle doesn't spend the daily quota. Only a donated garment is out.
  */
 function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
   return garments
@@ -140,8 +149,9 @@ function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
  * The cache key: the language, the season, `profile.updated_at` (clothing type, body and styles)
  * and a fingerprint of the wardrobe's categorized garments — id and rating-relevant columns, not
  * `status` (the laundry and lending don't change For you), nor `updated_at` or `last_worn_at`,
- * which logging a wear bumps (as lucky-list's, ruling P4-R6). `pinned_on` is the lucky list's
- * business and stays out.
+ * which logging a wear bumps (as lucky-list's; a wear would otherwise spend the quota again).
+ * `pinned_on` is the lucky list's business and stays out. The season is in the key so the ideas
+ * don't stay a season behind for up to a week.
  */
 function cacheKey(
   wardrobe: readonly RuleGarment[],
@@ -256,6 +266,41 @@ function withoutMarker(result: CachedForYou): OkResponse {
   return { kind: result.kind, ideas: result.ideas };
 }
 
+/**
+ * What a spent quota answers instead of a 429: the expired entry for this same closet if there is
+ * one (with one miss a day, the retry it was expired for has to wait anyway); otherwise the user's
+ * newest entry under any key (an older closet, profile, season or language), minus the ideas the
+ * wardrobe now owns. Null when nothing is left to show.
+ * NOTE: an entry from another key may carry the other language's lines and store words, or counts
+ * from an older closet, until the next day's quota. Upgrade path: store the language with the
+ * entry and re-render its template lines.
+ */
+async function staleAnswer(
+  deps: { env: FnEnv; fetch: typeof fetch },
+  userId: string,
+  sameKey: OkResponse | null,
+  wardrobe: readonly RuleGarment[],
+): Promise<OkResponse | null> {
+  if (sameKey !== null) return sameKey;
+  const newest = await cacheReadNewest(deps.env, deps.fetch, 'for_you_cache', userId);
+  const stored = newest === null ? null : fromCache(newest.result);
+  const ideas = stored?.ideas.filter((idea) => !ownsArchetype(wardrobe, idea)) ?? [];
+  return ideas.length === 0 ? null : { kind: 'ok', ideas };
+}
+
+/** Writes the new entry, then (only once it's written) drops the user's other keys, best effort. */
+async function store(
+  deps: { env: FnEnv; fetch: typeof fetch },
+  userId: string,
+  key: string,
+  result: CachedForYou,
+  now: number,
+): Promise<void> {
+  if (await cachePut(deps.env, deps.fetch, 'for_you_cache', userId, key, result, now)) {
+    await cachePrune(deps.env, deps.fetch, 'for_you_cache', userId, key);
+  }
+}
+
 export async function handleForYou(request: Request, deps: ForYouDeps): Promise<Response> {
   const now = deps.now ?? Date.now;
   const startedAt = now();
@@ -271,7 +316,8 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
     const [garments, profile] = await Promise.all([loadGarments(env, fetchFn, auth), loadProfile(env, fetchFn, auth)]);
 
     const wardrobe = wardrobeOf(garments);
-    // A garment still being read (no category yet) can't combine, so it doesn't count (ruling P5-R11).
+    // A garment still being read (no category yet) can't combine, so it doesn't count; one in the
+    // laundry or lent out does (the wardrobe view above).
     if (wardrobe.filter((g) => g.category !== null).length < MIN_GARMENTS) {
       return reply('too_small', 200, { kind: 'too_small' } satisfies ForYouResponse);
     }
@@ -286,9 +332,8 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
     if (row !== null && stored !== null && cacheFresh(row, now(), FOR_YOU_TTL_MS)) return reply('cached', 200, stored);
 
     if (!(await consumeQuota(env, fetchFn, userId, 'for_you', FOR_YOU_DAILY_LIMIT))) {
-      // An expired entry for this same closet (a degraded one past its hour, or one over a week
-      // old) beats an error: with one miss a day, the retry it was expired for has to wait anyway.
-      if (stored !== null) return reply('stale', 200, stored);
+      const stale = await staleAnswer(deps, userId, stored, wardrobe);
+      if (stale !== null) return reply('stale', 200, stale);
       return reply('over_quota', 429, { error: 'over_quota' });
     }
 
@@ -296,7 +341,7 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
     const ranked = rankByGain(wardrobe, clothingType, season);
     if (ranked.length === 0) {
       const empty: CachedForYou = { kind: 'ok', ideas: [], degraded: false };
-      await cachePut(env, fetchFn, 'for_you_cache', userId, key, empty, now());
+      await store(deps, userId, key, empty, now());
       return reply('empty', 200, withoutMarker(empty));
     }
 
@@ -310,7 +355,7 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
 
     const degraded = fitted.some(({ fit }) => fit === null) || cards.some((card) => card.line === null);
     const result: CachedForYou = { kind: 'ok', ideas: cards, degraded };
-    await cachePut(env, fetchFn, 'for_you_cache', userId, key, result, now());
+    await store(deps, userId, key, result, now());
     return reply(degraded ? 'degraded' : 'ranked', 200, withoutMarker(result));
   } catch {
     // The database itself failed (garments, profile or quota); nothing was ranked or cached.

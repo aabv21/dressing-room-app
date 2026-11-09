@@ -271,6 +271,14 @@ describe('for-you', () => {
   test('ranks 3–5 ideas with the mock Jev fit and the mock Claude lines, then serves them from for_you_cache', async () => {
     const jevBefore = mock.calls('/v1/systemone');
     const claudeBefore = anthropic.calls();
+    // An entry from an older closet state, which the new entry replaces.
+    const seeded = await serviceClient().from('for_you_cache').insert({
+      user_id: userA.id,
+      cache_key: 'an-older-closet',
+      result: { kind: 'ok', ideas: [], degraded: false },
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    expect(seeded.error).toBeNull();
 
     const first = await invoke(userA.client, 'for-you', { language: 'en' });
 
@@ -296,12 +304,18 @@ describe('for-you', () => {
     expect(usage.data).toEqual([{ count: 1 }]);
     const cached = await service.from('for_you_cache').select('cache_key').eq('user_id', userA.id);
     expect(cached.data).toHaveLength(1);
+    expect(cached.data?.[0]?.cache_key).not.toBe('an-older-closet');
 
     // A cache hit: no quota (the day's one miss is spent), no Jev, no Claude.
     const second = await invoke(userA.client, 'for-you', { language: 'en' });
     expect(second).toEqual(first);
     expect(mock.calls('/v1/systemone')).toBe(jevBefore + jevCalls);
     expect(anthropic.calls()).toBe(claudeBefore + 1);
+
+    // Another key (Spanish) with the day's miss spent: the newest entry, as stale, not a 429.
+    const spent = await invoke(userA.client, 'for-you', { language: 'es' });
+    expect(spent).toEqual(first);
+    expect(mock.calls('/v1/systemone')).toBe(jevBefore + jevCalls);
   }, FUNCTION_TIMEOUT_MS);
 });
 

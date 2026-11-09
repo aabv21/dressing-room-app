@@ -685,7 +685,9 @@ hemisphere without one).
 6. One Claude lines request; a missing line falls back to its template.
 
 The response is `{ kind: 'ok', ideas: { id, category, colors, newOutfits, combinesWith, line,
-lineKey, lineParams, searchQuery }[] }`, in rank order, and cached.
+lineKey, lineParams, searchQuery }[] }`, in rank order, and cached. Once the new entry is written,
+the user's entries under every other key are deleted (best effort), so `for_you_cache` holds one
+entry per user.
 
 | Case | Response | Logged outcome |
 | --- | --- | --- |
@@ -695,7 +697,8 @@ lineKey, lineParams, searchQuery }[] }`, in rank order, and cached.
 | Fewer than 3 wardrobe garments | 200 `too_small` | `too_small` |
 | Cache hit (no quota, no models) | 200 cached ideas | `cached` |
 | Over the daily quota, with an expired entry for the same key | 200 that entry's ideas | `stale` |
-| Over the daily quota, nothing stored for the key | 429 `over_quota` | `over_quota` |
+| Over the daily quota, no entry for the key | 200 the user's newest entry (any key), minus the ideas the wardrobe now owns | `stale` |
+| Over the daily quota, and no entry with an idea left to show | 429 `over_quota` | `over_quota` |
 | Every fit and every line came back | 200 ideas, cached | `ranked` |
 | A fit failed or was skipped, or an idea got a template line | 200 ideas, cached degraded | `degraded` |
 | No archetype with gain > 0 | 200 `ideas: []`, cached | `empty` |
@@ -707,6 +710,15 @@ day, though, the retry after that hour usually finds the day's quota spent; rath
 for ideas it showed an hour ago, the function then serves the expired entry again (`stale`). The
 same goes for an entry past its 7 days when the day's miss went to another key. So a degraded
 answer is really retried on the first call after its hour on a day with quota left.
+
+**A spent quota on a changed closet.** When the key itself changed (a new or edited garment, a
+profile edit, the season or the language) after the day's miss, there's no entry for it. Rather
+than a 429 for the rest of the day, the function serves the user's newest entry under any key
+(`stale`), without the ideas the current wardrobe now owns (the same category and first color, as
+in the ranking): a garment the user just added for an idea drops that idea. Only when nothing is
+left does it answer 429. NOTE: that entry can carry an older closet's counts, or the other
+language's lines and store words, until the next day's miss; upgrade path: store the language with
+the entry and re-render its template lines.
 
 **Latency.** No weather and no fallback rater: the closet and profile reads, the cache read and the
 quota, then the Jev fits (5 at once, 10 s timeout each, none started after 15 s, so the last can

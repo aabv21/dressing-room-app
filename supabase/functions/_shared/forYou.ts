@@ -107,7 +107,7 @@ function outfitShapes(slot: Slot): readonly (readonly Slot[])[] {
 }
 
 /** True when the user already has the archetype: a garment that isn't donated, of the same category and first color. */
-export function ownsArchetype(garments: readonly RuleGarment[], archetype: Archetype): boolean {
+export function ownsArchetype(garments: readonly RuleGarment[], archetype: Pick<Archetype, 'category' | 'colors'>): boolean {
   return garments.some(
     (item) => item.status !== 'donated' && item.category === archetype.category && item.colors[0] === archetype.colors[0],
   );

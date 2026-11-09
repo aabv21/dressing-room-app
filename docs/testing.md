@@ -189,10 +189,11 @@ Supabase stack:
   call; and with A's `usage_counters` row for the day pre-filled to 50, a new outfit gets 429
   `over_quota` with no Jev call. `for-you` answers 3–5 ideas whose lines are the mock Claude's
   (`mockAnthropic.ts`, answering a line for every archetype id), after at most 10 mock Jev fits and
-  one Claude call; A's `for_you` usage counter is 1 and `for_you_cache` holds one entry, and a
-  second call returns the same body with no Jev or Claude call. `log_wear` called from supabase-js
-  bumps `wear_count` on exactly the worn garments, as A's own `garments` select shows. Needs the
-  Edge Runtime.
+  one Claude call; A's `for_you` usage counter is 1 and `for_you_cache` holds one entry (a seeded
+  older entry is pruned), a second call returns the same body with no Jev or Claude call, and a
+  Spanish call with the day's miss spent gets that newest entry back (`stale`), not a 429.
+  `log_wear` called from supabase-js bumps `wear_count` on exactly the worn garments, as A's own
+  `garments` select shows. Needs the Edge Runtime.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with `pnpm db:start && pnpm env:local && pnpm test:int`

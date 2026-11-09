@@ -419,27 +419,45 @@ export const DEGRADED_TTL_MS = 60 * 60 * 1000;
 /** A stored cache row: the result as stored (marker included) and its `created_at` in ms, null when unreadable. */
 export type CacheRow = { result: unknown; createdAt: number | null };
 
-/** The stored row for `key` whatever its age, or null on a miss or any error. */
-export async function cacheRead(
-  env: FnEnv,
-  fetchFn: FetchFn,
-  table: ResultCache,
-  userId: string,
-  key: string,
-): Promise<CacheRow | null> {
+/** The first row a cache read answered, or null when there is none or any request fails. */
+async function firstCacheRow(fetchFn: FetchFn, url: string, env: FnEnv): Promise<CacheRow | null> {
   try {
-    const rows = await restRows(
-      fetchFn,
-      `${env.supabaseUrl}/rest/v1/${table}?select=result,created_at&user_id=eq.${userId}&cache_key=eq.${encodeURIComponent(key)}`,
-      serviceHeaders(env),
-    );
-    const [row] = rows;
+    const [row] = await restRows(fetchFn, url, serviceHeaders(env));
     if (!isRecord(row) || row.result === undefined || row.result === null) return null;
     const createdAt = typeof row.created_at === 'string' ? Date.parse(row.created_at) : Number.NaN;
     return { result: row.result, createdAt: Number.isNaN(createdAt) ? null : createdAt };
   } catch {
     return null;
   }
+}
+
+/** The stored row for `key` whatever its age, or null on a miss or any error. */
+export function cacheRead(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  table: ResultCache,
+  userId: string,
+  key: string,
+): Promise<CacheRow | null> {
+  return firstCacheRow(
+    fetchFn,
+    `${env.supabaseUrl}/rest/v1/${table}?select=result,created_at&user_id=eq.${userId}&cache_key=eq.${encodeURIComponent(key)}`,
+    env,
+  );
+}
+
+/** The user's most recently written row, whatever its key or age; null when there is none or on any error. */
+export function cacheReadNewest(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  table: ResultCache,
+  userId: string,
+): Promise<CacheRow | null> {
+  return firstCacheRow(
+    fetchFn,
+    `${env.supabaseUrl}/rest/v1/${table}?select=result,created_at&user_id=eq.${userId}&order=created_at.desc&limit=1`,
+    env,
+  );
 }
 
 /**
@@ -494,6 +512,25 @@ export function cachePut(
     result,
     created_at: new Date(now).toISOString(),
   });
+}
+
+/** Deletes the user's rows under every key but `keep`; best effort, so a failure is ignored. */
+export async function cachePrune(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  table: ResultCache,
+  userId: string,
+  keep: string,
+): Promise<void> {
+  try {
+    const filter = `user_id=eq.${userId}&cache_key=neq.${encodeURIComponent(keep)}`;
+    await fetchFn(`${env.supabaseUrl}/rest/v1/${table}?${filter}`, {
+      method: 'DELETE',
+      headers: { ...serviceHeaders(env), prefer: 'return=minimal' },
+    });
+  } catch {
+    // A row left behind is only an older entry; the next write prunes it again.
+  }
 }
 
 export async function sha256Hex(text: string): Promise<string> {

@@ -88,7 +88,7 @@ const PROFILE: Row = {
   updated_at: '2026-11-01T00:00:00Z',
 };
 
-type RouteName = 'closet' | 'profile' | 'quota' | 'cacheGet' | 'cachePut' | 'jev' | 'claude';
+type RouteName = 'closet' | 'profile' | 'quota' | 'cacheGet' | 'cacheNewest' | 'cachePut' | 'cachePrune' | 'jev' | 'claude';
 type Call = { route: RouteName; url: URL; body: string | undefined };
 type FitState = { user: Row; outfit: { category: string; colors: string[] }[] };
 
@@ -98,7 +98,10 @@ function routeOf(method: string, url: URL): RouteName {
   if (url.pathname === '/rest/v1/garments' && method === 'GET') return 'closet';
   if (url.pathname === '/rest/v1/profiles' && method === 'GET') return 'profile';
   if (url.pathname === '/rest/v1/rpc/consume_quota' && method === 'POST') return 'quota';
-  if (url.pathname === '/rest/v1/for_you_cache') return method === 'GET' ? 'cacheGet' : 'cachePut';
+  if (url.pathname === '/rest/v1/for_you_cache') {
+    if (method === 'GET') return url.searchParams.has('cache_key') ? 'cacheGet' : 'cacheNewest';
+    return method === 'DELETE' ? 'cachePrune' : 'cachePut';
+  }
   throw new Error(`unexpected request ${method} ${url.href}`);
 }
 
@@ -211,10 +214,25 @@ function fakeFetch(w: World) {
         const row = w.cache.get(key);
         return json(200, row === undefined ? [] : [row]);
       }
+      case 'cacheNewest': {
+        // The user's newest entry, whatever its key.
+        expect(url.searchParams.get('user_id')).toBe(`eq.${USER_ID}`);
+        expect(url.searchParams.get('order')).toBe('created_at.desc');
+        expect(url.searchParams.get('limit')).toBe('1');
+        const newest = [...w.cache.values()].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0];
+        return json(200, newest === undefined ? [] : [newest]);
+      }
       case 'cachePut': {
         const row = JSON.parse(body ?? '{}') as { cache_key: string; result: unknown; created_at: string };
         w.cache.set(row.cache_key, { result: row.result, created_at: row.created_at });
         return new Response(null, { status: 201 });
+      }
+      case 'cachePrune': {
+        // Every key of the user's but the one just written.
+        expect(url.searchParams.get('user_id')).toBe(`eq.${USER_ID}`);
+        const keep = (url.searchParams.get('cache_key') ?? '').replace(/^neq\./, '');
+        for (const key of [...w.cache.keys()]) if (key !== keep) w.cache.delete(key);
+        return new Response(null, { status: 204 });
       }
       case 'jev': {
         const n = jevCount;
@@ -357,7 +375,7 @@ describe('too small', () => {
     expect(body).toEqual({ kind: 'too_small' });
   });
 
-  test('two available plus ten in the laundry is a wardrobe, not too_small (P5-R11)', async () => {
+  test('two available plus ten in the laundry is a wardrobe, not too_small', async () => {
     const laundry = Array.from({ length: 10 }, (_, i) => {
       const category: GarmentCategory = (['jeans', 'sneakers', 'shirt', 'pants', 'loafers'] as const)[i % 5] ?? 'jeans';
       return garment(30 + i, category, { status: 'laundry', colors: [i % 2 === 0 ? 'navy' : 'black'] });
@@ -517,7 +535,7 @@ describe('the ideas', () => {
   });
 });
 
-describe('the wardrobe (P5-R9)', () => {
+describe('the wardrobe: laundry and lent garments are still the user\'s', () => {
   test('a garment in the laundry still combines in the gain and still owns its archetype', async () => {
     // Both pairs of shoes away: with only available pieces no outfit would be complete.
     const isShoe = (row: Row): boolean => ['sneakers', 'loafers'].includes(String(row.category));
@@ -573,7 +591,7 @@ describe('cache and quota', () => {
     expect([...w.cache.values()][0]?.created_at).toBe(new Date(NOW + 7 * DAY_MS + 60_000).toISOString());
   });
 
-  test('a degraded entry is served for an hour, then recomputed (P4-R12)', async () => {
+  test('a degraded entry is served for an hour, then recomputed', async () => {
     const w = world({ claude: () => json(500, {}) });
     await forYou(w);
     const within = await forYou(w, forYouRequest(), NOW + 59 * 60_000);
@@ -585,12 +603,48 @@ describe('cache and quota', () => {
     expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: false })]);
   });
 
-  test('another language is another entry', async () => {
+  test('another language is another entry, which replaces the old one', async () => {
     const w = world();
     await forYou(w);
     const { calls } = await forYou(w, forYouRequest({ language: 'es' }));
     expect(count(calls, 'quota')).toBe(1);
-    expect(w.cache.size).toBe(2);
+    expect(w.cache.size).toBe(1);
+  });
+
+  test('a new entry removes the user\'s other keys, after the write', async () => {
+    const w = world();
+    await forYou(w);
+    const [oldKey] = [...w.cache.keys()];
+    w.garments = closet().map((row, i) => (i === 0 ? { ...row, colors: ['cream'] } : row));
+    const { calls } = await forYou(w);
+    const [newKey] = [...w.cache.keys()];
+    expect(w.cache.size).toBe(1);
+    expect(newKey).not.toBe(oldKey);
+    const routes = calls.map((call) => call.route);
+    expect(routes.indexOf('cachePrune')).toBeGreaterThan(routes.indexOf('cachePut'));
+    const prune = calls.find((call) => call.route === 'cachePrune');
+    expect(prune?.url.searchParams.get('cache_key')).toBe(`neq.${newKey ?? ''}`);
+  });
+
+  test('the empty answer prunes the other keys too', async () => {
+    const w = world();
+    await forYou(w);
+    w.garments = [garment(1, 'bag'), garment(2, 'bag', { colors: ['black'] }), garment(3, 'scarf')];
+    const { body } = await forYou(w);
+    expect(body).toEqual({ kind: 'ok', ideas: [] });
+    expect(cachedResults(w)).toEqual([{ kind: 'ok', ideas: [], degraded: false }]);
+  });
+
+  test('a failed prune still answers the ideas; a failed write prunes nothing', async () => {
+    const pruneFails = world({ fail: { cachePrune: json(500, {}) } });
+    const pruned = await forYou(pruneFails);
+    expect(pruned.response.status).toBe(200);
+    expect(outcomes()).toEqual([{ outcome: 'ranked' }]);
+
+    const putFails = world({ fail: { cachePut: json(500, {}) } });
+    const unwritten = await forYou(putFails);
+    expect(unwritten.response.status).toBe(200);
+    expect(count(unwritten.calls, 'cachePrune')).toBe(0);
   });
 
   test('logging a wear, the laundry or lending keeps the key; a garment edit or a profile edit changes it', async () => {
@@ -613,10 +667,12 @@ describe('cache and quota', () => {
       ['a profile edit', () => (w.profile = { ...PROFILE, updated_at: '2026-11-07T00:00:00Z' })],
     ];
     for (const [, change] of changes) {
-      const before = w.cache.size;
+      const before = [...w.cache.keys()];
       change();
       expect(count((await forYou(w)).calls, 'quota')).toBe(1);
-      expect(w.cache.size).toBe(before + 1);
+      // A new key, and the old one pruned.
+      expect(w.cache.size).toBe(1);
+      expect([...w.cache.keys()]).not.toEqual(before);
     }
   });
 
@@ -667,17 +723,55 @@ describe('cache and quota', () => {
     expect(body).toEqual({ error: 'internal' });
   });
 
-  test('over the quota with an expired entry for another key only → 429', async () => {
+  /** A garment that owns the idea's archetype: the same category and first color. */
+  const owning = (n: number, idea: ForYouCard): Row => garment(n, idea.category, { colors: [idea.colors[0]] });
+
+  test('over the quota with no entry for this closet → the newest entry for another key, minus the ideas the wardrobe now owns (stale)', async () => {
+    const w = world();
+    const first = (await forYou(w)).body as OkBody;
+    const [bought, ...rest] = first.ideas;
+    if (bought === undefined) throw new Error('expected ideas');
+    w.quota = false;
+    w.garments = [...closet(), owning(50, bought)];
+    const { response, body, calls } = await forYou(w, forYouRequest(), NOW + 60 * 60_000);
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ kind: 'ok', ideas: rest });
+    expect(count(calls, 'cacheNewest')).toBe(1);
+    expect(count(calls, 'jev') + count(calls, 'claude') + count(calls, 'cachePut') + count(calls, 'cachePrune')).toBe(0);
+    expect(outcomes()).toEqual([{ outcome: 'ranked' }, { outcome: 'stale' }]);
+  });
+
+  test('over the quota with another key\'s entry whose ideas the wardrobe now owns, every one → 429', async () => {
+    const w = world();
+    const first = (await forYou(w)).body as OkBody;
+    w.quota = false;
+    w.garments = [...closet(), ...first.ideas.map((idea, i) => owning(50 + i, idea))];
+    const { response, body } = await forYou(w, forYouRequest(), NOW + 60 * 60_000);
+    expect(response.status).toBe(429);
+    expect(body).toEqual({ error: 'over_quota' });
+    expect(outcomes()).toEqual([{ outcome: 'ranked' }, { outcome: 'over_quota' }]);
+  });
+
+  test('over the quota with only an empty entry for another key → 429', async () => {
+    const w = world({ garments: [garment(1, 'bag'), garment(2, 'bag', { colors: ['black'] }), garment(3, 'scarf')] });
+    await forYou(w);
+    w.quota = false;
+    w.garments = closet();
+    const { response } = await forYou(w);
+    expect(response.status).toBe(429);
+  });
+
+  test('over the quota when the newest-entry read fails → 429, not 500', async () => {
     const w = world();
     await forYou(w);
     w.quota = false;
     w.garments = closet().map((row, i) => (i === 0 ? { ...row, colors: ['cream'] } : row));
-    const { response } = await forYou(w, forYouRequest(), NOW + 8 * DAY_MS);
+    w.fail = { cacheNewest: json(500, {}) };
+    const { response } = await forYou(w);
     expect(response.status).toBe(429);
-    expect(outcomes()).toEqual([{ outcome: 'ranked' }, { outcome: 'over_quota' }]);
   });
 
-  test('a season change is a miss, even inside the 7 days (P5-R10)', async () => {
+  test('a season change is a miss, even inside the 7 days', async () => {
     const w = world();
     const autumn = Date.parse('2026-11-28T09:00:00Z');
     await forYou(w, forYouRequest(), autumn);
@@ -685,11 +779,11 @@ describe('cache and quota', () => {
     expect(count(sameSeason.calls, 'quota')).toBe(0);
     const winter = await forYou(w, forYouRequest(), Date.parse('2026-12-01T09:00:00Z'));
     expect(count(winter.calls, 'quota')).toBe(1);
-    expect(w.cache.size).toBe(2);
+    expect(w.cache.size).toBe(1);
   });
 });
 
-describe('latency budget (P4-R11, the lines deadline)', () => {
+describe('latency budget (the 15 s fit budget, the lines deadline)', () => {
   beforeEach(() => {
     jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
   });
@@ -746,7 +840,7 @@ describe('latency budget (P4-R11, the lines deadline)', () => {
     return { response, body: (await response.json()) as OkBody, calls: fake.calls, answeredAfter: answered.after };
   }
 
-  test('every Jev call and Claude hanging: the answer still lands before 40 s, with templates (I1)', async () => {
+  test('every Jev call and Claude hanging: the answer still lands before 40 s, with templates', async () => {
     // The closet read takes 14.9 s, so a first wave of fits starts just inside the budget and runs
     // to its 10 s timeout; Claude then gets only what's left before the 38 s lines deadline.
     const w = world({ closetDelayMs: 14_900, hang: ['jev', 'claude'] });
