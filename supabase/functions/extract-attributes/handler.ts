@@ -1,7 +1,7 @@
 // The `extract-attributes` Edge Function's request handler: called by a database webhook after a
 // garment row is inserted, it sends the garment's photo to Claude and writes the enum-only
-// attributes back. Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives
-// it under Node and `index.ts` serves it under Deno.
+// attributes back. The photo is read through `_shared/photoStore.ts`. Runtime-neutral: every effect
+// goes through the injected `fetch`, so Jest drives it under Node and `index.ts` serves it under Deno.
 //
 // Every failure after the garment is loaded (quota check, photo, Claude, parsing) still ends the
 // garment's `pending` state, so it always reaches review. Logs carry only the garment id and an
@@ -9,6 +9,7 @@
 
 import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
 import { buildExtractionRequest, isRecord, parseExtraction } from '../_shared/extraction.ts';
+import { downloadObject, photoPath } from '../_shared/photoStore.ts';
 
 export type ExtractEnv = {
   supabaseUrl: string;
@@ -130,9 +131,8 @@ async function loadClothingType(deps: ExtractDeps, userId: string): Promise<Clot
 }
 
 async function loadPhotoBase64(deps: ExtractDeps, garment: Garment): Promise<string | null> {
-  const response = await serviceRequest(deps, `/storage/v1/object/garments/${garment.userId}/${garment.id}/full.webp`);
-  if (response.status !== 200) return null;
-  return toBase64(new Uint8Array(await response.arrayBuffer()));
+  const bytes = await downloadObject(deps.env, deps.fetch, photoPath(garment.userId, garment.id, 'full'));
+  return bytes === null ? null : toBase64(bytes);
 }
 
 /** The Messages API response body, or null on a non-2xx answer, a network error or the timeout. */

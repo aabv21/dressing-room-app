@@ -116,7 +116,7 @@ export function userHeaders(env: SupabaseEnv, auth: string): Record<string, stri
 }
 
 /** Headers for a request made with the service role, which bypasses RLS. */
-export function serviceHeaders(env: SupabaseEnv): Record<string, string> {
+export function serviceHeaders(env: Pick<SupabaseEnv, 'serviceRoleKey'>): Record<string, string> {
   return { apikey: env.serviceRoleKey, authorization: `Bearer ${env.serviceRoleKey}` };
 }
 

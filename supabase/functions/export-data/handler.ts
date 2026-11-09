@@ -1,8 +1,9 @@
 // The `export-data` Edge Function's request handler: everything the signed-in caller owns, as one
 // JSON document `{ exportedAt, profile, garments, outfits (each with its items), wears, photos }`.
 // The rows are read with the caller's own token, so RLS applies (and any row that still isn't the
-// caller's is dropped); the photo URLs are signed for 7 days with the service role, only for
-// `{uid}/{garmentId}/{full,thumb}.webp` paths built from the caller's own garments.
+// caller's is dropped); the photo URLs are signed for 7 days with the service role, through
+// `_shared/photoStore.ts`, only for `{uid}/{garmentId}/{full,thumb}.webp` paths built from the
+// caller's own garments.
 // Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
 // `index.ts` serves it under Deno. Logs carry only an outcome word.
 //
@@ -11,16 +12,8 @@
 // links only open after swapping in the local API URL. Upgrade path: a public-URL function secret.
 
 import { isRecord } from '../_shared/extraction.ts';
-import {
-  restJson,
-  restRows,
-  serviceHeaders,
-  type SupabaseEnv,
-  UpstreamError,
-  userHeaders,
-  userIdFromJwt,
-  UUID,
-} from '../_shared/userContext.ts';
+import { PHOTO_KINDS, photoPath, signedUrls } from '../_shared/photoStore.ts';
+import { restRows, type SupabaseEnv, userHeaders, userIdFromJwt, UUID } from '../_shared/userContext.ts';
 
 export type ExportDataDeps = { env: SupabaseEnv; fetch: typeof fetch; now?: () => number };
 
@@ -38,12 +31,9 @@ export type DataExport = {
   photos: ExportPhoto[];
 };
 
-const BUCKET = 'garments';
 export const SIGNED_URL_TTL_S = 7 * 24 * 60 * 60;
 /** PostgREST answers at most `max_rows` (1000) rows per request, so every table is read in pages. */
 export const PAGE = 1000;
-const SIGN_CHUNK = 500;
-const VARIANTS = ['full', 'thumb'] as const;
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -76,26 +66,6 @@ async function readAll(
   }
 }
 
-/** The signed URL of every path that exists (by path), signed in chunks with the service role. */
-async function signPaths(env: SupabaseEnv, fetchFn: typeof fetch, paths: readonly string[]): Promise<Map<string, string>> {
-  const urls = new Map<string, string>();
-  for (let start = 0; start < paths.length; start += SIGN_CHUNK) {
-    const answer = await restJson(fetchFn, `${env.supabaseUrl}/storage/v1/object/sign/${BUCKET}`, {
-      method: 'POST',
-      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-      body: JSON.stringify({ expiresIn: SIGNED_URL_TTL_S, paths: paths.slice(start, start + SIGN_CHUNK) }),
-    });
-    if (!Array.isArray(answer)) throw new UpstreamError('storage sign: not an array');
-    for (const entry of answer as unknown[]) {
-      // A path with no object (a photo that never uploaded) comes back with an error and no URL.
-      if (isRecord(entry) && typeof entry.path === 'string' && typeof entry.signedURL === 'string') {
-        urls.set(entry.path, encodeURI(`${env.supabaseUrl}/storage/v1${entry.signedURL}`));
-      }
-    }
-  }
-  return urls;
-}
-
 async function photosOf(
   env: SupabaseEnv,
   fetchFn: typeof fetch,
@@ -103,15 +73,15 @@ async function photosOf(
   garments: readonly Row[],
 ): Promise<ExportPhoto[]> {
   const ids = garments.flatMap((garment) => (typeof garment.id === 'string' && UUID.test(garment.id) ? [garment.id] : []));
-  const pathOf = (id: string, variant: (typeof VARIANTS)[number]): string => `${userId}/${id}/${variant}.webp`;
-  const urls = await signPaths(
+  const urls = await signedUrls(
     env,
     fetchFn,
-    ids.flatMap((id) => VARIANTS.map((variant) => pathOf(id, variant))),
+    ids.flatMap((id) => PHOTO_KINDS.map((kind) => photoPath(userId, id, kind))),
+    SIGNED_URL_TTL_S,
   );
   return ids.flatMap((garmentId) => {
-    const full = urls.get(pathOf(garmentId, 'full')) ?? null;
-    const thumb = urls.get(pathOf(garmentId, 'thumb')) ?? null;
+    const full = urls.get(photoPath(userId, garmentId, 'full')) ?? null;
+    const thumb = urls.get(photoPath(userId, garmentId, 'thumb')) ?? null;
     return full === null && thumb === null ? [] : [{ garmentId, full, thumb }];
   });
 }

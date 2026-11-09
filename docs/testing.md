@@ -136,6 +136,12 @@ never called. See `docs/ai.md`. To run only this project:
   that ignores text in the image) and the response sanitizer: a refusal, `is_garment: false` or
   non-JSON fails; only enum values survive, at most 3 colors, and a dropped value marks its field
   uncertain.
+- `supabase/functions/_shared/__tests__/photoStore.test.ts` — the Storage boundary against a fake
+  `fetch`: photo paths (non-uuid ids refused), the URL, method and service-role headers of every
+  call, listing past 1000 entries and at most 5 folders at a time, removal in chunks of 1000,
+  signing one path or 500 per call, a missing object as `null` (a 404, or Storage's 400 with
+  `"statusCode": "404"`), a throw on a 5xx, and that no function file outside `photoStore.ts`
+  contains `/storage/v1/`.
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
   after 30 s (`failed`), a garment no longer pending or missing, and logs that carry only the garment

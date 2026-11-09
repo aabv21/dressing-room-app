@@ -369,6 +369,21 @@ and (storage.foldername(name))[1] = (select auth.uid())::text
 A user can never read, write, or delete another user's objects, even with a guessed path — the
 folder-name check runs server-side on every request.
 
+The Edge Functions reach the bucket only through `supabase/functions/_shared/photoStore.ts`, always
+with the service role (which bypasses these policies, so every caller passes a uid it has verified):
+
+- `photoPath(uid, garmentId, 'full' | 'thumb')` builds `{uid}/{garmentId}/{kind}.webp` and throws
+  when either id isn't a uuid;
+- `listUserObjects` lists everything under `{uid}/` at any depth (1000 entries a page, the garment
+  folders 5 at a time), and `removeObjects` removes paths 1000 per call;
+- `signedUrl` signs one path, `signedUrls` up to 500 paths per call;
+- `downloadObject` reads an object's bytes.
+
+A missing object is `null` from `signedUrl` and `downloadObject` (and simply absent from
+`signedUrls`'s map). Storage reports one as a 404, or, in the version the local stack runs, as a
+400 whose body says `"statusCode": "404"`; both count as missing. Any other failure throws. No other
+function file builds a `/storage/v1/` URL; `_shared/__tests__/photoStore.test.ts` fails if one does.
+
 ### Writing a profile: update, never a partial upsert
 
 `saveProfile` sends `update … where user_id = <me>` with only the columns that changed, and treats
