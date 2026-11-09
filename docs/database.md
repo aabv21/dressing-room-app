@@ -129,9 +129,10 @@ timestamptz not null default now())` is one row per logged wear of an outfit.
 Indexes: `outfits_user_id_idx` on `outfits (user_id)`; on `outfit_items`, `outfit_items_garment_id_idx`
 on `outfit_items (garment_id)` — no separate index on `outfit_id` alone, since the primary key
 `(outfit_id, garment_id)` already leads with `outfit_id` and serves that lookup; on `wears`,
-`wears_user_id_idx` on `wears (user_id)`, `wears_user_id_worn_on_idx` on `wears (user_id, worn_on
-desc)` (backs Stats' and Diary's reads of a user's wears by date, `src/stats/wearsRepository.ts`'s
-`listWears`) and `wears_outfit_id_idx` on `wears (outfit_id)` (backs the wear-count trigger's and
+`wears_user_id_worn_on_idx` on `wears (user_id, worn_on desc)` (backs Stats' and Diary's reads of a
+user's wears by date, `src/stats/wearsRepository.ts`'s `listWears`, and every other lookup by
+`user_id`, which is why `20261109151326_drop_redundant_wears_user_id_idx.sql` dropped the plain
+`wears (user_id)` index Plan 4 also created) and `wears_outfit_id_idx` on `wears (outfit_id)` (backs the wear-count trigger's and
 the RPCs' per-outfit lookups).
 
 **Clients never insert or update these tables directly in the documented path** —
@@ -692,7 +693,8 @@ to the API until RLS and these revokes close it:
   including trigger functions (a trigger still fires; only direct calls are blocked;
   `schema_hygiene.test.sql` checks every trigger function).
 - An index on the column per-user queries filter by (`user_id`), unless it's already the primary
-  key.
+  key or leads another index (`schema_hygiene.test.sql` fails on an index another one makes
+  redundant).
 - Tests: pgTAP for the policies and constraints, and supabase-js integration tests that user A
   can't select, update, delete or list user B's rows.
 - `pnpm db:types` and commit the generated types (CI fails on drift).
@@ -807,7 +809,8 @@ discards both the user and its profile row — no cleanup step is needed.
   `'rating'` is exhausted for the same user — the two `quota_kind` values are tracked independently.
 - `schema_hygiene.test.sql` — checklist rules checked across the whole `public` schema, so a new
   table or function can't miss one silently: no trigger function is executable by `anon` or
-  `authenticated`.
+  `authenticated`, and no index is a leading-column prefix of another index on the same table (the
+  longer one already serves its lookups, so the shorter one is only a write cost).
 - `insights_account.test.sql` (Plan 5) — the client can set their own `pinned_on` and `status =
   'donated'` on `garments`; `authenticated` and `anon` can neither select nor insert
   `apple_tokens`/`for_you_cache`; `consume_quota(A, 'for_you', 1)` returns `true` then `false`, same

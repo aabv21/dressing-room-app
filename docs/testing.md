@@ -328,7 +328,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
   queueing the request fails.
 - `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
-  is executable by a client role.
+  is executable by a client role, and no index is made redundant by another that starts with the
+  same columns.
 
 See `docs/database.md` for how these tests impersonate a user and create test rows without a real
 JWT.
