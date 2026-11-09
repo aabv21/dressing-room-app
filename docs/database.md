@@ -2,7 +2,8 @@
 
 The local backend is Supabase (Postgres 17) run via `pnpm db:*` scripts (see `AGENTS.md`). This
 document covers the `public.profiles`, `public.garments` and `public.usage_counters` tables, their
-enums, the signup trigger, row level security, and the `garments` storage bucket. See
+enums, the signup trigger, row level security, the `garments` storage bucket, and what account
+deletion and data export do to them. See
 `docs/testing.md` for how these are exercised by pgTAP and the integration Jest project.
 
 ## Tables and enums
@@ -184,8 +185,9 @@ Server-only: one row per user who signed in with Apple, holding the refresh toke
 revokes with Apple before removing the `auth.users` row. `(user_id uuid primary key references
 auth.users on delete cascade, refresh_token text not null, created_at timestamptz not null default
 now())`. RLS is enabled with **no policies at all** and `revoke all` from both `anon` and
-`authenticated` — same server-only pattern as the caches above; only `service_role` (the Apple
-sign-in and account-deletion Edge Functions) ever touches it.
+`authenticated` — same server-only pattern as the caches above; only `service_role` (the
+`apple-token` and `delete-account` Edge Functions) ever touches it. See "Account deletion and data
+export" below for how the row is written and used.
 
 ### `public.usage_counters`
 
@@ -555,6 +557,54 @@ back into onboarding. The app's `completeOnboarding` sends Postgres's `'now'` li
 NOTE: the trigger also blocks the service role, so an admin reset of onboarding (back to null) must
 run with the trigger disabled: `set local session_replication_role = replica;` in the same
 transaction as the `update` (as the table owner).
+
+### Account deletion and data export (Plan 5)
+
+Three Edge Functions, all `verify_jwt = true` and called by the signed-in user
+(`supabase/functions/{apple-token,delete-account,export-data}/`). The service-role key is used only
+inside them, never in `src/`.
+
+- **`apple-token`** — `signInWithIdToken` keeps no Apple refresh token, and Apple's `/auth/revoke`
+  needs one. Right after Sign in with Apple the app sends the credential's one-time
+  `authorizationCode` (fire-and-forget, `src/auth/socialAuth.ts`); the function exchanges it at
+  Apple's `/auth/token` with an ES256 client secret (`_shared/apple.ts`, signed with WebCrypto from
+  the `.p8` key). The token is bound to the caller: the exchange's id_token must be issued by Apple
+  (`iss`) for this app (`aud` = `APPLE_CLIENT_ID`), and its `sub` must be one of the caller's
+  `auth.identities` with provider `apple` (read with the service role through
+  `GET /auth/v1/admin/users/{uid}`). Only then does it upsert `public.apple_tokens (user_id,
+  refresh_token)` with the service role; otherwise it stores nothing and revokes the new token, best
+  effort. It answers 200 with an outcome word (`stored`, `skipped` without the `APPLE_*` secrets,
+  `invalid`, `exchange_failed`, `identity_mismatch`, `lookup_failed`, `store_failed`); the token
+  never leaves the server.
+- **`delete-account`** — in this order:
+  0. confirms the caller with `GET /auth/v1/user` and the caller's own token, before anything
+     irreversible; Auth's `user_not_found` (or a 404) means an earlier attempt already finished, so
+     it answers `deleted` and touches nothing, and any other failure answers 500;
+  1. with the service role, lists every object under `garments/{uid}/` (Storage's list, 1000 entries
+     a page, the garment folders 5 at a time) and only then removes them, 1000 paths per call;
+  2. revokes the `apple_tokens` refresh token with Apple, if there is one — a failed revoke (or a
+     failed read of the row) is logged as `revoke_failed` and never blocks the deletion;
+  3. with the service role, `DELETE /auth/v1/admin/users/{uid}`, after which every public table cascades away:
+     `profiles`, `garments` (and through them `outfit_items`), `outfits`, `wears`,
+     `usage_counters`, `rating_cache`, `lucky_cache`, `for_you_cache` and `apple_tokens` all
+     reference `auth.users` with `on delete cascade` (pinned by `insights_account.test.sql`).
+
+  Safe to retry: a failed caller check, listing, removal or user deletion answers 500 with the user
+  still there, so the next attempt starts over with whatever is left; once the user is gone, a retry
+  (the access token stays valid until it expires) stops at step 0 and answers 200
+  `{ outcome: 'deleted' }`; a 404 from the admin delete counts as deleted too. Storage objects are removed first
+  because nothing cascades into `storage.objects`.
+- **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
+  and `wears` with the caller's own token, so RLS applies, in pages of 1000 (`max_rows`), and drops
+  any row whose `user_id` isn't the caller's. Photo URLs are signed with the service role for 7 days,
+  only for `{uid}/{garmentId}/{full,thumb}.webp` paths built from the caller's own garments (a
+  missing variant is `null`, and a garment with no photo at all is left out of `photos`). The answer
+  is `{ exportedAt, profile, garments, outfits, wears, photos: [{ garmentId, full, thumb }] }`.
+
+NOTE: locally the signed export URLs start with the Edge Runtime's internal `SUPABASE_URL`
+(`http://kong:8000`), so they only open after swapping in `http://127.0.0.1:54421`; hosted, it's the
+public project URL. Upgrade path: a public-URL function secret, if a local export ever needs to
+open on a device.
 
 ## New table checklist
 

@@ -247,6 +247,10 @@ pnpm test:int
 pnpm db:stop
 ```
 
+`pnpm db:start` (like `db:start:ci`) goes through `scripts/db-start.ts`, which first writes a
+local-only Apple test key to gitignored `supabase/.temp/apple-test-key.pem` if it's missing;
+`account.int.test.ts` needs it, so start the stack with the script, not a bare `supabase start`.
+
 CI's `database` job (`.github/workflows/ci.yml`) runs the Docker-dependent steps in the same order,
 on the same ports, since the config in `supabase/config.toml` applies in CI too (the stack runs
 alone there, so there's no other local project to avoid colliding with). Two differences:

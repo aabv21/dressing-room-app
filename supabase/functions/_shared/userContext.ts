@@ -1,7 +1,8 @@
-// What the user-called AI functions (`rate-outfit`, `lucky-list`, `for-you`) share: who is
-// calling, the caller's profile and garments (read with the caller's own token, so RLS applies),
-// today's weather (cached per location and UTC hour), the daily quota, the result caches (service
-// role), the Jev and Claude calls with their timeouts, and a concurrency-limited map.
+// What the user-called functions share: who is calling, the caller's profile and garments (read
+// with the caller's own token, so RLS applies), today's weather (cached per location and UTC hour),
+// the daily quota, the result caches (service role), the Jev and Claude calls with their timeouts,
+// and a concurrency-limited map. The account functions (`apple-token`, `delete-account`,
+// `export-data`) use only the caller and the PostgREST helpers, with `SupabaseEnv`.
 //
 // Runtime-neutral: every effect goes through the injected `fetch`, and only web-standard globals
 // (`crypto.subtle`, `atob`, `TextEncoder`, `AbortController`) are used, so Jest drives it under
@@ -57,6 +58,9 @@ export type FnEnv = {
   geocodingUrl: string;
 };
 
+/** The part of `FnEnv` every function has: the project URL and its two keys. */
+export type SupabaseEnv = Pick<FnEnv, 'supabaseUrl' | 'anonKey' | 'serviceRoleKey'>;
+
 type FetchFn = typeof fetch;
 
 export const JEV_TIMEOUT_MS = 10_000;
@@ -106,28 +110,35 @@ export function userIdFromJwt(authHeader: string | null): string | null {
 
 // --- PostgREST ---------------------------------------------------------------------------------
 
-function userHeaders(env: FnEnv, auth: string): Record<string, string> {
+/** Headers for a request made as the caller: RLS applies. */
+export function userHeaders(env: SupabaseEnv, auth: string): Record<string, string> {
   return { apikey: env.anonKey, authorization: auth };
 }
 
-function serviceHeaders(env: FnEnv): Record<string, string> {
+/** Headers for a request made with the service role, which bypasses RLS. */
+export function serviceHeaders(env: SupabaseEnv): Record<string, string> {
   return { apikey: env.serviceRoleKey, authorization: `Bearer ${env.serviceRoleKey}` };
 }
 
-async function restJson(fetchFn: FetchFn, url: string, init: RequestInit): Promise<unknown> {
+export async function restJson(fetchFn: FetchFn, url: string, init: RequestInit): Promise<unknown> {
   const response = await fetchFn(url, init);
   if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
   return (await response.json()) as unknown;
 }
 
-async function restRows(fetchFn: FetchFn, url: string, headers: Record<string, string>): Promise<unknown[]> {
+export async function restRows(fetchFn: FetchFn, url: string, headers: Record<string, string>): Promise<unknown[]> {
   const rows = await restJson(fetchFn, url, { headers });
   if (!Array.isArray(rows)) throw new UpstreamError('not an array');
   return rows as unknown[];
 }
 
 /** POST with `Prefer: resolution=merge-duplicates`: an insert that updates the row on a primary-key conflict. */
-async function upsert(env: FnEnv, fetchFn: FetchFn, table: string, row: Record<string, unknown>): Promise<boolean> {
+export async function upsert(
+  env: SupabaseEnv,
+  fetchFn: FetchFn,
+  table: string,
+  row: Record<string, unknown>,
+): Promise<boolean> {
   try {
     const response = await fetchFn(`${env.supabaseUrl}/rest/v1/${table}`, {
       method: 'POST',
