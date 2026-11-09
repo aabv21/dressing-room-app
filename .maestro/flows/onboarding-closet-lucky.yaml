@@ -123,6 +123,6 @@ appId: com.aabv21.dressingroom
 - tapOn: "Closet"
 - tapOn: "Stats"
 - extendedWaitUntil:
-    visible: "1 outfits logged"
+    visible: "1 outfit logged"
     timeout: 30000
 - assertVisible: "What you wear most"

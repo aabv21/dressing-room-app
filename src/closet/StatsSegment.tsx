@@ -425,7 +425,7 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
         <>
           <View style={styles.kpis}>
             <KpiTile value={`${String(kpi.wornPct)}%`} label={t(`stats.kpi.worn.${period}`)} />
-            <KpiTile value={String(kpi.outfits)} label={t('stats.kpi.outfits')} />
+            <KpiTile value={String(kpi.outfits)} label={t(pluralKey('stats.kpi.outfits', kpi.outfits))} />
             <KpiTile value={kpi.avgScore === null ? '—' : `${String(kpi.avgScore)}%`} label={t('stats.kpi.score')} />
             <KpiTile
               value={t(pluralKey('stats.kpi.streak', kpi.streak), { count: kpi.streak })}

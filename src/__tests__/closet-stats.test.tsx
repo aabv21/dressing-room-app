@@ -397,6 +397,18 @@ describe('stats', () => {
     expect(screen.queryByText(/^Tip:/)).not.toBeOnTheScreen();
   });
 
+  test('one outfit in the period reads in the singular', async () => {
+    mockedListWears.mockResolvedValue([
+      { id: 'w-one', wornOn: '2026-11-03', occasion: null, score: null, garmentIds: [SKIRT] },
+    ]);
+    await render(<ClosetScreen />);
+    await fireEvent.press(tab('Stats'));
+
+    expect(await screen.findByText('outfit logged')).toBeOnTheScreen();
+    expect(screen.getByLabelText('1 outfit logged')).toBeOnTheScreen();
+    expect(screen.queryByText('outfits logged')).not.toBeOnTheScreen();
+  });
+
   test('a failed history fetch shows an error line', async () => {
     mockedListWears.mockRejectedValue(new Error('offline'));
     await render(<ClosetScreen />);
