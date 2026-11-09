@@ -322,8 +322,8 @@ function withPinnedFirst<T extends { id: string }>(items: readonly T[], pinnedId
  * accessory, where "none" weighs as much as all the extras together. Each slot's pool holds only
  * pieces that pass the per-piece rules (`fitsAlone`), so a few admissible garments in a large
  * closet are always reachable and a draw can only fail on colors or patterns. Duplicates are
- * dropped; drawing stops at `limit` candidates or after `limit × 20` draws in total. Items worn in the last 7 days are avoided while
- * at least 3 candidates survive without them: that first pass may use half the draws, the
+ * dropped; drawing stops at `limit` candidates or after `limit × 20` draws in total. Items worn
+ * in the last 7 days are avoided while at least 3 candidates survive without them: that first pass may use half the draws, the
  * fallback pass the rest. Deterministic for a given seed and closet order.
  *
  * `pinnedIds`, when given, also biases every `PIN_ATTEMPT_STRIDE`th draw to pick one of them for

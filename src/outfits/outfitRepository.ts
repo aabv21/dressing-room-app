@@ -1,6 +1,6 @@
 // The outfit data layer's writes: logging a wear (idempotent per client-generated `wearId`, so a
-// retried request never logs it twice) and saving a built outfit. Both go through `rpc`, with errors mapped through
-// `requestResult.ts` the same way `garmentRepository.ts`'s writes are.
+// retried request never logs it twice) and saving a built outfit. Both go through `rpc`, with
+// errors mapped through `requestResult.ts` the same way `garmentRepository.ts`'s writes are.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 

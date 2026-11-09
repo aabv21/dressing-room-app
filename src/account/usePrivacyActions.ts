@@ -98,9 +98,11 @@ export function usePrivacyActions(): { exporting: Action; deleting: Action } {
     if (result === 'reauth' && message !== undefined) {
       // An app-wide Alert, since the local sign-out takes this screen away; never shown to another
       // account that signed in while the request was out.
-      if (!sessionStillFor(userId)) return;
-      Alert.alert(t(message));
-      announceForAccessibility(t(message));
+      if (sessionStillFor(userId)) {
+        Alert.alert(t(message));
+        announceForAccessibility(t(message));
+      }
+      if (mounted.current) setDeleteBusy(false);
       return;
     }
     if (!mounted.current) return;

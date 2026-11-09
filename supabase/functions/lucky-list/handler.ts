@@ -73,7 +73,10 @@ type Outcome = 'cached' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_
 export const LUCKY_DAILY_LIMIT = 10;
 /** How many of the best pre-scored candidates are rated with Jev. */
 export const MAX_RANKED = 30;
-/** At most this many of the ranked outfits share the same base (the same pieces but the extra), so the list spreads. */
+/**
+ * At most this many of the ranked outfits share the same base (the same pieces but the extra), so
+ * the list spreads.
+ */
 export const MAX_PER_BASE = 2;
 /**
  * The floor of the per-garment cap among the ranked outfits (raised for a slot with few

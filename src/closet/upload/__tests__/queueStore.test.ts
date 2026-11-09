@@ -426,8 +426,8 @@ test('resetFailed clears failure, attempts and backoff', async () => {
 });
 
 test('a replacement enqueued mid-run does not interrupt the running upload or lose the new photo', async () => {
-  // The replacement race end to end, against the real queueStore (not the simplified FakeStore runQueue.test.ts
-  // uses): gate `prepare` for garment g, call enqueueReplacement(g) while that first run is still
+  // The replacement race end to end, against the real queueStore (not the simplified FakeStore
+  // runQueue.test.ts uses): gate `prepare` for garment g, call enqueueReplacement(g) while that first run is still
   // mid-`prepare`, then release. The old run must still commit (using the data it already read),
   // removing only its own row/files; the replacement row must survive untouched and be picked up
   // by a follow-up pass.

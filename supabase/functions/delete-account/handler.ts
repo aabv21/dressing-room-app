@@ -13,7 +13,7 @@
 //   4. Once this call has deleted the user, the folder is swept one last time, best effort: another
 //      device (or a token that is still valid) can upload between steps 1 and 3, because the
 //      storage insert policy only checks the folder's uid. A failed sweep never changes the answer.
-// Steps 1–3 use the service role. Safe to retry: a failure in step 0, 1 or 3 answers 500 with the
+// Steps 1–4 use the service role. Safe to retry: a failure in step 0, 1 or 3 answers 500 with the
 // user still there, so a retry starts over with whatever is left; once the user is gone, a retry
 // (the caller's token is still valid until it expires) sweeps the folder at step 0 and answers
 // `deleted`. The uid is always the verified JWT's `sub`, never anything from the request body.
