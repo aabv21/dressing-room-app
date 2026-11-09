@@ -143,7 +143,9 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
   past a full list page. Halfway failures cover a failed schema or data dump, a refused list, a
   500 or 404 on one object, `fetch` throwing, an unsafe object name, a missing `pnpm`, and an
   existing `.partial`. Each exits non-zero, leaves only its `.partial` and rotates nothing, and no
-  log line holds the database URL, its password or the service-role key. The real dump, restore
+  log line holds the database URL, its password or the service-role key. No spawned command line
+  holds the password either, decoded or percent-encoded; the dump gets it in `PGPASSWORD`, and a
+  `BACKUP_DB_URL` that isn't a Postgres URL is refused without being echoed. The real dump, restore
   and photo upload are checked by hand against the local stack (`docs/database.md`'s "Hosted
   backups").
 

@@ -846,7 +846,9 @@ A run writes into `<UTC time>.partial/` and renames it only once every step has 
 deletes all but the newest 14 complete backups. If any step fails (the dump, a refused key, or one
 object's download), the run exits 1, leaves its `.partial` folder for inspection and deletes
 nothing. Delete old `.partial` folders by hand. The log has outcome words only: the database URL,
-its password and the service-role key are redacted.
+its password and the service-role key are redacted. The password never reaches a command line,
+where `ps` would show it: the dump gets `BACKUP_DB_URL` without it and the password in
+`PGPASSWORD`.
 
 The backup doesn't hold the Vault secrets (`extract_attributes_url`, `extract_webhook_secret`) or
 the function secrets. Those are set by hand (see `AGENTS.md`'s "Local backend").

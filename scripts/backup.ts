@@ -14,7 +14,9 @@
 // Everything is written to `<BACKUP_DIR>/<UTC timestamp>.partial/`, renamed to `<UTC timestamp>/`
 // only once complete; then all but the newest `KEEP_BACKUPS` complete backups are deleted. A run
 // that fails at any step exits 1 and leaves its `.partial` folder for inspection, and never
-// rotates. Logs carry outcome words only: secrets and connection strings are redacted.
+// rotates. Logs carry outcome words only: secrets and connection strings are redacted. The database
+// password never reaches a command line (where `ps` shows it): the dump gets the URL without it and
+// the password in `PGPASSWORD`.
 //
 // Env: BACKUP_DB_URL (the hosted connection string, percent-encoded), SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY, and optionally BACKUP_DIR (default `~/dressing-room-backups`, never
@@ -62,12 +64,23 @@ const BACKUP_NAME = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$/;
 
 export type ManifestEntry = { path: string; size: number; sha256: string };
 
-export type BackupConfig = { dbUrl: string; supabaseUrl: string; serviceRoleKey: string; backupRoot: string };
+export type BackupConfig = {
+  /** `BACKUP_DB_URL` without its password. */
+  dbUrl: string;
+  /** `BACKUP_DB_URL`'s password, percent-decoded; empty when the URL has none. */
+  dbPassword: string;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  backupRoot: string;
+};
 
 export type CommandResult = { code: number; stderr: string };
 
-/** Runs `command` with `args` from the repository root, resolving with its exit code and stderr. */
-export type RunCommand = (command: string, args: readonly string[]) => Promise<CommandResult>;
+/**
+ * Runs `command` with `args` from the repository root, with `env` added to its environment,
+ * resolving with its exit code and stderr.
+ */
+export type RunCommand = (command: string, args: readonly string[], env: Readonly<Record<string, string>>) => Promise<CommandResult>;
 
 export type BackupDeps = {
   config: BackupConfig;
@@ -105,21 +118,38 @@ export function redact(text: string, secrets: readonly string[]): string {
 const listOf = (names: readonly string[]): string =>
   names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
 
+/** `url` split into the URL without its password and the decoded password; null when it isn't a Postgres URL. */
+function splitDbUrl(url: string): { dbUrl: string; dbPassword: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+    if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') return null;
+    const dbPassword = decodeURIComponent(parsed.password);
+    parsed.password = '';
+    return { dbUrl: parsed.href, dbPassword };
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The run's settings from `env`, or why they're unusable. BACKUP_DIR may start with `~/`; it must
- * be absolute otherwise, and never inside `repoRoot`, since backups hold personal data.
+ * The run's settings from `env`, or why they're unusable (never echoing a value). BACKUP_DIR may
+ * start with `~/`; it must be absolute otherwise, and never inside `repoRoot`, since backups hold
+ * personal data.
  */
 export function backupConfigFrom(
   env: Readonly<Record<string, string | undefined>>,
   home: string,
   repoRoot: string,
 ): BackupConfig | { error: string } {
-  const { BACKUP_DB_URL: dbUrl = '', SUPABASE_URL: supabaseUrl = '', SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey = '' } = env;
-  const required = { BACKUP_DB_URL: dbUrl, SUPABASE_URL: supabaseUrl, SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey };
+  const { BACKUP_DB_URL: fullDbUrl = '', SUPABASE_URL: supabaseUrl = '', SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey = '' } = env;
+  const required = { BACKUP_DB_URL: fullDbUrl, SUPABASE_URL: supabaseUrl, SUPABASE_SERVICE_ROLE_KEY: serviceRoleKey };
   const missing = Object.entries(required)
     .filter(([, value]) => value === '')
     .map(([name]) => name);
   if (missing.length > 0) return { error: `missing ${listOf(missing)} in the environment` };
+  const db = splitDbUrl(fullDbUrl);
+  if (db === null) return { error: 'BACKUP_DB_URL must be a postgresql:// connection string' };
 
   const dir = env.BACKUP_DIR ?? '';
   let backupRoot: string;
@@ -133,7 +163,7 @@ export function backupConfigFrom(
     return { error: 'BACKUP_DIR must be outside the repository: backups hold personal data' };
   }
 
-  return { dbUrl, supabaseUrl: supabaseUrl.replace(/\/+$/, ''), serviceRoleKey, backupRoot };
+  return { ...db, supabaseUrl: supabaseUrl.replace(/\/+$/, ''), serviceRoleKey, backupRoot };
 }
 
 /** A failed step; its message is logged after redaction. */
@@ -158,7 +188,8 @@ function stderrTail(stderr: string): string {
 
 async function dump(deps: BackupDeps, what: string, extraArgs: readonly string[], file: string): Promise<void> {
   const args = ['exec', 'supabase', 'db', 'dump', '--db-url', deps.config.dbUrl, ...extraArgs, '-f', file];
-  const result = await deps.run('pnpm', args);
+  const env: Record<string, string> = deps.config.dbPassword === '' ? {} : { PGPASSWORD: deps.config.dbPassword };
+  const result = await deps.run('pnpm', args, env);
   if (result.code !== 0) throw new StepError(`${what} dump failed (exit ${String(result.code)}): ${stderrTail(result.stderr)}`);
   deps.log(`backup: ${what} dump ok`);
 }
@@ -229,17 +260,12 @@ async function entryOf(dir: string, relativePath: string): Promise<ManifestEntry
   return manifestEntry(relativePath, new Uint8Array(await readFile(join(dir, relativePath))));
 }
 
-/** The secrets a log line must never show: the key, the DB URL and its password (encoded and not). */
-function secretsOf(config: BackupConfig): string[] {
-  const secrets = [config.serviceRoleKey, config.dbUrl];
-  try {
-    const password = new URL(config.dbUrl).password;
-    secrets.push(password, decodeURIComponent(password));
-  } catch {
-    // Not a parseable URL: the connection-string pattern still covers it.
-  }
-  return secrets;
-}
+/** The secrets a log line must never show: the key and the DB password (decoded and encoded). */
+const secretsOf = (config: BackupConfig): string[] => [
+  config.serviceRoleKey,
+  config.dbPassword,
+  encodeURIComponent(config.dbPassword),
+];
 
 /** Takes one backup (see the module comment); resolves with the process exit code. */
 export async function runBackup(deps: BackupDeps): Promise<number> {
@@ -296,10 +322,22 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
   return 0;
 }
 
-/** Spawns `command` from the repository root, so `pnpm exec supabase` is this repo's CLI. */
-const runCommand: RunCommand = (command, args) =>
+/**
+ * Spawns `command` from the repository root, so `pnpm exec supabase` is this repo's CLI. The child
+ * gets this process's env plus `env`, minus the URL with the password and the service-role key,
+ * which it doesn't need.
+ */
+const runCommand: RunCommand = (command, args, env) =>
   new Promise((resolveResult, reject) => {
-    const child = spawn(command, args, { cwd: REPO_ROOT, stdio: ['ignore', 'ignore', 'pipe'], timeout: DUMP_TIMEOUT_MS });
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...env };
+    delete childEnv.BACKUP_DB_URL;
+    delete childEnv.SUPABASE_SERVICE_ROLE_KEY;
+    const child = spawn(command, args, {
+      cwd: REPO_ROOT,
+      env: childEnv,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: DUMP_TIMEOUT_MS,
+    });
     let stderr = '';
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk: string) => {

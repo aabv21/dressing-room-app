@@ -21,6 +21,7 @@ import {
 
 const DB_PASSWORD = 'hunter2-db-password';
 const DB_URL = `postgresql://postgres.abcdefgh:${DB_PASSWORD}@aws-0-eu-west-1.pooler.supabase.com:5432/postgres`;
+const DB_URL_NO_PASSWORD = 'postgresql://postgres.abcdefgh@aws-0-eu-west-1.pooler.supabase.com:5432/postgres';
 const SERVICE_KEY = 'service-role-key-never-logged';
 const SUPABASE_URL = 'https://abcdefgh.supabase.co';
 const NOW = new Date('2026-11-09T03:30:07.123Z');
@@ -113,13 +114,37 @@ describe('backupConfigFrom', () => {
   const repoRoot = '/Users/someone/code/dressing-room-app';
   const env = { BACKUP_DB_URL: DB_URL, SUPABASE_URL: `${SUPABASE_URL}/`, SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY };
 
-  test('reads the env, trims the URL and defaults BACKUP_DIR to ~/dressing-room-backups', () => {
+  test('reads the env, splits the password out of the DB URL, trims the URL and defaults BACKUP_DIR', () => {
     expect(backupConfigFrom(env, home, repoRoot)).toEqual({
-      dbUrl: DB_URL,
+      dbUrl: DB_URL_NO_PASSWORD,
+      dbPassword: DB_PASSWORD,
       supabaseUrl: SUPABASE_URL,
       serviceRoleKey: SERVICE_KEY,
       backupRoot: '/Users/someone/dressing-room-backups',
     });
+  });
+
+  test('percent-decodes the password and keeps the query string', () => {
+    const url = 'postgresql://postgres.abcdefgh:p%40ss%2Fw%3Ard@db.example.com:5432/postgres?sslmode=require';
+
+    expect(backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot)).toMatchObject({
+      dbUrl: 'postgresql://postgres.abcdefgh@db.example.com:5432/postgres?sslmode=require',
+      dbPassword: 'p@ss/w:rd',
+    });
+  });
+
+  test('a URL without a password gives an empty password', () => {
+    const url = 'postgres://postgres@127.0.0.1:54322/postgres';
+
+    expect(backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot)).toMatchObject({ dbUrl: url, dbPassword: '' });
+  });
+
+  test('refuses a DB URL that is not a Postgres URL, without echoing it', () => {
+    for (const url of ['not a url with hunter2', `https://user:hunter2@example.com/db`]) {
+      expect(backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot)).toEqual({
+        error: 'BACKUP_DB_URL must be a postgresql:// connection string',
+      });
+    }
   });
 
   test('expands a leading ~/ in BACKUP_DIR', () => {
@@ -159,12 +184,12 @@ describe('backupConfigFrom', () => {
 
 // --- runBackup, driven by fakes ------------------------------------------------------------------
 
-type Call = { command: string; args: readonly string[] };
+type Call = { command: string; args: readonly string[]; env: Readonly<Record<string, string>> };
 
 /** A `pnpm exec supabase db dump` fake that writes `-f`'s file, unless `failWhen` matches the call. */
 function fakeRun(calls: Call[], failWhen: (args: readonly string[]) => boolean = () => false): RunCommand {
-  return async (command, args) => {
-    calls.push({ command, args });
+  return async (command, args, env) => {
+    calls.push({ command, args, env });
     if (failWhen(args)) {
       return { code: 1, stderr: `pg_dump: error: connection to ${DB_URL} failed: password ${DB_PASSWORD} rejected` };
     }
@@ -241,7 +266,13 @@ beforeEach(async () => {
   for (const name of [...OLD_BACKUPS, STALE_PARTIAL]) await mkdir(join(root, name));
   await writeFile(join(root, 'backup.log'), 'old log\n');
   logs = [];
-  config = { dbUrl: DB_URL, supabaseUrl: SUPABASE_URL, serviceRoleKey: SERVICE_KEY, backupRoot: root };
+  config = {
+    dbUrl: DB_URL_NO_PASSWORD,
+    dbPassword: DB_PASSWORD,
+    supabaseUrl: SUPABASE_URL,
+    serviceRoleKey: SERVICE_KEY,
+    backupRoot: root,
+  };
 });
 
 afterEach(async () => {
@@ -280,11 +311,12 @@ test('a complete run writes the dumps, every object and the manifest, renames th
 
   expect(code).toBe(0);
   const dir = join(root, NAME);
-  // The two dumps, through the repo's own Supabase CLI.
+  // The two dumps, through the repo's own Supabase CLI, with the password in the env only.
   expect(calls).toEqual([
     {
       command: 'pnpm',
-      args: ['exec', 'supabase', 'db', 'dump', '--db-url', DB_URL, '-f', join(`${dir}.partial`, 'schema.sql')],
+      args: ['exec', 'supabase', 'db', 'dump', '--db-url', DB_URL_NO_PASSWORD, '-f', join(`${dir}.partial`, 'schema.sql')],
+      env: { PGPASSWORD: DB_PASSWORD },
     },
     {
       command: 'pnpm',
@@ -294,7 +326,7 @@ test('a complete run writes the dumps, every object and the manifest, renames th
         'db',
         'dump',
         '--db-url',
-        DB_URL,
+        DB_URL_NO_PASSWORD,
         '--data-only',
         '--use-copy',
         '-x',
@@ -302,6 +334,7 @@ test('a complete run writes the dumps, every object and the manifest, renames th
         '-f',
         join(`${dir}.partial`, 'data.sql'),
       ],
+      env: { PGPASSWORD: DB_PASSWORD },
     },
   ]);
   // Every Storage call carries the service-role key.
@@ -323,6 +356,30 @@ test('a complete run writes the dumps, every object and the manifest, renames th
   const names = (await readdir(root)).sort();
   expect(names).toEqual([...OLD_BACKUPS.slice(2), NAME, STALE_PARTIAL, 'backup.log'].sort());
   expectNoSecretsLogged();
+});
+
+test('no spawned command line carries the database password, decoded or percent-encoded', async () => {
+  const password = 'p@ss/w:rd hunter2';
+  const url = `postgresql://postgres.abcdefgh:${encodeURIComponent(password)}@db.example.com:5432/postgres`;
+  const parsed = backupConfigFrom(
+    { BACKUP_DB_URL: url, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, BACKUP_DIR: root },
+    '/Users/someone',
+    '/Users/someone/code/dressing-room-app',
+  );
+  if ('error' in parsed) throw new Error(parsed.error);
+  const calls: Call[] = [];
+
+  const code = await runBackup({ config: parsed, now: NOW, run: fakeRun(calls), fetch: fakeFetch({ objects: OBJECTS }, []), log });
+
+  expect(code).toBe(0);
+  expect(calls).toHaveLength(2);
+  for (const call of calls) {
+    const argv = [call.command, ...call.args].join(' ');
+    expect(argv).not.toContain(password);
+    expect(argv).not.toContain(encodeURIComponent(password));
+    expect(argv).not.toContain('hunter2');
+    expect(call.env).toEqual({ PGPASSWORD: password });
+  }
 });
 
 test('an empty bucket still makes a complete backup with only the dumps in the manifest', async () => {
