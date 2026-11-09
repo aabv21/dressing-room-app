@@ -20,6 +20,7 @@ import {
   finalRank,
   GAIN_CAP,
   LINE_MAX_CHARS,
+  MAX_PER_SLOT,
   ownsArchetype,
   parseFit,
   parseLines,
@@ -332,30 +333,62 @@ describe('finalRank', () => {
     expect(FIT_FLOOR).toBe(0.3);
     const ranked = finalRank([
       { archetype: archetype('white-tee'), gain: gain(100), fit: 0.1 }, // 100 × 0.3 = 30
-      { archetype: archetype('black-tee'), gain: gain(40), fit: 1 }, // 40
-      { archetype: archetype('navy-sweater'), gain: gain(50), fit: null }, // 50 × 0.3 = 15
-      { archetype: archetype('gray-hoodie'), gain: gain(60), fit: 0.6 }, // 36
+      { archetype: archetype('dark-jeans'), gain: gain(40), fit: 1 }, // 40
+      { archetype: archetype('camel-blazer'), gain: gain(50), fit: null }, // 50 × 0.3 = 15
+      { archetype: archetype('white-sneakers'), gain: gain(60), fit: 0.6 }, // 36
     ]);
-    expect(ranked.map((item) => item.archetype.id)).toEqual(['black-tee', 'gray-hoodie', 'white-tee', 'navy-sweater']);
+    expect(ranked.map((item) => item.archetype.id)).toEqual(['dark-jeans', 'white-sneakers', 'white-tee', 'camel-blazer']);
     expect(ranked.map((item) => item.fit)).toEqual([1, 0.6, 0.3, 0.3]);
     expect(ranked.map((item) => item.score)).toEqual([40, 36, 30, 15]);
   });
 
   it('returns at most 5, breaking ties by gain and then id', () => {
     const ranked = finalRank(
-      ['white-tee', 'black-tee', 'breton-tee', 'white-shirt', 'light-blue-shirt', 'navy-sweater'].map((id, index) => ({
-        archetype: archetype(id),
-        gain: gain(index === 5 ? 20 : 10),
-        fit: index === 5 ? 0.5 : 1,
-      })),
+      ['white-tee', 'dark-jeans', 'white-sneakers', 'camel-blazer', 'little-black-dress', 'black-tee'].map(
+        (id, index) => ({
+          archetype: archetype(id),
+          gain: gain(index === 5 ? 20 : 10),
+          fit: index === 5 ? 0.5 : 1,
+        }),
+      ),
     );
     expect(ranked.map((item) => item.archetype.id)).toEqual([
-      'navy-sweater',
       'black-tee',
-      'breton-tee',
-      'light-blue-shirt',
-      'white-shirt',
+      'camel-blazer',
+      'dark-jeans',
+      'little-black-dress',
+      'white-sneakers',
     ]);
+  });
+
+  it('keeps at most 2 ideas per slot, filling the rest from other slots', () => {
+    const outerwear = ['camel-blazer', 'navy-blazer', 'denim-jacket', 'camel-coat', 'beige-trench', 'black-puffer'];
+    const ranked = finalRank([
+      ...outerwear.map((id, index) => ({ archetype: archetype(id), gain: gain(100 - index), fit: 1 })),
+      { archetype: archetype('white-tee'), gain: gain(10), fit: 1 },
+      { archetype: archetype('dark-jeans'), gain: gain(9), fit: 1 },
+      { archetype: archetype('white-sneakers'), gain: gain(8), fit: 1 },
+      { archetype: archetype('black-tee'), gain: gain(7), fit: 1 },
+    ]);
+    expect(MAX_PER_SLOT).toBe(2);
+    expect(ranked.map((item) => item.archetype.id)).toEqual([
+      'camel-blazer',
+      'navy-blazer',
+      'white-tee',
+      'dark-jeans',
+      'white-sneakers',
+    ]);
+  });
+
+  it('returns at most 2 ideas when only one slot has gain', () => {
+    const ranked = finalRank(
+      ['white-tee', 'black-tee', 'white-shirt', 'navy-sweater'].map((id, index) => ({
+        archetype: archetype(id),
+        gain: gain(10 - index),
+        fit: 1,
+      })),
+    );
+    expect(ranked.map((item) => item.archetype.id)).toEqual(['white-tee', 'black-tee']);
   });
 
   it('is empty when nothing has gain', () => {

@@ -20,6 +20,11 @@ export const GAIN_CAP = 5000;
 export const FIT_CANDIDATES = 10;
 /** The most ideas returned. */
 export const MAX_IDEAS = 5;
+/**
+ * The most ideas returned for one slot. Layering pieces gain every outfit the closet can already
+ * make, so without this cap a closet of a few pieces would get only coats and blazers.
+ */
+export const MAX_PER_SLOT = 2;
 /** The lowest fit an idea can rank with: a missing or poor Jev answer still leaves its gain in play. */
 export const FIT_FLOOR = 0.3;
 /** The widest formality gap (on the 1–5 scale) between two pieces that still combine. */
@@ -64,8 +69,9 @@ function archetypeGarment(archetype: Archetype): RuleGarment {
 
 /**
  * True when no two pieces sit more than `MAX_FORMALITY_SPREAD` apart in formality (unknown
- * formality is ignored). `passesRules` with no occasion admits every formality, so without this a
- * blazer would "combine" with gym shorts.
+ * formality is ignored). For you only (lucky-list never applies it): gain checks `passesRules`
+ * with no occasion, which accepts any mix of formality, so without this a ball gown with sneakers
+ * or a blazer with gym shorts would count as a new outfit.
  */
 function formalityCoherent(outfit: Outfit): boolean {
   const levels = outfit.flatMap((item) => (item.formality === null ? [] : [item.formality]));
@@ -221,10 +227,11 @@ export function parseFit(body: unknown): number | null {
 
 /**
  * The ideas to show: gain × fit, the fit floored at `FIT_FLOOR` (a null fit, Jev having failed,
- * ranks at the floor), best first (ties: more new outfits, then id), at most `MAX_IDEAS`.
+ * ranks at the floor), best first (ties: more new outfits, then id), at most `MAX_PER_SLOT` per
+ * slot (the next best of other slots fills in) and at most `MAX_IDEAS` in all.
  */
 export function finalRank(items: readonly (ForYouIdea & { fit: number | null })[]): RankedIdea[] {
-  return items
+  const ranked = items
     .filter(({ gain }) => gain.newOutfits > 0)
     .map(({ archetype, gain, fit }) => {
       const floored = Math.max(FIT_FLOOR, fit ?? FIT_FLOOR);
@@ -232,8 +239,19 @@ export function finalRank(items: readonly (ForYouIdea & { fit: number | null })[
     })
     .sort(
       (x, y) => y.score - x.score || y.gain.newOutfits - x.gain.newOutfits || compareIds(x.archetype, y.archetype),
-    )
-    .slice(0, MAX_IDEAS);
+    );
+
+  const perSlot = new Map<Slot, number>();
+  const kept: RankedIdea[] = [];
+  for (const idea of ranked) {
+    if (kept.length >= MAX_IDEAS) break;
+    const slot = slotOf(idea.archetype.category);
+    const count = perSlot.get(slot) ?? 0;
+    if (count >= MAX_PER_SLOT) continue;
+    perSlot.set(slot, count + 1);
+    kept.push(idea);
+  }
+  return kept;
 }
 
 /** The template line for an idea, keyed by the archetype's slot; the app renders `forYou.line.*`. */
