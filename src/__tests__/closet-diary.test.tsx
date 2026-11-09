@@ -142,8 +142,8 @@ describe('month view', () => {
     expect(screen.getByRole('header', { name: 'October 2026' })).toBeOnTheScreen();
     // At a large text size the month title wraps between its arrows, and the count goes under it.
     expect(screen.getByRole('header', { name: 'October 2026' })).toHaveStyle({ flexShrink: 1 });
-    expect(screen.getByRole('header', { name: 'October 2026' }).parent).toHaveStyle({ flexShrink: 1 });
-    expect(screen.getByRole('header', { name: 'October 2026' }).parent?.parent).toHaveStyle({ flexWrap: 'wrap' });
+    expect(screen.getByTestId('diary-month-nav')).toHaveStyle({ flexShrink: 1 });
+    expect(screen.getByTestId('diary-month-row')).toHaveStyle({ flexWrap: 'wrap' });
     // Five Monday-first weeks: Sep 28 – Nov 1, no trailing week of November only. The other months'
     // days are hidden from screen readers.
     expect(screen.getAllByTestId(/^diary-cell-/, hidden)).toHaveLength(35);
@@ -172,8 +172,8 @@ describe('month view', () => {
     // Oct 3 is unworn, Oct 28 is worn: both read in the muted ink or darker, never the old light grey.
     const unworn = within(screen.getByTestId('diary-cell-2026-10-03')).getByText('3');
     expect(unworn).toHaveStyle({ color: colors.muted });
-    expect(unworn).toHaveProp('maxFontSizeMultiplier', 1.3);
-    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.3);
+    expect(unworn).toHaveProp('maxFontSizeMultiplier', 1.6);
+    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.6);
   });
 
   test('prev and next change the month and refetch; next stops at the current month', async () => {

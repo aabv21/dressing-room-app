@@ -347,8 +347,8 @@ export function DiarySegment(): React.JSX.Element {
 
   return (
     <View style={styles.body}>
-      <View style={styles.monthRow}>
-        <View style={styles.monthNav}>
+      <View style={styles.monthRow} testID="diary-month-row">
+        <View style={styles.monthNav} testID="diary-month-nav">
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={prevLabel}

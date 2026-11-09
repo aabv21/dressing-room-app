@@ -80,13 +80,31 @@ describe('HorizontalBars', () => {
     expect(screen.getByText('30')).toHaveStyle({ width: 62 });
   });
 
-  test('at a large text size the label and value columns grow with the text, up to the 1.5x cap', async () => {
-    mockWindow.fontScale = 3.1;
+  test('up to the large-text threshold the label and value columns grow with the text, which is never capped', async () => {
+    mockWindow.fontScale = 1.4;
     await render(<HorizontalBars rows={rows} onSelect={jest.fn()} valueWidth={62} />);
-    expect(screen.getByText('30')).toHaveStyle({ width: 93 });
-    expect(screen.getByText('30')).toHaveProp('maxFontSizeMultiplier', 1.5);
-    expect(screen.getByText('White sneakers')).toHaveStyle({ width: 138 });
-    expect(screen.getByText('White sneakers')).toHaveProp('maxFontSizeMultiplier', 1.5);
+    expect(screen.getByTestId('bar-row-sneakers')).toHaveStyle({ flexDirection: 'row' });
+    expect(screen.getByText('30')).toHaveStyle({ width: 62 * 1.4 });
+    expect(screen.getByText('White sneakers')).toHaveStyle({ width: 92 * 1.4 });
+    expect(screen.getByText('30').props.maxFontSizeMultiplier).toBeUndefined();
+    expect(screen.getByText('White sneakers').props.maxFontSizeMultiplier).toBeUndefined();
+  });
+
+  test('above the large-text threshold a row stacks its label and value over a full-width bar, the label wrapping', async () => {
+    mockWindow.fontScale = 3.1;
+    await render(
+      <HorizontalBars rows={rows} selectedId="jeans" onSelect={jest.fn()} detail="21 wears" valueWidth={62} />,
+    );
+    expect(screen.getByTestId('bar-row-sneakers')).toHaveStyle({ flexDirection: 'column' });
+    const label = screen.getByText('White sneakers');
+    expect(label.props.numberOfLines).toBeUndefined();
+    expect(label.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(label).not.toHaveStyle({ width: 92 });
+    expect(screen.getByText('30').props.maxFontSizeMultiplier).toBeUndefined();
+    expect(screen.getByText('30')).not.toHaveStyle({ width: 62 });
+    expect(screen.getByText('21 wears')).toHaveStyle({ marginLeft: 0 });
+    // Still one labeled button per row for a screen reader.
+    expect(screen.getByRole('button', { name: 'White sneakers, 30' })).toBeOnTheScreen();
   });
 
   test('a smaller text size keeps the default columns', async () => {
@@ -217,6 +235,9 @@ describe('KpiTile', () => {
 
   test('beside another tile at the default text size, a full row at a large one', async () => {
     await render(<KpiTile value="62%" label="outfits logged" />);
+    expect(screen.getByLabelText('62% outfits logged')).toHaveStyle({ flexBasis: '48%' });
+    mockWindow.fontScale = 1.4;
+    await screen.rerender(<KpiTile value="62%" label="outfits logged" />);
     expect(screen.getByLabelText('62% outfits logged')).toHaveStyle({ flexBasis: '48%' });
     mockWindow.fontScale = 2;
     await screen.rerender(<KpiTile value="62%" label="outfits logged" />);

@@ -48,20 +48,22 @@ export const spacing = {
 } as const;
 
 /**
- * `maxFontSizeMultiplier` caps for text in fixed-size chrome, where growing without limit would clip
- * or push it out of its box. Everything else grows with the system text size.
+ * `maxFontSizeMultiplier` caps, only for text in fixed-size chrome, where growing without limit would
+ * clip or push it out of its box. Content text is never capped: above `LARGE_TEXT_FONT_SCALE`
+ * (`layout.ts`) side-by-side layouts stack or take a full row instead.
  */
 export const textScale = {
   // Tab bar and segment labels: iOS shows them enlarged on a long press (the large content viewer).
   compact: 1.3,
-  // Chart labels and values beside a bar.
-  chart: 1.5,
   // Anchored CTA labels: the zone floats over the content, so it can't grow without covering it.
   cta: 1.5,
-  // The score ring's number and caption, inside a fixed 112 pt ring.
+  // The score ring's number and caption; the ring grows with them up to the same factor.
   ring: 1.2,
-  // Calendar day numbers, inside square day cells.
-  calendar: 1.3,
+  // Calendar day numbers and weekday letters, inside square day cells.
+  calendar: 1.6,
+  // The status badge and wear count over a closet grid thumbnail; iOS shows the cell enlarged on a
+  // long press, and a screen reader reads both in the cell's label.
+  overlay: 1.3,
   // Decorative emoji beside text, which would otherwise take the width the text needs.
   emoji: 1.3,
 } as const;

@@ -1,3 +1,4 @@
+import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MessageKey } from '../i18n';
@@ -45,4 +46,16 @@ export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
   const ctaBottom = tabBarBottom + layout.tabBarHeight + layout.ctaGap;
   const contentPaddingBottom = ctaBottom + layout.ctaHeight + 24;
   return { tabBarBottom, ctaBottom, contentPaddingBottom };
+}
+
+/**
+ * The system text scale (iOS Dynamic Type, Android font scale) above which side-by-side layouts
+ * stack or take a full row, so their content text can keep growing without breaking mid-word. It
+ * sits between iOS's largest standard size (about 1.35x) and its first accessibility size.
+ */
+export const LARGE_TEXT_FONT_SCALE = 1.5;
+
+/** Whether the system text scale is above `LARGE_TEXT_FONT_SCALE`. */
+export function useLargeText(): boolean {
+  return useWindowDimensions().fontScale > LARGE_TEXT_FONT_SCALE;
 }

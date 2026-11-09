@@ -1,18 +1,20 @@
-import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
-import { colors, radii, spacing, textScale } from '../theme';
+import { useLargeText } from '../layout';
+import { colors, radii, spacing } from '../theme';
 
 /**
- * Mockup 04's `.kpi` tile: a big value over a small muted label, two to a row. Past the charts'
- * text cap a tile takes the whole row, so the big value and the label's words don't break mid-word.
+ * Mockup 04's `.kpi` tile: a big value over a small muted label, two to a row. Above
+ * `LARGE_TEXT_FONT_SCALE` a tile takes the whole row, so the big value and the label's words don't
+ * break mid-word.
  */
 export function KpiTile(props: { value: string; label: string }): React.JSX.Element {
   const { value, label } = props;
-  const { fontScale } = useWindowDimensions();
+  const largeText = useLargeText();
   return (
     // One element for a screen reader: "62% of your closet worn this month".
     <View
-      style={[styles.tile, fontScale > textScale.chart ? styles.fullRow : null]}
+      style={[styles.tile, largeText ? styles.fullRow : null]}
       accessible
       accessibilityLabel={`${value} ${label}`}
     >
