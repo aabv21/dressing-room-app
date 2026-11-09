@@ -122,13 +122,17 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
 - `scripts/__tests__/calibration.test.ts` — the Jev calibration: Spearman's ρ on a hand-computed set
   with a tie (and null, never NaN, when undefined), the predicted band and the confusion matrix, the
   weight search (on the 0.05 grid, summing to 1, deterministic, never lowering ρ, unchanged when
-  nothing improves), the band search's tie rule toward 70/50, `evaluate` with unknown weather
-  neutralized, and tiny, skewed or broken data (all-`good` labels, 3 outfits, a missing answer, a
+  nothing improves, `weather_fit` never moved, a ρ tie broken by accuracy), the band search's tie
+  rule toward 70/50 and `great` kept above `good` (capped at 100, flagged in the report), the
+  confidence aggregate (`min` chosen when its ρ is higher, the current one kept on a tie or when
+  both are undefined), `evaluate` with unknown weather neutralized, and tiny, skewed or broken data (all-`good` labels, 3 outfits, a missing answer, a
   malformed labels or answers file), each a named error with no report and no NaN. `eval` on the
   fictional `calibration/example.*.json` fixtures, through `runEval` and the real CLI (exit codes 0,
   1 and 2). `export` and `collect` only through their helpers: rows built into the `rate-outfit`
   state, the service-role reads against a fake `fetch`, merging into an existing labels file, and
-  which outfits still need an answer, against a fake Jev. The CLI runs with the Supabase and
+  which outfits still need an answer, against a fake Jev; the collect summary (a hint to check
+  `TYPESAFE_API_KEY` and `TYPESAFE_BASE_URL` when every call failed) and the owner-only (0600)
+  mode of a rewritten local file. The CLI runs with the Supabase and
   TypeSafe keys blanked, so it can't reach either; nothing calls a real service.
 
 ### `functions`

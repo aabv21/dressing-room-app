@@ -1,7 +1,7 @@
 /** @jest-environment node */
 // scripts/__tests__/calibration.test.ts
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,19 +15,24 @@ import {
   type RatingDimension,
   type RatingState,
   withHardFailures,
+  composeRating,
 } from '../../supabase/functions/_shared/rating.ts';
 import {
   collectAnswers,
+  collectSummary,
   exportEntries,
   fetchExportRows,
+  formatReport,
   type LabelEntry,
   mergeEntries,
   parseAnswersFile,
   parseLabelsFile,
   pendingAnswers,
   runEval,
+  writeLocalJson,
 } from '../calibrate.ts';
 import {
+  type CalibrationReport,
   confusionMatrix,
   evaluate,
   type Label,
@@ -162,6 +167,42 @@ describe('searchWeights', () => {
     expect(searchWeights(samples, RATING_CONFIG)).toEqual(searchWeights(samples, RATING_CONFIG));
   });
 
+  it('never moves weather_fit, even when it carries the signal', () => {
+    // weather_fit tracks the label exactly; the other dimensions are noise.
+    const weatherSignal = labeled.map((entry, index) => ({
+      label: entry.label,
+      answers: answersAt(((index * 37) % 11) / 10, { weather_fit: levelOf(entry.label) }),
+    }));
+    const heavierWeather = { ...RATING_CONFIG, weights: { ...RATING_CONFIG.weights, color_harmony: 0.05, weather_fit: 0.3 } };
+    for (const config of [RATING_CONFIG, heavierWeather]) {
+      const result = searchWeights(weatherSignal, config);
+      expect(result.weights.weather_fit).toBe(config.weights.weather_fit);
+      expect(Math.abs(sum(Object.values(result.weights)) - 1)).toBeLessThan(1e-9);
+      for (const weight of Object.values(result.weights)) expect(onGrid(weight)).toBe(true);
+    }
+  });
+
+  it('takes a move that keeps ρ but raises accuracy', () => {
+    // pattern_mix sits 0.2 above every other dimension, so each 0.05 moved into it shifts every
+    // score up by 1 point: the ranking (and ρ) stays, but the good outfits at 69 reach the 70 band.
+    const level = new Map<Label, number>([
+      ['bad', 0.2],
+      ['ok', 0.5],
+      ['good', 0.67],
+    ]);
+    const shifted = labeled.map((entry) => {
+      const base = level.get(entry.label) ?? 0;
+      return { label: entry.label, answers: answersAt(base, { pattern_mix: base + 0.2 }) };
+    });
+    const startScores = shifted.map(({ answers }) => composeRating(answers.dims, false).score);
+    expect(new Set(startScores)).toEqual(new Set([22, 52, 69]));
+    const result = searchWeights(shifted, RATING_CONFIG);
+    expect(result.spearman).toBeCloseTo(1, 12);
+    expect(result.accuracy).toBe(1);
+    // The first improving move (color_harmony is tried first) gives 0.05 to pattern_mix, then nothing improves.
+    expect(result.weights).toEqual({ ...RATING_CONFIG.weights, color_harmony: 0.15, pattern_mix: 0.15 });
+  });
+
   it('keeps the current weights when no move improves ρ', () => {
     // Every dimension at the label's level: any weighting ranks them perfectly, so ρ can't improve.
     const perfect = labeled.map((entry) => ({ label: entry.label, answers: answersAt(levelOf(entry.label)) }));
@@ -182,9 +223,13 @@ describe('searchBands', () => {
     expect(searchBands(shifted, RATING_CONFIG.bands)).toEqual({ great: 85, good: 70, fair: 54 });
   });
 
-  it('raises great to good when good moves above it', () => {
+  it('raises great above good when good reaches it, capped at 100', () => {
     const high = [sample('bad', 30), sample('ok', 88), sample('ok', 89), sample('good', 95)];
-    expect(searchBands(high, RATING_CONFIG.bands)).toEqual({ great: 90, good: 90, fair: 50 });
+    expect(searchBands(high, RATING_CONFIG.bands)).toEqual({ great: 91, good: 90, fair: 50 });
+    const top = [sample('bad', 30), sample('ok', 99), sample('good', 100)];
+    expect(searchBands(top, RATING_CONFIG.bands)).toEqual({ great: 100, good: 100, fair: 50 });
+    const atGreat = [sample('bad', 30), sample('ok', 84), sample('good', 85)];
+    expect(searchBands(atGreat, RATING_CONFIG.bands)).toEqual({ great: 86, good: 85, fair: 50 });
   });
 
   it('keeps 0 < fair < good ≤ 100', () => {
@@ -230,6 +275,67 @@ describe('evaluate', () => {
     if ('error' in report) throw new Error(report.detail);
     expect(report.spearman).toBeNull();
     expect(JSON.stringify(report)).not.toContain('NaN');
+  });
+
+  describe('the confidence aggregate', () => {
+    /**
+     * 12 outfits scored in their band (every dimension at the label's level, confidence 0.6) and 2
+     * `bad` outfits scored 80 like the good ones, so they land in `good` whatever the weights and
+     * bands. The wrong ones carry `wrongConfidences`.
+     */
+    function confidenceSet(wrongConfidences: Partial<Record<RatingDimension, number>>, wrongBase: number) {
+      const labeled: LabeledOutfit[] = [];
+      const answers = new Map<string, RatingAnswers>();
+      for (let index = 0; index < 12; index += 1) {
+        const label = LABEL_CYCLE[index % 3] ?? 'ok';
+        labeled.push(outfit(`right${String(index)}`, label));
+        answers.set(`right${String(index)}`, answersAt(levelOf(label), {}, 0.6));
+      }
+      for (let index = 0; index < 2; index += 1) {
+        labeled.push(outfit(`wrong${String(index)}`, 'bad'));
+        const answer = answersAt(0.8, {}, wrongBase);
+        const confidences = new Map<string, number>(Object.entries(wrongConfidences));
+        const dims = Object.fromEntries(
+          RATING_DIMENSIONS.map((dimension) => [
+            dimension,
+            { normalized: 0.8, confidence: confidences.get(dimension) ?? wrongBase },
+          ]),
+        ) as DimensionScores;
+        answers.set(`wrong${String(index)}`, { ...answer, dims });
+      }
+      return { labeled, answers };
+    }
+
+    it('suggests min when its ρ with band correctness is higher', () => {
+      // Wrong outfits: confident overall (mean 86) but one dimension at 0.1 (min 10); right ones: 60 both ways.
+      const { labeled, answers } = confidenceSet({ style_match: 0.1 }, 0.9);
+      const report = evaluate(labeled, answers, RATING_CONFIG);
+      if ('error' in report) throw new Error(report.detail);
+      expect(report.suggested.accuracy).toBeCloseTo(12 / 14, 12);
+      expect(report.confidence.min ?? -2).toBeGreaterThan(report.confidence.mean ?? 2);
+      expect(report.suggested.confidenceAggregate).toBe('min');
+    });
+
+    it('keeps the current aggregate on a tie', () => {
+      // Every dimension at the same confidence: mean = min for every outfit, so the ρs are equal.
+      const { labeled, answers } = confidenceSet({}, 0.9);
+      for (const aggregate of ['mean', 'min'] as const) {
+        const report = evaluate(labeled, answers, { ...RATING_CONFIG, confidenceAggregate: aggregate });
+        if ('error' in report) throw new Error(report.detail);
+        expect(report.confidence.mean).not.toBeNull();
+        expect(report.confidence.min).toBeCloseTo(report.confidence.mean ?? Number.NaN, 12);
+        expect(report.suggested.confidenceAggregate).toBe(aggregate);
+      }
+    });
+
+    it('keeps the current aggregate when both ρs are undefined (every band right)', () => {
+      const labeled = Array.from({ length: 12 }, (_, index) => outfit(`p${String(index)}`, LABEL_CYCLE[index % 3] ?? 'ok'));
+      const answers = new Map(labeled.map((entry) => [entry.id, answersAt(levelOf(entry.label))]));
+      const report = evaluate(labeled, answers, { ...RATING_CONFIG, confidenceAggregate: 'min' });
+      if ('error' in report) throw new Error(report.detail);
+      expect(report.confidence).toEqual({ mean: null, min: null });
+      expect(report.suggested.confidenceAggregate).toBe('min');
+    });
   });
 
   describe('tiny, skewed or broken data', () => {
@@ -328,7 +434,24 @@ describe('runEval', () => {
     for (const dimension of RATING_DIMENSIONS) expect(stdout).toContain(dimension);
     expect(stdout).toMatch(/weights: \{/);
     expect(stdout).toMatch(/confidenceAggregate: '(mean|min)'/);
+    expect(stdout).toContain('`weather_fit` is held at its current weight');
     expect(stdout).not.toContain('NaN');
+  });
+
+  it('flags a suggested great band that moves', () => {
+    const parsedLabels = parseLabelsFile(labelsText);
+    const parsedAnswers = parseAnswersFile(answersText);
+    if ('error' in parsedLabels || 'error' in parsedAnswers) throw new Error('fixture did not parse');
+    const report = evaluate(
+      parsedLabels.entries.flatMap(({ id, labeler, label, state }) => (label === null ? [] : [{ id, labeler, label, state }])),
+      parsedAnswers.answers,
+      RATING_CONFIG,
+    );
+    if ('error' in report) throw new Error(report.detail);
+    const moved: CalibrationReport = { ...report, suggested: { ...report.suggested, bands: { great: 91, good: 90, fair: 50 } } };
+    expect(formatReport(moved, RATING_CONFIG)).toContain('`great` moves from 85 to 91');
+    const kept: CalibrationReport = { ...report, suggested: { ...report.suggested, bands: { great: 85, good: 72, fair: 50 } } };
+    expect(formatReport(kept, RATING_CONFIG)).not.toContain('`great` moves');
   });
 
   const labels = JSON.parse(labelsText) as unknown[];
@@ -480,6 +603,46 @@ describe('collect helpers', () => {
     expect(Object.keys(result.bodies).sort()).toEqual(['a', 'c']);
     expect(result.added).toEqual(['c']);
     expect(result.failed).toEqual(['d']);
+  });
+});
+
+describe('collectSummary', () => {
+  it('is quiet and 0 when every pending outfit got an answer', () => {
+    expect(collectSummary({ added: ['a'], failed: [] }, 'answers.local.json')).toMatchObject({ code: 0, stderr: '' });
+  });
+
+  it('lists failures and exits 1 when some failed, without the key hint', () => {
+    const summary = collectSummary({ added: ['a'], failed: ['b'] }, 'answers.local.json');
+    expect(summary.code).toBe(1);
+    expect(summary.stderr).toContain('b');
+    expect(summary.stderr).not.toContain('TYPESAFE_API_KEY');
+  });
+
+  it('hints at the key and base URL when every call failed', () => {
+    const summary = collectSummary({ added: [], failed: ['a', 'b'] }, 'answers.local.json');
+    expect(summary.code).toBe(1);
+    expect(summary.stderr).toContain('TYPESAFE_API_KEY');
+    expect(summary.stderr).toContain('TYPESAFE_BASE_URL');
+  });
+});
+
+describe('writeLocalJson', () => {
+  it('leaves the file readable by the owner only, also when it already existed', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'calibration-'));
+    try {
+      const path = join(dir, 'labels.local.json');
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- a temp directory this test created.
+      await writeFile(path, '[]');
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- same temp file.
+      await chmod(path, 0o644);
+      await writeLocalJson(path, [{ id: 'a' }]);
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- same temp file.
+      expect((await stat(path)).mode & 0o777).toBe(0o600);
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- same temp file.
+      expect(JSON.parse(readFileSync(path, 'utf8')) as unknown).toEqual([{ id: 'a' }]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

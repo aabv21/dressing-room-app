@@ -52,6 +52,15 @@ export type CalibrationError = { error: 'not_enough_data' | 'missing_answers'; d
 
 export const MIN_LABELED = 10;
 
+/**
+ * Dimensions the weight search never moves. Calibration outfits carry no weather, so `weather_fit`
+ * is always the neutral 0.5 and its weight can't be learned from them.
+ * NOTE: weather's weight stays untuned; ceiling: it keeps the hand-set value; upgrade path: label
+ * outfits rated with known weather and unfreeze it. The `min` confidence aggregate still includes
+ * `weather_fit`'s confidence, as production computes it.
+ */
+export const FROZEN_DIMENSIONS: readonly RatingDimension[] = ['weather_fit'];
+
 /** Weights move in steps of 1/20 = 0.05; they are searched as integer units that sum to 20. */
 const UNITS = 20;
 const EPSILON = 1e-12;
@@ -177,9 +186,10 @@ const toWeights = (units: ReadonlyMap<RatingDimension, number>): Weights =>
   Object.fromEntries(RATING_DIMENSIONS.map((dimension) => [dimension, (units.get(dimension) ?? 0) / UNITS])) as Weights;
 
 /**
- * Coordinate descent over the 8 weights on the 0.05 grid, starting from `config.weights`. For each
- * dimension in `RATING_DIMENSIONS` order, it takes the best single move of 0.05 to or from that
- * dimension (another dimension on the other side), if it raises ρ, or keeps ρ and raises band
+ * Coordinate descent over the weights on the 0.05 grid, starting from `config.weights`, with the
+ * `FROZEN_DIMENSIONS` held at their weight (moves happen among the other 7, so the sum stays 1).
+ * For each dimension in `RATING_DIMENSIONS` order, it takes the best single move of 0.05 to or from
+ * that dimension (another dimension on the other side), if it raises ρ, or keeps ρ and raises band
  * accuracy under `config.bands`. Sweeps repeat until one changes nothing. Every move strictly
  * improves (ρ, accuracy), so it terminates, and it is deterministic.
  */
@@ -191,12 +201,13 @@ export function searchWeights(
   const fitWith = (candidate: ReadonlyMap<RatingDimension, number>): Fit =>
     fitOf(samples, { ...config, weights: toWeights(candidate) });
   let best = fitWith(units);
+  const movable = RATING_DIMENSIONS.filter((dimension) => !FROZEN_DIMENSIONS.includes(dimension));
   let improved = true;
   while (improved) {
     improved = false;
-    for (const dimension of RATING_DIMENSIONS) {
+    for (const dimension of movable) {
       let move: { units: Map<RatingDimension, number>; fit: Fit } | null = null;
-      for (const other of RATING_DIMENSIONS) {
+      for (const other of movable) {
         if (other === dimension) continue;
         for (const [from, to] of [
           [other, dimension],
@@ -224,7 +235,8 @@ export function searchWeights(
 /**
  * The integer `good` and `fair` thresholds (0 < fair < good ≤ 100) with the best band accuracy for
  * these scores. Ties go to the smallest |good − current good| + |fair − current fair|, then to the
- * lower `good`, then the lower `fair`. `great` isn't labeled, so it stays, raised to `good` if needed.
+ * lower `good`, then the lower `fair`. `great` isn't labeled, so it stays, unless `good` reaches it:
+ * then it becomes `good + 1` (at most 100), so the `good` band never vanishes.
  */
 export function searchBands(samples: readonly { label: Label; score: number }[], current: RatingBands): RatingBands {
   const scores = samples.map(({ score }) => score);
@@ -238,7 +250,7 @@ export function searchBands(samples: readonly { label: Label; score: number }[],
       }
     }
   }
-  return { great: Math.max(current.great, best.good), good: best.good, fair: best.fair };
+  return { great: Math.min(100, Math.max(current.great, best.good + 1)), good: best.good, fair: best.fair };
 }
 
 /**

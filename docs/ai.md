@@ -617,30 +617,37 @@ composes them, with the unknown weather neutralized.
 
 **Suggestions.**
 
-- **Weights**: coordinate descent over the 8 weights, starting from the current ones.
+- **Weights**: coordinate descent over the weights, starting from the current ones.
+  - `weather_fit` is held at its current weight. The calibration outfits carry no weather, so its
+    answer is always the neutral 0.5 and its weight can't be learned from them. The moves happen
+    among the other 7 dimensions, and the report says so.
   - Each weight stays on a 0.05 grid in [0, 1], and the weights always sum to 1.
   - For each dimension in `RATING_DIMENSIONS` order, it takes the best move of 0.05 to or from that
     dimension that raises ρ, or keeps ρ and raises the accuracy under the current bands.
   - Sweeps repeat until none improves anything. The search is deterministic and never lowers ρ.
 - **Bands**: the integer `good` and `fair` (0 < fair < good ≤ 100) with the best accuracy for the
   suggested weights. Ties go to the pair closest to the current 70/50 (the smallest
-  |Δgood| + |Δfair|, then the lower values). `great` isn't labeled, so it stays, raised to `good` if
-  `good` passes it.
+  |Δgood| + |Δfair|, then the lower values). `great` isn't labeled, so it stays, unless the suggested
+  `good` reaches it. Then it becomes `good + 1` (at most 100), and the report flags the move.
 - **Confidence aggregate**: `mean` (the weighted mean, today's behavior) or `min` (the minimum over
   the dimensions). The report gives each one's Spearman's ρ with band correctness (1 when the
   suggested score falls in the labeled band, else 0) and suggests the higher. A tie, or both
-  undefined, keeps the current one.
+  undefined, keeps the current one. `min` includes `weather_fit`'s confidence, as production
+  computes it, even though that answer is the neutral one here.
 
 **Applying a suggestion:**
 
 1. Copy the report's "Suggested `RATING_CONFIG`" block into `RATING_CONFIG` in
    `supabase/functions/_shared/rating.ts`.
-2. Update this file: the weight table and the dimension headings above, the labels' bands, and the
-   confidence bullet if the aggregate changed.
+2. Update this file: the weight table and the dimension headings above, the labels' bands
+   (including `great` if the report flags it), and the confidence bullet if the aggregate changed.
 3. `swapBelow` (70) matches the old `good` band; move it with `good` unless there's a reason not to.
 4. Bump `CACHE_VERSION` in `rate-outfit` and `lucky-list` so cached scores are recomputed.
 5. Run the gate. `rating.test.ts` pins the weights' sum, the bands and the score fixtures, so update
    those expectations deliberately.
+
+NOTE: `weather_fit`'s weight is never tuned from these labels; ceiling: it keeps its hand-set
+value; upgrade path: label outfits rated with known weather, then let the search move it.
 
 NOTE: about 50 labels is a small sample and the search fits it closely; ceiling: treat the
 suggestion as a hint and apply it only when ρ and accuracy improve by a clear margin; upgrade path:

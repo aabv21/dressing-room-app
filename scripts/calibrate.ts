@@ -5,7 +5,7 @@
 // report with suggested weights. Both `.local.json` files hold personal data and are gitignored;
 // `eval` only prints, it never writes a config.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -36,7 +36,15 @@ import {
   serviceHeaders,
   UUID,
 } from '../supabase/functions/_shared/userContext.ts';
-import { type CalibrationReport, type Confusion, evaluate, type Label, type LabeledOutfit, LABELS } from './calibration.ts';
+import {
+  type CalibrationReport,
+  type Confusion,
+  evaluate,
+  FROZEN_DIMENSIONS,
+  type Label,
+  type LabeledOutfit,
+  LABELS,
+} from './calibration.ts';
 
 const CALIBRATION_DIR = fileURLToPath(new URL('../calibration/', import.meta.url));
 const LABELS_PATH = resolve(CALIBRATION_DIR, 'labels.local.json');
@@ -169,6 +177,8 @@ export function formatReport(report: CalibrationReport, config: RatingConfig): s
         `| \`${dimension}\` | ${weight(currentWeights, dimension)} | ${weight(suggestedWeights, dimension)} |`,
     ),
     '',
+    `${FROZEN_DIMENSIONS.map((dimension) => `\`${dimension}\``).join(', ')} is held at its current weight: the calibration outfits carry no weather, so its answer is always neutral and its weight can't be learned from them. The other 7 weights share the rest.`,
+    '',
     '## Bands',
     '',
     '| Band | Current | Suggested |',
@@ -177,6 +187,12 @@ export function formatReport(report: CalibrationReport, config: RatingConfig): s
     `| fair (ok) | ≥ ${String(config.bands.fair)} | ≥ ${String(suggested.bands.fair)} |`,
     `| great (not labeled) | ≥ ${String(config.bands.great)} | ≥ ${String(suggested.bands.great)} |`,
     '',
+    ...(suggested.bands.great === config.bands.great
+      ? []
+      : [
+          `\`great\` moves from ${String(config.bands.great)} to ${String(suggested.bands.great)}: it isn't labeled, but it must stay above the suggested \`good\` band. Check that "great" still reads right before applying it.`,
+          '',
+        ]),
     '## Confusion matrices',
     '',
     'Rows are the hand label, columns the band the score falls in.',
@@ -329,6 +345,24 @@ export async function collectAnswers(
   return { bodies: { ...bodies, ...Object.fromEntries(added) }, added: [...added.keys()], failed };
 }
 
+/**
+ * What `collect` prints: the count saved, and the outfits that failed (exit 1). When every call
+ * failed, the likely cause is the key or the base URL, so it says so.
+ */
+export function collectSummary(
+  result: { added: readonly string[]; failed: readonly string[] },
+  answersPath: string,
+): { code: 0 | 1; stdout: string; stderr: string } {
+  const stdout = `Saved ${String(result.added.length)} new Jev answer(s) to ${answersPath}.`;
+  if (result.failed.length === 0) return { code: 0, stdout, stderr: '' };
+  const failed = `Jev gave no usable answer for ${String(result.failed.length)} outfit(s): ${result.failed.join(', ')}. Run collect again.`;
+  const hint =
+    result.added.length === 0
+      ? ' Every call failed: check TYPESAFE_API_KEY and TYPESAFE_BASE_URL (default https://api.typesafe.ai).'
+      : '';
+  return { code: 1, stdout, stderr: `${failed}${hint}` };
+}
+
 // --- CLI ---------------------------------------------------------------------------------------
 
 class UsageError extends Error {}
@@ -364,10 +398,16 @@ async function readRequired(path: string, hint: string): Promise<string> {
   return text;
 }
 
-async function writeJson(path: string, value: unknown): Promise<void> {
-  // Same fixed calibration paths as above; owner-only, since they hold personal data.
+/**
+ * Writes a calibration file readable by the owner only, since it holds personal data. `mode` only
+ * applies when the file is created, so an existing file is narrowed with `chmod` too.
+ */
+export async function writeLocalJson(path: string, value: unknown): Promise<void> {
+  // Same fixed calibration paths as above.
   // eslint-disable-next-line security/detect-non-literal-fs-filename
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  await chmod(path, 0o600);
 }
 
 async function existingLabels(): Promise<LabelEntry[]> {
@@ -387,7 +427,7 @@ async function exportCommand(user: string | undefined, labeler: string | undefin
   const existing = await existingLabels();
   const exported = exportEntries(await fetchExportRows({ supabaseUrl, serviceRoleKey }, fetch, user), labeler);
   const merged = mergeEntries(existing, exported);
-  await writeJson(LABELS_PATH, merged);
+  await writeLocalJson(LABELS_PATH, merged);
   console.log(
     `Added ${String(merged.length - existing.length)} outfit(s) to ${LABELS_PATH} (${String(merged.length)} in total). ` +
       'Set each new "label" to "bad", "ok" or "good", then run `pnpm calibrate collect`.',
@@ -407,13 +447,11 @@ async function collectCommand(): Promise<number> {
   const result = await collectAnswers(labels.entries, saved.bodies, (state) =>
     runJev(env, fetch, buildJevRequest(state, Math.random)),
   );
-  if (result.added.length > 0) await writeJson(ANSWERS_PATH, result.bodies);
-  console.log(`Saved ${String(result.added.length)} new Jev answer(s) to ${ANSWERS_PATH}.`);
-  if (result.failed.length > 0) {
-    console.error(`Jev gave no usable answer for ${String(result.failed.length)} outfit(s): ${result.failed.join(', ')}. Run collect again.`);
-    return 1;
-  }
-  return 0;
+  if (result.added.length > 0) await writeLocalJson(ANSWERS_PATH, result.bodies);
+  const summary = collectSummary(result, ANSWERS_PATH);
+  console.log(summary.stdout);
+  if (summary.stderr !== '') console.error(summary.stderr);
+  return summary.code;
 }
 
 async function evalCommand(labelsPath: string | undefined, answersPath: string | undefined): Promise<number> {
