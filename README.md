@@ -50,7 +50,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 - Build: pick an outfit piece by piece (top and bottom or a one-piece, shoes, and optional outerwear and an accessory) from the garments that are available, filtered by category, then ask "How does it look?".
 - Rating: a 0–100 score with a label, the AI's confidence, short reasons, and for a weak outfit a one-tap swap of its weakest piece; save the outfit or log it as worn. Jev rates it, with Claude as a fallback marked "estimated". Locally mock Jev and Open-Meteo services answer; nothing calls the real APIs until the owner sets the hosted keys.
 - For you: 3–5 staples your closet is missing, ranked by how many new outfits each opens with what you own and how well it suits your body and style, each with a short line and a "Search in stores" button that opens a web search in your language. The last ideas stay readable offline. A low rating with no swap links here ("Missing something?").
-- Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome (the tab bar, anchored buttons, the score ring, calendar cells) stops between 1.2× and 1.6×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
+- Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome, such as the tab bar, anchored buttons, the score ring and calendar cells, stops between 1.2× and 1.6×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
 - Jev calibration: `pnpm calibrate export|collect|eval` turns hand-labeled saved outfits into an agreement report (Spearman's ρ, band accuracy, a confusion matrix) with suggested weights, bands and confidence aggregate. Real labels stay in gitignored files.
 - Nightly hosted backup: `pnpm backup` dumps the database and downloads every photo with a sha256 manifest to the owner's Mac, keeping the newest 14, with a tested restore.
 - Release config: `eas.json` profiles for development, internal preview and store builds, and EAS Submit to TestFlight and the Play internal track.
@@ -58,7 +58,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 
 ## Architecture
 
-![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions call Anthropic, TypeSafe and Open-Meteo, and Postgres starts the extraction function through pg_net](docs/diagrams/system-context.svg)
+![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, and a garment insert starts the extraction function](docs/diagrams/system-context.svg)
 
 The app talks only to one Supabase project, with the user's session: Auth, Postgres with row-level security on every table, a private photo bucket, and seven Edge Functions. Background removal, resizing and a resumable upload queue run on the phone, and so do Stats and Diary. Only the Edge Functions call the outside services: Claude labels each garment photo, TypeSafe's Jev rates outfits from bucketed, enum-only data (never photos or measurements), and Open-Meteo gives the weather. Code owns the workflow; per-user daily quotas and caches come before any paid call, and each model failure has a fallback.
 
@@ -119,7 +119,7 @@ pnpm e2e                                   # Maestro flows on the iOS simulator:
 
 `pnpm test` needs no Docker. `db:test` and `test:int` need the local stack (`pnpm db:start && pnpm db:reset && pnpm env:local`). `pnpm e2e` also needs the dev build on a booted simulator, Metro, Maestro and Java 17 (`brew install maestro openjdk@17`); it starts the mocks and signs up a fresh `@example.com` user itself. AI calls are tested against recorded-shape fixtures and mocks, never the real APIs.
 
-CI runs the quality gate (supply-chain settings, typecheck, lint, unit tests, expo-doctor), a security job (gitleaks, `pnpm audit`), workflow linting (actionlint, zizmor), and a database job (pgTAP, a generated-types drift check and the integration tests). [`docs/testing.md`](docs/testing.md) lists every suite.
+CI runs the quality gate (supply-chain settings, typecheck, lint, unit tests, expo-doctor), a security job (gitleaks, `pnpm audit`), workflow linting (actionlint, zizmor), and a database job (pgTAP, a generated-types drift check and the integration tests). A separate CodeQL workflow (pull requests, `main` and weekly) analyzes the code once the repo is public; it skips itself while the repo is private. [`docs/testing.md`](docs/testing.md) lists every suite.
 
 ## Owner setup
 

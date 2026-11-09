@@ -56,7 +56,7 @@ subirse se guarda en la carpeta propia de la app hasta que se sube.
 | Proveedor | Qué recibe | Para qué |
 |---|---|---|
 | Supabase | Todo lo anterior | Alojamiento: la base de datos, el inicio de sesión, el almacenamiento de fotos y las funciones del servidor que llaman a los servicios de abajo |
-| Anthropic (Claude) | Por cada prenda nueva, su foto preparada (sin fondo y de 784 píxeles como máximo) y el tipo de ropa que elegiste. Cuando el servicio de calificación no está disponible, el mismo resumen anónimo que recibe TypeSafe. Para "Para ti", solo descripciones genéricas de las prendas sugeridas y con cuántas de tus prendas y outfits combina cada una, sin nada más sobre ti. | Reconocer los atributos de cada prenda; una calificación de respaldo; las frases cortas de las tarjetas de "Para ti" |
+| Anthropic (Claude) | Por cada prenda nueva, su foto preparada (sin fondo y de 784 píxeles como máximo) y el tipo de ropa que elegiste. Cuando el servicio de calificación no está disponible, el mismo resumen anónimo que recibe TypeSafe. Para "Para ti", solo descripciones genéricas de las prendas sugeridas, con cuántas de tus prendas y outfits combina cada una, y el idioma de la app (inglés o español) en que escribir las frases, sin nada más sobre ti. | Reconocer los atributos de cada prenda; una calificación de respaldo; las frases cortas de las tarjetas de "Para ti" |
 | TypeSafe (Jev) | Solo un resumen anónimo: tu tipo de ropa, tipo de cuerpo, un rango de estatura (baja, media o alta), rango de edad y estilos; la ocasión, el clima y la temporada; y la categoría, los colores, el estampado, la formalidad y el corte de cada prenda. Nunca una foto, una medida exacta, una talla, tu nombre ni tu correo. | Calificar outfits y ordenar sugerencias |
 | Open-Meteo | Las coordenadas de tu ciudad, o el nombre de la ciudad cuando no las hay | El clima del día |
 | Apple | Tu identidad de Iniciar sesión con Apple y, cuando eliminas tu cuenta, una solicitud para revocar el acceso de la app | El inicio de sesión, y cortar ese vínculo cuando te vas |
@@ -74,7 +74,10 @@ Tus datos se guardan hasta que los eliminas o eliminas tu cuenta. Puedes elimina
 (sus fotos también se borran) o cualquier uso registrado cuando quieras. El dueño de la app guarda
 cada noche una copia de seguridad de la base de datos y las fotos en su propia computadora, solo para
 recuperación, y conserva las 14 más recientes; los datos que eliminas desaparecen de las copias de
-seguridad en un plazo de 14 días.
+seguridad después de las 14 copias nocturnas siguientes (unas dos semanas cuando se hacen todas las
+noches).
+
+Cada proveedor de abajo aplica sus propias reglas de conservación a lo que recibe de la app.
 
 ## Tus opciones: exportar y eliminar
 

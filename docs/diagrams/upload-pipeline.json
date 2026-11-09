@@ -8,7 +8,7 @@
     "quality_profile": "showcase",
     "viewBox": [
       1068,
-      560
+      600
     ],
     "legend": {
       "entries": {
@@ -45,7 +45,8 @@
       "label": "Camera · gallery",
       "sublabel": "burst or multi-select",
       "stage": 0,
-      "row": 1
+      "row": 1,
+      "width": 152
     },
     {
       "id": "queue",
@@ -53,7 +54,8 @@
       "label": "Upload queue",
       "sublabel": "cut-out · WebP · SQLite",
       "stage": 1,
-      "row": 1
+      "row": 1,
+      "width": 136
     },
     {
       "id": "storage",
@@ -61,15 +63,17 @@
       "label": "garments bucket",
       "sublabel": "full + thumb WebP",
       "stage": 2,
-      "row": 0
+      "row": 0,
+      "width": 136
     },
     {
       "id": "rows",
       "type": "database",
       "label": "garments table",
-      "sublabel": "status pending",
+      "sublabel": "pending → done or failed",
       "stage": 2,
-      "row": 2
+      "row": 2,
+      "width": 136
     },
     {
       "id": "extract",
@@ -77,7 +81,8 @@
       "label": "extract-attributes",
       "sublabel": "100 a day per user",
       "stage": 3,
-      "row": 1
+      "row": 1,
+      "width": 160
     },
     {
       "id": "claude",
@@ -86,7 +91,8 @@
       "sublabel": "Haiku 5.5 · enums",
       "brand": "anthropic",
       "stage": 4,
-      "row": 0
+      "row": 0,
+      "width": 136
     },
     {
       "id": "review",
@@ -94,7 +100,8 @@
       "label": "Review queue",
       "sublabel": "asks only doubts",
       "stage": 4,
-      "row": 2
+      "row": 2,
+      "width": 136
     }
   ],
   "flows": [
@@ -124,13 +131,29 @@
       "from": "rows",
       "to": "extract",
       "label": "pg_net webhook",
-      "variant": "security"
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          530,
+          271
+        ]
+      ]
     },
     {
       "id": "download",
       "from": "storage",
       "to": "extract",
-      "label": "full.webp"
+      "label": "full.webp",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          745,
+          157
+        ]
+      ]
     },
     {
       "id": "label",
@@ -145,6 +168,21 @@
       "label": "5 s poll",
       "variant": "dashed",
       "route": "bottom-channel"
+    },
+    {
+      "id": "write-back",
+      "from": "extract",
+      "to": "rows",
+      "label": "if pending",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "via": [
+        [
+          745,
+          385
+        ]
+      ]
     }
   ],
   "cards": [

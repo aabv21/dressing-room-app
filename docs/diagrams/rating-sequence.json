@@ -155,9 +155,9 @@
       "from": "jev",
       "to": "fn",
       "y": 561,
-      "label": "weighted score 0–100",
+      "label": "typed answers",
       "variant": "return",
-      "note": "hard failure caps at 40"
+      "note": "code composes 0–100 · hard failure caps at 40"
     },
     {
       "from": "fn",
@@ -170,7 +170,7 @@
       "from": "claude",
       "to": "fn",
       "y": 650,
-      "label": "estimated, or 503",
+      "label": "level indices, or 503",
       "variant": "return"
     },
     {
@@ -190,8 +190,9 @@
       "from": "jev",
       "to": "fn",
       "y": 769,
-      "label": "swap if 5 points better",
-      "variant": "return"
+      "label": "answers per candidate",
+      "variant": "return",
+      "note": "code offers a swap 5+ points better"
     },
     {
       "from": "fn",

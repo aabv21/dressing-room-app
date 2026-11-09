@@ -10,9 +10,9 @@
   "layout": {
     "mode": "grid",
     "cols": 5,
-    "cellW": 160,
+    "cellW": 150,
     "cellH": 64,
-    "gapX": 90,
+    "gapX": 110,
     "gapY": 70,
     "origin": [
       40,
@@ -24,11 +24,11 @@
       "id": "idp",
       "type": "external",
       "label": "Apple · Google",
-      "sublabel": "native sign-in",
+      "sublabel": "sign-in ID tokens",
       "row": 0,
       "col": 0,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -40,7 +40,7 @@
       "row": 1,
       "col": 0,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -52,7 +52,7 @@
       "row": 1,
       "col": 1,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -64,7 +64,7 @@
       "row": 0,
       "col": 2,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -76,7 +76,7 @@
       "row": 1,
       "col": 2,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -85,10 +85,10 @@
       "type": "database",
       "label": "Storage",
       "sublabel": "private garments bucket",
-      "row": 2,
+      "row": 3,
       "col": 2,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -98,10 +98,10 @@
       "label": "Postgres 17",
       "sublabel": "RLS on every table",
       "brand": "postgresql",
-      "row": 3,
+      "row": 2,
       "col": 2,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -114,7 +114,7 @@
       "row": 0,
       "col": 4,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -126,7 +126,7 @@
       "row": 1,
       "col": 4,
       "size": [
-        160,
+        150,
         64
       ]
     },
@@ -138,9 +138,21 @@
       "row": 2,
       "col": 4,
       "size": [
-        160,
+        150,
         64
       ]
+    },
+    {
+      "id": "appleid",
+      "type": "external",
+      "label": "Apple ID",
+      "sublabel": "token exchange · revoke",
+      "size": [
+        150,
+        64
+      ],
+      "row": 3,
+      "col": 4
     }
   ],
   "boundaries": [
@@ -189,23 +201,84 @@
       "variant": "emphasis"
     },
     {
-      "id": "to-storage",
-      "from": "gateway",
-      "to": "storage",
-      "label": "photos",
-      "fromSide": "bottom",
-      "toSide": "left"
-    },
-    {
       "id": "to-rest",
       "from": "gateway",
       "to": "postgres",
-      "label": "PostgREST",
+      "label": "PostgREST (RLS)",
       "fromSide": "bottom",
       "toSide": "left",
+      "labelAt": [
+        468,
+        370
+      ],
       "via": [
         [
-          370,
+          375,
+          370
+        ]
+      ]
+    },
+    {
+      "id": "to-storage",
+      "from": "gateway",
+      "to": "storage",
+      "label": "photos (RLS)",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "labelAt": [
+        468,
+        504
+      ],
+      "via": [
+        [
+          375,
+          504
+        ]
+      ]
+    },
+    {
+      "id": "fn-db",
+      "from": "functions",
+      "to": "postgres",
+      "label": "user JWT · service role",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        635,
+        303
+      ]
+    },
+    {
+      "id": "trigger",
+      "from": "postgres",
+      "to": "functions",
+      "label": "on insert",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelAt": [
+        771,
+        310
+      ]
+    },
+    {
+      "id": "fn-storage",
+      "from": "functions",
+      "to": "storage",
+      "label": "service role",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelAt": [
+        810,
+        440
+      ],
+      "via": [
+        [
+          810,
+          236
+        ],
+        [
+          810,
           504
         ]
       ]
@@ -215,8 +288,7 @@
       "from": "functions",
       "to": "anthropic",
       "label": "photo · buckets",
-      "fromSide": "top",
-      "toSide": "left"
+      "fromSide": "top"
     },
     {
       "id": "jev",
@@ -230,18 +302,20 @@
       "from": "functions",
       "to": "meteo",
       "label": "city or coords",
-      "fromSide": "right",
-      "toSide": "left"
+      "labelAt": [
+        987,
+        370
+      ]
     },
     {
-      "id": "trigger",
-      "from": "postgres",
-      "to": "functions",
-      "label": "insert · pg_net",
-      "variant": "dashed",
-      "fromSide": "right",
-      "toSide": "right",
-      "labelDy": 48
+      "id": "apple",
+      "from": "functions",
+      "to": "appleid",
+      "label": "refresh token",
+      "labelAt": [
+        987,
+        504
+      ]
     }
   ],
   "cards": [

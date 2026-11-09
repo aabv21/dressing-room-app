@@ -55,7 +55,7 @@ folder until it is uploaded.
 | Processor | What it receives | Why |
 |---|---|---|
 | Supabase | Everything listed above | Hosting: the database, sign-in, photo storage and the server functions that call the services below |
-| Anthropic (Claude) | For each new garment, its prepared photo (cut out and at most 784 pixels) and the clothing type you chose. When the rating service is unavailable, the same anonymous summary that TypeSafe receives. For "For you", only generic descriptions of the suggested pieces and how many of your garments and outfits each one combines with, with nothing else about you. | Recognizing each garment's attributes; a backup outfit rating; the short lines on the "For you" cards |
+| Anthropic (Claude) | For each new garment, its prepared photo (cut out and at most 784 pixels) and the clothing type you chose. When the rating service is unavailable, the same anonymous summary that TypeSafe receives. For "For you", only generic descriptions of the suggested pieces, how many of your garments and outfits each one combines with, and the app's language (English or Spanish) to write the lines in, with nothing else about you. | Recognizing each garment's attributes; a backup outfit rating; the short lines on the "For you" cards |
 | TypeSafe (Jev) | An anonymous summary only: your clothing type, body type, a height range (short, medium or tall), age group and styles; the occasion, the weather and the season; and each piece's category, colors, pattern, formality and fit. Never a photo, an exact measurement, a size, your name or your email. | Rating outfits and ranking suggestions |
 | Open-Meteo | Your city's coordinates, or the city's name when there are none | The day's weather |
 | Apple | Your Sign in with Apple identity, and, when you delete your account, a request to revoke the app's access | Sign-in, and ending that link when you leave |
@@ -71,7 +71,10 @@ words such as "camel blazer women"; Google's own privacy policy applies to that 
 Your data stays until you delete it or delete your account. You can delete any garment (its photos
 are removed too) or any logged wear at any time. The owner keeps a nightly backup of the database
 and photos on their own computer, for recovery only, and keeps the 14 most recent ones; data you
-delete disappears from the backups within 14 days.
+delete disappears from the backups after the next 14 nightly backups (about two weeks when they run
+every night).
+
+Each processor below applies its own retention rules to what it receives from the app.
 
 ## Your choices: export and deletion
 

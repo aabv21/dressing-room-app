@@ -4,7 +4,7 @@ This page follows a garment from the camera to a rated outfit, then covers the o
 paths, the data model, failures, security, scaling and costs, the reasons behind each design
 choice, and how to regenerate the diagrams.
 
-![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions call Anthropic, TypeSafe and Open-Meteo, and Postgres starts the extraction function through pg_net](diagrams/system-context.svg)
+![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, and a garment insert starts the extraction function](diagrams/system-context.svg)
 
 System context: [interactive page](diagrams/system-context.html) · [source](diagrams/system-context.json)
 
@@ -42,7 +42,7 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 | Upload queue | Phone | `src/closet/upload/`: a SQLite queue that takes each photo through prepare, upload and commit, saving the stage reached before the next starts. Two items at a time, backoff from 5 s doubling to 10 min, 8 attempts. |
 | `garment-cutout` | Phone | A local native module: iOS 17+ Vision foreground masks and Android ML Kit subject segmentation remove the photo's background. Without it, the original photo is kept. |
 | Auth | Supabase | Email and password (8 characters or more), Sign in with Apple and Sign in with Google through native ID tokens, and a 6-digit password-reset code by email. |
-| Postgres 17 | Supabase | Profiles, garments, outfits, wears, the daily quota counters, the AI result caches and the Apple refresh tokens. RLS on every table; the client writes only through column grants and two RPCs. |
+| Postgres 17 | Supabase | Profiles, garments, outfits, wears, the daily quota counters, the AI result caches and the Apple refresh tokens. RLS on every table. Garment writes are narrowed by column grants; the app writes outfits and wears through the `log_wear` and `save_outfit` RPCs, and RLS limits any direct insert, or a wear's delete, to the caller's own rows. |
 | Storage | Supabase | The private `garments` bucket: `{user id}/{garment id}/full.webp` and `thumb.webp`, 2 MiB at most per object, with folder policies that match RLS. |
 | `extract-attributes` | Edge Function | Called by the garment insert trigger through `pg_net`, with a shared secret header. Sends the photo to Claude and writes back enum-only attributes and the fields Claude doubted. |
 | `rate-outfit` | Edge Function | Rates a built outfit with Jev, falls back to Claude, and searches a swap for a weak outfit. |
@@ -62,7 +62,7 @@ questions and weights are in [`ai.md`](ai.md), and the tables, policies and gran
 
 ## How a garment gets into the closet
 
-![Upload pipeline: a photo goes from the camera or gallery into the upload queue, which uploads both WebP files and inserts the garment row; the insert trigger calls extract-attributes, which reads the photo and asks Claude, and the app polls until the review queue can ask about the doubts](diagrams/upload-pipeline.svg)
+![Upload pipeline: a photo goes from the camera or gallery into the upload queue, which uploads both WebP files and inserts the garment row; the insert trigger calls extract-attributes, which reads the photo, asks Claude and writes the attributes back while the garment is still pending, and the app polls until the review queue can ask about the doubts](diagrams/upload-pipeline.svg)
 
 Upload pipeline: [interactive page](diagrams/upload-pipeline.html) · [source](diagrams/upload-pipeline.json)
 
@@ -141,9 +141,9 @@ counts, for each staple the user doesn't own, the complete outfits it would make
 a missing line falls back to a template. Over the quota, the function serves the last entry it has
 rather than a 429.
 
-**Data export.** Profile → "Export my data" calls `export-data`, which reads the caller's rows with
-the caller's token, signs each photo URL for 7 days with the service role, and returns one JSON
-document that the app hands to the share sheet.
+**Data export.** Profile → "Export my data" calls `export-data`, which reads the caller's rows
+with the caller's token, signs each photo URL for 7 days with the service role, and returns one
+JSON document that the app hands to the share sheet.
 
 **Account deletion.** Profile → "Delete account" asks twice, writes a device marker, pauses the
 upload queue and calls `delete-account`. The function confirms the caller with Auth, lists and
@@ -151,13 +151,12 @@ removes every object under the caller's folder, revokes the Apple token if there
 the auth user (every table cascades) and sweeps the folder once more. The app reports the account
 deleted only on that answer, or when Auth says the same token's user is gone; then it clears the
 queue, signs out on the device, and removes every per-user key, the data exports and the image
-caches. Any other failure
-keeps the marker and the paused queue, and the next launch, foreground or reconnect only asks Auth
-whether the account still exists.
+caches. Any other failure keeps the marker and the paused queue, and the next launch, foreground or
+reconnect only asks Auth whether the account still exists.
 
 ## What gets stored where
 
-![Data model: auth.users owns every row through user_id cascades; profiles, garments, outfits, outfit_items, wears and the photos are client tables under RLS, and the quota counters, result caches, Apple tokens and weather cache are service-role only](diagrams/data-model.svg)
+![Data model: auth.users owns every row through on-delete-cascade user_id keys; outfit_items and wears cascade from their outfit and garment; profiles, garments, outfits, outfit_items, wears and the photos are client tables under RLS, and the quota counters, result caches, Apple tokens and weather cache are service-role only](diagrams/data-model.svg)
 
 Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/data-model.json)
 
@@ -193,13 +192,16 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 ## Security and privacy
 
 - **No keys in the app.** The bundle holds only public values (the Supabase URL and anon key, the
-  Google OAuth client ids), never a secret. Model keys and the service-role key live only in the Edge
-  Functions' secrets and in owner scripts.
-- **Isolation.** Every client table has RLS policies on the caller's own rows (`(select auth.uid())`); Storage's
-  folder policies do the same for photos. Column grants stop the client from writing
-  `extraction_status`, `wear_count` or `user_id`, wears and outfits are written only through
-  `log_wear` and `save_outfit`, and the server-only tables have no policies and no client grants.
-  pgTAP and integration tests try user A against user B's rows and objects.
+  Google OAuth client ids), never a secret. Model keys and the service-role key live only in the
+  Edge Functions' secrets and in owner scripts.
+- **Isolation.** Every client table has RLS policies on the caller's own rows
+  (`(select auth.uid())`), and Storage's folder policies do the same for photos. Column grants stop
+  the client from writing `extraction_status`, `wear_count` or `user_id`. The app writes outfits
+  and wears only through `log_wear` and `save_outfit`; a client can still insert into `outfits`,
+  `outfit_items` and `wears`, or delete a wear, directly, but RLS limits that to its own rows, so
+  the worst it can do is leave its own data inconsistent, never touch another user's
+  ([`database.md`](database.md) has the details). The server-only tables have no policies and no
+  client grants. pgTAP and integration tests try user A against user B's rows and objects.
 - **Functions act as the caller.** The user-called functions read the caller's rows with the
   caller's token, so RLS applies to them too. The service role is used for the quota, the caches,
   the Apple tokens, the caller's own photo folder and, in `delete-account`, the auth user; the
@@ -208,7 +210,7 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
   clothing type for extraction, and the same bucketed state as Jev for a fallback rating. Jev sees
   only buckets and enum values: clothing type, body type, a height bucket, age group, styles,
   occasion, a weather band, season and each piece's attributes. Exact measurements, sizes, names and
-  photos never reach Jev, and the functions don't even read the measurements or sizes.
+  photos never reach Jev, and the rating functions never read chest, waist, hips or sizes.
 - **Untrusted model output.** Every model answer goes through structured outputs and a parser that
   keeps only catalog values; reasons and swap wording come from templates, and For you's free-text
   lines are length-checked and shown as plain text. [`red-team.md`](red-team.md) maps each attack to
