@@ -191,6 +191,12 @@ never called. See `docs/ai.md`. To run only this project:
   signing one path or 500 per call, a missing object as `null` (a 404, or Storage's 400 with
   `"statusCode": "404"`), a throw on a 5xx, and that no function file outside `photoStore.ts`
   contains `/storage/v1/`.
+- `supabase/functions/_shared/__tests__/gateway.test.ts` — the gateway's JWT check, read from
+  `supabase/config.toml`: every function folder has its own `[functions.<name>]` section and no
+  section names a missing folder; every user-called function has `verify_jwt = true`, since
+  `userIdFromJwt` reads the token's `sub` without checking its signature; and `extract-attributes`,
+  the database webhook, is the only one with `verify_jwt = false`, checking its `x-webhook-secret`
+  header instead and never reading a JWT.
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
   after 30 s (`failed`), a garment no longer pending, already reviewed or missing, adversarial

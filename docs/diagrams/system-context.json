@@ -1,0 +1,276 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Dressing Room System Context",
+    "locale": "en",
+    "output": "docs/diagrams/system-context.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "cols": 5,
+    "cellW": 160,
+    "cellH": 64,
+    "gapX": 90,
+    "gapY": 70,
+    "origin": [
+      40,
+      70
+    ]
+  },
+  "components": [
+    {
+      "id": "idp",
+      "type": "external",
+      "label": "Apple · Google",
+      "sublabel": "native sign-in",
+      "row": 0,
+      "col": 0,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "Dressing Room app",
+      "sublabel": "Expo · upload queue",
+      "row": 1,
+      "col": 0,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "security",
+      "label": "API gateway",
+      "sublabel": "user JWT",
+      "row": 1,
+      "col": 1,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth",
+      "sublabel": "password · ID tokens",
+      "row": 0,
+      "col": 2,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "functions",
+      "type": "backend",
+      "label": "Edge Functions",
+      "sublabel": "7 · quotas · caches",
+      "row": 1,
+      "col": 2,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "Storage",
+      "sublabel": "private garments bucket",
+      "row": 2,
+      "col": 2,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "Postgres 17",
+      "sublabel": "RLS on every table",
+      "brand": "postgresql",
+      "row": 3,
+      "col": 2,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "anthropic",
+      "type": "external",
+      "label": "Anthropic",
+      "sublabel": "Claude Haiku 5.5",
+      "brand": "anthropic",
+      "row": 0,
+      "col": 4,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "typesafe",
+      "type": "external",
+      "label": "TypeSafe",
+      "sublabel": "Jev ratings",
+      "row": 1,
+      "col": 4,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "meteo",
+      "type": "external",
+      "label": "Open-Meteo",
+      "sublabel": "forecast · geocoding",
+      "row": 2,
+      "col": 4,
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Supabase project",
+      "wraps": [
+        "gateway",
+        "auth",
+        "functions",
+        "storage",
+        "postgres"
+      ],
+      "pad": 22
+    }
+  ],
+  "connections": [
+    {
+      "id": "sign-in",
+      "from": "app",
+      "to": "idp",
+      "label": "sign in",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "api",
+      "from": "app",
+      "to": "gateway",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "to-auth",
+      "from": "gateway",
+      "to": "auth",
+      "label": "sessions",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "to-functions",
+      "from": "gateway",
+      "to": "functions",
+      "label": "verify_jwt",
+      "variant": "emphasis"
+    },
+    {
+      "id": "to-storage",
+      "from": "gateway",
+      "to": "storage",
+      "label": "photos",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "to-rest",
+      "from": "gateway",
+      "to": "postgres",
+      "label": "PostgREST",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          370,
+          504
+        ]
+      ]
+    },
+    {
+      "id": "claude",
+      "from": "functions",
+      "to": "anthropic",
+      "label": "photo · buckets",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "jev",
+      "from": "functions",
+      "to": "typesafe",
+      "label": "buckets only",
+      "variant": "emphasis"
+    },
+    {
+      "id": "weather",
+      "from": "functions",
+      "to": "meteo",
+      "label": "city or coords",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "trigger",
+      "from": "postgres",
+      "to": "functions",
+      "label": "insert · pg_net",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelDy": 48
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "On the phone",
+      "items": [
+        "Background removal, resize and WebP before any upload",
+        "A SQLite queue resumes uploads after a restart or offline",
+        "Stats and Diary are computed on the device"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Isolation",
+      "items": [
+        "RLS and folder policies: no cross-user reads",
+        "Model keys and the service role stay in the functions",
+        "Per-user daily quotas before any paid call"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "What leaves Supabase",
+      "items": [
+        "Claude: a 784 px cut-out and enum values",
+        "Jev: height, age and body buckets, never photos",
+        "Open-Meteo: the city name or its coordinates"
+      ]
+    }
+  ]
+}

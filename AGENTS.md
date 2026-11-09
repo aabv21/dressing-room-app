@@ -44,6 +44,7 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - `pnpm backup` — `scripts/backup.ts`: the nightly export of the hosted project (a schema and a data dump through `pnpm exec supabase db dump`, every `garments` photo, and a sha256 manifest) to `~/dressing-room-backups/<UTC time>/`, keeping the newest 14. It runs on the owner's Mac under launchd (`scripts/launchd/com.aabv21.dressing-room-backup.plist.example`), never in CI. Needs `BACKUP_DB_URL`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and Docker running. `node scripts/backup.ts --verify <folder>` recomputes a backup's sizes and sha256s against its `manifest.json`. Setup and the tested restore are in `docs/database.md`'s "Hosted backups".
 - `EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK=1 pnpm exec expo-doctor` — Expo's project checks, minus the SDK version check (see Supply-chain hardening). CI's quality job runs it.
 - `pnpm check:supply-chain` — fail if `pnpm-workspace.yaml` loses `trustPolicy: no-downgrade` or `minimumReleaseAge`, or gains a `trustPolicyExclude` (CI's quality job runs it).
+- Regenerate a diagram after you edit its source in `docs/diagrams/`, with [archify](https://github.com/tt-a1i/archify)'s 2.17 skill package (`2.17.0-dev.1`) kept outside the repo: validate, deliver, export the SVG from the page, and visual-check a copy. `docs/architecture.md`'s "Regenerating the diagrams" has the steps.
 
 Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 
@@ -67,11 +68,40 @@ Run `pnpm typecheck && pnpm lint && pnpm test` before declaring any task done.
 - `scripts/` — repo tooling (TypeScript, run with Node's native type stripping — no `.js`/`.mjs` sources). `calibration.ts` (the Jev calibration math) and `calibrate.ts` (its CLI) import the rating code from `supabase/functions/_shared/`. `backup.ts` is the hosted backup, and `launchd/` holds its schedule's example plist. `e2e.ts` runs the Maestro flows (`pnpm e2e`).
 - `calibration/` — the fictional example labels and Jev answers the calibration tests use; the owner's real `*.local.json` files sit here too, gitignored.
 - `.maestro/` — the Maestro end-to-end flows `pnpm e2e` runs: `config.yaml` (their order), `flows/` (the three flows), `subflows/` (steps they share) and `fixtures/` (fictional garment photos drawn with `sharp`). See `docs/testing.md`'s "End-to-end flows".
+- `docs/` — the documents in the Documentation map below. `diagrams/` holds the four archify diagrams: edit only each `*.json` source, then regenerate its `*.html` page and `*.svg` export. `screenshots/` holds the README's simulator screenshots (en and es), taken against the local stack and the mocks with fictional `@example.com` accounts only.
 - `integration/` — `*.int.test.ts` Jest suites that run against a live local Supabase (plain Node, no Expo/React Native — see `pnpm test:int` above and `helpers.ts`'s module doc for why `src/auth/emailAuth.ts` is imported directly rather than through `authService.ts`'s barrel). `lib-supabase.stub.ts` is mapped over `src/lib/supabase.ts` by `jest.config.ts`'s `integration` project, so the default-client path in `emailAuth.ts`/`socialAuth.ts` throws loudly instead of touching native modules if a test ever omits its client; `expo-file-system.stub.ts` does the same for `garmentRepository.ts`'s file read (integration tests upload bytes through `uploadGarmentPhotoBytes`). `mockAnthropic.ts` (port 54499) and `mockServices.ts` (port 54498: Jev, the Open-Meteo forecast and geocoding, Apple's `/auth/token` and `/auth/revoke`) stand in for the external APIs the functions call.
+
+## Documentation map
+
+| Document | Covers |
+|---|---|
+| [`README.md`](README.md) | What the app does, screenshots in English and Spanish, what works now, the architecture summary, the quick start, tests, the owner setup, costs and the license. |
+| [`docs/architecture.md`](docs/architecture.md) | What runs where, the components, the request lifecycles (upload, rating, lucky, For you, export, deletion), what is stored where, failures, security, scaling and costs, the design decisions, and how to regenerate the diagrams. It embeds every diagram below. |
+| [`docs/ai.md`](docs/ai.md) | Every model call: prompts, schemas, Jev questions, levels and weights, parsers, the functions' cases and outcome words, quotas, costs and the calibration workflow. |
+| [`docs/database.md`](docs/database.md) | Tables, enums, RLS, grants, storage rules, triggers and RPCs, account deletion and data export, migrations, pgTAP, and the hosted backups. |
+| [`docs/red-team.md`](docs/red-team.md) | The attacks on the AI calls and the data, each with its defense and the test that pins it. |
+| [`docs/testing.md`](docs/testing.md) | Every test suite, the end-to-end flows, which tests need Docker, and what CI runs. |
+| [`docs/performance-gate.md`](docs/performance-gate.md) | The on-device scroll-performance go/no-go protocol. |
+| [`docs/privacy-policy.md`](docs/privacy-policy.md) | The privacy policy: what the app collects, where it lives, what reaches each processor (buckets only for Jev, photos only for Claude's extraction), retention, export and deletion. The owner fills in `<owner email>` and publishes it on GitHub Pages. |
+| [`docs/privacy-policy.es.md`](docs/privacy-policy.es.md) | The same policy in Spanish. |
+| [`docs/diagrams/system-context.json`](docs/diagrams/system-context.json) | The system-context diagram's archify source (type `architecture`): the app → API gateway → Auth, Edge Functions, Storage and Postgres, the pg_net trigger, and the calls to Anthropic, TypeSafe and Open-Meteo. |
+| [`docs/diagrams/system-context.html`](docs/diagrams/system-context.html) | Its interactive page; open it in a browser to pan, search and inspect each node. |
+| [`docs/diagrams/system-context.svg`](docs/diagrams/system-context.svg) | Its exported image, which follows the reader's light or dark theme; embedded in `docs/architecture.md` and the README. |
+| [`docs/diagrams/upload-pipeline.json`](docs/diagrams/upload-pipeline.json) | The upload pipeline's archify source (type `dataflow`): capture → upload queue → the bucket and the garments row → the pg_net webhook → `extract-attributes` → Claude, and the review queue's polling. |
+| [`docs/diagrams/upload-pipeline.html`](docs/diagrams/upload-pipeline.html) | Its interactive page. |
+| [`docs/diagrams/upload-pipeline.svg`](docs/diagrams/upload-pipeline.svg) | Its exported image, embedded in `docs/architecture.md`. |
+| [`docs/diagrams/rating-sequence.json`](docs/diagrams/rating-sequence.json) | The rating sequence's archify source (type `sequence`): request, reads with the user's JWT, weather, cache and quota, Jev, the Claude fallback, the swap search, and the cached answer. |
+| [`docs/diagrams/rating-sequence.html`](docs/diagrams/rating-sequence.html) | Its interactive page. |
+| [`docs/diagrams/rating-sequence.svg`](docs/diagrams/rating-sequence.svg) | Its exported image, embedded in `docs/architecture.md`. |
+| [`docs/diagrams/data-model.json`](docs/diagrams/data-model.json) | The data model's archify source (type `architecture`): `auth.users` owning every row, the client tables under RLS, and the service-role-only tables. |
+| [`docs/diagrams/data-model.html`](docs/diagrams/data-model.html) | Its interactive page. |
+| [`docs/diagrams/data-model.svg`](docs/diagrams/data-model.svg) | Its exported image, embedded in `docs/architecture.md`. |
+
+Update `architecture.md` (and its diagrams) when a change alters a component, a request lifecycle, the data model, a failure mode, security, scaling or a design decision, and the privacy policy (both languages) when it changes what the app collects or what reaches a processor.
 
 ## Conventions
 
-- Everything in English, except `src/i18n/es.ts` and the Spanish data the product needs: For you's es store-search words (`supabase/functions/_shared/searchTerms.ts` and the archetypes' own search phrases in `supabase/functions/_shared/archetypes.ts`) and the iOS usage strings in `locales/es.json`.
+- Everything in English, except `src/i18n/es.ts` and the Spanish data the product needs: For you's es store-search words (`supabase/functions/_shared/searchTerms.ts` and the archetypes' own search phrases in `supabase/functions/_shared/archetypes.ts`) the iOS usage strings in `locales/es.json`, and the Spanish privacy policy, `docs/privacy-policy.es.md` (a translation of `docs/privacy-policy.md`; change both together).
 - Comments only where intent isn't obvious. A deliberate simplification gets one `NOTE:` line naming its ceiling and upgrade path.
 - `pnpm` (pinned to an exact 11.x in `packageManager`); Node `>=24`. Never `npm`/`yarn`/`bun`.
 - TypeScript strict mode plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `verbatimModuleSyntax`, `erasableSyntaxOnly`, `allowImportingTsExtensions`, with `noEmit` — no build step, no `.js`/`.mjs` source files.
