@@ -7,7 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { LARGE_TEXT_FONT_SCALE } from '../layout';
+import { useLargeText } from '../layout';
 import { colors, layout, spacing } from '../theme';
 
 const GROW_DURATION_MS = 450;
@@ -72,7 +72,7 @@ export function HorizontalBars(props: {
   const { rows, selectedId = null, onSelect, detail, color = colors.accent, valueWidth = VALUE_WIDTH } = props;
   const max = Math.max(1, ...rows.map((row) => row.value));
   const { fontScale } = useWindowDimensions();
-  const stacked = fontScale > LARGE_TEXT_FONT_SCALE;
+  const stacked = useLargeText();
   const scale = Math.max(fontScale, 1);
   const rowStyle = stacked ? styles.rowStacked : styles.row;
   const labelStyle = stacked ? [styles.label, styles.labelStacked] : [styles.label, { width: LABEL_WIDTH * scale }];
