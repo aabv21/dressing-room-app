@@ -87,6 +87,13 @@ describe('appleEnvFrom', () => {
       expect(appleEnvFrom((key) => blank.get(key))).toBeNull();
     },
   );
+
+  test('is null when a value is an unresolved env(...) reference (a bare `supabase start`)', () => {
+    const unresolved = new Map(full).set('APPLE_PRIVATE_KEY', 'env(LOCAL_APPLE_PRIVATE_KEY)');
+    expect(appleEnvFrom((key) => unresolved.get(key))).toBeNull();
+    const padded = new Map(full).set('APPLE_TEAM_ID', '  env(LOCAL_APPLE_TEAM_ID)');
+    expect(appleEnvFrom((key) => padded.get(key))).toBeNull();
+  });
 });
 
 describe('appleClientSecret', () => {

@@ -432,8 +432,9 @@ OPEN_METEO_GEOCODING_URL = "http://host.docker.internal:54498"
 # db:start:ci) run scripts/db-start.ts, which generates a local-only P-256 key into gitignored
 # supabase/.temp/apple-test-key.pem (kept across restarts, never registered with Apple) and passes it
 # as LOCAL_APPLE_PRIVATE_KEY. No key is ever committed. A bare `supabase start` without it leaves
-# APPLE_PRIVATE_KEY unset, so apple-token answers `skipped` and deletion skips the revoke. Hosted
-# projects set their own with `supabase secrets set` (AGENTS.md).
+# APPLE_PRIVATE_KEY unset or, depending on the CLI, the literal "env(LOCAL_APPLE_PRIVATE_KEY)";
+# appleEnvFrom treats both as missing, so apple-token answers `skipped` and deletion skips the
+# revoke. Hosted projects set their own with `supabase secrets set` (AGENTS.md).
 APPLE_TEAM_ID = "LOCALTEAM0"
 APPLE_KEY_ID = "LOCALKEY00"
 APPLE_CLIENT_ID = "local.dressing-room.test"

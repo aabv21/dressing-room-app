@@ -31,11 +31,15 @@ export const APPLE_TIMEOUT_MS = 10_000;
 
 const REQUIRED = ['APPLE_TEAM_ID', 'APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_CLIENT_ID'] as const;
 
-/** The Apple env from the function's variables, or null when any of the four required ones is missing or blank. */
+/**
+ * The Apple env from the function's variables, or null when any of the four required ones is
+ * missing, blank or an unresolved `env(...)` reference: a bare `supabase start` without the
+ * variable the config names can pass that literal string through instead of leaving it unset.
+ */
 export function appleEnvFrom(get: (name: string) => string | undefined): AppleEnv | null {
   const values = REQUIRED.map((name) => get(name)?.trim() ?? '');
   const [teamId = '', keyId = '', privateKey = '', clientId = ''] = values;
-  if (values.some((value) => value === '')) return null;
+  if (values.some((value) => value === '' || value.startsWith('env('))) return null;
   const baseUrl = get('APPLE_BASE_URL')?.trim() ?? '';
   return { teamId, keyId, privateKey, clientId, baseUrl: baseUrl === '' ? APPLE_DEFAULT_BASE_URL : baseUrl };
 }
