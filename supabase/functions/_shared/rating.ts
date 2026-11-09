@@ -80,18 +80,22 @@ export const RATING_CONFIG = {
 
 export type RatingLabel = 'great' | 'good' | 'fair' | 'poor';
 
-/** `public.body_type`, `public.age_group` and `public.style` (SQL-only enums today, like `GarmentStatus`). */
-export type BodyType =
-  | 'hourglass'
-  | 'pear'
-  | 'apple'
-  | 'rectangle'
-  | 'inverted_triangle'
-  | 'trapezoid'
-  | 'triangle'
-  | 'oval';
-export type AgeGroup = 'under_18' | '18_24' | '25_34' | '35_44' | '45_54' | '55_plus';
-export type Style = 'casual' | 'elegant' | 'minimalist' | 'sporty' | 'urban' | 'bohemian' | 'classic';
+/** `public.body_type`, `public.age_group` and `public.style`, in their SQL order. */
+export const BODY_TYPES = [
+  'hourglass',
+  'pear',
+  'apple',
+  'rectangle',
+  'inverted_triangle',
+  'trapezoid',
+  'triangle',
+  'oval',
+] as const;
+export const AGE_GROUPS = ['under_18', '18_24', '25_34', '35_44', '45_54', '55_plus'] as const;
+export const STYLES = ['casual', 'elegant', 'minimalist', 'sporty', 'urban', 'bohemian', 'classic'] as const;
+export type BodyType = (typeof BODY_TYPES)[number];
+export type AgeGroup = (typeof AGE_GROUPS)[number];
+export type Style = (typeof STYLES)[number];
 
 export type HeightBucket = 'short' | 'medium' | 'tall';
 

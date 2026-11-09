@@ -22,7 +22,9 @@ import {
 import { isRecord } from './extraction.ts';
 import type { GarmentStatus, RuleGarment } from './outfitRules.ts';
 import {
+  AGE_GROUPS,
   type AgeGroup,
+  BODY_TYPES,
   type BodyType,
   buildJevRequest,
   composeRating,
@@ -34,6 +36,7 @@ import {
   RATING_LEVELS,
   type RatingState,
   type Style,
+  STYLES,
 } from './rating.ts';
 import {
   forecastUrl,
@@ -181,14 +184,15 @@ export type ProfileRow = {
 
 export const PROFILE_COLUMNS = 'clothing_type,body_type,height_cm,age_group,styles,city_name,city_lat,city_lon,updated_at';
 
-// The enums are Postgres-checked; the casts only narrow strings the database already validated.
+// Postgres already checks these enums; re-checking them here means only enum members, never free
+// text, can reach the Jev and Claude requests built from the profile.
 export function profileFrom(row: Record<string, unknown>): ProfileRow {
   return {
     clothing_type: oneOf(['feminine', 'masculine', 'everything'], row.clothing_type),
-    body_type: stringOrNull(row.body_type) as BodyType | null,
+    body_type: oneOf(BODY_TYPES, row.body_type),
     height_cm: numberOrNull(row.height_cm),
-    age_group: stringOrNull(row.age_group) as AgeGroup | null,
-    styles: strings(row.styles) as Style[],
+    age_group: oneOf(AGE_GROUPS, row.age_group),
+    styles: strings(row.styles).flatMap((style) => oneOf(STYLES, style) ?? []),
     city_name: stringOrNull(row.city_name),
     city_lat: numberOrNull(row.city_lat),
     city_lon: numberOrNull(row.city_lon),
