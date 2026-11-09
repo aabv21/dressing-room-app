@@ -745,7 +745,7 @@ describe('generateCandidates', () => {
       expect(pinned.some((outfit) => outfit.some((item) => item.id === jacket.id))).toBe(false);
     });
 
-    // --- M3: the hint is chosen only among admissible pins ---------------------------------------
+    // --- the hint is chosen only among admissible pins -------------------------------------------
 
     test('an inadmissible pin (wrong season) never starves an admissible sibling pin out of 20 seeds', () => {
       const neutrals = ['white', 'black', 'gray', 'navy', 'beige'] as const;
@@ -769,7 +769,7 @@ describe('generateCandidates', () => {
       }
     });
 
-    // --- M4: an admissible pin is exempt from the 7-day recent-wear exclusion --------------------
+    // --- an admissible pin is exempt from the 7-day recent-wear exclusion ------------------------
 
     test('a pinned garment worn yesterday still appears, unlike an ordinary recently-worn piece', () => {
       const recentPin = garment({ category: 'sneakers', colors: ['white'], last_worn_at: '2026-11-07T00:00:00Z' });

@@ -1,6 +1,6 @@
 // A garment's detail (spec §3.3 "Garment CRUD"): every attribute editable, the status, replacing
 // the photo and deleting. No mockup of its own: it reuses mockup 02 review's photo, chip editors and
-// anchored CTA. A root Stack screen inside the tabs guard (P3-R3), so there's no tab bar.
+// anchored CTA. A root Stack screen inside the tabs guard, so there's no tab bar.
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused, useLocalSearchParams } from 'expo-router';
@@ -274,7 +274,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
               values={values}
               onChange={onChange}
               clothingType={clothingType}
-              // P3-R13: every category, so a shirt can become a jacket in one tap.
+              // Every category, so a shirt can become a jacket in one tap.
               narrowCategory={false}
               disabled={reading}
             />

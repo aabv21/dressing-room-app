@@ -774,7 +774,7 @@ describe('degraded results', () => {
   });
 });
 
-describe('a cached swap is re-checked (M1)', () => {
+describe('a cached swap is re-checked', () => {
   const withSwap = (): World =>
     world({
       jev: (state) =>

@@ -293,7 +293,7 @@ export function FieldEditor(props: {
   clothingType: ClothingType;
   /**
    * Category only (default true): offer just the current category's slot. Off when the AI doubted
-   * the category itself, since the right answer may be in another slot (P3-R12).
+   * the category itself, since the right answer may be in another slot.
    */
   narrowCategory?: boolean;
   /** Every choice shown but not tappable (e.g. while the AI is still reading the photo). */

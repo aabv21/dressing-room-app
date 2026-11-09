@@ -108,7 +108,7 @@ function getRow(garmentId: string): QueueRow | null {
   return db.getFirstSync<QueueRow>('SELECT * FROM upload_queue WHERE garment_id = ?;', [garmentId]);
 }
 
-// NOTE (P3-R8): named `<garmentId>-<uuid>-source.<ext>`, not the brief's `<garmentId>-source.<ext>`.
+// NOTE: named `<garmentId>-<uuid>-source.<ext>`, not a fixed `<garmentId>-source.<ext>`.
 // A fixed name would let a replacement's copy collide with (and be deleted alongside) the row a
 // worker already in flight for the same garment is using — see `saveItem`/`removeItem` below,
 // which key on `source_uri` instead of only `garment_id` to survive that race. Ceiling: file names

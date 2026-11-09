@@ -1,7 +1,7 @@
 // "How does it look?" (mockup 01 screen 3): the AI's rating of a picked outfit — the score ring and
 // label, the AI confidence, template reasons, a one-tap swap for a low score — and Save / I'll wear
 // it. Today and Build push it with the garment ids (`ids`, comma-separated) and an optional
-// `occasion`. A root Stack screen inside the tabs guard (P3-R3), so there's no tab bar.
+// `occasion`. A root Stack screen inside the tabs guard, so there's no tab bar.
 import { randomUUID } from 'expo-crypto';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -296,7 +296,7 @@ function RateOutfit({
   const { isWorn, markWorn } = useWornToday(day);
   const logged = isWorn(ids);
   const [actionError, setActionError] = useState<RequestError | null>(null);
-  // P4-R5: one id per wear attempt, kept across a retry so a lost response can't log it twice.
+  // One id per wear attempt, kept across a retry so a lost response can't log it twice.
   const wearId = useRef<string | null>(null);
 
   const run = useCallback(

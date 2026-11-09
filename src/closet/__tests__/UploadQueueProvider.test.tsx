@@ -209,7 +209,7 @@ test('a pass that committed something refreshes the closet; one that did not, do
   expect(mockRefresh).toHaveBeenCalledTimes(1);
 });
 
-test('schedules one run at the earliest future retry of a non-failed item (P3-R9)', async () => {
+test('schedules one run at the earliest future retry of a non-failed item', async () => {
   jest.useFakeTimers({ now: 1_000_000 });
   mockedListQueue.mockReturnValue([
     item({ garmentId: 'later', nextAttemptAt: 1_000_000 + 20_000 }),

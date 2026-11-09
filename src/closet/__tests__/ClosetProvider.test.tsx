@@ -265,7 +265,7 @@ async function renderWithHandle(): Promise<{ current: () => ReturnType<typeof us
   };
 }
 
-describe('a replaced photo (final review I3)', () => {
+describe('a replaced photo', () => {
   test('a refresh that returns a bumped photo_version re-signs that thumbnail at once', async () => {
     let signing = 0;
     mockedSign.mockImplementation((paths) => {
@@ -324,7 +324,7 @@ describe('a replaced photo (final review I3)', () => {
   });
 });
 
-describe('a poll that finds nothing new (final review T7 M1)', () => {
+describe('a poll that finds nothing new', () => {
   test('writes no kv and keeps the same garments array and thumbnail map', async () => {
     const rows = (): Garment[] => [
       garment({ id: 'a', extraction_status: 'pending' }),
@@ -375,7 +375,7 @@ describe('a poll that finds nothing new (final review T7 M1)', () => {
   });
 });
 
-describe('work in flight for a user who is gone (I1)', () => {
+describe('work in flight for a user who is gone', () => {
   test('a refresh that resolves after unmount writes neither state nor kv', async () => {
     kvSet(CACHE_KEY, JSON.stringify({ garments: [garment({ id: 'cached', extraction_status: 'done' })], thumbs: {} }));
     const list = deferred<ReturnType<typeof garment>[]>();
@@ -454,7 +454,7 @@ describe('work in flight for a user who is gone (I1)', () => {
   });
 });
 
-describe('refresh on foreground and reconnect (I2)', () => {
+describe('refresh on foreground and reconnect', () => {
   test('returning to the foreground refreshes; going to the background does not', async () => {
     mockedList.mockResolvedValue([]);
     await renderProvider();

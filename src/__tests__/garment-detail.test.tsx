@@ -336,7 +336,7 @@ function deferred(): { promise: Promise<RequestResult>; resolve: (result: Reques
   return { promise, resolve };
 }
 
-describe('category (I1, P3-R13)', () => {
+describe('category: required to save, and any category reachable in one tap', () => {
   test('clearing the category disables Save and shows a hint until one is picked', async () => {
     await renderDetail();
 
@@ -362,7 +362,7 @@ describe('category (I1, P3-R13)', () => {
   });
 });
 
-describe('saves never race (I2, M1)', () => {
+describe('saves never race', () => {
   test('a second status tap while one is saving is ignored, and the first one lands', async () => {
     const first = deferred();
     mockedUpdateGarment.mockReturnValueOnce(first.promise);
@@ -494,7 +494,7 @@ describe('one save at a time (fix round 2)', () => {
   });
 });
 
-describe('donated (P5-R2)', () => {
+describe('donated: not offered by the status picker', () => {
   test('the status picker offers available, laundry and lent only', async () => {
     await renderDetail();
 

@@ -15,8 +15,8 @@ import { View } from 'react-native';
 //   component that reads `.value` straight into a style object only ever sees the value from
 //   its own render pass, never a later mutation, exactly like reanimated's real shared values
 //   (UI-thread state that never triggers a React re-render on write — see `mutablesCommon.js`).
-//   This is deliberate: it's what makes this mock able to catch C1 (see task-4-report.md), where
-//   a component did exactly that and froze every bar at 0% on a real device. Internally each
+//   This is deliberate: it's what makes this mock able to catch a component that does exactly
+//   that, a bug that once froze every Stats bar at 0% on a real device. Internally each
 //   box also keeps a tiny listener set so `useAnimatedStyle` (below) can re-render when the
 //   value it's reading changes — there is no UI thread here to push the update straight to a
 //   native view, so a React re-render is the only way this mock can make a later write visible

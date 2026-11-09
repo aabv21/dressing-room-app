@@ -506,7 +506,7 @@ describe('the lucky list', () => {
     for (const outfit of outfits) expect(outfit.garmentIds).toContain(oneCoat);
   });
 
-  test('the same user and date give the same candidate order on a recompute; another date another order (M3)', async () => {
+  test('the same user and date give the same candidate order on a recompute; another date another order', async () => {
     const failing = (): World => world({ jev: () => json(500, {}) });
     const order = async (date: string): Promise<string[][]> =>
       ((await lucky(failing(), luckyRequest({ date, occasion: 'university' }))).body as OkBody).outfits.map(
@@ -762,7 +762,7 @@ describe('weather', () => {
     expect((body as OkBody).weather).toBeNull();
     expect((body as OkBody).outfits.length).toBeGreaterThan(0);
     expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
-    // Every rating succeeded; the degradation is the weather's alone (M2).
+    // Every rating succeeded; the degradation is the weather's alone.
     expect(outcomes()).toEqual([{ outcome: 'degraded' }]);
   });
 

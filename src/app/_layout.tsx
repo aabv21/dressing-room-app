@@ -90,7 +90,7 @@ function Guards() {
       </Stack.Protected>
       <Stack.Protected guard={active.status === 'signedIn' && active.onboardingComplete}>
         <Stack.Screen name="(tabs)" />
-        {/* P3-R3: closet screens without the tab bar, pushed over the tabs. The camera is a
+        {/* Closet screens without the tab bar, pushed over the tabs. The camera is a
             full-screen modal, matching mockup 02 screen 2 having no tab bar or back header of its
             own; review (screen 3) and the garment detail are plain pushes, so the back gesture returns
             to the closet. */}

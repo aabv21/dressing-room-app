@@ -365,7 +365,7 @@ export function generateCandidates(
     ctx.weather !== null &&
     (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
 
-  // Only pins `fitsAlone` admits for this context ever claim a forced attempt (M3): an
+  // Only pins `fitsAlone` admits for this context ever claim a forced attempt: an
   // inadmissible pin (the wrong season, formality, or a coat on a hot day) would otherwise waste
   // every 4th attempt on a garment that can never appear, starving an admissible sibling pin.
   const byId = new Map(garments.map((item) => [item.id, item]));
@@ -386,7 +386,7 @@ export function generateCandidates(
   let attemptCount = 0;
 
   function draw(excludeRecentlyWorn: boolean, remaining: number, maxDraws: number): Outfit[] {
-    // M4: an admissible pinned garment is kept even if it was worn recently — a wear logged
+    // An admissible pinned garment is kept even if it was worn recently — a wear logged
     // between the "Wear it" tap and the pinned day shouldn't silently drop it from every draw.
     const pool = (items: readonly RuleGarment[]): readonly RuleGarment[] =>
       items.filter(

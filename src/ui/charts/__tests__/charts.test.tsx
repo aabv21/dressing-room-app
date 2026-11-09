@@ -69,7 +69,7 @@ describe('HorizontalBars', () => {
     expect(screen.getByText('30')).toHaveStyle({ width: 62 });
   });
 
-  // Regression test for C1 (review round 1): `Bar` used to read its reanimated shared value
+  // Regression test: `Bar` used to read its reanimated shared value
   // straight into a plain style object during render. `withTiming`'s write happens on the UI
   // thread and never triggers a React re-render, so on a real device every bar stayed frozen at
   // its first-render width (0%, since reduced motion is off by default) — only `useAnimatedStyle`

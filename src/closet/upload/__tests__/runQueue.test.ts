@@ -43,12 +43,12 @@ function makeItem(overrides: Partial<QueueItem> = {}): QueueItem {
   };
 }
 
-// `QueueStoreApi`/`QueueSteps` are declared with method-shorthand syntax (matching the brief's
-// exact interfaces), which trips `@typescript-eslint/unbound-method` the moment a test asserts on
-// one of these functions with `toHaveBeenCalledWith`/`toHaveBeenCalledTimes` (the rule treats a
-// shorthand method as a potentially-`this`-bound class method). Fakes below are therefore typed as
-// plain `jest.Mock`-property bags, not as `QueueStoreApi`/`QueueSteps` themselves, and are passed
-// to `runQueue` where only its parameter's structural type is checked — same pattern as
+// `QueueStoreApi`/`QueueSteps` are declared with method-shorthand syntax, which trips
+// `@typescript-eslint/unbound-method` the moment a test asserts on one of these functions with
+// `toHaveBeenCalledWith`/`toHaveBeenCalledTimes` (the rule treats a shorthand method as a
+// potentially-`this`-bound class method). Fakes below are therefore typed as plain
+// `jest.Mock`-property bags, not as `QueueStoreApi`/`QueueSteps` themselves, and are passed to
+// `runQueue` where only its parameter's structural type is checked — same pattern as
 // `src/auth/__tests__/authService.test.ts`'s `fakeClient`.
 
 type FakeStore = {
@@ -282,7 +282,7 @@ test('at most 2 prepare calls are in flight at once', async () => {
 });
 
 test('an item enqueued while a pass is running is committed by the same awaited call', async () => {
-  // I2: runQueue reads listQueue once per sweep; without a rerun flag an item added mid-pass
+  // runQueue reads listQueue once per sweep; without a rerun flag an item added mid-pass
   // would sit until some unrelated later trigger called runQueue again.
   const store = createFakeStore([makeItem({ garmentId: 'a' })]);
   const steps = createSteps();

@@ -68,7 +68,7 @@ function nextRetryAt(items: readonly QueueItem[], now: number): number | null {
 /**
  * Runs the signed-in user's persisted upload queue: on mount (a launch resumes whatever an earlier
  * session left), after every enqueue, when the app returns to the foreground, when the network
- * comes back, and (P3-R9) at the earliest pending retry, so a backed-off item doesn't wait for an
+ * comes back, and at the earliest pending retry, so a backed-off item doesn't wait for an
  * unrelated trigger while the app stays open. A pass that committed garments refreshes the closet.
  *
  * While the user's account deletion is unconfirmed (`account.deleting.<id>`, see
