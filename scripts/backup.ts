@@ -22,7 +22,7 @@
 //
 // Env: BACKUP_DB_URL (the hosted connection string, percent-encoded), SUPABASE_URL,
 // SUPABASE_SERVICE_ROLE_KEY, and optionally BACKUP_DIR (default `~/dressing-room-backups`, never
-// inside this repository).
+// inside this repository, never the home folder or the filesystem root).
 //
 // `node scripts/backup.ts --verify <backup folder>` recomputes every size and sha256 in the
 // folder's `manifest.json` and exits 1 on any difference (run it before a restore).
@@ -31,7 +31,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { isRecord } from '../supabase/functions/_shared/extraction.ts';
@@ -151,13 +151,15 @@ export function redact(text: string, secrets: readonly string[]): string {
 const listOf = (names: readonly string[]): string =>
   names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
 
+const PERCENT_ENCODING_HINT = "percent-encode its password's special characters (@ as %40, % as %25, / as %2F)";
+
 /** `url` split into the URL without its password and the decoded password, or why it can't be. */
 function splitDbUrl(url: string): { dbUrl: string; dbPassword: string } | { error: string } {
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    parsed = new URL('invalid:');
+    return { error: `BACKUP_DB_URL is not a valid postgresql:// connection string: ${PERCENT_ENCODING_HINT}` };
   }
   if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') {
     return { error: 'BACKUP_DB_URL must be a postgresql:// connection string' };
@@ -167,7 +169,7 @@ function splitDbUrl(url: string): { dbUrl: string; dbPassword: string } | { erro
     dbPassword = decodeURIComponent(parsed.password);
   } catch {
     return {
-      error: "BACKUP_DB_URL's password is not valid percent-encoding: percent-encode its special characters (@ as %40, % as %25, / as %2F)",
+      error: `BACKUP_DB_URL's password is not valid percent-encoding: ${PERCENT_ENCODING_HINT}`,
     };
   }
   parsed.password = '';
@@ -176,8 +178,8 @@ function splitDbUrl(url: string): { dbUrl: string; dbPassword: string } | { erro
 
 /**
  * The run's settings from `env`, or why they're unusable (never echoing a value). BACKUP_DIR may
- * start with `~/`; it must be absolute otherwise, and never inside `repoRoot`, since backups hold
- * personal data.
+ * start with `~/`; it must be absolute otherwise, never inside `repoRoot`, since backups hold
+ * personal data, and never `home` or the root, since the run chmods it to 0700.
  */
 export function backupConfigFrom(
   env: Readonly<Record<string, string | undefined>>,
@@ -199,6 +201,12 @@ export function backupConfigFrom(
   else if (dir === '~' || dir.startsWith('~/')) backupRoot = resolve(home, dir.slice(2));
   else if (isAbsolute(dir)) backupRoot = resolve(dir);
   else return { error: 'BACKUP_DIR must be an absolute path or start with ~/' };
+
+  if (backupRoot === resolve(home) || backupRoot === parse(backupRoot).root) {
+    return {
+      error: 'BACKUP_DIR must be a folder of its own, not the home folder or the filesystem root: the run makes it private',
+    };
+  }
 
   const fromRepo = relative(resolve(repoRoot), backupRoot);
   if (fromRepo === '' || (fromRepo !== '..' && !fromRepo.startsWith(`..${sep}`) && !isAbsolute(fromRepo))) {

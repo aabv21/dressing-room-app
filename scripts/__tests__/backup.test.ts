@@ -170,16 +170,28 @@ describe('backupConfigFrom', () => {
     const config = backupConfigFrom({ ...env, BACKUP_DB_URL: 'postgresql://postgres:pa%zz100%@db.example.com/postgres' }, home, repoRoot);
 
     expect(config).toEqual({
-      error: "BACKUP_DB_URL's password is not valid percent-encoding: percent-encode its special characters (@ as %40, % as %25, / as %2F)",
+      error:
+        "BACKUP_DB_URL's password is not valid percent-encoding: percent-encode its password's special characters (@ as %40, % as %25, / as %2F)",
     });
     expect(JSON.stringify(config)).not.toContain('pa%zz');
   });
 
   test('refuses a DB URL that is not a Postgres URL, without echoing it', () => {
-    for (const url of ['not a url with hunter2', `https://user:hunter2@example.com/db`]) {
-      expect(backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot)).toEqual({
-        error: 'BACKUP_DB_URL must be a postgresql:// connection string',
+    expect(backupConfigFrom({ ...env, BACKUP_DB_URL: 'https://user:hunter2@example.com/db' }, home, repoRoot)).toEqual({
+      error: 'BACKUP_DB_URL must be a postgresql:// connection string',
+    });
+  });
+
+  test('an unparseable DB URL hints at percent-encoding the password, without echoing it', () => {
+    // An unencoded `/` in the password ends the host early, so `pass` becomes an invalid port.
+    for (const url of ['not a url with hunter2', 'postgresql://postgres:pass/hunter2@db.example.com:5432/postgres']) {
+      const config = backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot);
+
+      expect(config).toEqual({
+        error:
+          "BACKUP_DB_URL is not a valid postgresql:// connection string: percent-encode its password's special characters (@ as %40, % as %25, / as %2F)",
       });
+      expect(JSON.stringify(config)).not.toContain('hunter2');
     }
   });
 
@@ -207,6 +219,14 @@ describe('backupConfigFrom', () => {
     for (const dir of [repoRoot, `${repoRoot}/backups`, `${repoRoot}/../dressing-room-app/x`]) {
       expect(backupConfigFrom({ ...env, BACKUP_DIR: dir }, home, repoRoot)).toEqual({
         error: 'BACKUP_DIR must be outside the repository: backups hold personal data',
+      });
+    }
+  });
+
+  test('refuses a BACKUP_DIR that is the home folder or the filesystem root, which the run would make private', () => {
+    for (const dir of ['~', '~/', home, `${home}/`, `${home}/code/..`, '/', '/Users/..']) {
+      expect(backupConfigFrom({ ...env, BACKUP_DIR: dir }, home, repoRoot)).toEqual({
+        error: 'BACKUP_DIR must be a folder of its own, not the home folder or the filesystem root: the run makes it private',
       });
     }
   });
