@@ -25,6 +25,7 @@ A digital closet and AI outfit rater, built with Expo and Supabase.
 - For you: 3–5 staples your closet is missing, ranked by how many new outfits each opens with what you own and how well it suits your body and style, each with a short line and a "Search in stores" button that opens a web search in your language. The last ideas stay readable offline. A low rating with no swap links here ("Missing something?").
 - Fixture mode for performance testing: with `EXPO_PUBLIC_PERF_FIXTURES_URL` set, the Closet grid shows 500 generated thumbnails served from your computer, a disabled upload CTA, and a frame-stats HUD (frames, dropped frames, p95 and median frame time, inferred refresh rate). Tap the HUD to reset it; long-press it to also clear the image caches for a cold pass.
 - Performance gate: [`docs/performance-gate.md`](./docs/performance-gate.md) — protocol for the on-device scroll-performance go/no-go call. Status: pending.
+- AI red team: [`docs/red-team.md`](./docs/red-team.md) — prompt injection through photos and profile fields, the enum-bounded outputs and their sanitizers, quota abuse and cross-user access: each attack's defense and the test that pins it.
 
 ## Quick start
 
