@@ -1,16 +1,19 @@
 // The `delete-account` Edge Function's request handler: deletes the signed-in caller's account.
 //   0. The caller is confirmed with `GET /auth/v1/user` and the caller's own token (the gateway has
 //      verified the JWT; this makes sure Auth still knows the user before anything irreversible).
-//      An unknown user means a previous attempt already finished: `deleted`, touching nothing.
+//      An unknown user means a previous attempt already finished: the `{uid}/` folder is swept
+//      once more (a photo the app uploaded while that attempt's answer was lost), then `deleted`.
 //   1. Every object under `garments/{uid}/` is listed (1000 entries per page, the garment folders
 //      `LIST_CONCURRENCY` at a time), and only then removed, 1000 paths per call.
 //   2. The stored Apple refresh token, if there is one, is revoked with Apple. A failed revoke (or a
 //      failed read of the token row) never blocks the deletion.
 //   3. The auth user is deleted (`DELETE /auth/v1/admin/users/{id}`); every public table cascades
-//      from `auth.users`, `apple_tokens` included.
+//      from `auth.users`, `apple_tokens` included. A 404 means a concurrent attempt deleted it
+//      first, so the folder is swept again, as in step 0.
 // Steps 1–3 use the service role. Safe to retry: a failure in step 0, 1 or 3 answers 500 with the
 // user still there, so a retry starts over with whatever is left; once the user is gone, a retry
-// (the caller's token is still valid until it expires) stops at step 0 and answers `deleted`.
+// (the caller's token is still valid until it expires) sweeps the folder at step 0 and answers
+// `deleted`. The uid is always the verified JWT's `sub`, never anything from the request body.
 // Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
 // `index.ts` serves it under Deno. Logs carry only outcome words.
 
@@ -135,13 +138,20 @@ async function revokeApple(deps: DeleteAccountDeps, userId: string, now: number)
   return (await revokeToken(deps.apple, deps.fetch, refreshToken, now)) ? 'revoked' : 'revoke_failed';
 }
 
-/** Deletes the auth user; a 404 means a previous attempt already did. */
-async function deleteUser(env: SupabaseEnv, fetchFn: typeof fetch, userId: string): Promise<void> {
+/** Deletes the auth user: true when this call deleted it, false on a 404 (an earlier attempt did). */
+async function deleteUser(env: SupabaseEnv, fetchFn: typeof fetch, userId: string): Promise<boolean> {
   const response = await fetchFn(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: 'DELETE',
     headers: serviceHeaders(env),
   });
-  if (!response.ok && response.status !== 404) throw new UpstreamError(`admin delete: HTTP ${String(response.status)}`);
+  if (response.status === 404) return false;
+  if (!response.ok) throw new UpstreamError(`admin delete: HTTP ${String(response.status)}`);
+  return true;
+}
+
+/** Lists and removes every object under `{uid}/`. */
+async function sweepStorage(env: SupabaseEnv, fetchFn: typeof fetch, userId: string): Promise<void> {
+  await removeObjects(env, fetchFn, await listObjects(env, fetchFn, `${userId}/`));
 }
 
 export async function handleDeleteAccount(request: Request, deps: DeleteAccountDeps): Promise<Response> {
@@ -153,18 +163,24 @@ export async function handleDeleteAccount(request: Request, deps: DeleteAccountD
 
   const { env, fetch: fetchFn } = deps;
   try {
-    if (!(await callerExists(env, fetchFn, auth, userId))) return reply('already_deleted', 200, { outcome: 'deleted' });
+    if (!(await callerExists(env, fetchFn, auth, userId))) {
+      await sweepStorage(env, fetchFn, userId);
+      return reply('already_deleted', 200, { outcome: 'deleted' });
+    }
   } catch {
     return reply('error', 500, { error: 'internal' });
   }
   try {
-    await removeObjects(env, fetchFn, await listObjects(env, fetchFn, `${userId}/`));
+    await sweepStorage(env, fetchFn, userId);
   } catch {
     return reply('error', 500, { error: 'internal' });
   }
   const revoke = await revokeApple(deps, userId, now());
   try {
-    await deleteUser(env, fetchFn, userId);
+    if (!(await deleteUser(env, fetchFn, userId))) {
+      await sweepStorage(env, fetchFn, userId);
+      return reply('already_deleted', 200, { outcome: 'deleted' }, revoke);
+    }
   } catch {
     return reply('error', 500, { error: 'internal' }, revoke);
   }

@@ -269,14 +269,62 @@ describe('delete-account', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'deleted' });
-    // The caller check finds the user gone, so nothing else is touched.
-    expect(kinds(retry.steps)).toEqual(['whoami']);
+    // The caller check finds the user gone: only the caller's (now empty) folder is listed again.
+    expect(kinds(retry.steps)).toEqual(['whoami', 'list']);
+    expect(retry.steps).toContainEqual({ kind: 'list', prefix: `${USER_ID}/`, offset: 0 });
+  });
+
+  test('a retry after a lost answer sweeps the photos uploaded meanwhile, and only the caller\'s', async () => {
+    const state = world();
+    await handleDeleteAccount(request(), { env: ENV, apple, fetch: fakeFetch(state).fetch, now: () => NOW });
+    // The app's upload queue landed one more photo after the first attempt listed storage.
+    const late = `${USER_ID}/${garmentId(40)}/full.webp`;
+    state.objects.add(late);
+
+    const retry = fakeFetch(state);
+    const response = await handleDeleteAccount(request(), { env: ENV, apple, fetch: retry.fetch, now: () => NOW });
+
+    expect(await response.json()).toEqual({ outcome: 'deleted' });
+    expect(removed(retry.steps)).toEqual([late]);
+    expect([...state.objects].every((path) => path.startsWith(`${OTHER_ID}/`))).toBe(true);
+    expect(state.objects.size).toBe(4);
+    expect(kinds(retry.steps)).not.toContain('revoke');
+    expect(kinds(retry.steps)).not.toContain('deleteUser');
+  });
+
+  test('a failed sweep after the user is gone answers 500, so the app retries', async () => {
+    const state = world({ users: new Set([OTHER_ID]), failList: true });
+    const { fetch: fetchFn } = fakeFetch(state);
+
+    const response = await handleDeleteAccount(request(), { env: ENV, apple, fetch: fetchFn, now: () => NOW });
+
+    expect(response.status).toBe(500);
+  });
+
+  test('a 404 from the user deletion (a concurrent attempt won) sweeps the folder again and answers deleted', async () => {
+    const late = `${USER_ID}/${garmentId(41)}/thumb.webp`;
+    const state: World = world({
+      deleteUser: () => {
+        state.users.delete(USER_ID);
+        state.objects.add(late);
+        return json(404, { code: 404, error_code: 'user_not_found', msg: 'User not found' });
+      },
+    });
+    const { fetch: fetchFn, steps } = fakeFetch(state);
+
+    const response = await handleDeleteAccount(request(), { env: ENV, apple, fetch: fetchFn, now: () => NOW });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'deleted' });
+    expect(state.objects.has(late)).toBe(false);
+    // The second sweep lists the caller's root and the late garment's folder, then removes.
+    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'remove']);
   });
 
   test.each([
     ['GoTrue’s 403 user_not_found', () => json(403, { code: 403, error_code: 'user_not_found', msg: 'gone' })],
     ['a 404 with user_not_found', () => json(404, { code: 404, error_code: 'user_not_found', msg: 'User not found' })],
-  ])('answers deleted without touching anything when the caller check gives %s', async (_name, whoami) => {
+  ])('answers deleted after sweeping only the caller\'s folder when the caller check gives %s', async (_name, whoami) => {
     const state = world({ whoami });
     const { fetch: fetchFn, steps } = fakeFetch(state);
 
@@ -284,8 +332,12 @@ describe('delete-account', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'deleted' });
-    expect(kinds(steps)).toEqual(['whoami']);
-    expect(state.objects.size).toBe(10);
+    expect(kinds(steps)).not.toContain('token');
+    expect(kinds(steps)).not.toContain('revoke');
+    expect(kinds(steps)).not.toContain('deleteUser');
+    // The other user's 4 photos stay; the caller's 6 are swept.
+    expect(state.objects.size).toBe(4);
+    expect([...state.objects].every((path) => path.startsWith(`${OTHER_ID}/`))).toBe(true);
   });
 
   test.each([

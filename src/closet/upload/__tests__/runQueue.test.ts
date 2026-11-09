@@ -24,7 +24,7 @@ jest.mock('expo-file-system', () => ({
 }));
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'uuid') }));
 
-import { PermanentUploadError, backoffMs, runQueue } from '../runQueue';
+import { PermanentUploadError, backoffMs, pauseQueue, resumeQueue, runQueue } from '../runQueue';
 
 function makeItem(overrides: Partial<QueueItem> = {}): QueueItem {
   return {
@@ -305,6 +305,65 @@ test('an item enqueued while a pass is running is committed by the same awaited 
   expect(result).toEqual({ committed: 2, failed: 0, waiting: 0 });
   expect(steps.prepare).toHaveBeenCalledTimes(2);
   expect(store.all()).toHaveLength(0);
+});
+
+describe('pauseQueue', () => {
+  afterEach(() => {
+    resumeQueue('user-1');
+  });
+
+  test('waits for the running stage, then starts no upload, commit or next item', async () => {
+    const store = createFakeStore([makeItem({ garmentId: 'a' }), makeItem({ garmentId: 'b', createdAt: 1 })]);
+    const steps = createSteps();
+    const gateA = deferred<{ fullUri: string; thumbUri: string }>();
+    const gateB = deferred<{ fullUri: string; thumbUri: string }>();
+    steps.prepare.mockReturnValueOnce(gateA.promise).mockReturnValueOnce(gateB.promise);
+
+    const pass = runQueue('user-1', steps, store, () => 0);
+    await flushMicrotasks();
+    let paused = false;
+    const pausing = pauseQueue('user-1').then(() => {
+      paused = true;
+    });
+    await flushMicrotasks();
+    expect(paused).toBe(false);
+
+    gateA.resolve({ fullUri: 'file:///full.webp', thumbUri: 'file:///thumb.webp' });
+    gateB.resolve({ fullUri: 'file:///full.webp', thumbUri: 'file:///thumb.webp' });
+    await pausing;
+    await pass;
+
+    expect(paused).toBe(true);
+    expect(steps.upload).not.toHaveBeenCalled();
+    expect(steps.commit).not.toHaveBeenCalled();
+    // Stopped, not failed: each keeps its prepared stage and its attempts, and is due at once.
+    expect(store.all()).toHaveLength(2);
+    for (const stored of store.all()) {
+      expect(stored).toMatchObject({ stage: 'prepared', attempts: 0, nextAttemptAt: 0, failed: false });
+    }
+  });
+
+  test('a paused queue starts no pass until it is resumed', async () => {
+    const store = createFakeStore([makeItem()]);
+    const steps = createSteps();
+
+    await pauseQueue('user-1');
+    expect(await runQueue('user-1', steps, store, () => 0)).toEqual({ committed: 0, failed: 0, waiting: 0 });
+    expect(steps.prepare).not.toHaveBeenCalled();
+    expect(store.saveItem).not.toHaveBeenCalled();
+
+    resumeQueue('user-1');
+    expect(await runQueue('user-1', steps, store, () => 0)).toEqual({ committed: 1, failed: 0, waiting: 0 });
+  });
+
+  test('pausing one user leaves another user\'s queue running', async () => {
+    const store = createFakeStore([makeItem({ userId: 'user-2' })]);
+    const steps = createSteps();
+
+    await pauseQueue('user-1');
+
+    expect(await runQueue('user-2', steps, store, () => 0)).toEqual({ committed: 1, failed: 0, waiting: 0 });
+  });
 });
 
 // A native crash (OOM in the cut-out or the image manipulator) kills the process mid-stage, so no

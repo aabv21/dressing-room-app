@@ -391,6 +391,25 @@ test('removeItem ignores files that are already gone', async () => {
   expect(listQueue('user-1')).toHaveLength(0);
 });
 
+test('clearQueue removes every row and copied file of one user, and only that user', async () => {
+  const { enqueuePhotos, listQueue, clearQueue } = await loadQueueStore();
+  registerSourceFile('file:///cache/a.jpg');
+  registerSourceFile('file:///cache/b.jpg');
+  registerSourceFile('file:///cache/c.jpg');
+
+  const mine = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/b.jpg']);
+  const [theirs] = enqueuePhotos('user-2', ['file:///cache/c.jpg']) as [QueueItem];
+
+  clearQueue('user-1');
+
+  expect(listQueue('user-1')).toHaveLength(0);
+  for (const item of mine) {
+    expect(mockFiles.has(item.sourceUri)).toBe(false);
+  }
+  expect(listQueue('user-2')).toEqual([theirs]);
+  expect(mockFiles.has(theirs.sourceUri)).toBe(true);
+});
+
 test('resetFailed clears failure, attempts and backoff', async () => {
   const { enqueuePhotos, saveItem, resetFailed, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');

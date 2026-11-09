@@ -133,3 +133,19 @@ export async function signOut(client: Client = supabase, clearStoredAuth: () => 
   clearStoredAuth();
   return signOutWithScope(client, 'local');
 }
+
+/**
+ * Signs this device out (`{ scope: 'local' }`) after the account was deleted: Auth then rejects the
+ * session's tokens, which supabase-js ignores on sign-out, or it may already have dropped the
+ * session after a refused refresh. Never fails: when supabase-js can't finish the local sign-out (offline with an expired token, or
+ * a refresh it can't complete), the persisted session is deleted directly and the local sign-out
+ * runs again, which then finds no session and emits SIGNED_OUT.
+ */
+export async function signOutLocally(client: Client = supabase, clearStoredAuth: () => void = clearPersistedAuth): Promise<void> {
+  const local = await signOutWithScope(client, 'local');
+  if (local.ok) {
+    return;
+  }
+  clearStoredAuth();
+  await signOutWithScope(client, 'local');
+}

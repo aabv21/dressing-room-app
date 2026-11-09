@@ -3,10 +3,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { Alert, AppState } from 'react-native';
 
+import { confirmPendingDeletion } from '../account/deletionFlow';
+import { deletionState } from '../account/deletionMarker';
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n';
 import { useCloset } from './ClosetProvider';
 import {
+  clearQueue,
   enqueuePhotos,
   enqueueReplacement as storeReplacement,
   listQueue,
@@ -15,7 +18,7 @@ import {
   type QueueItem,
 } from './upload/queueStore';
 import { createQueueSteps } from './upload/queueSteps';
-import { runQueue } from './upload/runQueue';
+import { pauseQueue, resumeQueue, runQueue } from './upload/runQueue';
 
 interface UploadQueueContextValue {
   /** Photos still on their way (including ones waiting out a retry backoff). */
@@ -26,6 +29,15 @@ interface UploadQueueContextValue {
   enqueueReplacement: (garmentId: string, uri: string) => void;
   retryFailed: () => void;
   discardFailed: () => void;
+  /**
+   * For account deletion: `pause` stops the queue and resolves once a stage in flight has finished,
+   * so nothing reaches storage after the server has listed it; nothing runs until `resume`.
+   * `clear` drops every queued photo, only once the account is gone. `resume` unpauses and runs
+   * the queue (`run: false` only unpauses, for a user who is signing out).
+   */
+  pause: () => Promise<void>;
+  clear: () => void;
+  resume: (options?: { run?: boolean }) => void;
 }
 
 type Counts = { pending: number; failed: number };
@@ -58,6 +70,12 @@ function nextRetryAt(items: readonly QueueItem[], now: number): number | null {
  * session left), after every enqueue, when the app returns to the foreground, when the network
  * comes back, and (P3-R9) at the earliest pending retry, so a backed-off item doesn't wait for an
  * unrelated trigger while the app stays open. A pass that committed garments refreshes the closet.
+ *
+ * While the user's account deletion is unconfirmed (`account.deleting.<id>`, see
+ * `src/account/deletionMarker.ts`) the queue never runs, and mounting (a launch or sign-in with the
+ * marker present), the app returning to the foreground and a reconnect only check whether the
+ * account still exists (`confirmPendingDeletion`); they never delete anything without the user's
+ * tap.
  */
 export function UploadQueueProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { userId: sessionUserId } = useAuth();
@@ -93,6 +111,10 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     if (userId === null || sessionUser.current !== userId) {
       return;
     }
+    // A deletion this device started for the user isn't confirmed: nothing may reach storage.
+    if (deletionState(userId) !== null) {
+      return;
+    }
     let committed = 0;
     try {
       ({ committed } = await runQueue(userId, steps));
@@ -112,6 +134,46 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     setNextRetry(at === null ? null : { at });
   }, [userId, steps, syncCounts, refresh]);
 
+  const pause = useCallback(async () => {
+    if (userId === null) {
+      return;
+    }
+    await pauseQueue(userId);
+  }, [userId]);
+
+  const clear = useCallback(() => {
+    if (userId === null) {
+      return;
+    }
+    clearQueue(userId);
+    syncCounts();
+  }, [userId, syncCounts]);
+
+  const resume = useCallback(
+    (options?: { run?: boolean }) => {
+      if (userId === null) {
+        return;
+      }
+      resumeQueue(userId);
+      if (options?.run !== false) {
+        void run();
+      }
+    },
+    [userId, run],
+  );
+
+  /**
+   * While the user's deletion is unconfirmed, checks whether the account still exists (verify only,
+   * never a deletion; overlapping checks share one) and reports true, so the caller skips its run.
+   */
+  const verifyPendingDeletion = useCallback((): boolean => {
+    if (userId === null || deletionState(userId) === null) {
+      return false;
+    }
+    void confirmPendingDeletion(userId, { pause, clear, resume });
+    return true;
+  }, [userId, pause, clear, resume]);
+
   useEffect(() => {
     if (nextRetry === null) {
       return undefined;
@@ -126,18 +188,24 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
 
   useEffect(() => {
     mounted.current = true;
-    void run();
+    // Mount, foreground and reconnect either check an unconfirmed deletion or run the queue.
+    const trigger = (): void => {
+      if (!verifyPendingDeletion()) {
+        void run();
+      }
+    };
+    trigger();
 
     const appState = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void run();
+        trigger();
       }
     });
     let wasOnline: boolean | null = null;
     const network = Network.addNetworkStateListener((event) => {
       const online = event.isConnected === true && event.isInternetReachable !== false;
       if (online && wasOnline === false) {
-        void run();
+        trigger();
       }
       wasOnline = online;
     });
@@ -147,7 +215,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
       appState.remove();
       network.remove();
     };
-  }, [run]);
+  }, [run, verifyPendingDeletion]);
 
   const enqueue = useCallback(
     (uris: readonly string[]) => {
@@ -205,8 +273,8 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
   }, [userId, syncCounts]);
 
   const value = useMemo<UploadQueueContextValue>(
-    () => ({ ...counts, enqueue, enqueueReplacement, retryFailed, discardFailed }),
-    [counts, enqueue, enqueueReplacement, retryFailed, discardFailed],
+    () => ({ ...counts, enqueue, enqueueReplacement, retryFailed, discardFailed, pause, clear, resume }),
+    [counts, enqueue, enqueueReplacement, retryFailed, discardFailed, pause, clear, resume],
   );
 
   return <UploadQueueContext.Provider value={value}>{children}</UploadQueueContext.Provider>;

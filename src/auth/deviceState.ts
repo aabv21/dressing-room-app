@@ -73,3 +73,11 @@ export function forgetOtherAccounts(userId: string): void {
     kvRemove(LANGUAGE_PENDING_KEY);
   }
 }
+
+/** Drops everything kept here for `userId`, once that account is deleted. */
+export function forgetAccount(userId: string): void {
+  if (readOnboardingEntry()?.userId === userId) {
+    kvRemove(ONBOARDING_KEY);
+  }
+  clearLanguageSavePending(userId);
+}

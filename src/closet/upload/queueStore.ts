@@ -248,6 +248,13 @@ export function removeItem(item: QueueItem): void {
   deleteIfExists(item.thumbUri);
 }
 
+/** Removes every queued photo of `userId`, rows and on-device copies (pause the queue first). */
+export function clearQueue(userId: string): void {
+  for (const item of listQueue(userId)) {
+    removeItem(item);
+  }
+}
+
 export function resetFailed(userId: string): void {
   db.runSync(
     'UPDATE upload_queue SET failed = 0, attempts = 0, next_attempt_at = 0 WHERE user_id = ?;',

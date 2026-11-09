@@ -1,7 +1,8 @@
-import { Check, LogOut } from 'lucide-react-native';
+import { Check, Download, LogOut, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { usePrivacyActions } from '../../account/usePrivacyActions';
 import { useAuth } from '../../auth/AuthProvider';
 import { clearLanguageSavePending, markLanguageSavePending } from '../../auth/deviceState';
 import { useSignOut } from '../../auth/useSignOut';
@@ -27,7 +28,7 @@ function SectionHeading({ children }: { children: string }): React.JSX.Element {
   );
 }
 
-/** "Account": the signed-in email and Sign out (account deletion and data export come later). */
+/** "Account": the signed-in email and Sign out. */
 function AccountSection(): React.JSX.Element {
   const { t } = useI18n();
   const { email } = useAuth();
@@ -59,6 +60,55 @@ function AccountSection(): React.JSX.Element {
             {t(signOut.error)}
           </Text>
         ) : null}
+      </View>
+    </>
+  );
+}
+
+/**
+ * "Privacy": what happens to body data, then "Export my data" (a JSON file through the share
+ * sheet) and the destructive "Delete account" (two confirms). Both stay disabled while either runs.
+ */
+function PrivacySection(): React.JSX.Element {
+  const { t } = useI18n();
+  const { exporting, deleting } = usePrivacyActions();
+  const busy = exporting.busy || deleting.busy;
+  return (
+    <>
+      <SectionHeading>{t('profile.section.privacy')}</SectionHeading>
+      <View style={styles.card}>
+        <Text style={styles.privacyNote}>{t('profile.privacy.note')}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.privacy.export')}
+          accessibilityState={{ disabled: busy, busy: exporting.busy }}
+          disabled={busy}
+          onPress={exporting.run}
+          style={[styles.signOut, busy ? styles.disabled : null]}
+        >
+          {exporting.busy ? <ActivityIndicator size="small" color={colors.ink} /> : <Download size={16} color={colors.ink} />}
+          <Text style={styles.signOutLabel}>{exporting.busy ? t('profile.privacy.exporting') : t('profile.privacy.export')}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.privacy.delete')}
+          accessibilityState={{ disabled: busy, busy: deleting.busy }}
+          disabled={busy}
+          onPress={deleting.run}
+          style={[styles.signOut, styles.danger, busy ? styles.disabled : null]}
+        >
+          {deleting.busy ? <ActivityIndicator size="small" color={colors.error} /> : <Trash2 size={16} color={colors.error} />}
+          <Text style={[styles.signOutLabel, styles.dangerLabel]}>
+            {deleting.busy ? t('profile.privacy.deleting') : t('profile.privacy.delete')}
+          </Text>
+        </Pressable>
+        {[exporting.error, deleting.error].map((error) =>
+          error !== undefined ? (
+            <Text key={error} style={styles.error} accessibilityLiveRegion="polite">
+              {t(error)}
+            </Text>
+          ) : null,
+        )}
       </View>
     </>
   );
@@ -235,6 +285,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         <StyleSection value={draft} onChange={edit} />
         <LanguageSection onSave={saveLanguage} />
         <AccountSection />
+        <PrivacySection />
         {saveError !== undefined ? (
           <Text style={styles.error} accessibilityLiveRegion="polite">
             {t(saveError)}
@@ -313,6 +364,7 @@ export default function ProfileScreen() {
         <ActivityIndicator style={styles.spinner} color={colors.accent} accessibilityLabel={t('onboarding.loading')} />
       )}
       <AccountSection />
+      <PrivacySection />
     </Screen>
   );
 }
@@ -398,6 +450,20 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.5,
+  },
+  privacyNote: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingTop: 8,
+  },
+  danger: {
+    marginTop: 0,
+    borderColor: colors.errorTint,
+    backgroundColor: colors.errorTint,
+  },
+  dangerLabel: {
+    color: colors.error,
   },
   message: {
     color: colors.ink,

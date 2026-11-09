@@ -9,6 +9,7 @@ export {
   requestPasswordReset,
   signInWithEmail,
   signOut,
+  signOutLocally,
   signUpWithEmail,
 } from './emailAuth';
 export { signInWithApple, signInWithGoogle } from './socialAuth';

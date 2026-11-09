@@ -130,8 +130,9 @@ Indexes: `outfits_user_id_idx` on `outfits (user_id)`; on `outfit_items`, `outfi
 on `outfit_items (garment_id)` — no separate index on `outfit_id` alone, since the primary key
 `(outfit_id, garment_id)` already leads with `outfit_id` and serves that lookup; on `wears`,
 `wears_user_id_idx` on `wears (user_id)`, `wears_user_id_worn_on_idx` on `wears (user_id, worn_on
-desc)` (backs the diary/Today queries added in later plans) and `wears_outfit_id_idx` on `wears
-(outfit_id)` (backs the wear-count trigger's and the RPCs' per-outfit lookups).
+desc)` (backs Stats' and Diary's reads of a user's wears by date, `src/stats/wearsRepository.ts`'s
+`listWears`) and `wears_outfit_id_idx` on `wears (outfit_id)` (backs the wear-count trigger's and
+the RPCs' per-outfit lookups).
 
 **Clients never insert or update these tables directly in the documented path** —
 `public.log_wear()` and `public.save_outfit()` (below) are the RPCs the app calls. Clients may
@@ -152,10 +153,10 @@ references public.outfits on delete cascade`'s cascade into `wears` and fires
 rows it would join through to find "which garments" are already gone, so its `where … and g.id in
 (select oi.garment_id from public.outfit_items oi where oi.outfit_id = old.outfit_id)` matches
 nothing and no garment's `wear_count`/`last_worn_at` moves. There is no client path to delete an
-`outfits` row today (no delete policy, and delete is revoked outright — see above), so this can't
-happen yet. **Plan 5, which adds the diary undo, must delete the `wears` row(s) first** (the
-existing `wears_delete_own` policy already allows that) and only then, if it ever deletes the
-outfit at all, delete `outfits` — never the other order.
+`outfits` row (no delete policy, and delete is revoked outright — see above), so this can't happen.
+Diary's Delete (`deleteWear`) deletes only the `wears` row, through `wears_delete_own`, and the
+trigger lowers the counts; the outfit stays. Any future outfit deletion must delete its `wears`
+rows first and only then the `outfits` row — never the other order.
 
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5)
 
@@ -229,11 +230,11 @@ RLS is enabled with two policies for `authenticated`, both comparing `user_id = 
 
 **There is no insert policy** (the first migration had one; `20261107171540_profiles_value_limits_and_write_rules`
 dropped it): the signup trigger creates every row, so a client insert — including the insert half
-of an upsert — is rejected with `42501`. **There is no delete policy** either: account deletion is
-not yet implemented, so a client delete removes nothing, and a profile row only goes away via
-`on delete cascade` from `auth.users`. The `anon` role has no privileges on the table at all
-(nothing reads profiles while signed out), and neither client role has `truncate`, `trigger` or
-`references`.
+of an upsert — is rejected with `42501`. **There is no delete policy** either: a client delete
+removes nothing, and a profile row only goes away via `on delete cascade` from `auth.users`
+(account deletion goes through the `delete-account` function; see "Account deletion and data
+export"). The `anon` role has no privileges on the table at all (nothing reads profiles while
+signed out), and neither client role has `truncate`, `trigger` or `references`.
 
 ### `public.garments`
 
@@ -579,7 +580,9 @@ inside them, never in `src/`.
 - **`delete-account`** — in this order:
   0. confirms the caller with `GET /auth/v1/user` and the caller's own token, before anything
      irreversible; only Auth's `user_not_found` means an earlier attempt already finished, so it
-     answers `deleted` and touches nothing; any other failure, a bare 404 included, answers 500;
+     sweeps `garments/{uid}/` once more (a photo that landed while that attempt's answer was lost)
+     and answers `deleted`, with no revoke or user deletion; any other failure, a bare 404
+     included, answers 500;
   1. with the service role, lists every object under `garments/{uid}/` (Storage's list, 1000 entries
      a page, the garment folders 5 at a time) and only then removes them, 1000 paths per call;
   2. revokes the `apple_tokens` refresh token with Apple, if there is one — a failed revoke (or a
@@ -591,9 +594,40 @@ inside them, never in `src/`.
 
   Safe to retry: a failed caller check, listing, removal or user deletion answers 500 with the user
   still there, so the next attempt starts over with whatever is left; once the user is gone, a retry
-  (the access token stays valid until it expires) stops at step 0 and answers 200
-  `{ outcome: 'deleted' }`; a 404 from the admin delete counts as deleted too. Storage objects are removed first
-  because nothing cascades into `storage.objects`.
+  (the access token stays valid until it expires) sweeps the folder at step 0 and answers 200
+  `{ outcome: 'deleted' }`; a 404 from the admin delete (a concurrent attempt won) sweeps the folder
+  again and counts as deleted too; a failed sweep on either path answers 500. The uid is always the
+  verified JWT's `sub`. Storage objects are removed first because nothing cascades into
+  `storage.objects`.
+
+  The app (`src/account/`) first writes the kv marker `account.deleting.<uid>`, then pauses its
+  upload queue (a stage in flight finishes), so no photo lands after the listing, and sends the
+  session's access token explicitly. It reports the account deleted only on
+  `{ outcome: 'deleted' }`, or on a 401 for which Auth's `GET /user` with that same token answers
+  `user_not_found` (a retry after a lost 200). Any other 401 (an expired token,
+  `session_not_found`, a refresh token that's gone) or no session at all doesn't prove the account
+  is gone, so the app tells the user to sign in again and then delete the account again
+  (`reauth`), and signs out locally, keeping the queue and the kv entries (the marker turns
+  `reauth`). Signing in doesn't finish anything by itself: the check below sees the account still
+  there and removes the marker, and the user taps "Delete account" again. On a deletion the app clears
+  the queue, signs out locally and clears every kv key under the user's id, the marker included.
+  Any other failure (network, a 500, a gateway 502/504) may come after the server already deleted
+  the user, so the marker stays: the user stays signed in, is told the deletion couldn't be
+  confirmed and that photo uploads are paused, and can tap again.
+
+  While the marker exists that user's queue never runs. The marker holds its state and the time it
+  was written (`deleting:<ms>` / `reauth:<ms>`; a bare old-format value reads as written long ago).
+  A launch, sign-in, return to the foreground or reconnect with the marker present only asks Auth,
+  with that session's token, whether the account still exists, and never deletes anything without a
+  tap: `user_not_found` gets the same local cleanup and sign-out as a confirmed deletion; the same
+  user, more than 2 minutes after the marker (the function may still be sweeping storage), removes
+  the marker and lets the queue run; anything else keeps the marker for the next check. A session that ends while the marker says
+  `deleting` (supabase-js signs out by itself once the account is gone) drops that account's kv
+  data, but not the queue's local photo copies.
+
+  NOTE: on that lost-session path the upload queue's SQLite rows and their photo copies stay on the
+  device; they never upload without that user's session, and run again if the account turns out to
+  exist. Upgrade path: a `queue.purge.<uid>` sweep when the queue provider mounts.
 - **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
   and `wears` with the caller's own token, so RLS applies, in pages of 1000 (`max_rows`), and drops
   any row whose `user_id` isn't the caller's. Photo URLs are signed with the service role for 7 days,

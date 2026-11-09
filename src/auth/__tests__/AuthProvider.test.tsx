@@ -582,3 +582,82 @@ test('unmount unsubscribes from auth state changes and stops auto-refresh', asyn
   expect(subscription.data.subscription.unsubscribe).toHaveBeenCalledTimes(1);
   expect(stopAutoRefresh).toHaveBeenCalledTimes(1);
 });
+
+describe('an account deletion under way when the session ends', () => {
+  const DELETED = 'user-deleted';
+
+  afterEach(() => {
+    kvRemove(`account.deleting.${DELETED}`);
+    kvRemove(`closet.v1.${DELETED}`);
+  });
+
+  test("a session lost while the deletion is marked (supabase-js's own sign-out) drops that account's data", async () => {
+    await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: DELETED } });
+    });
+    kvSet(`account.deleting.${DELETED}`, 'deleting');
+    kvSet(`closet.v1.${DELETED}`, 'x');
+
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+
+    expect(kvGet(`account.deleting.${DELETED}`)).toBeNull();
+    expect(kvGet(`closet.v1.${DELETED}`)).toBeNull();
+  });
+
+  test('a deletion waiting for the user to sign in again (reauth) keeps the data and the marker', async () => {
+    await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: DELETED } });
+    });
+    kvSet(`account.deleting.${DELETED}`, 'reauth');
+    kvSet(`closet.v1.${DELETED}`, 'x');
+
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+
+    expect(kvGet(`account.deleting.${DELETED}`)).toBe('reauth');
+    expect(kvGet(`closet.v1.${DELETED}`)).toBe('x');
+  });
+
+  test('a kv error while dropping that data still reaches the signed-out and signed-in states', async () => {
+    const kv = jest.requireActual<typeof import('../../lib/kv')>('../../lib/kv');
+    const keysSpy = jest.spyOn(kv, 'kvKeys').mockImplementation(() => {
+      throw new Error('kv unavailable');
+    });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+    expect(result.current.status).toBe('signedOut');
+
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-2' } });
+    });
+    await waitFor(() => {
+      expect(result.current.status).toBe('signedIn');
+    });
+    expect(result.current.userId).toBe('user-2');
+    expect(keysSpy).toHaveBeenCalledTimes(2);
+    keysSpy.mockRestore();
+  });
+
+  test("another account signing in drops a deleting account's data, and keeps its own marker for the retry", async () => {
+    kvSet(`account.deleting.${DELETED}`, 'deleting');
+    kvSet(`closet.v1.${DELETED}`, 'x');
+    kvSet('account.deleting.user-2', 'deleting');
+    await renderHook(() => useAuth(), { wrapper });
+
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-2' } });
+    });
+
+    expect(kvGet(`closet.v1.${DELETED}`)).toBeNull();
+    expect(kvGet('account.deleting.user-2')).toBe('deleting');
+    kvRemove('account.deleting.user-2');
+  });
+});

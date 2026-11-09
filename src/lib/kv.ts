@@ -2,7 +2,7 @@ import Storage from 'expo-sqlite/kv-store';
 
 /**
  * Synchronous key-value storage backed by `expo-sqlite/kv-store`'s SQLite-backed store. These
- * three functions are the only intended callers of `expo-sqlite/kv-store` in this app — anything
+ * functions are the only intended callers of `expo-sqlite/kv-store` in this app — anything
  * that needs on-device persistence of small values (e.g. the locale preference) should go through
  * them rather than importing the store directly.
  */
@@ -17,4 +17,9 @@ export function kvSet(key: string, value: string): void {
 
 export function kvRemove(key: string): void {
   Storage.removeItemSync(key);
+}
+
+/** Every key in the store (account deletion uses it to find the per-user keys). */
+export function kvKeys(): string[] {
+  return Storage.getAllKeysSync();
 }
