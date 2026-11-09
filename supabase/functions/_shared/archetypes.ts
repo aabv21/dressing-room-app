@@ -23,6 +23,11 @@ export type Archetype = {
   warmth: number;
   fit: GarmentFit;
   clothing: 'feminine' | 'masculine' | 'all';
+  /**
+   * The store-search noun phrase, for an archetype whose defining trait is a pattern, material or
+   * wash that "{category} {color}" would lose ("camisa de franela", not "camisa roja").
+   */
+  search?: { en: string; es: string };
 };
 
 const ALL_YEAR: Season[] = ['spring', 'summer', 'autumn', 'winter'];
@@ -48,28 +53,32 @@ function staple(
   return { id, category, colors, pattern, formality, seasons, warmth, fit, clothing };
 }
 
+function searchedAs(archetype: Archetype, en: string, es: string): Archetype {
+  return { ...archetype, search: { en, es } };
+}
+
 export const ARCHETYPES: readonly Archetype[] = [
   // Shared staples.
   staple('all', 'white-tee', 't_shirt', ['white'], 2, ALL_YEAR, 1, 'regular'),
   staple('all', 'black-tee', 't_shirt', ['black'], 2, ALL_YEAR, 1, 'regular'),
-  staple('all', 'breton-tee', 't_shirt', ['navy', 'white'], 2, NOT_WINTER, 1, 'regular', 'striped'),
+  searchedAs(staple('all', 'breton-tee', 't_shirt', ['navy', 'white'], 2, NOT_WINTER, 1, 'regular', 'striped'), 'striped breton t-shirt', 'franela marinera a rayas'),
   staple('all', 'white-shirt', 'shirt', ['white'], 3, ALL_YEAR, 1, 'regular'),
   staple('all', 'light-blue-shirt', 'shirt', ['light_blue'], 3, ALL_YEAR, 1, 'regular'),
   staple('all', 'navy-sweater', 'sweater', ['navy'], 3, COLD_HALF, 3, 'regular'),
   staple('all', 'gray-sweater', 'sweater', ['gray'], 2, COLD_HALF, 3, 'regular'),
   staple('all', 'gray-hoodie', 'hoodie', ['gray'], 1, NOT_SUMMER, 2, 'loose'),
-  staple('all', 'dark-jeans', 'jeans', ['navy'], 2, ALL_YEAR, 2, 'regular'),
+  searchedAs(staple('all', 'dark-jeans', 'jeans', ['navy'], 2, ALL_YEAR, 2, 'regular'), 'dark wash jeans', 'jeans oscuros'),
   staple('all', 'black-jeans', 'jeans', ['black'], 2, ALL_YEAR, 2, 'fitted'),
-  staple('all', 'light-jeans', 'jeans', ['light_blue'], 2, WARM_HALF, 2, 'regular'),
+  searchedAs(staple('all', 'light-jeans', 'jeans', ['light_blue'], 2, WARM_HALF, 2, 'regular'), 'light wash jeans', 'jeans claros'),
   staple('all', 'beige-chinos', 'pants', ['beige'], 3, NOT_WINTER, 2, 'regular'),
   staple('all', 'black-trousers', 'pants', ['black'], 4, ALL_YEAR, 2, 'regular'),
   staple('all', 'camel-blazer', 'blazer', ['camel'], 4, NOT_SUMMER, 2, 'regular'),
   staple('all', 'navy-blazer', 'blazer', ['navy'], 4, ALL_YEAR, 2, 'regular'),
-  staple('all', 'denim-jacket', 'jacket', ['blue'], 2, MILD, 2, 'regular'),
-  staple('all', 'black-leather-jacket', 'jacket', ['black'], 3, MILD, 2, 'fitted'),
+  searchedAs(staple('all', 'denim-jacket', 'jacket', ['blue'], 2, MILD, 2, 'regular'), 'denim jacket', 'chaqueta de jean'),
+  searchedAs(staple('all', 'black-leather-jacket', 'jacket', ['black'], 3, MILD, 2, 'fitted'), 'black leather jacket', 'chaqueta de cuero negra'),
   staple('all', 'camel-coat', 'coat', ['camel'], 4, COLD_HALF, 3, 'regular'),
-  staple('all', 'beige-trench', 'coat', ['beige'], 3, MILD, 2, 'regular'),
-  staple('all', 'black-puffer', 'coat', ['black'], 1, ['winter'], 3, 'loose'),
+  searchedAs(staple('all', 'beige-trench', 'coat', ['beige'], 3, MILD, 2, 'regular'), 'beige trench coat', 'gabardina beige'),
+  searchedAs(staple('all', 'black-puffer', 'coat', ['black'], 1, ['winter'], 3, 'loose'), 'black puffer jacket', 'chaqueta acolchada negra'),
   staple('all', 'white-sneakers', 'sneakers', ['white'], 2, ALL_YEAR, 1, 'regular'),
   staple('all', 'black-boots', 'boots', ['black'], 3, COLD_HALF, 3, 'regular'),
   staple('all', 'camel-boots', 'boots', ['camel'], 3, NOT_SUMMER, 2, 'regular'),
@@ -78,16 +87,16 @@ export const ARCHETYPES: readonly Archetype[] = [
 
   // Feminine staples.
   staple('feminine', 'white-blouse', 'blouse', ['white'], 3, ALL_YEAR, 1, 'regular'),
-  staple('feminine', 'cream-silk-blouse', 'blouse', ['cream'], 4, ALL_YEAR, 1, 'loose'),
+  searchedAs(staple('feminine', 'cream-silk-blouse', 'blouse', ['cream'], 4, ALL_YEAR, 1, 'loose'), 'cream silk blouse', 'blusa de seda crema'),
   staple('feminine', 'white-tank', 'tank_top', ['white'], 1, WARM_HALF, 1, 'fitted'),
   staple('feminine', 'cream-cardigan', 'cardigan', ['cream'], 2, NOT_SUMMER, 2, 'regular'),
   staple('feminine', 'cream-wide-pants', 'pants', ['cream'], 3, NOT_WINTER, 2, 'loose'),
   staple('feminine', 'black-midi-skirt', 'skirt', ['black'], 3, ALL_YEAR, 1, 'regular'),
-  staple('feminine', 'denim-skirt', 'skirt', ['blue'], 2, WARM_HALF, 1, 'regular'),
+  searchedAs(staple('feminine', 'denim-skirt', 'skirt', ['blue'], 2, WARM_HALF, 1, 'regular'), 'denim skirt', 'falda de jean'),
   staple('feminine', 'beige-pleated-skirt', 'skirt', ['beige'], 3, NOT_SUMMER, 2, 'regular'),
   staple('feminine', 'black-leggings', 'leggings', ['black'], 1, NOT_SUMMER, 2, 'fitted'),
   staple('feminine', 'little-black-dress', 'dress', ['black'], 4, ALL_YEAR, 1, 'fitted'),
-  staple('feminine', 'floral-dress', 'dress', ['pink', 'green'], 2, WARM_HALF, 1, 'regular', 'floral'),
+  searchedAs(staple('feminine', 'floral-dress', 'dress', ['pink', 'green'], 2, WARM_HALF, 1, 'regular', 'floral'), 'floral dress', 'vestido floreado'),
   staple('feminine', 'navy-wrap-dress', 'dress', ['navy'], 3, NOT_WINTER, 1, 'fitted'),
   staple('feminine', 'black-jumpsuit', 'jumpsuit', ['black'], 4, NOT_WINTER, 1, 'regular'),
   staple('feminine', 'black-heels', 'heels', ['black'], 5, ALL_YEAR, 1, 'regular'),
@@ -97,10 +106,10 @@ export const ARCHETYPES: readonly Archetype[] = [
   // Masculine staples.
   staple('masculine', 'navy-polo', 'polo', ['navy'], 2, WARM_HALF, 1, 'regular'),
   staple('masculine', 'white-polo', 'polo', ['white'], 2, WARM_HALF, 1, 'regular'),
-  staple('masculine', 'denim-shirt', 'shirt', ['blue'], 2, NOT_SUMMER, 2, 'regular'),
-  staple('masculine', 'flannel-shirt', 'shirt', ['red', 'navy'], 1, COLD_HALF, 2, 'regular', 'checked'),
+  searchedAs(staple('masculine', 'denim-shirt', 'shirt', ['blue'], 2, NOT_SUMMER, 2, 'regular'), 'denim shirt', 'camisa de jean'),
+  searchedAs(staple('masculine', 'flannel-shirt', 'shirt', ['red', 'navy'], 1, COLD_HALF, 2, 'regular', 'checked'), 'flannel shirt', 'camisa de franela'),
   staple('masculine', 'olive-overshirt', 'shirt', ['olive'], 2, MILD, 2, 'loose'),
-  staple('masculine', 'cream-knit', 'sweater', ['cream'], 2, COLD_HALF, 3, 'regular'),
+  searchedAs(staple('masculine', 'cream-knit', 'sweater', ['cream'], 2, COLD_HALF, 3, 'regular'), 'cream knit sweater', 'suéter tejido crema'),
   staple('masculine', 'gray-trousers', 'pants', ['gray'], 4, ALL_YEAR, 2, 'regular'),
   staple('masculine', 'olive-chinos', 'pants', ['olive'], 2, NOT_WINTER, 2, 'regular'),
   staple('masculine', 'navy-chinos', 'pants', ['navy'], 3, ALL_YEAR, 2, 'regular'),

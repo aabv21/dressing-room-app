@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { type Archetype, ARCHETYPES, archetypesFor } from '../archetypes.ts';
 import {
   CLOTHING_TYPES,
+  slotOf,
   categoriesFor,
   GARMENT_COLORS,
   GARMENT_FITS,
@@ -16,7 +17,9 @@ import {
   archetypeGain,
   buildFitRequest,
   buildLinesRequest,
+  FIT_CANDIDATES,
   FIT_FLOOR,
+  fitCandidates,
   finalRank,
   GAIN_CAP,
   LINE_MAX_CHARS,
@@ -28,7 +31,7 @@ import {
   searchQuery,
   templateLine,
 } from '../forYou.ts';
-import type { RuleGarment } from '../outfitRules.ts';
+import { mulberry32, type RuleGarment } from '../outfitRules.ts';
 import { JEV_MODEL, type RatingState, SCORE_QUESTIONS } from '../rating.ts';
 
 function fixture(name: string): unknown {
@@ -130,6 +133,12 @@ describe('ARCHETYPES', () => {
       expect([1, 2, 3]).toContain(a.warmth);
       expect(a.seasons.length).toBeGreaterThan(0);
       for (const season of a.seasons) expect(SEASONS).toContain(season);
+      if (a.search !== undefined) {
+        expect(a.search.en.trim()).toBe(a.search.en);
+        expect(a.search.es.trim()).toBe(a.search.es);
+        expect(a.search.en.length).toBeGreaterThan(0);
+        expect(a.search.es.length).toBeGreaterThan(0);
+      }
     }
   });
 });
@@ -253,6 +262,21 @@ describe('rankByGain', () => {
   it('is empty for an empty closet', () => {
     expect(rankByGain([], 'masculine', 'winter')).toEqual([]);
   });
+
+  it('breaks gain ties by the pieces combined with, then by the archetype list order', () => {
+    // One top and one pair of shoes: every bottom completes 1 outfit with 2 pieces, every dress 1 with 1.
+    const ranked = rankByGain([garment('t_shirt'), garment('sneakers')], 'feminine', 'autumn');
+    expect(ranked.every((item) => item.gain.newOutfits === 1)).toBe(true);
+    const order = (item: { archetype: Archetype }) => ARCHETYPES.indexOf(item.archetype);
+    const bottoms = ranked.filter((item) => item.gain.combinesWith === 2);
+    const onePieces = ranked.filter((item) => item.gain.combinesWith === 1);
+    expect(ranked).toEqual([...bottoms, ...onePieces]);
+    expect(bottoms.map(order)).toEqual(bottoms.map(order).sort((a, b) => a - b));
+    expect(onePieces.map(order)).toEqual(onePieces.map(order).sort((a, b) => a - b));
+    // List order, not alphabetical: dark-jeans before beige-chinos, the dress before black-jumpsuit.
+    expect(bottoms[0]?.archetype.id).toBe('dark-jeans');
+    expect(onePieces[0]?.archetype.id).toBe('little-black-dress');
+  });
 });
 
 describe('buildFitRequest', () => {
@@ -342,7 +366,7 @@ describe('finalRank', () => {
     expect(ranked.map((item) => item.score)).toEqual([40, 36, 30, 15]);
   });
 
-  it('returns at most 5, breaking ties by gain and then id', () => {
+  it('returns at most 5, breaking ties by gain and then the archetype list order', () => {
     const ranked = finalRank(
       ['white-tee', 'dark-jeans', 'white-sneakers', 'camel-blazer', 'little-black-dress', 'black-tee'].map(
         (id, index) => ({
@@ -354,11 +378,20 @@ describe('finalRank', () => {
     );
     expect(ranked.map((item) => item.archetype.id)).toEqual([
       'black-tee',
-      'camel-blazer',
+      'white-tee',
       'dark-jeans',
-      'little-black-dress',
+      'camel-blazer',
       'white-sneakers',
     ]);
+  });
+
+  it('breaks score ties by the pieces combined with before the list order', () => {
+    const ranked = finalRank([
+      { archetype: archetype('dark-jeans'), gain: { newOutfits: 10, combinesWith: 3 }, fit: 1 },
+      { archetype: archetype('white-sneakers'), gain: { newOutfits: 10, combinesWith: 5 }, fit: 1 },
+      { archetype: archetype('white-tee'), gain: { newOutfits: 10, combinesWith: 3 }, fit: 1 },
+    ]);
+    expect(ranked.map((item) => item.archetype.id)).toEqual(['white-sneakers', 'white-tee', 'dark-jeans']);
   });
 
   it('keeps at most 2 ideas per slot, filling the rest from other slots', () => {
@@ -393,6 +426,77 @@ describe('finalRank', () => {
 
   it('is empty when nothing has gain', () => {
     expect(finalRank([])).toEqual([]);
+  });
+});
+
+describe('fitCandidates', () => {
+  const OUTERWEAR = [
+    'camel-blazer',
+    'navy-blazer',
+    'denim-jacket',
+    'black-leather-jacket',
+    'camel-coat',
+    'beige-trench',
+    'black-puffer',
+    'gray-blazer',
+    'navy-bomber',
+  ];
+  const dominated = (others: readonly string[]) => [
+    ...OUTERWEAR.map((id, index) => ({ archetype: archetype(id), gain: { newOutfits: 100 - index, combinesWith: 6 } })),
+    ...others.map((id, index) => ({ archetype: archetype(id), gain: { newOutfits: 10 - index, combinesWith: 3 } })),
+  ];
+  /** What `finalRank` can return at best: 2 per slot, 5 in all. */
+  const achievable = (ideas: readonly { archetype: Archetype }[]): number => {
+    const perSlot = new Map<string, number>();
+    for (const { archetype: a } of ideas) {
+      const slot = slotOf(a.category);
+      perSlot.set(slot, (perSlot.get(slot) ?? 0) + 1);
+    }
+    return Math.min(5, [...perSlot.values()].reduce((sum, count) => sum + Math.min(2, count), 0));
+  };
+
+  it('keeps the best gain with at most 3 per slot, up to 10', () => {
+    expect(FIT_CANDIDATES).toBe(10);
+    const candidates = fitCandidates(dominated(['white-tee', 'black-tee', 'dark-jeans', 'white-sneakers']));
+    expect(candidates.map((item) => item.archetype.id)).toEqual([
+      'camel-blazer',
+      'navy-blazer',
+      'denim-jacket',
+      'white-tee',
+      'black-tee',
+      'dark-jeans',
+      'white-sneakers',
+    ]);
+  });
+
+  it('stops at 10 candidates', () => {
+    const ids = ['white-tee', 'black-tee', 'white-shirt', 'dark-jeans', 'black-jeans', 'beige-chinos'];
+    const shoes = ['white-sneakers', 'black-boots', 'camel-boots', 'brown-loafers'];
+    const candidates = fitCandidates(dominated([...ids, ...shoes]));
+    expect(candidates).toHaveLength(10);
+  });
+
+  it.each([
+    ['five slots', ['white-tee', 'black-tee', 'dark-jeans', 'white-sneakers', 'little-black-dress']],
+    ['three slots', ['white-tee', 'black-tee', 'white-shirt', 'dark-jeans']],
+    ['two slots', ['white-tee']],
+    ['one slot', []],
+  ])(
+    'lets finalRank return min(5, achievable) ideas when one slot dominates the gain (%s)',
+    (_label, others: readonly string[]) => {
+      const ranked = dominated(others);
+      const rng = mulberry32(7);
+      for (let round = 0; round < 50; round += 1) {
+        const ideas = finalRank(fitCandidates(ranked).map((idea) => ({ ...idea, fit: rng() })));
+        expect(ideas).toHaveLength(achievable(ranked));
+      }
+    },
+  );
+
+  it('fills 5 ideas where a plain slice of the gain ranking could not', () => {
+    const ranked = dominated(['white-tee', 'dark-jeans', 'white-sneakers']);
+    expect(finalRank(ranked.slice(0, FIT_CANDIDATES).map((idea) => ({ ...idea, fit: 1 })))).toHaveLength(3);
+    expect(finalRank(fitCandidates(ranked).map((idea) => ({ ...idea, fit: 1 })))).toHaveLength(5);
   });
 });
 
@@ -439,6 +543,10 @@ describe('buildLinesRequest', () => {
     expect(buildLinesRequest(ideas, 'en')).toMatchObject({
       messages: [{ content: [{ text: expect.stringContaining('English') as unknown }] }],
     });
+  });
+
+  it('refuses an empty idea list, so an empty id enum never goes out', () => {
+    expect(() => buildLinesRequest([], 'en')).toThrow();
   });
 
   it('asks for { lines: [{ id, text }] } with the ids as an enum and no unsupported keywords', () => {
@@ -530,6 +638,22 @@ describe('searchQuery', () => {
     expect(searchQuery(BLAZER, 'masculine', 'en')).toBe('camel blazer men');
   });
 
+  it.each([
+    ['flannel-shirt', 'masculine', 'flannel shirt men', 'camisa de franela hombre'],
+    ['breton-tee', 'feminine', 'striped breton t-shirt women', 'franela marinera a rayas mujer'],
+    ['floral-dress', 'feminine', 'floral dress women', 'vestido floreado mujer'],
+    ['denim-jacket', 'masculine', 'denim jacket men', 'chaqueta de jean hombre'],
+    ['black-leather-jacket', 'feminine', 'black leather jacket women', 'chaqueta de cuero negra mujer'],
+    ['dark-jeans', 'everything', 'dark wash jeans', 'jeans oscuros'],
+  ] as const)('uses the search phrase of %s in place of the category and color', (id, clothingType, en, es) => {
+    expect(searchQuery(archetype(id), clothingType, 'en')).toBe(en);
+    expect(searchQuery(archetype(id), clothingType, 'es')).toBe(es);
+  });
+
+  it('still leaves the audience out of a search phrase for everything', () => {
+    expect(searchQuery(archetype('floral-dress'), 'everything', 'es')).toBe('vestido floreado');
+  });
+
   it('leaves the audience out for everything', () => {
     expect(searchQuery(BLAZER, 'everything', 'es')).toBe('blazer camel');
     expect(searchQuery(BLAZER, 'everything', 'en')).toBe('camel blazer');
@@ -540,7 +664,7 @@ describe('searchQuery', () => {
     expect(searchQuery(archetype('black-jeans'), 'masculine', 'es')).toBe('jeans negros hombre');
     expect(searchQuery(archetype('black-boots'), 'feminine', 'es')).toBe('botas negras mujer');
     expect(searchQuery(archetype('gray-sweater'), 'masculine', 'es')).toBe('suéter gris hombre');
-    expect(searchQuery(archetype('dark-jeans'), 'masculine', 'es')).toBe('jeans azul marino hombre');
+    expect(searchQuery(archetype('navy-chinos'), 'masculine', 'es')).toBe('pantalón azul marino hombre');
     expect(searchQuery(archetype('light-blue-shirt'), 'masculine', 'en')).toBe('light blue shirt men');
   });
 
