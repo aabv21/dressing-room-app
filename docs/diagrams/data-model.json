@@ -212,12 +212,18 @@
     {
       "id": "own-usage",
       "from": "users",
-      "to": "usage"
+      "to": "usage",
+      "label": "cascade"
     },
     {
       "id": "own-caches",
       "from": "users",
-      "to": "caches"
+      "to": "caches",
+      "label": "cascade",
+      "labelAt": [
+        824,
+        256
+      ]
     },
     {
       "id": "own-apple",
@@ -249,10 +255,14 @@
       "label": "outfit_id cascade"
     },
     {
-      "id": "wear-outfit",
-      "from": "wears",
-      "to": "outfits",
-      "label": "outfit_id cascade"
+      "id": "outfit-wears",
+      "from": "outfits",
+      "to": "wears",
+      "label": "outfit_id cascade",
+      "labelAt": [
+        390,
+        487
+      ]
     }
   ],
   "cards": [

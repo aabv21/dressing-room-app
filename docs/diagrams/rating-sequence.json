@@ -170,7 +170,7 @@
       "from": "claude",
       "to": "fn",
       "y": 650,
-      "label": "level indices, or 503",
+      "label": "level indices, or nothing",
       "variant": "return"
     },
     {

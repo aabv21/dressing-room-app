@@ -450,13 +450,13 @@ rect.c-bg-rect { fill: var(--bg); }
         <path data-edge-from="users" data-edge-to="garments" data-edge-label="user_id cascade" data-edge-key="1" data-edge-id="own-garments" data-composition-points="580,249;470,249" d="M 580 249 L 470 249" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="users" data-edge-to="outfits" data-edge-label="cascade" data-edge-key="2" data-edge-id="own-outfits" data-composition-points="580,263;525,263;525,410;470,410" d="M 580 263 L 533 263 Q 525 263 525 271 L 525 402 Q 525 410 517 410 L 470 410" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="users" data-edge-to="wears" data-edge-label="cascade" data-edge-key="3" data-edge-id="own-wears" data-composition-points="660,288;660,312;494,312;494,564;470,564" d="M 660 288 L 660 304 Q 660 312 652 312 L 502 312 Q 494 312 494 320 L 494 556 Q 494 564 486 564 L 470 564" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="users" data-edge-to="usage" data-edge-key="4" data-edge-id="own-usage" data-composition-points="740,242;795,242;795,102;850,102" d="M 740 242 L 787 242 Q 795 242 795 234 L 795 110 Q 795 102 803 102 L 850 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="users" data-edge-to="caches" data-edge-key="5" data-edge-id="own-caches" data-composition-points="740,256;850,256" d="M 740 256 L 850 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="users" data-edge-to="apple" data-edge-label="cascade" data-edge-key="6" data-edge-id="own-apple" data-composition-points="740,270;795,270;795,410;850,410" d="M 740 270 L 787 270 Q 795 270 795 278 L 795 402 Q 795 410 803 410 L 850 410" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="users" data-edge-to="usage" data-edge-label="cascade" data-edge-key="4" data-edge-id="own-usage" data-composition-points="740,249;795,249;795,102;850,102" d="M 740 249 L 787 249 Q 795 249 795 241 L 795 110 Q 795 102 803 102 L 850 102" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="users" data-edge-to="caches" data-edge-label="cascade" data-edge-key="5" data-edge-id="own-caches" data-composition-points="740,256;850,256" d="M 740 256 L 850 256" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="users" data-edge-to="apple" data-edge-label="cascade" data-edge-key="6" data-edge-id="own-apple" data-composition-points="740,263;795,263;795,410;850,410" d="M 740 263 L 787 263 Q 795 263 795 271 L 795 402 Q 795 410 803 410 L 850 410" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="garments" data-edge-to="objects" data-edge-label="{uid}/{id}/" data-edge-key="7" data-edge-id="photo-path" data-composition-points="390,224;390,200;224,200;224,102;200,102" d="M 390 224 L 390 208 Q 390 200 382 200 L 232 200 Q 224 200 224 192 L 224 110 Q 224 102 216 102 L 200 102" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="garments" data-edge-to="items" data-edge-label="garment_id cascade" data-edge-key="8" data-edge-id="garment-items" data-composition-points="310,256;120,256;120,378" d="M 310 256 L 128 256 Q 120 256 120 264 L 120 378" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="outfits" data-edge-to="items" data-edge-label="outfit_id cascade" data-edge-key="9" data-edge-id="outfit-items" data-composition-points="310,410;200,410" d="M 310 410 L 200 410" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="wears" data-edge-to="outfits" data-edge-label="outfit_id cascade" data-edge-key="10" data-edge-id="wear-outfit" data-composition-points="390,532;390,442" d="M 390 532 L 390 442" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="outfits" data-edge-to="wears" data-edge-label="outfit_id cascade" data-edge-key="10" data-edge-id="outfit-wears" data-composition-points="390,442;390,532" d="M 390 442 L 390 532" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
         <!-- Components -->
         <g id="node-users" data-node-id="users" data-node-label="auth.users" tabindex="0" role="button" aria-label="Focus auth.users, every user_id cascades, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="every user_id cascades" data-node-context="Architecture component">
@@ -608,11 +608,17 @@ rect.c-bg-rect { fill: var(--bg); }
           <rect x="555.2" y="292" width="43.6" height="14" rx="3" class="c-mask"/>
           <text x="577" y="302" class="t-muted" font-size="8" text-anchor="middle">cascade</text>
         </g>
-
-
+        <g data-edge-from="users" data-edge-to="usage" data-edge-label="cascade" data-edge-key="4" data-edge-id="own-usage">
+          <rect x="773.2" y="155.5" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="795" y="165.5" class="t-muted" font-size="8" text-anchor="middle">cascade</text>
+        </g>
+        <g data-edge-from="users" data-edge-to="caches" data-edge-label="cascade" data-edge-key="5" data-edge-id="own-caches">
+          <rect x="802.2" y="246" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="824" y="256" class="t-muted" font-size="8" text-anchor="middle">cascade</text>
+        </g>
         <g data-edge-from="users" data-edge-to="apple" data-edge-label="cascade" data-edge-key="6" data-edge-id="own-apple">
-          <rect x="773.2" y="320" width="43.6" height="14" rx="3" class="c-mask"/>
-          <text x="795" y="330" class="t-muted" font-size="8" text-anchor="middle">cascade</text>
+          <rect x="773.2" y="316.5" width="43.6" height="14" rx="3" class="c-mask"/>
+          <text x="795" y="326.5" class="t-muted" font-size="8" text-anchor="middle">cascade</text>
         </g>
         <g data-edge-from="garments" data-edge-to="objects" data-edge-label="{uid}/{id}/" data-edge-key="7" data-edge-id="photo-path">
           <rect x="275.6" y="180" width="62.8" height="14" rx="3" class="c-mask"/>
@@ -626,9 +632,9 @@ rect.c-bg-rect { fill: var(--bg); }
           <rect x="209.2" y="390" width="91.6" height="14" rx="3" class="c-mask"/>
           <text x="255" y="400" class="t-muted" font-size="8" text-anchor="middle">outfit_id cascade</text>
         </g>
-        <g data-edge-from="wears" data-edge-to="outfits" data-edge-label="outfit_id cascade" data-edge-key="10" data-edge-id="wear-outfit">
-          <rect x="344.2" y="512" width="91.6" height="14" rx="3" class="c-mask"/>
-          <text x="390" y="522" class="t-muted" font-size="8" text-anchor="middle">outfit_id cascade</text>
+        <g data-edge-from="outfits" data-edge-to="wears" data-edge-label="outfit_id cascade" data-edge-key="10" data-edge-id="outfit-wears">
+          <rect x="344.2" y="477" width="91.6" height="14" rx="3" class="c-mask"/>
+          <text x="390" y="487" class="t-muted" font-size="8" text-anchor="middle">outfit_id cascade</text>
         </g>
 
         <!-- Boundary labels (foreground masks keep routes out of titles) -->
