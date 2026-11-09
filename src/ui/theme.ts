@@ -59,8 +59,9 @@ export const textScale = {
   cta: 1.5,
   // The score ring's number and caption; the ring grows with them up to the same factor.
   ring: 1.2,
-  // Calendar day numbers and weekday letters, inside square day cells.
-  calendar: 1.6,
+  // Calendar day numbers and weekday letters, inside square day cells (with the worn day's
+  // thumbnail, which shrinks at a large text size).
+  calendar: 1.45,
   // The status badge and wear count over a closet grid thumbnail; iOS shows the cell enlarged on a
   // long press, and a screen reader reads both in the cell's label.
   overlay: 1.3,

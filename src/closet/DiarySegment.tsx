@@ -18,6 +18,7 @@ import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
+import { useLargeText } from '../ui/layout';
 import { colors, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
 import { slotOf } from './catalog';
 import { useCloset } from './ClosetProvider';
@@ -121,6 +122,7 @@ function DayCell({
   onPress: ((day: string) => void) | undefined;
 }): React.JSX.Element {
   const worn = onPress !== undefined;
+  const largeText = useLargeText();
   const style = [
     styles.cell,
     worn ? styles.cellWorn : null,
@@ -140,7 +142,7 @@ function DayCell({
         <Image
           testID={`diary-thumb-${cell.day}`}
           source={{ uri: thumbUri, cacheKey: `${thumb.id}:thumb:${String(thumb.photo_version)}` }}
-          style={styles.cellThumb}
+          style={[styles.cellThumb, largeText ? styles.cellThumbLarge : null]}
           cachePolicy="disk"
           contentFit="contain"
           accessibilityIgnoresInvertColors
@@ -534,6 +536,10 @@ const styles = StyleSheet.create({
     width: '58%',
     aspectRatio: 1,
     borderRadius: 6,
+  },
+  // Leaves room for the enlarged day number in the square cell.
+  cellThumbLarge: {
+    width: '46%',
   },
   loading: {
     paddingVertical: spacing.md,

@@ -103,11 +103,19 @@ function october(): WearWithItems[] {
   return wears;
 }
 
+// The device's text size (iOS Dynamic Type, Android font scale).
+const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
 const mockedListWears = jest.mocked(listWears);
 const mockedDeleteWear = jest.mocked(deleteWear);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockWindow.fontScale = 1;
   mockCloset.garments = CLOSET;
   mockCloset.thumbUrls = new Map(CLOSET.map((g) => [g.id, thumbUrl(g.id)]));
   mockedListWears.mockImplementation((from) => Promise.resolve(from === '2026-10-01' ? october() : []));
@@ -172,8 +180,17 @@ describe('month view', () => {
     // Oct 3 is unworn, Oct 28 is worn: both read in the muted ink or darker, never the old light grey.
     const unworn = within(screen.getByTestId('diary-cell-2026-10-03')).getByText('3');
     expect(unworn).toHaveStyle({ color: colors.muted });
-    expect(unworn).toHaveProp('maxFontSizeMultiplier', 1.6);
-    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.6);
+    expect(unworn).toHaveProp('maxFontSizeMultiplier', 1.45);
+    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.45);
+    expect(screen.getByTestId('diary-thumb-2026-10-28')).toHaveStyle({ width: '58%' });
+  });
+
+  test('at the largest text size a worn day shrinks its thumbnail so the number and photo fit the cell', async () => {
+    mockWindow.fontScale = 2;
+    await openDiary();
+
+    expect(screen.getByTestId('diary-thumb-2026-10-28')).toHaveStyle({ width: '46%' });
+    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.45);
   });
 
   test('prev and next change the month and refetch; next stops at the current month', async () => {
