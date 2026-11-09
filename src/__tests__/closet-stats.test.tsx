@@ -9,6 +9,7 @@ import { Alert } from 'react-native';
 import BuildScreen from '../app/(tabs)/build';
 import ClosetScreen from '../app/(tabs)/closet';
 import { updateGarment, type Garment } from '../closet/garmentRepository';
+import { localDate } from '../outfits/aiClient';
 import { listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
 
@@ -27,7 +28,7 @@ jest.mock('expo-router', () => ({
   useIsFocused: jest.fn(() => true),
 }));
 jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
-jest.mock('../outfits/aiClient', () => ({ localDate: () => '2026-11-08' }));
+jest.mock('../outfits/aiClient', () => ({ localDate: jest.fn(() => '2026-11-08') }));
 jest.mock('../stats/wearsRepository', () => ({ listWears: jest.fn() }));
 // The Diary segment reads the signed-in user (its deletes clear Today's worn record).
 jest.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
@@ -124,15 +125,24 @@ function history(): WearWithItems[] {
 const mockedListWears = jest.mocked(listWears);
 const mockedUpdate = jest.mocked(updateGarment);
 const mockedPush = jest.mocked(router.push);
+const mockedLocalDate = jest.mocked(localDate);
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockSetGarments(CLOSET);
   mockedListWears.mockResolvedValue(history());
   mockedUpdate.mockResolvedValue({ ok: true });
+  mockedLocalDate.mockReturnValue('2026-11-08');
 });
 
 const tab = (name: string) => screen.getByRole('tab', { name });
+
+/** Opens Stats and waits for the history, for closets whose KPIs aren't the fixture's 60%. */
+async function openStatsLoaded(): Promise<void> {
+  await render(<ClosetScreen />);
+  await fireEvent.press(tab('Stats'));
+  await screen.findByText('outfits logged');
+}
 
 async function openStats(): Promise<void> {
   await render(<ClosetScreen />);
@@ -176,16 +186,14 @@ describe('stats', () => {
     expect(screen.getByText('in a row')).toBeOnTheScreen();
   });
 
-  test('switching the period refetches and rescopes the KPIs', async () => {
+  test('switching the period rescopes the KPIs from the same year of history', async () => {
     await openStats();
 
     await fireEvent.press(screen.getByRole('radio', { name: '6 months' }));
 
-    await waitFor(() => {
-      expect(mockedListWears).toHaveBeenCalledTimes(2);
-    });
     // The October wear adds the skirt (the donated tee doesn't count): 4 of 5 active garments.
     expect(await screen.findByText('80%')).toBeOnTheScreen();
+    expect(mockedListWears).toHaveBeenCalledTimes(1);
     expect(screen.getByText('of your closet worn these 6 months')).toBeOnTheScreen();
     expect(screen.getByText('22')).toBeOnTheScreen();
   });
@@ -245,6 +253,65 @@ describe('stats', () => {
 
     expect(mockedUpdate).toHaveBeenCalledWith(OLD_COAT, { pinned_on: '2026-11-09' });
     expect(await screen.findByText('Pinned for tomorrow ✓')).toBeOnTheScreen();
+  });
+
+  test('a pinned row keeps Donate', async () => {
+    await openStats();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+
+    expect(await screen.findByText('Pinned for tomorrow ✓')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
+  });
+
+  test('a lent or uncategorized row offers no "Wear it", only Donate', async () => {
+    const old = { ...done, created_at: '2026-01-10T12:00:00.000Z' } as const;
+    mockSetGarments([
+      garment({ ...old, id: OLD_COAT, category: 'coat', colors: ['green'], status: 'lent' }),
+      garment({ ...old, id: 'unnamed-1', colors: ['red'] }),
+    ]);
+    await openStatsLoaded();
+
+    expect(screen.getByText('Lent out')).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: /^Wear it/ })).not.toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: /^Donate, .* · Red$/ })).toBeOnTheScreen();
+  });
+
+  test('"Wear it" pins for the day after the tap, even past midnight', async () => {
+    await openStats();
+    mockedLocalDate.mockReturnValue('2026-11-09');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+
+    expect(mockedUpdate).toHaveBeenCalledWith(OLD_COAT, { pinned_on: '2026-11-10' });
+    expect(await screen.findByText('Pinned for tomorrow ✓')).toBeOnTheScreen();
+  });
+
+  test('a pin commits onto the newest copy of the garment', async () => {
+    let finish: (value: { ok: true }) => void = () => undefined;
+    mockedUpdate.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await openStats();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+    // A refresh lands while the pin is in flight.
+    await act(async () => {
+      mockSetGarments(mockStore.garments.map((g) => (g.id === OLD_COAT ? { ...g, wear_count: 3 } : g)));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      finish({ ok: true });
+      await Promise.resolve();
+    });
+
+    expect(mockStore.garments.find((g) => g.id === OLD_COAT)).toMatchObject({
+      wear_count: 3,
+      pinned_on: '2026-11-09',
+    });
   });
 
   test('"Donate" confirms, sets donated and the row disappears', async () => {

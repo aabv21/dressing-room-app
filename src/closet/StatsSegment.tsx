@@ -3,7 +3,7 @@
 // computed on the device from the closet and the wear history; nothing here costs AI.
 import { Image } from 'expo-image';
 import { router, useIsFocused } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { formatWearCount, pluralKey, useI18n } from '../i18n';
@@ -25,7 +25,10 @@ import { updateGarment, type Garment } from './garmentRepository';
 
 const PERIODS: readonly Period[] = ['week', 'month', 'sixMonths'];
 // NOTE: a year of history feeds the streak, so a longer streak reads as 365 days; an unbounded
-// fetch on every period switch isn't worth it. Upgrade path: a server-side streak count.
+// fetch on every focus isn't worth it. Upgrade path: a server-side streak count.
+// NOTE: PostgREST returns at most 1000 rows (`max_rows`) and the wears come newest first, so only
+// a year with more than 1000 wears loses its oldest ones (a streak or a 6-month count that old).
+// Upgrade path: page through the range.
 const STREAK_HISTORY_DAYS = 365;
 // Room for "100 wears" / "100 usos" at the bars' 12 pt.
 const WEARS_VALUE_WIDTH = 62;
@@ -57,6 +60,11 @@ function lastWornDays(wears: readonly WearWithItems[]): Map<string, string> {
     }
   }
   return last;
+}
+
+/** Whether lucky-list can use a pin on this garment: it only draws available, categorized pieces. */
+function canPin(g: Garment): boolean {
+  return g.status === 'available' && g.category !== null;
 }
 
 /** The counted colors of the active closet that aren't among `shown` ("Other"'s filter). */
@@ -104,6 +112,7 @@ function UnusedRow({
   const label = pieceLabel(garment, t);
   const wearLabel = t('stats.unused.wear');
   const donateLabel = t('stats.unused.donate');
+  const away = garment.status === 'laundry' || garment.status === 'lent' ? garment.status : null;
   return (
     <View style={styles.unusedRow}>
       <View style={styles.thumb}>
@@ -119,10 +128,15 @@ function UnusedRow({
       <Text style={styles.unusedLabel} numberOfLines={1}>
         {label}
       </Text>
-      {pinned ? (
-        <Text style={styles.pinned}>{t('stats.unused.pinned')}</Text>
-      ) : (
-        <View style={styles.minis}>
+      <View style={styles.minis}>
+        {/* "Wear it" only where lucky-list will use the pin; a laundry or lent piece shows why not. */}
+        {!canPin(garment) ? (
+          away === null ? null : (
+            <Text style={styles.statusNote}>{t(`garment.status.${away}`)}</Text>
+          )
+        ) : pinned ? (
+          <Text style={styles.pinned}>{t('stats.unused.pinned')}</Text>
+        ) : (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${wearLabel}, ${label}`}
@@ -136,21 +150,21 @@ function UnusedRow({
           >
             <Text style={styles.miniText}>{wearLabel}</Text>
           </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${donateLabel}, ${label}`}
-            accessibilityState={{ disabled: busy }}
-            disabled={busy}
-            hitSlop={{ top: MINI_SLOP, bottom: MINI_SLOP, left: 2, right: 2 }}
-            onPress={() => {
-              onDonate(garment);
-            }}
-            style={[styles.mini, busy ? styles.dimmed : null]}
-          >
-            <Text style={styles.miniText}>{donateLabel}</Text>
-          </Pressable>
-        </View>
-      )}
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${donateLabel}, ${label}`}
+          accessibilityState={{ disabled: busy }}
+          disabled={busy}
+          hitSlop={{ top: MINI_SLOP, bottom: MINI_SLOP, left: 2, right: 2 }}
+          onPress={() => {
+            onDonate(garment);
+          }}
+          style={[styles.mini, busy ? styles.dimmed : null]}
+        >
+          <Text style={styles.miniText}>{donateLabel}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -171,17 +185,15 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<RequestError | null>(null);
 
-  // Refetched on focus and on a period change. The streak needs a year back, which covers every
-  // period's range too.
+  // Fetched once per focus: the streak needs a year back, which covers every period's range too,
+  // so a period switch only re-derives from the same history.
   useEffect(() => {
     if (!focused) {
       return undefined;
     }
     let current = true;
     const day = localDate();
-    const periodFrom = periodRange(period, day).from;
-    const yearBack = addDays(day, -STREAK_HISTORY_DAYS);
-    listWears(periodFrom < yearBack ? periodFrom : yearBack, day).then(
+    listWears(addDays(day, -STREAK_HISTORY_DAYS), day).then(
       (wears) => {
         if (current) {
           setToday(day);
@@ -198,7 +210,7 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
     return () => {
       current = false;
     };
-  }, [focused, period]);
+  }, [focused]);
 
   const periodOptions = useMemo(
     () => PERIODS.map((value) => ({ value, label: t(`stats.period.${value}`) })),
@@ -298,19 +310,31 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
   const tomorrow = addDays(today, 1);
   const unused = useMemo(() => unusedSixMonths(garments, today), [garments, today]);
 
+  // A save commits onto the newest copy of the garment, not the row tapped before the request:
+  // a refresh or another edit may have landed while it was in flight.
+  const garmentsRef = useRef(garments);
+  useEffect(() => {
+    garmentsRef.current = garments;
+  }, [garments]);
+  const latest = useCallback((g: Garment) => garmentsRef.current.find((entry) => entry.id === g.id) ?? g, []);
+
   const pin = useCallback(
     async (g: Garment) => {
+      // "Tomorrow" as of the tap: the screen may have stayed open past midnight.
+      const day = localDate();
+      setToday(day);
+      const target = addDays(day, 1);
       setSaving(true);
       setSaveError(null);
-      const result = await updateGarment(g.id, { pinned_on: tomorrow });
+      const result = await updateGarment(g.id, { pinned_on: target });
       setSaving(false);
       if (result.ok) {
-        replaceLocal({ ...g, pinned_on: tomorrow });
+        replaceLocal({ ...latest(g), pinned_on: target });
       } else {
         setSaveError(result.error);
       }
     },
-    [tomorrow, replaceLocal],
+    [latest, replaceLocal],
   );
 
   const donate = useCallback(
@@ -320,12 +344,12 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
       const result = await updateGarment(g.id, { status: 'donated' });
       setSaving(false);
       if (result.ok) {
-        replaceLocal({ ...g, status: 'donated' });
+        replaceLocal({ ...latest(g), status: 'donated' });
       } else {
         setSaveError(result.error);
       }
     },
-    [replaceLocal],
+    [latest, replaceLocal],
   );
 
   const confirmDonate = useCallback(
@@ -566,6 +590,7 @@ const styles = StyleSheet.create({
   },
   minis: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs + 2,
   },
   mini: {
@@ -586,6 +611,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.positive,
+  },
+  statusNote: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
   },
   dimmed: {
     opacity: 0.4,
