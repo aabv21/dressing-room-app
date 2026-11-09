@@ -61,6 +61,7 @@ subirse se guarda en la carpeta propia de la app hasta que se sube.
 | Open-Meteo | Las coordenadas de tu ciudad, o el nombre de la ciudad cuando no las hay | El clima del día |
 | Apple | Tu identidad de Iniciar sesión con Apple y, cuando eliminas tu cuenta, una solicitud para revocar el acceso de la app | El inicio de sesión, y cortar ese vínculo cuando te vas |
 | Google | Tu identidad de Iniciar sesión con Google | El inicio de sesión |
+| Amazon SES | Tu correo electrónico y el código de confirmación o para restablecer la contraseña | Enviar los correos de tu cuenta |
 
 Los servicios de IA reciben estas solicitudes desde el servidor de la app, nunca directamente desde
 tu teléfono, y el servidor nunca les envía tus fotos salvo para el reconocimiento de prendas descrito
@@ -77,7 +78,7 @@ recuperación, y conserva las 14 más recientes; los datos que eliminas desapare
 seguridad después de las 14 copias nocturnas siguientes (unas dos semanas cuando se hacen todas las
 noches).
 
-Cada proveedor de abajo aplica sus propias reglas de conservación a lo que recibe de la app.
+Cada proveedor de arriba aplica sus propias reglas de conservación a lo que recibe de la app.
 
 ## Tus opciones: exportar y eliminar
 

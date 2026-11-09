@@ -60,6 +60,7 @@ folder until it is uploaded.
 | Open-Meteo | Your city's coordinates, or the city's name when there are none | The day's weather |
 | Apple | Your Sign in with Apple identity, and, when you delete your account, a request to revoke the app's access | Sign-in, and ending that link when you leave |
 | Google | Your Sign in with Google identity | Sign-in |
+| Amazon SES | Your email address and the confirmation or reset code | Sending your account's emails |
 
 The AI services receive these requests from the app's server, never directly from your phone, and
 the app's server never sends them your photos except for the garment recognition described above.
@@ -74,7 +75,7 @@ and photos on their own computer, for recovery only, and keeps the 14 most recen
 delete disappears from the backups after the next 14 nightly backups (about two weeks when they run
 every night).
 
-Each processor below applies its own retention rules to what it receives from the app.
+Each processor above applies its own retention rules to what it receives from the app.
 
 ## Your choices: export and deletion
 

@@ -32,9 +32,12 @@ Untrusted input reaches those calls only as:
   care label written as an instruction.
 - **The profile.** Its only free-text fields are `city_name` (1–80 characters) and the three sizes
   (1–10 characters). `city_name` goes only to Open-Meteo's geocoding API, as a `URLSearchParams`
-  value. The sizes and measurements are never read by a function: `PROFILE_COLUMNS` doesn't select
-  them. The rest of the profile is numbers and Postgres enums, and the functions check the enums
-  again.
+  value. The sizes and the chest, waist and hip measurements are never read by a function that
+  calls a model: `rate-outfit`, `lucky-list` and `for-you` read the profile through
+  `PROFILE_COLUMNS`, which doesn't select them, and `extract-attributes` reads only
+  `clothing_type`. `export-data` does read the whole profile, to return it to its owner, and calls
+  no model. The rest of the profile is numbers and Postgres enums, and the functions check the
+  enums again.
 - **The garment rows.** Every attribute column is a Postgres enum, a bounded smallint or an enum
   array; there is no free-text column.
 
