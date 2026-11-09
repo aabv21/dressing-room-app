@@ -179,10 +179,10 @@ export type ProfileRow = {
   updated_at: string | null;
 };
 
-const PROFILE_COLUMNS = 'clothing_type,body_type,height_cm,age_group,styles,city_name,city_lat,city_lon,updated_at';
+export const PROFILE_COLUMNS = 'clothing_type,body_type,height_cm,age_group,styles,city_name,city_lat,city_lon,updated_at';
 
 // The enums are Postgres-checked; the casts only narrow strings the database already validated.
-function profileFrom(row: Record<string, unknown>): ProfileRow {
+export function profileFrom(row: Record<string, unknown>): ProfileRow {
   return {
     clothing_type: oneOf(['feminine', 'masculine', 'everything'], row.clothing_type),
     body_type: stringOrNull(row.body_type) as BodyType | null,
@@ -211,13 +211,13 @@ export async function loadProfile(env: FnEnv, fetchFn: FetchFn, auth: string): P
 
 // --- Garments ----------------------------------------------------------------------------------
 
-const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at,pinned_on';
+export const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at,pinned_on';
 const GARMENT_STATUSES = ['available', 'laundry', 'lent', 'donated'] as const satisfies readonly GarmentStatus[];
 
 /** `pinned_on`, read as a plain `YYYY-MM-DD` the way the lucky-list cache key and request dates are compared. */
 const pinnedOnOf = (value: unknown): string | null => (isIsoDate(value) ? value : null);
 
-function garmentFrom(row: unknown): RuleGarment {
+export function garmentFrom(row: unknown): RuleGarment {
   if (!isRecord(row) || typeof row.id !== 'string' || typeof row.updated_at !== 'string') {
     throw new UpstreamError('garments: unexpected row');
   }
@@ -541,7 +541,7 @@ export async function sha256Hex(text: string): Promise<string> {
 // --- Models ------------------------------------------------------------------------------------
 
 /** The System One response body, or null on a non-2xx answer, a network error or 10 s passing. */
-export function runJev(env: FnEnv, fetchFn: FetchFn, request: unknown): Promise<unknown> {
+export function runJev(env: Pick<FnEnv, 'typesafeApiKey' | 'typesafeBaseUrl'>, fetchFn: FetchFn, request: unknown): Promise<unknown> {
   return fetchJson(
     fetchFn,
     `${trimSlash(env.typesafeBaseUrl)}/v1/systemone`,

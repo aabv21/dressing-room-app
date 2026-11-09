@@ -277,7 +277,7 @@ The descriptions:
 ### Composite score, confidence and labels
 
 Weights are configuration (`RATING_CONFIG`), to be tuned against the owner-labeled set in the
-owner session:
+owner session (see "Calibration" below):
 
 | Dimension | Weight |
 | --- | --- |
@@ -294,7 +294,10 @@ owner session:
   count (`RATING_LEVELS`).
 - `score = round(100 · Σ wᵢ · normalizedᵢ)`, then `min(score, 40)` on a hard failure.
 - Displayed confidence: `round(100 · Σ wᵢ · confidenceᵢ)`, the weighted mean of Jev's per-dimension
-  confidences. Jev's numeric scale is weakly calibrated, so treat the percentage as relative.
+  confidences (`confidenceAggregate: 'mean'`; `'min'` would take the minimum over the dimensions
+  instead). Jev's numeric scale is weakly calibrated, so treat the percentage as relative.
+- `composeRating` takes the config as an optional third argument (default `RATING_CONFIG`), which
+  is how the calibration script tries candidate weights and bands.
 - Labels: ≥ 85 `great`, ≥ 70 `good`, ≥ 50 `fair`, otherwise `poor`.
 - A response with any answer missing, of the wrong `type` or out of range parses to null, and the
   function falls back to Claude.
@@ -565,6 +568,83 @@ ceiling, but the quotas only bound the spend; they don't enforce $1 a month. The
 the providers' spend caps and console limits (spec §4.5): the owner session confirms how TypeSafe
 bills (per request or per question) and sets a spend alert if TypeSafe offers one (`AGENTS.md`,
 "Owner session").
+
+### Calibration
+
+Jev's scale is weakly calibrated, so the weights, the bands and the confidence aggregate are tuned
+against hand labels (spec §4.2): the owner and their partner each label about 25 saved outfits
+`bad`, `ok` or `good`. `scripts/calibration.ts` holds the math and `scripts/calibrate.ts` the CLI
+(`pnpm calibrate <command>`). Re-run the whole workflow whenever the questions, their levels or the
+state change.
+
+**Workflow:**
+
+1. **Export** (once per labeler):
+   `SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… pnpm calibrate export --user <uid> --labeler <name>`.
+   It reads the user's saved outfits (`outfits.saved_at` set) and profile from the hosted project
+   with the service role. Each outfit's `RatingState` comes from `ratingState`, the same function
+   `rate-outfit` uses, with no occasion (saved outfits don't keep one), no weather, and the season
+   of the day it was saved. Incomplete outfits are skipped. New outfits are appended to
+   `calibration/labels.local.json` with `label: null` and a description such as
+   `Saved 2026-11-08: top: blouse (black); bottom: jeans (blue); shoes: sneakers (white)`.
+   Re-running adds only outfits the file doesn't have, and keeps the labels.
+2. **Label** by hand: set each `label` to `bad`, `ok` or `good`. Entries left `null` are ignored.
+3. **Collect**: `TYPESAFE_API_KEY=… pnpm calibrate collect` (`TYPESAFE_BASE_URL` defaults to
+   `https://api.typesafe.ai`). It sends the production request (`buildJevRequest`) once for every
+   labeled outfit without a saved answer, at most 5 at a time, and saves the response bodies to
+   `calibration/answers.local.json`. An answer that doesn't parse isn't saved: the run names it and
+   exits 1, and the next run asks again. Each outfit costs one rating ($0.00004–0.00007).
+4. **Evaluate**: `pnpm calibrate eval [--labels <file>] [--answers <file>]` (the two local files by
+   default) prints a Markdown report and exits 0. It never writes a file or a config.
+
+Both `.local.json` files hold personal data. They are gitignored (`calibration/*.local.json`),
+written readable by the owner only, and never committed. `calibration/example.labels.json` and
+`calibration/example.answers.json` are 12 fictional outfits for the tests and a dry run:
+`pnpm calibrate eval --labels calibration/example.labels.json --answers calibration/example.answers.json`.
+
+**Metrics.** Labels count as `bad` = 0, `ok` = 1, `good` = 2. Scores are composed the way the app
+composes them, with the unknown weather neutralized.
+
+- **Spearman's ρ** between the composite score and the label, with average ranks for ties.
+- **Accuracy**: the share of outfits whose score falls in the labeled band. The predicted class is
+  `good` from `bands.good` (70), `ok` from `bands.fair` (50), and `bad` below. A 3×3 confusion
+  matrix (rows: label; columns: predicted band) is printed for the current and the suggested
+  configuration.
+- **Too little or broken data.** Fewer than 10 labeled outfits, or fewer than 2 distinct labels,
+  prints "Not enough data" and exits 2. A labeled outfit without an answer prints "Missing answers"
+  with its ids and exits 2. A malformed labels or answers file exits 1. An undefined ρ (every
+  score equal) prints `n/a`, never NaN.
+
+**Suggestions.**
+
+- **Weights**: coordinate descent over the 8 weights, starting from the current ones.
+  - Each weight stays on a 0.05 grid in [0, 1], and the weights always sum to 1.
+  - For each dimension in `RATING_DIMENSIONS` order, it takes the best move of 0.05 to or from that
+    dimension that raises ρ, or keeps ρ and raises the accuracy under the current bands.
+  - Sweeps repeat until none improves anything. The search is deterministic and never lowers ρ.
+- **Bands**: the integer `good` and `fair` (0 < fair < good ≤ 100) with the best accuracy for the
+  suggested weights. Ties go to the pair closest to the current 70/50 (the smallest
+  |Δgood| + |Δfair|, then the lower values). `great` isn't labeled, so it stays, raised to `good` if
+  `good` passes it.
+- **Confidence aggregate**: `mean` (the weighted mean, today's behavior) or `min` (the minimum over
+  the dimensions). The report gives each one's Spearman's ρ with band correctness (1 when the
+  suggested score falls in the labeled band, else 0) and suggests the higher. A tie, or both
+  undefined, keeps the current one.
+
+**Applying a suggestion:**
+
+1. Copy the report's "Suggested `RATING_CONFIG`" block into `RATING_CONFIG` in
+   `supabase/functions/_shared/rating.ts`.
+2. Update this file: the weight table and the dimension headings above, the labels' bands, and the
+   confidence bullet if the aggregate changed.
+3. `swapBelow` (70) matches the old `good` band; move it with `good` unless there's a reason not to.
+4. Bump `CACHE_VERSION` in `rate-outfit` and `lucky-list` so cached scores are recomputed.
+5. Run the gate. `rating.test.ts` pins the weights' sum, the bands and the score fixtures, so update
+   those expectations deliberately.
+
+NOTE: about 50 labels is a small sample and the search fits it closely; ceiling: treat the
+suggestion as a hint and apply it only when ρ and accuracy improve by a clear margin; upgrade path:
+label more outfits, or hold some out to check the suggestion before applying it.
 
 ## For you
 

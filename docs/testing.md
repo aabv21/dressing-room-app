@@ -119,6 +119,18 @@ Node — no Expo globals, no React Native. Kept out of the `app` project because
 installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `scripts` test file's own
 `@jest-environment node` docblock during teardown.
 
+- `scripts/__tests__/calibration.test.ts` — the Jev calibration: Spearman's ρ on a hand-computed set
+  with a tie (and null, never NaN, when undefined), the predicted band and the confusion matrix, the
+  weight search (on the 0.05 grid, summing to 1, deterministic, never lowering ρ, unchanged when
+  nothing improves), the band search's tie rule toward 70/50, `evaluate` with unknown weather
+  neutralized, and tiny, skewed or broken data (all-`good` labels, 3 outfits, a missing answer, a
+  malformed labels or answers file), each a named error with no report and no NaN. `eval` on the
+  fictional `calibration/example.*.json` fixtures, through `runEval` and the real CLI (exit codes 0,
+  1 and 2). `export` and `collect` only through their helpers: rows built into the `rate-outfit`
+  state, the service-role reads against a fake `fetch`, merging into an existing labels file, and
+  which outfits still need an answer, against a fake Jev. The CLI runs with the Supabase and
+  TypeSafe keys blanked, so it can't reach either; nothing calls a real service.
+
 ### `functions`
 
 Tests for the Supabase Edge Function logic under `supabase/functions/**/*.test.ts`, running under

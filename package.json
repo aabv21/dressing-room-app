@@ -79,6 +79,7 @@
     "db:test": "supabase test db",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
     "env:local": "node scripts/env-local.ts",
-    "check:supply-chain": "node scripts/check-supply-chain.ts"
+    "check:supply-chain": "node scripts/check-supply-chain.ts",
+    "calibrate": "node scripts/calibrate.ts"
   }
 }
