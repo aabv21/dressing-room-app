@@ -609,19 +609,23 @@ inside them, never in `src/`.
   is gone, so the app tells the user to sign in again and then delete the account again
   (`reauth`), and signs out locally, keeping the queue and the kv entries (the marker turns
   `reauth`). Signing in doesn't finish anything by itself: the check below sees the account still
-  there and removes the marker, and the user taps "Delete account" again. On a deletion the app clears
-  the queue, signs out locally and clears every kv key under the user's id, the marker included.
+  there and removes the marker, and the user taps "Delete account" again. On a deletion the app
+  clears the queue, signs out locally and clears every kv key under the user's id, the marker
+  included.
   Any other failure (network, a 500, a gateway 502/504) may come after the server already deleted
   the user, so the marker stays: the user stays signed in, is told the deletion couldn't be
   confirmed and that photo uploads are paused, and can tap again.
 
   While the marker exists that user's queue never runs. The marker holds its state and the time it
-  was written (`deleting:<ms>` / `reauth:<ms>`; a bare old-format value reads as written long ago).
+  was written (`deleting:<ms>` / `reauth:<ms>`). Any value whose state is `deleting` or `reauth`
+  counts, whatever its time; a missing, malformed or future time is stamped anew at the next check,
+  so the window below starts over instead of being skipped.
   A launch, sign-in, return to the foreground or reconnect with the marker present only asks Auth,
   with that session's token, whether the account still exists, and never deletes anything without a
   tap: `user_not_found` gets the same local cleanup and sign-out as a confirmed deletion; the same
-  user, more than 2 minutes after the marker (the function may still be sweeping storage), removes
-  the marker and lets the queue run; anything else keeps the marker for the next check. A session that ends while the marker says
+  user, more than 10 minutes after the marker (the function may still be sweeping storage after the
+  app's 45 s timeout, up to the Edge Functions wall clock), removes the marker and lets the queue
+  run; anything else keeps the marker for the next check. A session that ends while the marker says
   `deleting` (supabase-js signs out by itself once the account is gone) drops that account's kv
   data, but not the queue's local photo copies.
 

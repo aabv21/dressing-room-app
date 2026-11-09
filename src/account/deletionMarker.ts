@@ -17,18 +17,30 @@ export type DeletionState = 'deleting' | 'reauth';
 
 const PREFIX = 'account.deleting.';
 
-type Marker = { state: DeletionState; markedAt: number };
+/**
+ * How long after the marker an account that still exists counts as "maybe still being deleted":
+ * the function may still be sweeping storage after the app gave up waiting (its 45 s timeout),
+ * up to the Edge Functions wall clock (150 s free, 400 s paid), so 10 minutes leaves a margin.
+ */
+export const DELETION_SETTLE_MS = 10 * 60 * 1000;
+
+/** `markedAt` is null when the written time can't be trusted (missing, malformed or in the future). */
+type Marker = { state: DeletionState; markedAt: number | null };
 
 /**
- * Reads a marker value, `<state>:<ms>` (the time it was written). A bare `deleting` or `reauth`
- * (written before markers carried a time) reads as marked at 0, i.e. long ago.
+ * Reads a marker value, `<state>:<ms>` (the time it was written). Any value whose state is
+ * `deleting` or `reauth` counts as a marker, whatever its time, so a damaged value never lets the
+ * queue run unchecked; only a value with another state reads as none.
  */
-function parseMarker(value: string | null): Marker | null {
+function parseMarker(value: string | null, now: number): Marker | null {
   if (value === null) return null;
-  const [state, at] = value.split(':');
+  const separator = value.indexOf(':');
+  const state = separator === -1 ? value : value.slice(0, separator);
   if (state !== 'deleting' && state !== 'reauth') return null;
-  const markedAt = at === undefined ? 0 : Number(at);
-  return Number.isFinite(markedAt) ? { state, markedAt } : null;
+  const at = separator === -1 ? '' : value.slice(separator + 1);
+  const markedAt = /^\d+$/.test(at) ? Number(at) : Number.NaN;
+  const trusted = Number.isSafeInteger(markedAt) && markedAt <= now + DELETION_SETTLE_MS;
+  return { state, markedAt: trusted ? markedAt : null };
 }
 
 export function markDeletion(userId: string, state: DeletionState, now: number = Date.now()): void {
@@ -36,12 +48,15 @@ export function markDeletion(userId: string, state: DeletionState, now: number =
 }
 
 export function deletionState(userId: string): DeletionState | null {
-  return parseMarker(kvGet(`${PREFIX}${userId}`))?.state ?? null;
+  return parseMarker(kvGet(`${PREFIX}${userId}`), Date.now())?.state ?? null;
 }
 
-/** When the marker was written (ms since the epoch; 0 for an old-format marker), or null without one. */
-export function deletionMarkedAt(userId: string): number | null {
-  return parseMarker(kvGet(`${PREFIX}${userId}`))?.markedAt ?? null;
+/**
+ * The marker's state and when it was written (ms since the epoch; null when that time can't be
+ * trusted), or null without a marker.
+ */
+export function readDeletionMarker(userId: string, now: number = Date.now()): Marker | null {
+  return parseMarker(kvGet(`${PREFIX}${userId}`), now);
 }
 
 export function clearDeletionMarker(userId: string): void {
@@ -60,7 +75,7 @@ export function forgetInterruptedDeletions(activeUserId: string | null): void {
   for (const key of kvKeys()) {
     if (!key.startsWith(PREFIX)) continue;
     const userId = key.slice(PREFIX.length);
-    if (userId !== activeUserId && parseMarker(kvGet(key))?.state === 'deleting') {
+    if (userId !== activeUserId && parseMarker(kvGet(key), Date.now())?.state === 'deleting') {
       forgetAccountOnDevice(userId);
     }
   }

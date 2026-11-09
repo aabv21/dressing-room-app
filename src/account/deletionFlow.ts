@@ -2,7 +2,7 @@ import { signOutLocally } from '../auth/authService';
 import type { MessageKey } from '../i18n';
 import { deleteAccount, verifyAccount } from './accountClient';
 import type { AccountError } from './accountClient';
-import { clearDeletionMarker, deletionMarkedAt, deletionState, markDeletion } from './deletionMarker';
+import { clearDeletionMarker, DELETION_SETTLE_MS, deletionState, markDeletion, readDeletionMarker } from './deletionMarker';
 import { forgetAccountOnDevice } from './forgetAccount';
 
 /** The upload queue controls the deletion needs (`useUploadQueue`'s). */
@@ -87,18 +87,15 @@ export async function runDeletion(userId: string, queue: QueueControl): Promise<
   }
 }
 
-/**
- * How long after the marker an account that still exists counts as "maybe still being deleted":
- * the function may still be sweeping storage when the app asks.
- */
-export const DELETION_SETTLE_MS = 2 * 60 * 1000;
+export { DELETION_SETTLE_MS };
 
 /**
  * While `userId`'s deletion is still marked (a launch, sign-in, foreground or reconnect): asks Auth,
  * without deleting anything, whether the account still exists. Gone → `finishLocally`, like a
  * confirmed deletion; still there more than `DELETION_SETTLE_MS` after the marker → the marker goes
  * and the queue runs again (deleting needs a new tap); anything else (offline, no usable session,
- * or still there right after the call) → the marker stays for the next check.
+ * or still there right after the call) → the marker stays for the next check. A marker whose time
+ * can't be trusted is stamped now, so the window starts over instead of being skipped.
  */
 export async function confirmPendingDeletion(
   userId: string,
@@ -113,8 +110,16 @@ export async function confirmPendingDeletion(
       await finishLocally(userId, queue);
       return 'deleted';
     }
-    const markedAt = deletionMarkedAt(userId);
-    if (status === 'exists' && markedAt !== null && now() - markedAt >= DELETION_SETTLE_MS) {
+    const marker = readDeletionMarker(userId, now());
+    if (status === 'exists' && marker !== null && marker.markedAt === null) {
+      try {
+        markDeletion(userId, marker.state, now());
+      } catch {
+        // NOTE: the marker stays as it was; the next check tries to stamp it again.
+      }
+      return 'pending';
+    }
+    if (status === 'exists' && marker !== null && marker.markedAt !== null && now() - marker.markedAt >= DELETION_SETTLE_MS) {
       try {
         clearDeletionMarker(userId);
       } catch {

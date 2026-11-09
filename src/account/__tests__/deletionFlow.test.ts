@@ -147,7 +147,7 @@ describe('confirmPendingDeletion (a launch, sign-in, foreground or reconnect wit
     expect(mockedDeleteAccount).not.toHaveBeenCalled();
   });
 
-  test('an account that still exists 2 minutes after the marker drops it and runs the queue again, deleting nothing', async () => {
+  test('an account that still exists past the settle window after the marker drops it and runs the queue again, deleting nothing', async () => {
     const queue = fakeQueue();
     mockedVerifyAccount.mockResolvedValue('exists');
 
@@ -161,7 +161,7 @@ describe('confirmPendingDeletion (a launch, sign-in, foreground or reconnect wit
     expect(mockedDeleteAccount).not.toHaveBeenCalled();
   });
 
-  test('an account that still exists within 2 minutes of the marker stays pending (the server may still be deleting)', async () => {
+  test('an account that still exists within the settle window of the marker stays pending (the server may still be deleting)', async () => {
     const queue = fakeQueue();
     mockedVerifyAccount.mockResolvedValue('exists');
 
@@ -172,14 +172,21 @@ describe('confirmPendingDeletion (a launch, sign-in, foreground or reconnect wit
     expect(mockedDeleteAccount).not.toHaveBeenCalled();
   });
 
-  test('an old-format marker counts as long ago, so an existing account is kept at once', async () => {
-    const queue = fakeQueue();
-    kvSet(MARKER, 'reauth');
-    mockedVerifyAccount.mockResolvedValue('exists');
+  test.each(['reauth', 'deleting:', 'deleting:soon', `deleting:${String(MARKED_AT + 2 * DELETION_SETTLE_MS)}`])(
+    'a marker with an untrusted time (%s) is stamped now and stays pending, so the window starts over',
+    async (value) => {
+      const queue = fakeQueue();
+      kvSet(MARKER, value);
+      mockedVerifyAccount.mockResolvedValue('exists');
 
-    expect(await confirmPendingDeletion(USER, queue, () => MARKED_AT)).toBe('kept');
-    expect(deletionState(USER)).toBeNull();
-  });
+      expect(await confirmPendingDeletion(USER, queue, () => MARKED_AT)).toBe('pending');
+      expect(queue.resume).not.toHaveBeenCalled();
+      expect(kvGet(MARKER)).toBe(`${value.startsWith('reauth') ? 'reauth' : 'deleting'}:${String(MARKED_AT)}`);
+
+      expect(await confirmPendingDeletion(USER, queue, settled)).toBe('kept');
+      expect(deletionState(USER)).toBeNull();
+    },
+  );
 
   test('anything else keeps the marker and the blocked queue for the next session', async () => {
     const queue = fakeQueue();
