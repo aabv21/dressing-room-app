@@ -449,7 +449,7 @@ test('ScoreRing exposes its score as a progressbar', async () => {
   await render(<RateScreen />);
 
   const ring = await screen.findByRole('progressbar');
-  expect(ring).toHaveAccessibleName('Score: 78%');
+  expect(ring).toHaveAccessibleName('Score');
   expect(ring).toHaveProp('accessibilityValue', { min: 0, max: 100, now: 78 });
 });
 
@@ -568,7 +568,7 @@ test('the ring is named in Spanish too', async () => {
         <RateScreen />
       </I18nProvider>,
     );
-    expect(await screen.findByRole('progressbar')).toHaveAccessibleName('Puntaje: 78 %');
+    expect(await screen.findByRole('progressbar')).toHaveAccessibleName('Puntaje');
   } finally {
     kvSet('locale-preference', 'system');
   }

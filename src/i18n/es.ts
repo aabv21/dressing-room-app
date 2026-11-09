@@ -491,7 +491,7 @@ export const es: Record<MessageKey, string> = {
   'rate.back': 'Volver',
   'rate.loading': 'Mirando tu outfit…',
   'rate.confidence': 'Confianza de la IA: {value} %',
-  'rate.score': 'Puntaje: {value} %',
+  'rate.score': 'Puntaje',
   'rate.confidence.estimated': 'Confianza de la IA: estimada',
   'rate.reason.good': 'Funciona',
   'rate.reason.warn': 'Ojo',

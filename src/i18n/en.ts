@@ -488,7 +488,7 @@ export const en = {
   'rate.back': 'Back',
   'rate.loading': 'Looking at your outfit…',
   'rate.confidence': 'AI confidence: {value}%',
-  'rate.score': 'Score: {value}%',
+  'rate.score': 'Score',
   'rate.confidence.estimated': 'AI confidence: estimated',
   'rate.reason.good': 'Works',
   'rate.reason.warn': 'Watch out',
