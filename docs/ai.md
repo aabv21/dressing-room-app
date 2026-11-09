@@ -103,7 +103,7 @@ attributes, so the garment reaches review for manual entry. Nothing is retried.
 | Not `POST`                                                  | unchanged                            | 405                          |
 | Missing or wrong `x-webhook-secret` (constant-time compare) | unchanged                            | 401                          |
 | Body is not `{ garment_id: <uuid> }`                        | unchanged                            | 400                          |
-| Garment missing, or no longer `pending`                     | unchanged                            | 200 `{ outcome: 'skipped' }` |
+| Garment missing, no longer `pending`, or already reviewed   | unchanged                            | 200 `{ outcome: 'skipped' }` |
 | Daily quota used up (`consume_quota` returns false)         | `over_quota`; Claude not called      | 200 `{ outcome: 'over_quota' }` |
 | Quota check or profile read errors                          | `failed`                             | 200 `{ outcome: 'failed' }`  |
 | Photo not found (storage answers anything but 200)          | `failed`                             | 200 `{ outcome: 'failed' }`  |
@@ -115,8 +115,11 @@ attributes, so the garment reaches review for manual entry. Nothing is retried.
 | Valid output                                                | `done`, attributes, `uncertain_fields` | 200 `{ outcome: 'done' }`  |
 | Loading the garment or writing back fails                   | may stay `pending`                   | 500                          |
 
-The write-back is `PATCH …/garments?id=eq.<id>&extraction_status=eq.pending`, so a duplicate webhook
-delivery can't overwrite a finished garment. A garment left `pending` by a 500 (or by a webhook
+The write-back is `PATCH …/garments?id=eq.<id>&extraction_status=eq.pending&reviewed_at=is.null`,
+so a duplicate webhook delivery can't overwrite a finished garment, and a review the user saved while
+Claude was still answering (the app sends a garment to review 10 minutes after `created_at` by the
+device's clock, so a clock running ahead gets there early) keeps the user's values. Such a garment
+stays `pending`; the app treats it as reviewed. A garment left `pending` by a 500 (or by a webhook
 that never arrived) counts as failed in the app 10 minutes after `created_at`.
 
 ### Quota

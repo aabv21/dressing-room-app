@@ -34,7 +34,7 @@ const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 const DEFAULT_ROUTES: Record<RouteName, Handler> = {
-  garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending' }]),
+  garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: null }]),
   rpc: () => json(200, true),
   profile: () => json(200, [{ clothing_type: 'masculine' }]),
   storage: () => new Response(IMAGE, { status: 200, headers: { 'content-type': 'image/webp' } }),
@@ -164,7 +164,7 @@ describe('extraction', () => {
 
     const [garment, rpc, profile, storage, claude, patch] = calls;
     expect(garment?.url).toBe(
-      `${ENV.supabaseUrl}/rest/v1/garments?id=eq.${GARMENT_ID}&select=id,user_id,extraction_status`,
+      `${ENV.supabaseUrl}/rest/v1/garments?id=eq.${GARMENT_ID}&select=id,user_id,extraction_status,reviewed_at`,
     );
     for (const call of [garment, rpc, profile, storage, patch]) {
       expect(call?.headers.get('apikey')).toBe(ENV.serviceRoleKey);
@@ -187,6 +187,8 @@ describe('extraction', () => {
 
     expect(patch?.url).toContain(`id=eq.${GARMENT_ID}`);
     expect(patch?.url).toContain('extraction_status=eq.pending');
+    // A review saved while the extraction ran (a device clock ahead, or a slow model) is never overwritten.
+    expect(patch?.url).toContain('reviewed_at=is.null');
     expect(patchBody(calls)).toEqual({
       category: 'jeans',
       colors: ['navy', 'light_blue'],
@@ -297,7 +299,19 @@ describe('extraction', () => {
 
   test('a garment that is no longer pending is skipped with no further calls', async () => {
     const { fetch, calls } = fakeFetch({
-      garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'done' }]),
+      garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'done', reviewed_at: null }]),
+    });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'skipped' });
+    expect(calls.map((call) => call.route)).toEqual(['garment']);
+  });
+
+  test('a garment the user already reviewed is skipped with no quota, Claude or write-back', async () => {
+    const { fetch, calls } = fakeFetch({
+      garment: () =>
+        json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: '2026-11-09T12:00:00Z' }]),
     });
     const response = await handleExtract(webhook(), { env: ENV, fetch });
 

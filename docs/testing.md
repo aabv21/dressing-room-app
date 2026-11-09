@@ -182,7 +182,9 @@ never called. See `docs/ai.md`. To run only this project:
   `max_tokens`, the category enum limited to the clothing type, the image block, a system prompt
   that ignores text in the image) and the response sanitizer: a refusal, `is_garment: false` or
   non-JSON fails; only enum values survive, at most 3 colors, and a dropped value marks its field
-  uncertain.
+  uncertain. The `claude-adversarial-*.json` fixtures pin it against a manipulated model: out-of-enum
+  values, extra fields aimed at server-only columns or prototype keys, instruction-like strings,
+  JSON wrapped in prose, and output cut off at `max_tokens`.
 - `supabase/functions/_shared/__tests__/photoStore.test.ts` — the Storage boundary against a fake
   `fetch`: photo paths (non-uuid ids refused), the URL, method and service-role headers of every
   call, listing past 1000 entries and at most 5 folders at a time, removal in chunks of 1000,
@@ -191,8 +193,9 @@ never called. See `docs/ai.md`. To run only this project:
   contains `/storage/v1/`.
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
-  after 30 s (`failed`), a garment no longer pending or missing, and logs that carry only the garment
-  id and an outcome word.
+  after 30 s (`failed`), a garment no longer pending, already reviewed or missing, adversarial
+  Claude responses (`claude-adversarial-*.json`) writing only the attribute columns, and logs that
+  carry only the garment id and an outcome word.
 - `supabase/functions/delete-account/__tests__/handler.test.ts` — the order (photos, Apple revoke,
   user), paging and chunks, the caller check (only `user_not_found` means already deleted), a
   retry after the user is gone sweeping only the caller's folder (photos that landed while the
