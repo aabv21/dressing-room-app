@@ -19,6 +19,8 @@ export function isE2eLaunch(): boolean {
 /**
  * In a dev build launched by the flows, hides LogBox's warning toasts: they sit over the anchored
  * CTAs, so a flow's tap would open the debugger instead of pressing the button.
+ * `ignoreAllLogs` hides the error toasts too; errors still reach Metro's log, so read it when a
+ * flow fails.
  */
 export function quietDevToastsForE2e(): void {
   if (__DEV__ && isE2eLaunch()) {
