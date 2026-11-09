@@ -561,8 +561,11 @@ nothing about how any of those garments should be rated.
 is fully qualified — `public.profiles`, not `profiles`) so it cannot be tricked by a search_path
 manipulation into writing to the wrong table. It runs `after insert on auth.users` and inserts a
 bare `public.profiles` row (`user_id` only; every other column takes its default/null). The
-`updated_at` trigger (`public.set_updated_at()`) is the same pattern, firing `before update on
-public.profiles`.
+`updated_at` trigger (`public.set_updated_at()`, `before update on public.profiles` and
+`public.garments`) also uses `set search_path = ''`, but isn't `security definer`: it only sets a
+column on the row being written. Both have `execute` revoked from `public`, `anon` and
+`authenticated` (`set_updated_at()` by `20261109151323_revoke_set_updated_at_execute.sql`);
+`schema_hygiene.test.sql` fails if any trigger function in `public` is executable by a client.
 
 ### Onboarding completion clock
 
@@ -686,7 +689,8 @@ to the API until RLS and these revokes close it:
 - `revoke all on <table> from anon` unless signed-out access is really needed.
 - `revoke truncate, trigger, references on <table> from anon, authenticated`.
 - `revoke execute on function <fn> from public, anon, authenticated` for every new function,
-  including trigger functions (a trigger still fires; only direct calls are blocked).
+  including trigger functions (a trigger still fires; only direct calls are blocked;
+  `schema_hygiene.test.sql` checks every trigger function).
 - An index on the column per-user queries filter by (`user_id`), unless it's already the primary
   key.
 - Tests: pgTAP for the policies and constraints, and supabase-js integration tests that user A
@@ -801,6 +805,9 @@ discards both the user and its profile row — no cleanup step is needed.
   roles, so an unrevoked insert path on either role can't pass silently); `consume_quota(A, 'rating',
   1)` returns `true` then `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though
   `'rating'` is exhausted for the same user — the two `quota_kind` values are tracked independently.
+- `schema_hygiene.test.sql` — checklist rules checked across the whole `public` schema, so a new
+  table or function can't miss one silently: no trigger function is executable by `anon` or
+  `authenticated`.
 - `insights_account.test.sql` (Plan 5) — the client can set their own `pinned_on` and `status =
   'donated'` on `garments`; `authenticated` and `anon` can neither select nor insert
   `apple_tokens`/`for_you_cache`; `consume_quota(A, 'for_you', 1)` returns `true` then `false`, same
