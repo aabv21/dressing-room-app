@@ -295,7 +295,7 @@ export function buildJevRequest(
 const RANGE_TOLERANCE = 1e-9;
 
 /** `value` clamped to [min, max] when it is a finite number within the tolerance of that range; otherwise null. */
-function inRange(value: unknown, min: number, max: number): number | null {
+export function inRange(value: unknown, min: number, max: number): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   if (value < min - RANGE_TOLERANCE || value > max + RANGE_TOLERANCE) return null;
   return Math.min(max, Math.max(min, value));
