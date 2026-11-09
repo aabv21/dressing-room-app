@@ -91,6 +91,20 @@ jest.mock('../auth/authService', () => ({
   signOutLocally: jest.fn(() => Promise.resolve()),
 }));
 
+const mockImageCache = { clearMemoryCache: jest.fn(() => Promise.resolve(true)), clearDiskCache: jest.fn(() => Promise.resolve(true)) };
+jest.mock('expo-image', () => {
+  const actual = jest.requireActual<typeof import('expo-image')>('expo-image');
+  class MockImage extends actual.Image {
+    static override clearMemoryCache(): Promise<boolean> {
+      return mockImageCache.clearMemoryCache();
+    }
+    static override clearDiskCache(): Promise<boolean> {
+      return mockImageCache.clearDiskCache();
+    }
+  }
+  return { ...actual, Image: MockImage };
+});
+
 jest.mock('expo-apple-authentication', () => ({
   AppleAuthenticationButton: () => null,
   AppleAuthenticationButtonType: { CONTINUE: 1 },
@@ -323,6 +337,7 @@ describe('Delete account', () => {
 
   test('a deletion pauses the upload queue first, then clears it and the device and signs out locally', async () => {
     mockedDeleteAccount.mockResolvedValue({ ok: true });
+    mockCacheNames.push('dressing-room-export-2026-11-01.json', 'photo.webp');
     await openProfile();
 
     await confirmBoth();
@@ -339,6 +354,10 @@ describe('Delete account', () => {
       expect(kvGet(key)).toBeNull();
     }
     expect(kvGet(`account.deleting.${USER_ID}`)).toBeNull();
+    // The export (body measurements included) and the cached photos go too.
+    expect(mockDeleted).toEqual(['dressing-room-export-2026-11-01.json']);
+    expect(mockImageCache.clearMemoryCache).toHaveBeenCalledTimes(1);
+    expect(mockImageCache.clearDiskCache).toHaveBeenCalledTimes(1);
     expect(jest.mocked(signOut)).not.toHaveBeenCalled();
     // Unpaused (without a run) only once the account is gone, so a later sign-in isn't paused.
     const signedOut = mockedSignOutLocally.mock.invocationCallOrder[0] ?? Infinity;

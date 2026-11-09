@@ -3,6 +3,7 @@ import type { MessageKey } from '../i18n';
 import { deleteAccount, verifyAccount } from './accountClient';
 import type { AccountError } from './accountClient';
 import { clearDeletionMarker, DELETION_SETTLE_MS, deletionState, markDeletion, readDeletionMarker } from './deletionMarker';
+import { forgetDeviceFiles } from './deviceFiles';
 import { forgetAccountOnDevice } from './forgetAccount';
 
 /** The upload queue controls the deletion needs (`useUploadQueue`'s). */
@@ -18,10 +19,10 @@ export type DeletionResult = 'deleted' | 'reauth' | AccountError | 'busy';
 const running = new Set<string>();
 
 /**
- * The device side of a confirmed deletion: clears the queue, signs out locally and drops the
- * account's device data, each step on its own so a failing one never skips the sign-out. The kv
- * cleanup also refuses any later write for this user, so a request still in flight (a closet
- * re-sign, For you, the lucky list) can't write it back.
+ * The device side of a confirmed deletion: clears the queue, signs out locally, drops the
+ * account's kv data and refuses any later write of it (a request still in flight: a closet
+ * re-sign, For you, the lucky list), then removes the data exports and the image caches. Each
+ * step runs on its own, so a failing one never skips the rest.
  */
 async function finishLocally(userId: string, queue: QueueControl): Promise<void> {
   try {
@@ -35,6 +36,7 @@ async function finishLocally(userId: string, queue: QueueControl): Promise<void>
   } catch {
     // AuthProvider's sign-out handling drops the data of a still-marked account as well.
   }
+  await forgetDeviceFiles();
   queue.resume({ run: false });
 }
 

@@ -1,15 +1,18 @@
 jest.mock('../accountClient', () => ({ deleteAccount: jest.fn(), verifyAccount: jest.fn() }));
 jest.mock('../../auth/authService', () => ({ signOutLocally: jest.fn(() => Promise.resolve()) }));
+jest.mock('../deviceFiles', () => ({ forgetDeviceFiles: jest.fn(() => Promise.resolve()) }));
 
 import { signOutLocally } from '../../auth/authService';
 import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
 import { deleteAccount, verifyAccount } from '../accountClient';
 import { confirmPendingDeletion, DELETION_SETTLE_MS, deletionMessage, runDeletion } from '../deletionFlow';
 import { deletionState, markDeletion } from '../deletionMarker';
+import { forgetDeviceFiles } from '../deviceFiles';
 
 const mockedDeleteAccount = jest.mocked(deleteAccount);
 const mockedSignOutLocally = jest.mocked(signOutLocally);
 const mockedVerifyAccount = jest.mocked(verifyAccount);
+const mockedForgetFiles = jest.mocked(forgetDeviceFiles);
 
 const USER = '0b7f6d7e-1111-4c4c-9a9a-000000000001';
 const MARKER = `account.deleting.${USER}`;
@@ -46,6 +49,7 @@ test('a deletion marks it before pausing, then clears the queue, signs out and d
   expect(queue.clear).toHaveBeenCalledTimes(1);
   expect(mockedSignOutLocally).toHaveBeenCalledTimes(1);
   expect(kvKeys()).toEqual([]);
+  expect(mockedForgetFiles).toHaveBeenCalledTimes(1);
   expect(queue.resume).toHaveBeenCalledWith({ run: false });
 });
 

@@ -10,10 +10,9 @@ import { useI18n } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
 import { exportData, exportFileName } from './accountClient';
 import { deletionMessage, runDeletion } from './deletionFlow';
+import { removeExports } from './deviceFiles';
 
 type Action = { run: () => void; busy: boolean; error: MessageKey | undefined };
-
-const EXPORT_FILE = /^dressing-room-export-.*\.json$/;
 
 /** Keeps state updates for a screen that may unmount mid-request (a deletion signs out). */
 function useMounted(): { readonly current: boolean } {
@@ -25,15 +24,6 @@ function useMounted(): { readonly current: boolean } {
     };
   }, []);
   return mounted;
-}
-
-/** Removes earlier exports from the cache directory, so only the newest copy of the data stays. */
-function removePreviousExports(): void {
-  for (const entry of Paths.cache.list()) {
-    if (entry instanceof File && EXPORT_FILE.test(entry.name)) {
-      entry.delete();
-    }
-  }
 }
 
 /**
@@ -72,7 +62,8 @@ export function usePrivacyActions(): { exporting: Action; deleting: Action } {
         } else {
           const outcome = await exportData();
           if (outcome.ok) {
-            removePreviousExports();
+            // Only the newest copy of the data stays in the cache directory.
+            removeExports();
             const file = new File(Paths.cache, exportFileName());
             await file.write(JSON.stringify(outcome.result, null, 2));
             await Sharing.shareAsync(file.uri, { mimeType: 'application/json', UTI: 'public.json' });
