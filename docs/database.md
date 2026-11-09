@@ -796,7 +796,9 @@ discards both the user and its profile row — no cleanup step is needed.
   vacuous `using (true)` policy); **an authenticated `update` on `outfits`, `outfit_items` or
   `wears` now raises `42501`** (a real privilege error, since update is revoked outright — see "RLS
   and storage rules" above), and so does an authenticated `delete` on `outfits`/`outfit_items`;
-  **B deleting A's wear by id removes 0 rows** and leaves A's wear and counts unchanged; deleting a
+  **B deleting A's wear by id removes 0 rows** and leaves A's wear and counts unchanged;
+  **`log_wear` by B reusing A's wear id raises `23505`**, leaving A's wear A's and logging nothing
+  for B; deleting a
   garment cascades its `outfit_items` rows. Also the cross-tenant direct-insert paths: B inserting a
   `wears` row with their own `user_id` but A's `outfit_id` raises `42501` and leaves A's
   `wear_count` unchanged; B inserting an `outfit_items` row into A's outfit (even naming B's own
