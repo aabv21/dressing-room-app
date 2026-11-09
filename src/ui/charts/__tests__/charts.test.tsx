@@ -133,8 +133,8 @@ describe('ProportionBar', () => {
 
   test('segment widths follow pct', async () => {
     await render(<ProportionBar segments={segments} onSelect={jest.fn()} />);
-    const blackSegment = screen.getByTestId('proportion-segment-black');
-    const oliveSegment = screen.getByTestId('proportion-segment-olive');
+    const blackSegment = screen.getByTestId('proportion-segment-black', { includeHiddenElements: true });
+    const oliveSegment = screen.getByTestId('proportion-segment-olive', { includeHiddenElements: true });
     const blackStyle = blackSegment.props.style as { flex?: number } | { flex?: number }[];
     const oliveStyle = oliveSegment.props.style as { flex?: number } | { flex?: number }[];
     const blackFlex = Array.isArray(blackStyle) ? blackStyle.find((s) => s.flex !== undefined)?.flex : blackStyle.flex;
@@ -156,8 +156,8 @@ describe('ProportionBar', () => {
 
   test('a light segment such as white gets a hairline border', async () => {
     await render(<ProportionBar segments={segments} onSelect={jest.fn()} />);
-    const whiteStyle = flattenStyle(screen.getByTestId('proportion-segment-white').props.style);
-    const blackStyle = flattenStyle(screen.getByTestId('proportion-segment-black').props.style);
+    const whiteStyle = flattenStyle(screen.getByTestId('proportion-segment-white', { includeHiddenElements: true }).props.style);
+    const blackStyle = flattenStyle(screen.getByTestId('proportion-segment-black', { includeHiddenElements: true }).props.style);
     expect(whiteStyle.borderWidth).toBeGreaterThan(0);
     expect(blackStyle.borderWidth === undefined || blackStyle.borderWidth === 0).toBe(true);
   });
@@ -170,18 +170,31 @@ describe('ProportionBar', () => {
     expect(screen.getByText('Other 22%')).toBeOnTheScreen();
   });
 
-  test('each segment and legend entry is a button that calls onSelect with its id', async () => {
+  test('each segment and legend entry calls onSelect with its id', async () => {
     const onSelect = jest.fn();
     await render(<ProportionBar segments={segments} onSelect={onSelect} />);
-    const segmentButton = screen.getByTestId('proportion-segment-black');
+    const segmentButton = screen.getByTestId('proportion-segment-black', { includeHiddenElements: true });
     const legendButton = screen.getByTestId('proportion-legend-blue');
-    expect(segmentButton).toHaveAccessibleName('Black 24%');
     expect(legendButton).toHaveAccessibleName('Blue 18%');
     await fireEvent.press(segmentButton);
     expect(onSelect).toHaveBeenCalledWith('black');
     onSelect.mockClear();
     await fireEvent.press(legendButton);
     expect(onSelect).toHaveBeenCalledWith('blue');
+  });
+
+  test('a screen reader reads each color once, through the legend, not again through the bar', async () => {
+    await render(<ProportionBar segments={segments} onSelect={jest.fn()} />);
+    expect(screen.getAllByRole('button').map((button) => button.props.accessibilityLabel as string)).toEqual([
+      'Black 24%',
+      'Blue 18%',
+      'White 15%',
+      'Camel 12%',
+      'Olive 9%',
+      'Other 22%',
+    ]);
+    expect(screen.queryByTestId('proportion-segment-black')).toBeNull();
+    expect(screen.getByTestId('proportion-segment-black', { includeHiddenElements: true })).toBeOnTheScreen();
   });
 
   test('segment and legend hit targets meet the 44pt minimum', async () => {
@@ -200,5 +213,10 @@ describe('KpiTile', () => {
     await render(<KpiTile value="62%" label="of your closet worn this month" />);
     expect(screen.getByText('62%')).toBeOnTheScreen();
     expect(screen.getByText('of your closet worn this month')).toBeOnTheScreen();
+  });
+
+  test('a screen reader reads the value and its label as one element', async () => {
+    await render(<KpiTile value="62%" label="of your closet worn this month" />);
+    expect(screen.getByLabelText('62% of your closet worn this month')).toHaveProp('accessible', true);
   });
 });

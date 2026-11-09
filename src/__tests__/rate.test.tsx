@@ -449,7 +449,7 @@ test('ScoreRing exposes its score as a progressbar', async () => {
   await render(<RateScreen />);
 
   const ring = await screen.findByRole('progressbar');
-  expect(ring).toHaveAccessibleName('78%');
+  expect(ring).toHaveAccessibleName('Score: 78%');
   expect(ring).toHaveProp('accessibilityValue', { min: 0, max: 100, now: 78 });
 });
 
@@ -557,4 +557,19 @@ test('after a swap, "I\'ll wear it" sends the swapped ids, the new score and a n
     score: 81,
   });
   expect(mockedLogWear.mock.calls.map(([input]) => input.wearId)).toEqual(['wear-1', 'wear-2']);
+});
+
+test('the ring is named in Spanish too', async () => {
+  mockedRate.mockReturnValue(ok(result()));
+  kvSet('locale-preference', 'es');
+  try {
+    await render(
+      <I18nProvider>
+        <RateScreen />
+      </I18nProvider>,
+    );
+    expect(await screen.findByRole('progressbar')).toHaveAccessibleName('Puntaje: 78 %');
+  } finally {
+    kvSet('locale-preference', 'system');
+  }
 });

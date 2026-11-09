@@ -3,7 +3,8 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
-import { colors, gradients } from '../ui/theme';
+import { useI18n } from '../i18n';
+import { colors, gradients, textScale } from '../ui/theme';
 
 const SIZE = 112;
 const STROKE = 10;
@@ -26,11 +27,14 @@ function AiGradient(): React.JSX.Element {
 }
 
 /**
- * The score (0–100) as a progress ring. The ring and its number are one accessible progressbar
- * ("78%"); the caption under the number (the label, e.g. "Looks good") sits outside it, so a screen
- * reader reads it as its own text instead of losing it inside the progressbar.
+ * The score (0–100) as a progress ring, drawn at its final value (it never animates). The ring and
+ * its number are one accessible progressbar ("Score: 78%"); the
+ * caption under the number (the label, e.g. "Looks good") sits outside it, so a screen reader reads
+ * it as its own text instead of losing it inside the progressbar. Both texts are capped for large
+ * text sizes, since the ring's size is fixed; the score is spoken in full either way.
  */
 export function ScoreRing({ score, caption }: { score: number; caption: string }): React.JSX.Element {
+  const { t } = useI18n();
   const value = Math.min(100, Math.max(0, Math.round(score)));
   const percent = `${String(value)}%`;
   return (
@@ -38,7 +42,7 @@ export function ScoreRing({ score, caption }: { score: number; caption: string }
       <View
         accessible
         accessibilityRole="progressbar"
-        accessibilityLabel={percent}
+        accessibilityLabel={t('rate.score', { value })}
         accessibilityValue={{ min: 0, max: 100, now: value }}
         style={StyleSheet.absoluteFill}
       >
@@ -47,6 +51,7 @@ export function ScoreRing({ score, caption }: { score: number; caption: string }
           <Circle cx={CENTER} cy={CENTER} r={RADIUS} stroke={colors.track} strokeWidth={STROKE} fill="none" />
           {value === 0 ? null : (
             <Circle
+              testID="score-ring-arc"
               cx={CENTER}
               cy={CENTER}
               r={RADIUS}
@@ -62,13 +67,21 @@ export function ScoreRing({ score, caption }: { score: number; caption: string }
           )}
         </Svg>
         <View style={[StyleSheet.absoluteFill, styles.numberSlot]}>
-          <Text style={styles.number}>{percent}</Text>
+          <Text style={styles.number} maxFontSizeMultiplier={textScale.ring}>
+            {percent}
+          </Text>
         </View>
       </View>
       {/* The number and the caption stack around the center: each slot is padded by the other's
           line height, so the pair stays centered without measuring. */}
       <View style={[StyleSheet.absoluteFill, styles.captionSlot]} pointerEvents="none">
-        <Text style={styles.caption} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+        <Text
+          style={styles.caption}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.8}
+          maxFontSizeMultiplier={textScale.ring}
+        >
           {caption}
         </Text>
       </View>

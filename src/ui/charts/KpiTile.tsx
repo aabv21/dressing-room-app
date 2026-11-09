@@ -6,7 +6,8 @@ import { colors, radii, spacing } from '../theme';
 export function KpiTile(props: { value: string; label: string }): React.JSX.Element {
   const { value, label } = props;
   return (
-    <View style={styles.tile}>
+    // One element for a screen reader: "62% of your closet worn this month".
+    <View style={styles.tile} accessible accessibilityLabel={`${value} ${label}`}>
       <Text style={styles.value}>{value}</Text>
       <Text style={styles.label}>{label}</Text>
     </View>
