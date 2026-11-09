@@ -202,6 +202,36 @@ describe('extraction', () => {
     });
   });
 
+  test.each([
+    'claude-adversarial-extra-fields',
+    'claude-adversarial-out-of-enum',
+    'claude-adversarial-instruction',
+  ])('%s writes only the attribute columns, uncertain_fields and done, to a pending row', async (name) => {
+    const { fetch, calls } = fakeFetch({ claude: () => json(200, fixture(name)) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(await response.json()).toEqual({ outcome: 'done' });
+    const patch = calls.find((call) => call.route === 'patch');
+    expect(patch?.url).toContain(`id=eq.${GARMENT_ID}`);
+    expect(patch?.url).toContain('extraction_status=eq.pending');
+    const body = patchBody(calls);
+    expect(Object.keys(body).sort()).toEqual([
+      'category',
+      'colors',
+      'extraction_status',
+      'fit',
+      'formality',
+      'material',
+      'occasions',
+      'pattern',
+      'seasons',
+      'uncertain_fields',
+      'warmth',
+    ]);
+    expect(body.extraction_status).toBe('done');
+    expect(JSON.stringify(body)).not.toMatch(/ignore|system|override|update|javascript/i);
+  });
+
   test('a profile without a clothing type offers every category', async () => {
     const { fetch, calls } = fakeFetch({ profile: () => json(200, [{ clothing_type: null }]) });
     await handleExtract(webhook(), { env: ENV, fetch });
