@@ -495,7 +495,8 @@ JWT.
 ## End-to-end flows (Maestro)
 
 `pnpm e2e` (`scripts/e2e.ts`) runs the three Maestro flows in `.maestro/flows/` on an iOS
-simulator, against the local stack and the mocks, as a fresh user:
+simulator, or with `E2E_PLATFORM=android pnpm e2e` on an Android emulator, against the local stack
+and the mocks, as a fresh user:
 
 1. `onboarding-closet-lucky.yaml` — sign up, onboarding, four garments from the gallery, review,
    "I'll wear it" on Today's "feeling lucky" outfit, and the wear in Stats ("1 outfit logged").
@@ -507,8 +508,8 @@ They share one account, created by the first and deleted by the last, so `.maest
 runs them in that order and stops at the first failure. Each run signs up as
 `e2e-<epoch ms>@example.com`, so a run that failed halfway (and left its user behind) never
 collides with the next. Flows wait on visible text with `extendedWaitUntil`, never a fixed sleep.
-The text is English, so the simulator's language must be English: `launchApp`'s `clearState`
-drops the in-app language choice, and the app follows the device.
+The text is English, so the device's language must be English: `launchApp`'s `clearState` drops
+the in-app language choice, and the app follows the device.
 
 ### Prerequisites
 
@@ -527,6 +528,12 @@ drops the in-app language choice, and the app follows the device.
 - **A booted iOS simulator with the dev build** (`pnpm ios` once; rebuild after native changes)
   **and Metro running** on `:8081`. With several simulators booted, name one:
   `E2E_SIMULATOR=<udid or name> pnpm e2e`.
+- **For Android, a running emulator with the dev build** (`pnpm android` once, with
+  `JAVA_HOME` at Java 17: the Gradle build fails on Android Studio's bundled Java 25). `adb` comes
+  from `ANDROID_HOME`, else Android Studio's default `~/Library/Android/sdk`. The emulator needs a
+  Google Play system image (ML Kit's segmentation model comes from Play services); this repo uses
+  an `android-36` `google_apis_playstore` arm64 image on a Pixel 9 AVD. Start it with
+  `-gpu host`: its default software renderer makes the flows several times slower.
 - **An English simulator.** Settings → General → Language & Region; the flows match English
   text.
 - **The local stack:** `pnpm db:start`, then `pnpm env:local` (the app must point at it; the script
@@ -535,8 +542,10 @@ drops the in-app language choice, and the app follows the device.
 
 ### What the script does
 
-1. Checks Java, Maestro, the simulator and the installed app, Metro, and the local stack, failing
-   with what to run instead of timing out in a flow.
+1. Checks Java, Maestro, the simulator or emulator and the installed app, Metro, and the local
+   stack, failing with what to run instead of timing out in a flow. On Android it also maps the
+   emulator's ports 8081 (Metro) and the Supabase API's port to the Mac's with `adb reverse`,
+   since the app's `127.0.0.1` is the emulator itself.
 2. Starts `node integration/mockServices.ts --serve --weak t_shirt` and
    `node integration/mockAnthropic.ts --serve ok`, and waits for each to print that it's listening.
 3. Copies the fictional photos in `.maestro/fixtures/` to a temporary folder and adds them to the
@@ -545,7 +554,8 @@ drops the in-app language choice, and the app follows the device.
    instead of failing, so the script stops it after a time limit and says whether it timed out or
    exited with an error. The photos go in on every run, so the simulator's photo library grows by
    four each time (erasing the simulator empties it, and removes the dev build too); the flow picks
-   the four newest.
+   the four newest. On Android they're pushed to `/sdcard/Pictures/` with `adb push`, under the
+   same names each run, and a media scan makes the system photo picker list them.
 4. Runs `maestro --device <udid> test --config .maestro/config.yaml .maestro/flows` with `EMAIL`
    and `PASSWORD` passed to the flows, then stops the mocks and exits with Maestro's status.
 
@@ -564,9 +574,14 @@ drops the in-app language choice, and the app follows the device.
   to plain text before typing, since typing into a secure field can drop characters.
 - **Dev warnings.** Every `launchApp` passes `-e2e 1`. iOS puts it in the app's user defaults, and
   in a dev build `src/lib/e2eLaunch.ts` then hides LogBox's warning toasts. They sit over the
-  anchored CTAs, so a tap there would open the debugger instead of pressing the button.
-- **The photo picker.** iOS's picker isn't the app's UI, so the flow taps its cells by Apple's
-  own accessibility id, `PXGGridLayout-Info` at indexes 0 to 3, after
+  anchored CTAs, so a tap there would open the debugger instead of pressing the button. Android
+  has no such channel, so there the flows rely on the app logging no warnings: a new warning shows
+  a toast over the tab bar, and fixing the warning is the cure (`adb logcat | grep ReactNativeJS`).
+- **The photo picker.** The gallery step is a subflow per platform
+  (`.maestro/subflows/pick-photos-ios.yaml` and `pick-photos-android.yaml`, chosen with `when:
+  platform`). Android's system photo picker labels each photo "Photo taken on <date>"; the subflow
+  taps the first four and "Done". iOS's picker isn't the app's UI, so its subflow taps the cells by
+  Apple's own accessibility id, `PXGGridLayout-Info` at indexes 0 to 3, after
   waiting for its "Select up to 30 photos." prompt. Both are iOS internals, not a public API: an iOS
   update can rename them, and the flow then fails at the gallery step. Check them with
   `maestro hierarchy` on the open picker.
@@ -578,9 +593,8 @@ drops the in-app language choice, and the app follows the device.
 
 There's no reliable simulator or emulator job yet: a macOS runner with a simulator, a dev build
 and the local stack in Docker is slow and flaky, and the Linux runner has no iOS simulator. So
-`pnpm e2e` runs locally before a release and after changes to the flows it covers. The flows are
-iOS only for now. On Android, `addmedia` becomes `adb push` plus a media scan, and the launch
-argument needs another channel (see the NOTE in `src/lib/e2eLaunch.ts`).
+`pnpm e2e` runs locally before a release and after changes to the flows it covers, on both
+platforms.
 
 ## Which tests need Docker
 
@@ -589,7 +603,7 @@ argument needs another channel (see the NOTE in `src/lib/e2eLaunch.ts`).
 | `pnpm test`     | no                              | no                    |
 | `pnpm db:test`  | yes                             | no (connects directly) |
 | `pnpm test:int` | yes                             | yes (`pnpm env:local` first) |
-| `pnpm e2e`      | yes, plus a simulator and Metro | yes (`pnpm env:local` first) |
+| `pnpm e2e`      | yes, plus a simulator or emulator and Metro | yes (`pnpm env:local` first) |
 
 `pnpm typecheck`, `pnpm lint`, and `pnpm test` need nothing beyond `pnpm install`.
 

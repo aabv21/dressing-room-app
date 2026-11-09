@@ -4,10 +4,15 @@ import { delimiter, join } from 'node:path';
 
 import { jevAnswersWithWeakPiece, serveOptionsFrom } from '../../integration/mockServices.ts';
 import {
+  adbPath,
   addMediaArgs,
   addMediaProblem,
+  androidPhotoPath,
+  apiPort,
   bootedSimulators,
+  connectedEmulators,
   e2eEmail,
+  e2ePlatform,
   envValue,
   HOMEBREW_JAVA_HOME,
   javaEnvironment,
@@ -114,7 +119,7 @@ describe('simulators', () => {
   test("fails when none is booted or the requested one isn't", () => {
     expect(pickSimulator([], undefined).ok).toBe(false);
     const missing = pickSimulator(bootedSimulators(list), 'B');
-    expect(!missing.ok && missing.message).toMatch(/E2E_SIMULATOR=B isn't booted/);
+    expect(!missing.ok && missing.message).toMatch(/E2E_SIMULATOR=B isn't running/);
   });
 });
 
@@ -220,5 +225,41 @@ describe('serveOptionsFrom (the mock services CLI)', () => {
   test('refuses a level out of range and a weak flag without a category', () => {
     expect(() => serveOptionsFrom(['--serve', '--level', '2'])).toThrow('--level must be between 0 and 1');
     expect(() => serveOptionsFrom(['--serve', '--weak'])).toThrow('--weak needs a category');
+  });
+});
+
+describe('Android target', () => {
+  test('E2E_PLATFORM defaults to ios and accepts android only', () => {
+    expect(e2ePlatform(undefined)).toEqual({ ok: true, platform: 'ios' });
+    expect(e2ePlatform('')).toEqual({ ok: true, platform: 'ios' });
+    expect(e2ePlatform('android')).toEqual({ ok: true, platform: 'android' });
+    const other = e2ePlatform('windows');
+    expect(!other.ok && other.message).toMatch(/use ios or android/);
+  });
+
+  test('adb comes from ANDROID_HOME, else Android Studio\'s default SDK', () => {
+    expect(adbPath({ ANDROID_HOME: '/sdk' }, '/Users/me')).toBe(join('/sdk', 'platform-tools', 'adb'));
+    expect(adbPath({}, '/Users/me')).toBe(join('/Users/me', 'Library', 'Android', 'sdk', 'platform-tools', 'adb'));
+  });
+
+  test('lists only ready devices from adb devices', () => {
+    const output = 'List of devices attached\nemulator-5554\tdevice\nemulator-5556\toffline\n\n';
+    expect(connectedEmulators(output)).toEqual([{ udid: 'emulator-5554', name: 'emulator-5554' }]);
+    expect(connectedEmulators('List of devices attached\n\n')).toEqual([]);
+  });
+
+  test('asks to start an emulator when none is running, and to pick one when several are', () => {
+    const none = pickSimulator([], undefined, 'android');
+    expect(!none.ok && none.message).toMatch(/No Android emulator is running/);
+    const two = connectedEmulators('List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice\n');
+    const several = pickSimulator(two, undefined, 'android');
+    expect(!several.ok && several.message).toMatch(/E2E_SIMULATOR/);
+    expect(pickSimulator(two, 'emulator-5556', 'android')).toEqual({ ok: true, simulator: { udid: 'emulator-5556', name: 'emulator-5556' } });
+  });
+
+  test('maps the Supabase API port and puts fixtures where the media scan finds them', () => {
+    expect(apiPort('http://127.0.0.1:54421')).toBe('54421');
+    expect(apiPort('https://example.supabase.co')).toBe('443');
+    expect(androidPhotoPath('jeans.jpg')).toBe('/sdcard/Pictures/jeans.jpg');
   });
 });
