@@ -802,15 +802,13 @@ describe('pinned garments', () => {
     expect((body as OkBody).outfits.map((o) => o.garmentIds)).toEqual(plain.outfits.map((o) => o.garmentIds));
   });
 
-  test('a pin on a garment in the laundry has no effect', async () => {
-    const w = world({
-      garments: pin(bigCloset(), idOf(5), DATE).map((row) => (String(row.id) === idOf(5) ? { ...row, status: 'laundry' } : row)),
-    });
-    const plain = (await lucky(world())).body as OkBody;
+  test('a pin on a garment in the laundry has no effect: the list equals the same laundried closet with no pin', async () => {
+    const laundried = bigCloset().map((row) => (String(row.id) === idOf(5) ? { ...row, status: 'laundry' } : row));
+    const withoutPin = (await lucky(world({ garments: laundried }))).body as OkBody;
+    const w = world({ garments: pin(laundried, idOf(5), DATE) });
     const { body } = await lucky(w);
-    // The pinned-but-unavailable piece is simply never a candidate; the rest of the closet is unchanged.
+    expect((body as OkBody).outfits.map((o) => o.garmentIds)).toEqual(withoutPin.outfits.map((o) => o.garmentIds));
     expect((body as OkBody).outfits.every((outfit) => !outfit.garmentIds.includes(idOf(5)))).toBe(true);
-    expect((body as OkBody).outfits.length).toBe(plain.outfits.length);
   });
 
   test('a pin with no complete rule-passing candidate gives the normal list', async () => {
@@ -840,6 +838,47 @@ describe('pinned garments', () => {
     for (const outfit of outfits) {
       expect(outfit.garmentIds.includes(idOf(5)) || outfit.garmentIds.includes(idOf(10))).toBe(true);
     }
+  });
+
+  // --- I1: a pinned outerwear piece is included on days the weather doesn't require it ----------
+
+  test('a pinned jacket on a mild day (the default COOL weather, outerwear not required): every outfit contains it', async () => {
+    // bigCloset's two jackets are ids 31 and 32.
+    const w = world({ garments: pin(bigCloset(), idOf(31), DATE) });
+    const { body } = await lucky(w);
+    const { outfits } = body as OkBody;
+    expect(outfits.length).toBeGreaterThan(0);
+    for (const outfit of outfits) expect(outfit.garmentIds).toContain(idOf(31));
+  });
+
+  test('a pinned jacket with no weather known: every outfit contains it', async () => {
+    const w = world({ garments: pin(bigCloset(), idOf(31), DATE), profile: NO_CITY });
+    const { body } = await lucky(w);
+    const { outfits } = body as OkBody;
+    expect(outfits.length).toBeGreaterThan(0);
+    for (const outfit of outfits) expect(outfit.garmentIds).toContain(idOf(31));
+  });
+
+  // --- I2: "Wear it" (a pin for tomorrow) must not invalidate today's cached list -----------------
+
+  test('a pin for tomorrow keeps today\'s cache entry a hit', async () => {
+    const w = world();
+    const first = (await lucky(w)).body as OkBody;
+    w.garments = pin(w.garments, idOf(5), '2026-11-09');
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'jev')).toBe(0);
+    expect(count(calls, 'quota')).toBe(0);
+    expect((body as OkBody).outfits).toEqual(first.outfits);
+    expect(w.luckyCache.size).toBe(1);
+  });
+
+  test('a pin for today (not tomorrow) does change the cache key', async () => {
+    const w = world();
+    await lucky(w);
+    w.garments = pin(w.garments, idOf(5), DATE);
+    const { calls } = await lucky(w);
+    expect(count(calls, 'jev')).toBeGreaterThan(0);
+    expect(w.luckyCache.size).toBe(2);
   });
 });
 

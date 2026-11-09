@@ -378,10 +378,12 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
    garment counts towards no slot and is never a candidate, exactly like one in the laundry.
 3. The cache key hashes the date, the occasion, `locationKey(profile)`, `profile.updated_at` and a
    closet fingerprint: each garment's id and rating-relevant columns (category, colors, pattern,
-   formality, fit, seasons, warmth, status, `pinned_on`; not `updated_at` or `last_worn_at`, which
-   logging a wear bumps), so an "I'll wear it" tap doesn't reshuffle the day's list, but a new
-   "Wear it" pin (Unused-for-6-months, task 5) does recompute it. A hit keeps the list as ranked
-   but recomputes each outfit's `freshThisWeek` from the current wear dates, and answers with this
+   formality, fit, seasons, warmth, status, and whether `pinned_on` equals *this request's* date;
+   not `updated_at` or `last_worn_at`, which logging a wear bumps), so an "I'll wear it" tap
+   doesn't reshuffle the day's list, but a new "Wear it" pin for today does recompute it — a pin
+   for tomorrow (what "Wear it" actually sets, per "Unused for 6 months" above) leaves today's
+   fingerprint, and so today's cached list, untouched. A hit keeps the list as ranked but
+   recomputes each outfit's `freshThisWeek` from the current wear dates, and answers with this
    hour's weather (the stored one, validated, only when this hour's is unknown). So on a hit Today
    shows the current hour's weather next to a list ranked earlier in the day.
 4. Quota `lucky` 10 per UTC day (cache misses only).
@@ -406,14 +408,20 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
    - `preScore` is the mean over the base pieces (outerwear included, extras not) of the days since
      last worn (never worn = 30, capped at 30) plus 5 for a neutral color, so adding a belt never
      wins and a dress isn't behind separates for having fewer pieces.
-   - A garment whose `pinned_on` equals the request's date biases every fourth draw (within its
-     own slot) to pick it instead of a random peer, so it's reachable even on a 200-garment closet
-     where its unforced odds across 200 random draws would otherwise sometimes miss it over many
-     seeds; with several pins only the first (by id) seeds the draw this way, since the generator
-     takes one hint garment, but any pinned garment can still turn up unforced. After generation,
-     candidates are kept only when they contain a pinned garment, and only when at least one
-     generated candidate does — otherwise the pin is ignored (no complete candidate could ever
-     honor it: wrong season, formality, or the piece isn't `available`) and the normal list runs.
+   - Every garment whose `pinned_on` equals the request's date, and that passes the per-piece
+     rules on its own, is rotated one at a time through every fourth draw (within its own slot) to
+     pick it instead of a random peer, so each is reachable even on a 200-garment closet where its
+     unforced odds across 200 random draws would otherwise sometimes miss it over many seeds. A
+     pin that fails the per-piece rules for this context (the wrong season or formality, or
+     outerwear on a hot day) never claims a forced draw, so it can't crowd out an admissible
+     sibling pin; that pin's own odds stay unforced, same as with no pin at all. An admissible pin
+     is also kept through the first pass's 7-day recent-wear exclusion (so a wear logged between
+     the "Wear it" tap and the pinned day can't silently drop it), and a pinned outerwear piece is
+     tried even on a day the weather doesn't call for outerwear (the per-piece rules allow
+     outerwear any day; only a cold day requires it). After generation, candidates are kept only
+     when they contain one of the pinned garments, and only when at least one generated candidate
+     does — otherwise every pin is ignored (no complete candidate could ever honor any of them)
+     and the normal list runs.
 6. Each is rated with Jev (at most 5 at once; no Claude fallback), with unknown weather made
    neutral as in rate-outfit. Rated outfits are sorted by score, highest first; outfits whose
    rating failed follow in pre-score order with `score: null`.

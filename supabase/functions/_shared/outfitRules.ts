@@ -297,11 +297,11 @@ function groupBySlot(garments: readonly RuleGarment[]): SlotGroups {
 
 /** How many draws `generateCandidates` may make in total (both passes) per candidate it is asked for. */
 const ATTEMPTS_PER_CANDIDATE = 20;
-/** Every 4th draw forces `pinnedId` into its slot (1 in 4 draws is one eighth of a candidate's 20 attempts; see `generateCandidates`). */
+/** Every 4th draw forces that attempt's pinned garment into its slot (so 1 in 4, or 5, of a candidate's 20 attempts; see `generateCandidates`). */
 const PIN_ATTEMPT_STRIDE = 4;
 
 /**
- * `items`, with `pinned` moved first when it's a member: `pick`'s index-0 fallback (an empty
+ * `items`, with `pinnedId` moved first when it's a member: `pick`'s index-0 fallback (an empty
  * `rng()` draw never lands past the array) and the forced-pick stride in `generateCandidates`
  * both read index 0, so this is the one place a "pick the pinned garment" attempt needs.
  */
@@ -327,21 +327,28 @@ function withPinnedFirst<T extends { id: string }>(items: readonly T[], pinnedId
  * at least 3 candidates survive without them: that first pass may use half the draws, the
  * fallback pass the rest. Deterministic for a given seed and closet order.
  *
- * `pinnedId`, when given, also biases every `PIN_ATTEMPT_STRIDE`th draw to pick that garment for
- * its own slot instead of a random one (lucky-list only asks for this on a pinned-for-today
- * garment, which a plain seeded draw can otherwise miss across many seeds on a large closet — see
- * the brief's 200-garment/20-seed check). The bias changes which garment a few draws use, not how
- * many draws happen or how the rest of the outfit is picked, so it only shifts that garment's own
- * odds, not the overall distribution. `lucky-list` still re-checks that at least one of the
- * returned candidates actually contains the pin before treating it as pinned (the garment might
- * not fit any rule-passing outfit at all).
+ * `pinnedIds`, when given, also biases every `PIN_ATTEMPT_STRIDE`th draw to pick one of them for
+ * its own slot instead of a random one — lucky-list asks for this on the garments pinned for
+ * today (see "Unused for 6 months" and "Wear it" in `global-constraints.md`), which a plain
+ * seeded draw can otherwise miss across many seeds on a large closet. Only the pinned garments
+ * that pass `fitsAlone` for this context are rotated through the forced attempts (one per attempt,
+ * round-robin); an inadmissible pin (wrong season, formality, or an outerwear piece on a hot day)
+ * never claims a forced attempt, so it can't starve an admissible sibling pin out of them. An
+ * admissible pinned garment is also exempt from the 7-day recent-wear exclusion in the first pass
+ * (a wear logged between the "Wear it" tap and the pinned day shouldn't silently drop the pin),
+ * and a pinned outerwear piece is still tried on forced attempts even when the weather doesn't
+ * call for outerwear (`passesRules` allows outerwear any day; it only requires it when cold). The
+ * bias changes which garment a few draws use, not how many draws happen or how the rest of the
+ * outfit is picked, so it only shifts the pinned garments' own odds, not the overall distribution.
+ * `lucky-list` still re-checks that at least one of the returned candidates actually contains a
+ * pin before treating it as pinned (a pinned garment might not fit any rule-passing outfit at all).
  */
 export function generateCandidates(
   garments: readonly RuleGarment[],
   ctx: RuleContext,
   seed: string,
   limit = DEFAULT_CANDIDATE_LIMIT,
-  pinnedId: string | null = null,
+  pinnedIds: readonly string[] = [],
 ): Outfit[] {
   const rng = mulberry32(hashString(seed));
   const groups = groupBySlot(garments);
@@ -357,18 +364,34 @@ export function generateCandidates(
     ctx.weather !== null &&
     (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
 
-  const pick = <T extends { id: string }>(items: readonly T[], forcePinned: boolean): T | undefined => {
-    if (forcePinned && items[0]?.id === pinnedId) return items[0];
+  // Only pins `fitsAlone` admits for this context ever claim a forced attempt (M3): an
+  // inadmissible pin (the wrong season, formality, or a coat on a hot day) would otherwise waste
+  // every 4th attempt on a garment that can never appear, starving an admissible sibling pin.
+  const byId = new Map(garments.map((item) => [item.id, item]));
+  const admissiblePins = pinnedIds.flatMap((id) => {
+    const item = byId.get(id);
+    return item !== undefined && fitsAlone(item, ctx) ? [item] : [];
+  });
+  const admissiblePinIds = new Set(admissiblePins.map((item) => item.id));
+  const outerwearPinIds = new Set(
+    admissiblePins.filter((item) => item.category !== null && slotOf(item.category) === 'outerwear').map((item) => item.id),
+  );
+
+  const pick = <T extends { id: string }>(items: readonly T[], pinnedId: string | null): T | undefined => {
+    if (pinnedId !== null && items[0]?.id === pinnedId) return items[0];
     return items.at(Math.floor(rng() * items.length));
   };
   let drawsLeft = limit * ATTEMPTS_PER_CANDIDATE;
   let attemptCount = 0;
 
   function draw(excludeRecentlyWorn: boolean, remaining: number, maxDraws: number): Outfit[] {
+    // M4: an admissible pinned garment is kept even if it was worn recently — a wear logged
+    // between the "Wear it" tap and the pinned day shouldn't silently drop it from every draw.
     const pool = (items: readonly RuleGarment[]): readonly RuleGarment[] =>
-      withPinnedFirst(
-        items.filter((item) => fitsAlone(item, ctx) && !(excludeRecentlyWorn && isRecentlyWorn(item, ctx.today))),
-        pinnedId,
+      items.filter(
+        (item) =>
+          fitsAlone(item, ctx) &&
+          (admissiblePinIds.has(item.id) || !(excludeRecentlyWorn && isRecentlyWorn(item, ctx.today))),
       );
     const shoes = pool(groups.shoes);
     const tops = pool(groups.top);
@@ -384,14 +407,28 @@ export function generateCandidates(
     const seen = new Set<string>();
     for (let attempt = 0; attempt < maxDraws && results.length < remaining; attempt += 1) {
       drawsLeft -= 1;
-      const forcePinned = pinnedId !== null && attemptCount % PIN_ATTEMPT_STRIDE === 0;
+      // Round-robins the forced garment across every admissible pin, one per forced attempt, so
+      // several simultaneous pins each get a fair share of the bias rather than only the first.
+      const forcedPin =
+        admissiblePins.length > 0 && attemptCount % PIN_ATTEMPT_STRIDE === 0
+          ? (admissiblePins.at(Math.floor(attemptCount / PIN_ATTEMPT_STRIDE) % admissiblePins.length) ?? null)
+          : null;
       attemptCount += 1;
-      const outfit: (RuleGarment | undefined)[] = [pick(shoes, forcePinned)];
-      if (rng() * totalWeight < pairWeight) outfit.push(pick(tops, forcePinned), pick(bottoms, forcePinned));
-      else outfit.push(pick(onePieces, forcePinned));
-      if (needsOuterwear) outfit.push(pick(outerwear, forcePinned));
+      const pinnedId = forcedPin?.id ?? null;
+
+      // I1: a pinned outerwear piece is tried even when the weather doesn't call for outerwear —
+      // `passesRules` allows outerwear on any day, it only requires it when cold.
+      const drawOuterwear = needsOuterwear || (pinnedId !== null && outerwearPinIds.has(pinnedId));
+
+      const outfit: (RuleGarment | undefined)[] = [pick(withPinnedFirst(shoes, pinnedId), pinnedId)];
+      if (rng() * totalWeight < pairWeight) {
+        outfit.push(pick(withPinnedFirst(tops, pinnedId), pinnedId), pick(withPinnedFirst(bottoms, pinnedId), pinnedId));
+      } else {
+        outfit.push(pick(withPinnedFirst(onePieces, pinnedId), pinnedId));
+      }
+      if (drawOuterwear) outfit.push(pick(withPinnedFirst(outerwear, pinnedId), pinnedId));
       // "none" weighs as much as every extra together.
-      if (extras.length > 0 && rng() < 0.5) outfit.push(pick(extras, forcePinned));
+      if (extras.length > 0 && rng() < 0.5) outfit.push(pick(withPinnedFirst(extras, pinnedId), pinnedId));
 
       const pieces = outfit.filter((item) => item !== undefined);
       const key = pieces

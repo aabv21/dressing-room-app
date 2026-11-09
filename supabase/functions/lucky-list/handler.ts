@@ -119,7 +119,9 @@ const locationOf = (profile: ProfileRow | null): string | null =>
  * The cache key. The closet fingerprint hashes each candidate garment's id and rating-relevant
  * columns (not `updated_at` or `last_worn_at`, which logging a wear bumps; ruling P4-R6), so
  * wearing an outfit doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit
- * instead. `pinned_on` is in the tuple (task 2) so a new "Wear it" pin recomputes the list.
+ * instead. The tuple carries whether `pinned_on` equals *this request's* date, not the raw value
+ * (I2): "Wear it" sets `pinned_on` to tomorrow, and the raw date would otherwise change today's
+ * fingerprint too, spending quota and re-ranking a list that "Wear it" was never meant to touch.
  */
 function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, input: LuckyInput): Promise<string> {
   // Only garments that can be candidates count (P4-R15): an upload still being read (no category
@@ -127,7 +129,18 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
   const fingerprint = garments
     .filter((g) => g.category !== null && g.status === 'available')
     .sort(byId)
-    .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status, g.pinned_on]);
+    .map((g) => [
+      g.id,
+      g.category,
+      g.colors,
+      g.pattern,
+      g.formality,
+      g.fit,
+      g.seasons,
+      g.warmth,
+      g.status,
+      g.pinned_on === input.date,
+    ]);
   return sha256Hex(
     JSON.stringify({
       v: CACHE_VERSION,
@@ -143,11 +156,9 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
 /**
  * The garments `pinned_on` equals the request's date, among the ones `generateCandidates` can
  * ever place (`available` and categorized); a pin on a garment that's in the laundry, lent,
- * donated, or still being read simply has no effect (the brief's "a pin on a garment in the
- * laundry has no effect"). `generateCandidates` only takes one hint garment, so when several are
- * pinned the first by id seeds the draw; `keepPinned` below still accepts a candidate containing
- * any pinned garment, so a seed drawing towards one pinned piece doesn't starve the others out of
- * the final list — they can still turn up in an unforced draw.
+ * donated, or still being read simply has no effect. `keepPinned` below accepts a candidate
+ * containing any one of these, so a seeded draw biased towards one pinned piece doesn't starve
+ * the others out of the final list — they can still turn up in an unforced draw.
  */
 function pinnedFor(garments: readonly RuleGarment[], date: string): RuleGarment[] {
   return garments.filter((g) => g.category !== null && g.status === 'available' && g.pinned_on === date);
@@ -155,8 +166,8 @@ function pinnedFor(garments: readonly RuleGarment[], date: string): RuleGarment[
 
 /**
  * Candidates containing any of `pinned`, when at least one candidate does; otherwise `candidates`
- * unfiltered (the brief's "a pin with no complete candidate gives the normal list" — the pin is
- * simply ignored rather than emptying today's list).
+ * unfiltered — a pin with no complete rule-passing candidate behind it is simply ignored, rather
+ * than emptying today's list.
  */
 function keepPinned(candidates: readonly Outfit[], pinned: readonly RuleGarment[]): Outfit[] {
   if (pinned.length === 0) return [...candidates];
@@ -327,10 +338,15 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
     // `generateCandidates` sets `outerwearAvailable` from the closet itself (ruling P4-R7).
     const rules: RuleContext = { occasion: input.occasion, season: seasonOf(input.date, lat), weather, today: input.date };
     const pinned = pinnedFor(garments, input.date);
-    // Only one hint garment biases the draw (the first pinned by id); `keepPinned` still accepts
-    // any pinned garment, so a second pin can surface unforced.
-    const pinnedHint = pinned.length > 0 ? [...pinned].sort(byId)[0]?.id ?? null : null;
-    const generated = generateCandidates(garments, rules, userId + input.date, undefined, pinnedHint);
+    // `generateCandidates` rotates the forced draw across every pinned garment that's admissible
+    // for this context on its own; `keepPinned` then accepts a candidate containing any of them.
+    const generated = generateCandidates(
+      garments,
+      rules,
+      userId + input.date,
+      undefined,
+      pinned.map((g) => g.id),
+    );
     const candidates = selectForRanking(keepPinned(generated, pinned), input.date);
     const { ranked, complete } = await rank(
       { env, fetch: fetchFn, rand: deps.rand ?? Math.random, profile, occasion: input.occasion, weather, rules, startedAt },
