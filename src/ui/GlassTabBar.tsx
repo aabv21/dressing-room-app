@@ -90,7 +90,10 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
                 onPress={onPress}
                 style={styles.tab}
               >
-                <View style={[styles.tabContent, selected ? styles.tabActive : null]}>
+                {/* The lens is always mounted and only fades in: Android draws a background or
+                    shadow added on selection without the border radius. */}
+                <View style={[styles.lens, { opacity: selected ? 1 : 0 }]} pointerEvents="none" />
+                <View style={styles.tabContent}>
                   <Icon size={18} color={selected ? '#6d28d9' : '#5f5b6b'} />
                   <Text
                     style={[styles.label, { color: selected ? '#6d28d9' : '#5f5b6b' }]}
@@ -147,13 +150,18 @@ const styles = StyleSheet.create({
   tabContent: {
     width: '100%',
     height: '100%',
-    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
   // The lens doesn't clip, so its outset shadow can sit on the view itself without an opaque fill.
-  tabActive: {
+  lens: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 23,
     backgroundColor: 'rgba(255,255,255,0.9)',
     boxShadow: '0px 2px 8px rgba(80,40,160,0.16), inset 0px 1px 0px #ffffff',
   },
