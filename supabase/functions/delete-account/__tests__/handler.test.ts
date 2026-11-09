@@ -275,7 +275,7 @@ describe('delete-account', () => {
 
   test.each([
     ['GoTrue’s 403 user_not_found', () => json(403, { code: 403, error_code: 'user_not_found', msg: 'gone' })],
-    ['a 404', () => json(404, { code: 404, msg: 'User not found' })],
+    ['a 404 with user_not_found', () => json(404, { code: 404, error_code: 'user_not_found', msg: 'User not found' })],
   ])('answers deleted without touching anything when the caller check gives %s', async (_name, whoami) => {
     const state = world({ whoami });
     const { fetch: fetchFn, steps } = fakeFetch(state);
@@ -290,6 +290,7 @@ describe('delete-account', () => {
 
   test.each([
     ['answers 500', () => json(500, { msg: 'boom' })],
+    ['answers a bare 404 (a misrouted gateway)', () => json(404, { message: 'no Route matched with those values' })],
     ['answers 403 for another reason', () => json(403, { code: 403, error_code: 'session_not_found', msg: 'no session' })],
     ['is unreachable', () => Promise.reject(new TypeError('fetch failed'))],
     ['names another user', () => json(200, { id: OTHER_ID })],

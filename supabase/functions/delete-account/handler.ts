@@ -10,8 +10,9 @@
 //      from `auth.users`, `apple_tokens` included.
 // Steps 1–3 use the service role. Safe to retry: a failure in step 0, 1 or 3 answers 500 with the
 // user still there, so a retry starts over with whatever is left; once the user is gone, a retry
-// (the caller's token is still valid until it expires) stops at step 0 and answers `deleted`. Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under
-// Node and `index.ts` serves it under Deno. Logs carry only outcome words.
+// (the caller's token is still valid until it expires) stops at step 0 and answers `deleted`.
+// Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
+// `index.ts` serves it under Deno. Logs carry only outcome words.
 
 import { type AppleEnv, revokeToken } from '../_shared/apple.ts';
 import { isRecord } from '../_shared/extraction.ts';
@@ -85,8 +86,9 @@ async function listObjects(env: SupabaseEnv, fetchFn: typeof fetch, prefix: stri
 
 /**
  * Whether Auth still knows the caller, asked with the caller's own token: true for the token's
- * user, false when Auth says the user doesn't exist (a 404, or its 403 `user_not_found`). Throws on
- * anything else, so nothing is deleted on an answer that can't be trusted.
+ * user, false only when Auth says the user doesn't exist (`error_code: 'user_not_found'`). Throws on
+ * anything else, a bare 404 included (a misrouted gateway answers 404 too), so nothing is reported
+ * deleted on an answer that can't be trusted.
  */
 async function callerExists(env: SupabaseEnv, fetchFn: typeof fetch, auth: string, userId: string): Promise<boolean> {
   const response = await fetchFn(`${env.supabaseUrl}/auth/v1/user`, { headers: userHeaders(env, auth) });
@@ -96,7 +98,7 @@ async function callerExists(env: SupabaseEnv, fetchFn: typeof fetch, auth: strin
   } catch {
     body = null;
   }
-  if (response.status === 404 || (isRecord(body) && body.error_code === 'user_not_found')) return false;
+  if (isRecord(body) && body.error_code === 'user_not_found') return false;
   if (!response.ok) throw new UpstreamError(`auth user: HTTP ${String(response.status)}`);
   if (!isRecord(body) || typeof body.id !== 'string' || body.id.toLowerCase() !== userId) {
     throw new UpstreamError('auth user: not the caller');

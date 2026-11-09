@@ -578,8 +578,8 @@ inside them, never in `src/`.
   never leaves the server.
 - **`delete-account`** — in this order:
   0. confirms the caller with `GET /auth/v1/user` and the caller's own token, before anything
-     irreversible; Auth's `user_not_found` (or a 404) means an earlier attempt already finished, so
-     it answers `deleted` and touches nothing, and any other failure answers 500;
+     irreversible; only Auth's `user_not_found` means an earlier attempt already finished, so it
+     answers `deleted` and touches nothing; any other failure, a bare 404 included, answers 500;
   1. with the service role, lists every object under `garments/{uid}/` (Storage's list, 1000 entries
      a page, the garment folders 5 at a time) and only then removes them, 1000 paths per call;
   2. revokes the `apple_tokens` refresh token with Apple, if there is one — a failed revoke (or a
