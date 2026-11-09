@@ -53,7 +53,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 - Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome, such as the tab bar, anchored buttons, the score ring and calendar cells, stops between 1.2× and 1.6×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
 - Jev calibration: `pnpm calibrate export|collect|eval` turns hand-labeled saved outfits into an agreement report (Spearman's ρ, band accuracy, a confusion matrix) with suggested weights, bands and confidence aggregate. Real labels stay in gitignored files.
 - Nightly hosted backup: `pnpm backup` dumps the database and downloads every photo with a sha256 manifest to the owner's Mac, keeping the newest 14, with a tested restore.
-- Release config: `eas.json` profiles for development, internal preview and store builds, and EAS Submit to TestFlight and the Play internal track.
+- Release config: `eas.json` profiles for development, internal preview and store builds, each reading the app's public `EXPO_PUBLIC_*` values from its EAS environment, and EAS Submit to TestFlight and the Play internal track.
 - Fixture mode for performance testing: with `EXPO_PUBLIC_PERF_FIXTURES_URL` set, the Closet grid shows 500 generated thumbnails served from your computer, a disabled upload CTA, and a frame-stats HUD (frames, dropped frames, p95 and median frame time, inferred refresh rate). Tap the HUD to reset it; long-press it to also clear the image caches for a cold pass.
 
 ## Architecture

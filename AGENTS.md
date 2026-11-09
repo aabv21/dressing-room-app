@@ -183,10 +183,18 @@ The local backend is Supabase running in Docker (via OrbStack), driven only thro
 
 `eas.json` holds the EAS Build and EAS Submit configuration; `app.json` has no `extra.eas.projectId` or top-level `owner` yet — `eas init` sets both, in the owner session below.
 
+- `cli.version: ">= 27.0.0"` — EAS CLI stops with an error when the installed version is older than the major this config was written against.
 - Three build profiles: `development` (`distribution: "internal"`, `developmentClient: true`, for a build with `expo-dev-client`), `preview` (`distribution: "internal"` too; on iOS that's an ad-hoc build by default since this is a regular Apple Developer membership, not an Enterprise one, so `ios.enterpriseProvisioning` doesn't apply; on Android `android.buildType: "apk"` so the artifact installs directly instead of needing a store), and `production` (`distribution: "store"`, `autoIncrement: true` so every build bumps the developer-facing build number without a commit).
+- Each profile names its EAS environment (`"environment": "development"`, `"preview"` or `"production"`), and EAS Build reads that environment's variables. This is where a cloud build gets the four `EXPO_PUBLIC_*` values the app inlines at build time: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`. `.env.local` is gitignored, so it never reaches EAS, and a build without them crashes at launch (`src/lib/supabase.ts` throws on a missing URL or key). They're public values (inlined into the bundle), so they use `plaintext` visibility; nothing secret goes there. Set them once per environment after `eas init`, with the hosted project's values:
+
+  ```bash
+  eas env:set --name EXPO_PUBLIC_SUPABASE_URL --value https://<ref>.supabase.co --visibility plaintext --environment development --environment preview --environment production
+  ```
+
+  and the same for the other three, then check them with `eas env:list --environment production`. `eas env:set` creates a variable or updates an existing one.
 - `cli.appVersionSource: "remote"` — EAS Build, not this repo, is the source of truth for the developer-facing build number/version code; `app.json` keeps only the user-facing `version` ("1.0.0") and never gains a hand-set `ios.buildNumber` or `android.versionCode`.
 - `submit.production` is EAS Submit's config for `eas submit`. NOTE: `ios.ascAppId` is a placeholder (`REPLACE_IN_INTEGRATION_SESSION`) — the owner session fills in the real App Store Connect app ID once the app record exists there (`eas submit` also accepts it as a prompt, but a pinned value avoids re-asking in CI later). NOTE: `android.track: "internal"` is the deliberate starting Google Play track (internal testing); the owner session promotes to a wider track only once internal testing passes.
-- Owner-session order for a release (detailed under "Owner session" below): the final app name and bundle id (see Conventions' "App identity" note — `com.aabv21.dressingroom` is provisional) → `eas init` → `eas build --profile <development|preview|production> --platform <ios|android>` → `eas submit --profile production --platform <ios|android>` → add testers to the TestFlight internal group (iOS) and confirm testers on the Play internal track (Android).
+- Owner-session order for a release (detailed under "Owner session" below): the final app name and bundle id (see Conventions' "App identity" note — `com.aabv21.dressingroom` is provisional) → the hosted project and its secrets → `eas init` → the EAS environment variables above → `eas build --profile <development|preview|production> --platform <ios|android>` → `eas submit --profile production --platform <ios|android>` → add testers to the TestFlight internal group (iOS) and confirm testers on the Play internal track (Android).
 
 ## Owner session
 
