@@ -424,6 +424,13 @@ describe('rating', () => {
     expect(count(second.calls, 'jev')).toBe(1);
   });
 
+  test('the quota rpc failing → 500 with no Jev or Claude call and nothing cached (fails closed)', async () => {
+    const w = world({ fail: { quota: json(500, { message: 'unavailable' }) } });
+    const { response, calls } = await rate(w);
+    expect(response.status).toBe(500);
+    expect(count(calls, 'jev') + count(calls, 'claude') + count(calls, 'cachePut')).toBe(0);
+  });
+
   test('quota false → 429 over_quota with no Jev call and nothing cached', async () => {
     const w = world({ quota: false });
     const { response, body, calls } = await rate(w);

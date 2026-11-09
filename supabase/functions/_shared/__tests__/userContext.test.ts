@@ -189,6 +189,12 @@ describe('loadProfile and loadGarments', () => {
     expect(JSON.stringify(profile)).not.toContain('Ignore');
   });
 
+  test('loadGarments refuses an id that is not a uuid before any request, so no PostgREST filter can be injected', async () => {
+    const { fetch, calls } = fakeFetch(() => json(200, []));
+    await expect(loadGarments(ENV, fetch, AUTH, [GARMENT_A, `${GARMENT_B}),or=(user_id.neq.0`])).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
   test('loadProfile answers null when there is no row', async () => {
     const { fetch } = fakeFetch(() => json(200, []));
     expect(await loadProfile(ENV, fetch, AUTH)).toBeNull();
@@ -417,6 +423,14 @@ describe('consumeQuota and the caches', () => {
     expect(JSON.parse(call?.body ?? '')).toEqual({ p_user_id: USER_ID, p_kind: 'rating', p_limit: 50 });
     expect(call?.headers.get('authorization')).toBe(`Bearer ${ENV.serviceRoleKey}`);
   });
+
+  test.each([['the string "true"', 'true'], ['1', 1], ['null', null], ['[true]', [true]], ['{}', {}]])(
+    'consumeQuota refuses a 200 whose body is %s, not exactly true',
+    async (_label, body) => {
+      const { fetch } = fakeFetch(() => json(200, body));
+      expect(await consumeQuota(ENV, fetch, USER_ID, 'rating', 50)).toBe(false);
+    },
+  );
 
   test('consumeQuota throws when the rpc fails', async () => {
     const { fetch } = fakeFetch(() => json(500, { message: 'boom' }));
