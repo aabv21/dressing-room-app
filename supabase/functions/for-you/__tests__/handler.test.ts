@@ -159,6 +159,8 @@ type World = {
   cache: Map<string, { result: unknown; created_at: string }>;
   /** How long the closet read takes, in ms (only with fake timers). */
   closetDelayMs?: number;
+  /** Routes that never answer: their calls end only when the caller aborts them. */
+  hang?: readonly RouteName[];
   fail?: Partial<Record<RouteName, Response>>;
 };
 
@@ -189,6 +191,13 @@ function fakeFetch(w: World) {
     calls.push({ route, url, body });
     const failure = new Map(Object.entries(w.fail ?? {})).get(route);
     if (failure !== undefined) return failure.clone();
+    if (w.hang?.includes(route) === true) {
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'));
+        });
+      });
+    }
     switch (route) {
       case 'closet':
         if (w.closetDelayMs !== undefined) await new Promise((resolve) => setTimeout(resolve, w.closetDelayMs));
@@ -325,10 +334,14 @@ describe('too small', () => {
   test.each([
     ['an empty closet', []],
     ['two garments', closet().slice(0, 2)],
-    ['everything in the laundry', closet().map((row) => ({ ...row, status: 'laundry' }))],
     [
-      'two available, the rest lent or still being read',
-      [...closet().slice(0, 2), garment(7, 'jeans', { status: 'lent' }), garment(8, null)],
+      'one available, one in the laundry, the rest donated or still being read',
+      [
+        garment(1, 't_shirt'),
+        garment(3, 'jeans', { colors: ['navy'], status: 'laundry' }),
+        garment(5, 'sneakers', { status: 'donated' }),
+        garment(8, null),
+      ],
     ],
   ])('%s → too_small with no cache, quota or model call', async (_label, garments) => {
     const { response, body, calls } = await forYou(world({ garments }));
@@ -342,6 +355,23 @@ describe('too small', () => {
     const garments = [...closet().slice(0, 2), garment(9, 'sneakers', { status: 'donated' })];
     const { body } = await forYou(world({ garments }));
     expect(body).toEqual({ kind: 'too_small' });
+  });
+
+  test('two available plus ten in the laundry is a wardrobe, not too_small (P5-R11)', async () => {
+    const laundry = Array.from({ length: 10 }, (_, i) => {
+      const category: GarmentCategory = (['jeans', 'sneakers', 'shirt', 'pants', 'loafers'] as const)[i % 5] ?? 'jeans';
+      return garment(30 + i, category, { status: 'laundry', colors: [i % 2 === 0 ? 'navy' : 'black'] });
+    });
+    const { body } = await forYou(world({ garments: [...closet().slice(0, 2), ...laundry] }));
+    expect(body).toMatchObject({ kind: 'ok' });
+    expect((body as OkBody).ideas.length).toBeGreaterThan(0);
+  });
+
+  test('everything in the laundry or lent out still gets ideas', async () => {
+    const away = closet().map((row, i) => ({ ...row, status: i % 2 === 0 ? 'laundry' : 'lent' }));
+    const { body: awayBody } = await forYou(world({ garments: away }));
+    const { body } = await forYou(world());
+    expect(awayBody).toEqual(body);
   });
 });
 
@@ -487,6 +517,19 @@ describe('the ideas', () => {
   });
 });
 
+describe('the wardrobe (P5-R9)', () => {
+  test('a garment in the laundry still combines in the gain and still owns its archetype', async () => {
+    // Both pairs of shoes away: with only available pieces no outfit would be complete.
+    const isShoe = (row: Row): boolean => ['sneakers', 'loafers'].includes(String(row.category));
+    const w = world({ garments: closet().map((row) => (isShoe(row) ? { ...row, status: 'laundry' } : row)) });
+    const { body } = await forYou(w);
+    expect(ids(body)).toEqual(expectedRanking(closet()).map(({ archetype }) => archetype.id));
+    expect((body as OkBody).ideas.every((idea) => idea.newOutfits > 0)).toBe(true);
+    // The white sneakers in the laundry still own the white-sneakers archetype.
+    expect(ids(body)).not.toContain('white-sneakers');
+  });
+});
+
 describe('donated garments', () => {
   test('a donated garment adds no gain and owns no archetype: the ideas match the closet without it', async () => {
     const donated = [
@@ -550,16 +593,23 @@ describe('cache and quota', () => {
     expect(w.cache.size).toBe(2);
   });
 
-  test('logging a wear keeps the key; a garment edit, the laundry or a profile edit changes it', async () => {
+  test('logging a wear, the laundry or lending keeps the key; a garment edit or a profile edit changes it', async () => {
     const w = world();
     await forYou(w);
     const worn = { last_worn_at: '2026-11-07T10:00:00Z', updated_at: '2026-11-07T10:00:00Z' };
     w.garments = closet().map((row, i) => (i === 0 ? { ...row, ...worn } : row));
     expect(count((await forYou(w)).calls, 'quota')).toBe(0);
+    const away = new Map([
+      [1, 'laundry'],
+      [2, 'lent'],
+    ]);
+    w.garments = closet().map((row, i) => ({ ...row, status: away.get(i) ?? row.status }));
+    const laundry = await forYou(w);
+    expect(count(laundry.calls, 'quota')).toBe(0);
+    expect(w.cache.size).toBe(1);
 
     const changes: [string, () => void][] = [
       ['an edit', () => (w.garments = closet().map((row, i) => (i === 0 ? { ...row, colors: ['cream'] } : row)))],
-      ['the laundry', () => (w.garments = closet().map((row, i) => (i === 1 ? { ...row, status: 'laundry' } : row)))],
       ['a profile edit', () => (w.profile = { ...PROFILE, updated_at: '2026-11-07T00:00:00Z' })],
     ];
     for (const [, change] of changes) {
@@ -597,9 +647,49 @@ describe('cache and quota', () => {
     expect(count(calls, 'jev') + count(calls, 'claude') + count(calls, 'cachePut')).toBe(0);
     expect(outcomes()).toEqual([{ outcome: 'degraded' }, { outcome: 'stale' }]);
   });
+
+  test('over the quota with an entry over 7 days old for the same closet → that entry (stale)', async () => {
+    const w = world();
+    const first = await forYou(w);
+    w.quota = false;
+    const { response, body } = await forYou(w, forYouRequest(), NOW + 8 * DAY_MS);
+    expect(response.status).toBe(200);
+    expect(body).toEqual(first.body);
+    expect(outcomes()).toEqual([{ outcome: 'ranked' }, { outcome: 'stale' }]);
+  });
+
+  test('the quota RPC failing with an expired entry for the same closet → 500, not the entry', async () => {
+    const w = world();
+    await forYou(w);
+    w.fail = { quota: json(500, {}) };
+    const { response, body } = await forYou(w, forYouRequest(), NOW + 8 * DAY_MS);
+    expect(response.status).toBe(500);
+    expect(body).toEqual({ error: 'internal' });
+  });
+
+  test('over the quota with an expired entry for another key only → 429', async () => {
+    const w = world();
+    await forYou(w);
+    w.quota = false;
+    w.garments = closet().map((row, i) => (i === 0 ? { ...row, colors: ['cream'] } : row));
+    const { response } = await forYou(w, forYouRequest(), NOW + 8 * DAY_MS);
+    expect(response.status).toBe(429);
+    expect(outcomes()).toEqual([{ outcome: 'ranked' }, { outcome: 'over_quota' }]);
+  });
+
+  test('a season change is a miss, even inside the 7 days (P5-R10)', async () => {
+    const w = world();
+    const autumn = Date.parse('2026-11-28T09:00:00Z');
+    await forYou(w, forYouRequest(), autumn);
+    const sameSeason = await forYou(w, forYouRequest(), autumn + DAY_MS);
+    expect(count(sameSeason.calls, 'quota')).toBe(0);
+    const winter = await forYou(w, forYouRequest(), Date.parse('2026-12-01T09:00:00Z'));
+    expect(count(winter.calls, 'quota')).toBe(1);
+    expect(w.cache.size).toBe(2);
+  });
 });
 
-describe('fit budget (P4-R11)', () => {
+describe('latency budget (P4-R11, the lines deadline)', () => {
   beforeEach(() => {
     jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
   });
@@ -641,6 +731,51 @@ describe('fit budget (P4-R11)', () => {
     expect(count(fake.calls, 'claude')).toBe(1);
     expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
     expect(outcomes()).toEqual([{ outcome: 'degraded' }]);
+  });
+
+  /** Runs the handler under fake time and reports when it answered, in ms since the request. */
+  async function timed(w: World, ms: number) {
+    const fake = fakeFetch(w);
+    const answered = { after: Number.POSITIVE_INFINITY };
+    const pending = handleForYou(forYouRequest(), { env: ENV, fetch: fake.fetch }).then((response) => {
+      answered.after = Date.now() - NOW;
+      return response;
+    });
+    await drive(ms);
+    const response = await pending;
+    return { response, body: (await response.json()) as OkBody, calls: fake.calls, answeredAfter: answered.after };
+  }
+
+  test('every Jev call and Claude hanging: the answer still lands before 40 s, with templates (I1)', async () => {
+    // The closet read takes 14.9 s, so a first wave of fits starts just inside the budget and runs
+    // to its 10 s timeout; Claude then gets only what's left before the 38 s lines deadline.
+    const w = world({ closetDelayMs: 14_900, hang: ['jev', 'claude'] });
+    const { response, body, calls, answeredAfter } = await timed(w, 45_000);
+    expect(response.status).toBe(200);
+    expect(answeredAfter).toBeLessThan(40_000);
+    expect(answeredAfter).toBeGreaterThanOrEqual(37_000);
+    expect(count(calls, 'jev')).toBe(5);
+    expect(count(calls, 'claude')).toBe(1);
+    expect(body.ideas.length).toBe(MAX_IDEAS);
+    expect(body.ideas.every((idea) => idea.line === null && idea.lineKey !== null)).toBe(true);
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
+  });
+
+  test('Jev and Claude hanging from the start: two fit waves, then Claude cut at the 38 s deadline', async () => {
+    const w = world({ hang: ['jev', 'claude'] });
+    const { calls, answeredAfter } = await timed(w, 45_000);
+    expect(count(calls, 'jev')).toBe(FIT_CANDIDATES);
+    expect(answeredAfter).toBeLessThan(40_000);
+  });
+
+  test('2 s or less left before the lines deadline → no Claude call, every idea on its template', async () => {
+    const w = world({ closetDelayMs: 36_500 });
+    const { body, calls, answeredAfter } = await timed(w, 40_000);
+    expect(count(calls, 'jev')).toBe(0);
+    expect(count(calls, 'claude')).toBe(0);
+    expect(answeredAfter).toBeLessThan(37_000);
+    expect(body.ideas.every((idea) => idea.line === null && idea.lineKey !== null)).toBe(true);
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
   });
 });
 

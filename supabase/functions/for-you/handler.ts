@@ -1,9 +1,9 @@
 // The `for-you` Edge Function's request handler: 3–5 "what you're missing" ideas for a signed-in
 // user. The archetypes the user doesn't own are ranked by how many new outfits each makes with
-// the available closet (`rankByGain`); up to 10 of them, spread over the slots (`fitCandidates`),
-// get a Jev fit for the user's body and styles; `finalRank` keeps the best gain × fit, at most 2
-// per slot; then one Claude request writes every idea's line, with a template key the app renders
-// when a line is missing.
+// the wardrobe, every garment that isn't donated (`rankByGain`); up to 10 of them, spread over
+// the slots (`fitCandidates`), get a Jev fit for the user's body and styles; `finalRank` keeps
+// the best gain × fit, at most 2 per slot; then one Claude request writes every idea's line, with
+// a template key the app renders when a line is missing.
 // Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node
 // and `index.ts` serves it under Deno.
 //
@@ -17,6 +17,7 @@ import {
   GARMENT_COLORS,
   type GarmentCategory,
   type GarmentColor,
+  type Season,
 } from '../_shared/catalog.ts';
 import { isRecord } from '../_shared/extraction.ts';
 import {
@@ -38,6 +39,7 @@ import {
   cacheFresh,
   cachePut,
   cacheRead,
+  CLAUDE_TIMEOUT_MS,
   consumeQuota,
   type FnEnv,
   loadGarments,
@@ -85,11 +87,19 @@ type Outcome = 'cached' | 'stale' | 'too_small' | 'ranked' | 'degraded' | 'empty
 export const FOR_YOU_DAILY_LIMIT = 1;
 /** An entry older than this is a miss, so the ideas follow the season and the user's taste at least weekly. */
 export const FOR_YOU_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-/** Fewer available garments than this answer `too_small`, with no quota or model call. */
-export const MIN_AVAILABLE = 3;
+/** Fewer wardrobe garments (categorized, not donated) than this answer `too_small`, with no quota or model call. */
+export const MIN_GARMENTS = 3;
 /** No Jev fit call starts once this long has passed since the request arrived (as lucky-list's, P4-R11). */
 export const FIT_BUDGET_MS = 15_000;
-const CACHE_VERSION = 1;
+/**
+ * The Claude lines call must finish this long after the request arrived: its timeout is what's left,
+ * at most `CLAUDE_TIMEOUT_MS`, so the answer lands well inside the app's 45 s function deadline.
+ */
+export const LINES_DEADLINE_MS = 38_000;
+/** With no more than this left before `LINES_DEADLINE_MS`, Claude is skipped and every idea gets its template. */
+export const MIN_LINES_TIMEOUT_MS = 2_000;
+// Bump whenever the archetypes, the gain rules or the response shape change: it's what invalidates the stored entries.
+const CACHE_VERSION = 2;
 
 const LANGUAGES = ['en', 'es'] as const satisfies readonly Language[];
 
@@ -116,19 +126,36 @@ async function readLanguage(request: Request): Promise<Language | null> {
 const byId = (a: RuleGarment, b: RuleGarment): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /**
- * The cache key: the language, `profile.updated_at` (clothing type, body and styles) and a closet
- * fingerprint of every categorized garment that isn't donated — id and rating-relevant columns, not
- * `updated_at` or `last_worn_at`, which logging a wear bumps (as lucky-list's, ruling P4-R6). A
- * garment in the laundry or lent out counts too: it adds no outfit, but it still means the user
- * owns that archetype, so its status is part of the fingerprint. `pinned_on` is the lucky list's
+ * For you looks at the wardrobe, not at today: a garment in the laundry or lent out is still the
+ * user's, so it owns its archetype and combines in the gain like an available one (ruling P5-R9).
+ * Only a donated garment is out.
+ */
+function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
+  return garments
+    .filter((g) => g.status !== 'donated')
+    .map((g) => (g.status === 'available' ? g : { ...g, status: 'available' }));
+}
+
+/**
+ * The cache key: the language, the season, `profile.updated_at` (clothing type, body and styles)
+ * and a fingerprint of the wardrobe's categorized garments — id and rating-relevant columns, not
+ * `status` (the laundry and lending don't change For you), nor `updated_at` or `last_worn_at`,
+ * which logging a wear bumps (as lucky-list's, ruling P4-R6). `pinned_on` is the lucky list's
  * business and stays out.
  */
-function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, language: Language): Promise<string> {
-  const fingerprint = garments
-    .filter((g) => g.category !== null && g.status !== 'donated')
+function cacheKey(
+  wardrobe: readonly RuleGarment[],
+  profile: ProfileRow | null,
+  language: Language,
+  season: Season,
+): Promise<string> {
+  const fingerprint = wardrobe
+    .filter((g) => g.category !== null)
     .sort(byId)
-    .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status]);
-  return sha256Hex(JSON.stringify({ v: CACHE_VERSION, fingerprint, profile: profile?.updated_at ?? null, language }));
+    .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth]);
+  return sha256Hex(
+    JSON.stringify({ v: CACHE_VERSION, fingerprint, profile: profile?.updated_at ?? null, language, season }),
+  );
 }
 
 const isStringRecord = (value: unknown): value is Record<string, string> =>
@@ -191,15 +218,21 @@ function fitAll(ctx: FitContext, candidates: readonly ForYouIdea[]): Promise<(Fo
   });
 }
 
-/** Every idea's Claude line by archetype id; empty when the request failed or nothing parsed. */
+/**
+ * Every idea's Claude line by archetype id; empty when the request failed, timed out or nothing
+ * parsed, or when `timeoutMs` is too short to be worth a call (`MIN_LINES_TIMEOUT_MS`).
+ */
 async function writeLines(
   env: FnEnv,
   fetchFn: typeof fetch,
   ideas: readonly RankedIdea[],
   language: Language,
+  timeoutMs: number,
 ): Promise<Map<string, string>> {
+  if (timeoutMs <= MIN_LINES_TIMEOUT_MS) return new Map<string, string>();
   const ids = ideas.map(({ archetype }) => archetype.id);
-  return parseLines(await runClaude(env, fetchFn, buildLinesRequest(ideas, language)), ids) ?? new Map<string, string>();
+  const body = await runClaude(env, fetchFn, buildLinesRequest(ideas, language), timeoutMs);
+  return parseLines(body, ids) ?? new Map<string, string>();
 }
 
 function toCard(idea: RankedIdea, line: string | undefined, clothingType: ClothingType, language: Language): ForYouCard {
@@ -237,11 +270,17 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
   try {
     const [garments, profile] = await Promise.all([loadGarments(env, fetchFn, auth), loadProfile(env, fetchFn, auth)]);
 
-    // A garment still being read (no category yet) can't combine, so it doesn't count.
-    const available = garments.filter((g) => g.category !== null && g.status === 'available');
-    if (available.length < MIN_AVAILABLE) return reply('too_small', 200, { kind: 'too_small' } satisfies ForYouResponse);
+    const wardrobe = wardrobeOf(garments);
+    // A garment still being read (no category yet) can't combine, so it doesn't count (ruling P5-R11).
+    if (wardrobe.filter((g) => g.category !== null).length < MIN_GARMENTS) {
+      return reply('too_small', 200, { kind: 'too_small' } satisfies ForYouResponse);
+    }
 
-    const key = await cacheKey(garments, profile, language);
+    // NOTE: the season comes from the UTC date and the profile's stored latitude (northern without
+    // one): a city typed without coordinates isn't geocoded here, so a southern-hemisphere user who
+    // typed one gets northern seasons. Upgrade path: `getLocalWeather`'s geocoded latitude.
+    const season = seasonOf(new Date(now()).toISOString().slice(0, 10), profile?.city_lat ?? null);
+    const key = await cacheKey(wardrobe, profile, language, season);
     const row = await cacheRead(env, fetchFn, 'for_you_cache', userId, key);
     const stored = row === null ? null : fromCache(row.result);
     if (row !== null && stored !== null && cacheFresh(row, now(), FOR_YOU_TTL_MS)) return reply('cached', 200, stored);
@@ -254,12 +293,7 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
     }
 
     const clothingType = profile?.clothing_type ?? 'everything';
-    // NOTE: the season comes from the UTC date and the profile's stored latitude (northern without
-    // one); a city typed without coordinates isn't geocoded here, and a season that turns while an
-    // entry is cached shows from the next miss (at most 7 days). Upgrade path: `getLocalWeather`'s
-    // latitude and the season in the cache key.
-    const season = seasonOf(new Date(now()).toISOString().slice(0, 10), profile?.city_lat ?? null);
-    const ranked = rankByGain(garments, clothingType, season);
+    const ranked = rankByGain(wardrobe, clothingType, season);
     if (ranked.length === 0) {
       const empty: CachedForYou = { kind: 'ok', ideas: [], degraded: false };
       await cachePut(env, fetchFn, 'for_you_cache', userId, key, empty, now());
@@ -270,7 +304,8 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
     const user = ratingState(profile, { occasion: null, weather: null, season }, []).user;
     const fitted = await fitAll({ env, fetch: fetchFn, user, startedAt, now }, candidates);
     const ideas = finalRank(fitted);
-    const lines = await writeLines(env, fetchFn, ideas, language);
+    const linesTimeout = Math.min(CLAUDE_TIMEOUT_MS, LINES_DEADLINE_MS - (now() - startedAt));
+    const lines = await writeLines(env, fetchFn, ideas, language, linesTimeout);
     const cards = ideas.map((idea) => toCard(idea, lines.get(idea.archetype.id), clothingType, language));
 
     const degraded = fitted.some(({ fit }) => fit === null) || cards.some((card) => card.line === null);

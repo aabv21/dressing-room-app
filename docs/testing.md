@@ -116,17 +116,17 @@ Supabase stack:
   inserting the same id again makes no second Claude call; and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
-- `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the
-  mock Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two pairs
-  of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'` with
-  the service role) and stored city coordinates; B has none. `lucky-list` answers `kind: 'ok'` with
-  complete outfits (one top, one bottom, one pair of shoes each) rated by the mock Jev, and a second
-  call is served from `lucky_cache` with no Jev call; the forecast lands in `weather_cache` for the
-  hour (fetched once, no geocoding for stored coordinates). `rate-outfit` answers Jev's score; a call
-  without a session gets 401 (the anon key passes the gateway, and the function finds no user in
-  it); B rating A's garment ids gets 404 `garment_not_found` (RLS hides them) with no Jev call; and
-  with A's `usage_counters` row for the day pre-filled to 50, a new outfit gets 429 `over_quota`
-  with no Jev call. `for-you` answers 3–5 ideas whose lines are the mock Claude's
+- `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
+  Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two
+  pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`
+  with the service role) and stored city coordinates; B has none. `lucky-list` answers `kind: 'ok'`
+  with complete outfits (one top, one bottom, one pair of shoes each) rated by the mock Jev, and a
+  second call is served from `lucky_cache` with no Jev call; the forecast lands in `weather_cache`
+  for the hour (fetched once, no geocoding for stored coordinates). `rate-outfit` answers Jev's
+  score; a call without a session gets 401 (the anon key passes the gateway, and the function finds
+  no user in it); B rating A's garment ids gets 404 `garment_not_found` (RLS hides them) with no Jev
+  call; and with A's `usage_counters` row for the day pre-filled to 50, a new outfit gets 429
+  `over_quota` with no Jev call. `for-you` answers 3–5 ideas whose lines are the mock Claude's
   (`mockAnthropic.ts`, answering a line for every archetype id), after at most 10 mock Jev fits and
   one Claude call; A's `for_you` usage counter is 1 and `for_you_cache` holds one entry, and a
   second call returns the same body with no Jev or Claude call. `log_wear` called from supabase-js

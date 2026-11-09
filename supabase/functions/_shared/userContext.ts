@@ -506,8 +506,16 @@ export function runJev(env: FnEnv, fetchFn: FetchFn, request: unknown): Promise<
   );
 }
 
-/** The Messages API response body, or null on a non-2xx answer, a network error or 20 s passing. */
-export function runClaude(env: FnEnv, fetchFn: FetchFn, request: unknown): Promise<unknown> {
+/**
+ * The Messages API response body, or null on a non-2xx answer, a network error or `timeoutMs`
+ * (default 20 s) passing.
+ */
+export function runClaude(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  request: unknown,
+  timeoutMs: number = CLAUDE_TIMEOUT_MS,
+): Promise<unknown> {
   return fetchJson(
     fetchFn,
     `${trimSlash(env.anthropicBaseUrl)}/v1/messages`,
@@ -520,7 +528,7 @@ export function runClaude(env: FnEnv, fetchFn: FetchFn, request: unknown): Promi
       },
       body: JSON.stringify(request),
     },
-    CLAUDE_TIMEOUT_MS,
+    timeoutMs,
   );
 }
 

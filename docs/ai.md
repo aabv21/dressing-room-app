@@ -8,8 +8,8 @@ logs the garment id and an outcome word; `rate-outfit`, `lucky-list` and `for-yo
 outcome word. The outcome words are `cached`, `rated`, `fallback`, `over_quota`, `unavailable`,
 `invalid` and `error` for `rate-outfit`; `cached`, `too_small`, `ranked`, `degraded`, `empty`,
 `over_quota`, `invalid` and `error` for `lucky-list`; and the same plus `stale` for `for-you` (each
-function's table below says when). Locally, every
-Claude, Jev and Open-Meteo call goes to a mock on the host (`docs/testing.md`'s `integration`).
+function's table below says when). Locally, every Claude, Jev and Open-Meteo call goes to a mock on
+the host (`docs/testing.md`'s `integration`).
 
 ## Garment attribute extraction
 
@@ -587,14 +587,18 @@ defining trait is a pattern, material or wash carries its own store-search phras
 
 ### Gain
 
-An archetype the user already owns (a garment that isn't donated, of the same category and first
-color; one in the laundry or lent out still counts as owned) is skipped. For the rest, the gain is
-the number of complete outfits the archetype would make with the user's `available` garments — the
-archetype plus the user's pieces for the other required slots ((top + bottom or a one-piece) plus
-shoes; outerwear layers over a complete outfit) — that pass `passesRules` with no occasion, the
-current season and no weather, counted up to 5,000. "Combines with" is the number of distinct user
-garments in those outfits. A donated garment is never one of them, and neither is one in the
-laundry or lent out.
+For you looks at the wardrobe, not at today: every garment that isn't donated counts, including
+one in the laundry or lent out (the handler treats those as available before ranking; the outfit
+rules and the lucky list are unchanged). What to buy shouldn't change with the wash, and a laundry
+toggle shouldn't cost the day's one recompute. A donated garment is out entirely.
+
+An archetype the user already owns (a wardrobe garment of the same category and first color) is
+skipped. For the rest, the gain is the number of complete outfits the archetype would make with the
+wardrobe — the archetype plus the user's pieces for the other required slots ((top + bottom or a
+one-piece) plus shoes; outerwear layers over a complete outfit) — that pass `passesRules` with no
+occasion, the current season and no weather, counted up to 5,000. "Combines with" is the number of
+distinct user garments in those outfits. So an idea may combine with a piece that is in the wash
+today.
 
 **Formality spread.** On top of `passesRules`, For you's gain requires every piece to sit within 2
 formality steps of every other (1 = very casual … 5 = formal). With no occasion, `passesRules`
@@ -664,14 +668,17 @@ weather is read: the season comes from the UTC date and the profile's stored lat
 hemisphere without one).
 
 1. Load the garments and the profile.
-2. Fewer than 3 `available`, categorized garments → `{ kind: 'too_small' }`, with no cache, quota or
-   model call (a brand-new closet, or everything in the laundry).
-3. The cache key hashes the language, `profile.updated_at` (clothing type, body, styles) and a closet
-   fingerprint: every categorized garment that isn't donated, by its id and rating-relevant columns
-   (category, colors, pattern, formality, fit, seasons, warmth, status; not `updated_at` or
-   `last_worn_at`, which logging a wear bumps, nor `pinned_on`). A laundry or lent garment is in the
-   fingerprint: it changes the gain, and it still owns its archetype. An entry older than 7 days is a
-   miss, so the ideas follow the season at least weekly.
+2. Fewer than 3 wardrobe garments with a category (not donated; laundry and lent count) →
+   `{ kind: 'too_small' }`, with no cache, quota or model call (a brand-new closet). A closet that
+   is all in the wash still gets ideas.
+3. The cache key hashes a version, the language, the season, `profile.updated_at` (clothing type,
+   body, styles) and a wardrobe fingerprint: every categorized garment that isn't donated, by its id
+   and rating-relevant columns (category, colors, pattern, formality, fit, seasons, warmth; not
+   `status`, so the laundry and lending keep the entry, nor `updated_at` or `last_worn_at`, which
+   logging a wear bumps, nor `pinned_on`). Donating a garment changes it; the season turning is a
+   miss on the next call. An entry older than 7 days is a miss too, so the ideas follow the user's
+   taste and new archetypes at least weekly. The version is bumped whenever the archetypes, the
+   gain rules or the response shape change, which invalidates every stored entry.
 4. Quota `for_you` 1 per UTC day (cache misses only).
 5. `rankByGain` → `fitCandidates` → Jev fits → `finalRank`. Nothing with gain > 0 → `ideas: []`,
    cached, with no Jev or Claude call.
@@ -685,7 +692,7 @@ lineKey, lineParams, searchQuery }[] }`, in rank order, and cached.
 | Not POST | 405 `method_not_allowed` | `invalid` |
 | No user in the JWT | 401 `unauthorized` | `invalid` |
 | Malformed body or another language | 400 `invalid_input` | `invalid` |
-| Fewer than 3 available garments | 200 `too_small` | `too_small` |
+| Fewer than 3 wardrobe garments | 200 `too_small` | `too_small` |
 | Cache hit (no quota, no models) | 200 cached ideas | `cached` |
 | Over the daily quota, with an expired entry for the same key | 200 that entry's ideas | `stale` |
 | Over the daily quota, nothing stored for the key | 429 `over_quota` | `over_quota` |
@@ -701,13 +708,16 @@ for ideas it showed an hour ago, the function then serves the expired entry agai
 same goes for an entry past its 7 days when the day's miss went to another key. So a degraded
 answer is really retried on the first call after its hour on a day with quota left.
 
-**Latency.** No weather and no fallback rater: the closet and profile reads, at most two waves of 5
-Jev fits (10 s timeout each, none started after 15 s), then the Claude lines (20 s timeout) — about
-40 s at worst, inside the app's 45 s function deadline.
+**Latency.** No weather and no fallback rater: the closet and profile reads, the cache read and the
+quota, then the Jev fits (5 at once, 10 s timeout each, none started after 15 s, so the last can
+run to about 25 s), then the Claude lines. The lines call has a deadline of its own: its timeout is
+what's left before 38 s from the request's arrival, at most 20 s, and with 2 s or less left Claude
+is skipped and every idea gets its template (degraded). So the answer lands by about 38 s plus the
+cache write, inside the app's 45 s function deadline. The database reads have no timeout of their
+own: a stalled read can still exceed it, as in the other functions.
 
-NOTE: the season isn't in the cache key and a city typed without coordinates isn't geocoded (its
-season is the northern one); an entry cached just before a season turns shows for up to 7 days.
-Upgrade path: the season in the key, and `getLocalWeather`'s geocoded latitude.
+NOTE: a city typed without coordinates isn't geocoded, so its season is the northern one (wrong for
+a southern-hemisphere user who typed a city). Upgrade path: `getLocalWeather`'s geocoded latitude.
 
 ### Cost
 

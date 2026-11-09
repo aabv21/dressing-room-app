@@ -549,4 +549,18 @@ describe('runJev and runClaude', () => {
     await jest.advanceTimersByTimeAsync(1);
     expect(await pending).toBeNull();
   });
+
+  test('runClaude takes a shorter timeout', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    const { fetch } = fakeFetch(hanging);
+    let settled = false;
+    const pending = runClaude(ENV, fetch, {}, 5_000).then((value) => {
+      settled = true;
+      return value;
+    });
+    await jest.advanceTimersByTimeAsync(4_999);
+    expect(settled).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await pending).toBeNull();
+  });
 });
