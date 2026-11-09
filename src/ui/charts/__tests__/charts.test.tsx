@@ -7,6 +7,17 @@ import { ProportionBar } from '../ProportionBar';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import; see src/test/reanimatedMock.ts's module doc
 jest.mock('react-native-reanimated', () => require('../../../test/reanimatedMock'));
 
+// The device's text size (iOS Dynamic Type, Android font scale), as the charts read it.
+const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
+afterEach(() => {
+  mockWindow.fontScale = 1;
+});
+
 describe('HorizontalBars', () => {
   const rows = [
     { id: 'sneakers', label: 'White sneakers', value: 30, valueLabel: '30' },
@@ -67,6 +78,22 @@ describe('HorizontalBars', () => {
   test('valueWidth widens the value column', async () => {
     await render(<HorizontalBars rows={rows} onSelect={jest.fn()} valueWidth={62} />);
     expect(screen.getByText('30')).toHaveStyle({ width: 62 });
+  });
+
+  test('at a large text size the label and value columns grow with the text, up to the 1.5x cap', async () => {
+    mockWindow.fontScale = 3.1;
+    await render(<HorizontalBars rows={rows} onSelect={jest.fn()} valueWidth={62} />);
+    expect(screen.getByText('30')).toHaveStyle({ width: 93 });
+    expect(screen.getByText('30')).toHaveProp('maxFontSizeMultiplier', 1.5);
+    expect(screen.getByText('White sneakers')).toHaveStyle({ width: 138 });
+    expect(screen.getByText('White sneakers')).toHaveProp('maxFontSizeMultiplier', 1.5);
+  });
+
+  test('a smaller text size keeps the default columns', async () => {
+    mockWindow.fontScale = 0.85;
+    await render(<HorizontalBars rows={rows} valueWidth={62} />);
+    expect(screen.getByText('30')).toHaveStyle({ width: 62 });
+    expect(screen.getByText('White sneakers')).toHaveStyle({ width: 92 });
   });
 
   // Regression test: `Bar` used to read its reanimated shared value

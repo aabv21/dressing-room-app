@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, layout, radii } from '../ui/theme';
+import { colors, layout, radii, textScale } from '../ui/theme';
 
 const SEGMENT_HEIGHT = 34;
 const PADDING = 3;
@@ -27,6 +27,9 @@ export function SegmentTabs<T extends string>(props: {
             accessibilityRole="tab"
             accessibilityLabel={option.label}
             accessibilityState={{ selected }}
+            // The label's size is capped to fit its third of the pill; a long press shows it enlarged (iOS).
+            accessibilityShowsLargeContentViewer
+            accessibilityLargeContentTitle={option.label}
             hitSlop={{ top: VERTICAL_SLOP, bottom: VERTICAL_SLOP, left: 0, right: 0 }}
             onPress={() => {
               if (!selected) {
@@ -35,7 +38,11 @@ export function SegmentTabs<T extends string>(props: {
             }}
             style={[styles.segment, selected ? styles.segmentOn : null]}
           >
-            <Text style={[styles.label, selected ? styles.labelOn : null]} numberOfLines={1}>
+            <Text
+              style={[styles.label, selected ? styles.labelOn : null]}
+              numberOfLines={1}
+              maxFontSizeMultiplier={textScale.compact}
+            >
               {option.label}
             </Text>
           </Pressable>

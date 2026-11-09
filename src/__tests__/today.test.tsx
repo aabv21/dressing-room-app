@@ -594,6 +594,13 @@ describe('offline', () => {
     expect(screen.getByText('Jeans · Blue')).toBeOnTheScreen();
   });
 
+  test('the note wraps beside its icon at a large text size instead of running off the screen', async () => {
+    mockedFetch.mockResolvedValue({ ok: false, error: 'network' });
+    storeLucky('user-1', '2026-11-08', null, list());
+    await render(<TodayScreen />);
+    expect(await screen.findByText(OFFLINE_NOTE)).toHaveStyle({ flexShrink: 1 });
+  });
+
   test('a stored too_small answer is shown offline too', async () => {
     storeLucky('user-1', '2026-11-08', null, { kind: 'too_small', missing: ['shoes'], weather: null });
     mockedFetch.mockResolvedValue({ ok: false, error: 'network' });

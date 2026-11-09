@@ -67,7 +67,7 @@ export function SocialButton(props: {
 
 const styles = StyleSheet.create({
   button: {
-    height: layout.ctaHeight,
+    minHeight: layout.ctaHeight,
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',

@@ -18,7 +18,7 @@ import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
-import { colors, layout, radii, selectionRing, spacing } from '../ui/theme';
+import { colors, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
 import { slotOf } from './catalog';
 import { useCloset } from './ClosetProvider';
 import type { Garment } from './garmentRepository';
@@ -30,8 +30,9 @@ const NAV_SIZE = 32;
 const NAV_SLOP = (layout.minHitTarget - NAV_SIZE) / 2;
 const MINI_HEIGHT = 28;
 const MINI_SLOP = (layout.minHitTarget - MINI_HEIGHT) / 2;
-// Mockup 04's calendar greys (`.cal .h`, `.d`) and a worn day's darker number (`.d.w`).
-const DAY_MUTED = '#8a8695';
+// Mockup 04's calendar greys (`.cal .h`, `.d`) and a worn day's darker number (`.d.w`). The light
+// grey is the theme's muted ink, the lightest that keeps 4.5:1 on the translucent day cells.
+const DAY_MUTED = colors.muted;
 const DAY_INK = '#4a4656';
 
 const formats = new Map<string, Intl.DateTimeFormat>();
@@ -129,7 +130,10 @@ function DayCell({
   ];
   const content = (
     <>
-      <Text style={[styles.cellNumber, worn ? styles.cellNumberWorn : null, today ? styles.cellNumberToday : null]}>
+      <Text
+        style={[styles.cellNumber, worn ? styles.cellNumberWorn : null, today ? styles.cellNumberToday : null]}
+        maxFontSizeMultiplier={textScale.calendar}
+      >
         {Number(cell.day.slice(8, 10))}
       </Text>
       {thumb === undefined || thumbUri === undefined ? null : (
@@ -380,7 +384,7 @@ export function DiarySegment(): React.JSX.Element {
         <View style={styles.week} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
           {weekdays.map((letter, index) => (
             // The letters repeat (M, T … S, S): the position is the identity.
-            <Text key={`weekday-${String(index)}`} style={styles.weekday}>
+            <Text key={`weekday-${String(index)}`} style={styles.weekday} maxFontSizeMultiplier={textScale.calendar}>
               {letter}
             </Text>
           ))}

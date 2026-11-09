@@ -12,6 +12,7 @@ import { kvRemove } from '../lib/kv';
 import { isWornToday, markWornToday } from '../outfits/wornToday';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
+import { colors } from '../ui/theme';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
 jest.mock('@shopify/flash-list', () => require('../test/flashListMock'));
@@ -160,6 +161,15 @@ describe('month view', () => {
       'Wednesday, October 28, Today, 1 outfit',
     );
     expect(screen.getByTestId('diary-cell-2026-10-21')).toHaveProp('accessibilityLabel', 'Wednesday, October 21, 2 outfits');
+  });
+
+  test('day numbers meet text contrast and stay inside their cells at a large text size', async () => {
+    await openDiary();
+    // Oct 3 is unworn, Oct 28 is worn: both read in the muted ink or darker, never the old light grey.
+    const unworn = within(screen.getByTestId('diary-cell-2026-10-03')).getByText('3');
+    expect(unworn).toHaveStyle({ color: colors.muted });
+    expect(unworn).toHaveProp('maxFontSizeMultiplier', 1.3);
+    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.3);
   });
 
   test('prev and next change the month and refetch; next stops at the current month', async () => {

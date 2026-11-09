@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
-import { colors, gradients, layout, radii } from './theme';
+import { colors, gradients, layout, radii, textScale } from './theme';
 
 export type CtaTone = 'ai' | 'commit' | 'ghost';
 
@@ -24,7 +24,7 @@ function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBas
   const content = (
     <View style={styles.contentRow}>
       {Icon ? <Icon size={16} color={iconColor} style={styles.icon} /> : null}
-      <Text style={textStyle} numberOfLines={2}>
+      <Text style={textStyle} numberOfLines={2} maxFontSizeMultiplier={textScale.cta}>
         {label}
       </Text>
     </View>

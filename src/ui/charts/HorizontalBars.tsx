@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -7,7 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { colors, layout, spacing } from '../theme';
+import { colors, layout, spacing, textScale } from '../theme';
 
 const GROW_DURATION_MS = 450;
 const LABEL_WIDTH = 92;
@@ -66,6 +66,12 @@ export function HorizontalBars(props: {
 }): React.JSX.Element {
   const { rows, selectedId = null, onSelect, detail, color = colors.accent, valueWidth = VALUE_WIDTH } = props;
   const max = Math.max(1, ...rows.map((row) => row.value));
+  // The label and value columns grow with the text they hold (capped), so a larger text size
+  // doesn't truncate them to a letter or two; every row still shares the same column widths.
+  const { fontScale } = useWindowDimensions();
+  const scale = Math.min(Math.max(fontScale, 1), textScale.chart);
+  const labelStyle = [styles.label, { width: LABEL_WIDTH * scale }];
+  const valueStyle = [styles.value, { width: valueWidth * scale }];
 
   return (
     <View style={styles.list}>
@@ -74,11 +80,11 @@ export function HorizontalBars(props: {
         const pct = (row.value / max) * 100;
         const content = (
           <>
-            <Text style={styles.label} numberOfLines={1}>
+            <Text style={labelStyle} numberOfLines={1} maxFontSizeMultiplier={textScale.chart}>
               {row.label}
             </Text>
             <Bar id={row.id} pct={pct} color={color} />
-            <Text style={[styles.value, { width: valueWidth }]} numberOfLines={1}>
+            <Text style={valueStyle} numberOfLines={1} maxFontSizeMultiplier={textScale.chart}>
               {row.valueLabel}
             </Text>
           </>
@@ -105,7 +111,9 @@ export function HorizontalBars(props: {
             >
               {content}
             </Pressable>
-            {isSelected && detail !== undefined ? <Text style={styles.detail}>{detail}</Text> : null}
+            {isSelected && detail !== undefined ? (
+              <Text style={[styles.detail, { marginLeft: LABEL_WIDTH * scale + spacing.sm - 2 }]}>{detail}</Text>
+            ) : null}
           </View>
         );
       })}
@@ -124,7 +132,6 @@ const styles = StyleSheet.create({
     minHeight: ROW_HEIGHT,
   },
   label: {
-    width: LABEL_WIDTH,
     fontSize: 12,
     color: colors.ink,
   },
@@ -150,6 +157,5 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: -2,
     marginBottom: spacing.xs,
-    marginLeft: LABEL_WIDTH + spacing.sm - 2,
   },
 });
