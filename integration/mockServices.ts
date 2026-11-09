@@ -247,8 +247,25 @@ function flagValue(argv: readonly string[], flag: string): number | undefined {
   return value;
 }
 
+export type ServeOptions = { level: number; temp?: number; weak?: string };
+
+/** The `--serve` CLI's options from `argv`; throws on a bad or conflicting flag. */
+export function serveOptionsFrom(argv: readonly string[]): ServeOptions {
+  const levelFlag = flagValue(argv, '--level');
+  const temp = flagValue(argv, '--temp');
+  const weakIndex = argv.indexOf('--weak');
+  const weak = weakIndex === -1 ? undefined : argv[weakIndex + 1];
+  if (weakIndex !== -1 && (weak === undefined || !/^[a-z_]+$/.test(weak))) throw new Error('--weak needs a category');
+  if (levelFlag !== undefined && weak !== undefined) {
+    throw new Error('--level and --weak are exclusive: --weak sets its own answers');
+  }
+  const level = levelFlag ?? 1;
+  if (level < 0 || level > 1) throw new Error('--level must be between 0 and 1');
+  return { level, ...(temp === undefined ? {} : { temp }), ...(weak === undefined ? {} : { weak }) };
+}
+
 /**
- * `node integration/mockServices.ts --serve [--level <0..1>] [--temp <°C>] [--weak <category>]`:
+ * `node integration/mockServices.ts --serve [--level <0..1> | --weak <category>] [--temp <°C>]`:
  * keeps the mock running for a manual simulator check or the Maestro flows. Jev answers every
  * question at `level` (default 1, so a composite of `round(100 · level)`), or, with `--weak`, scores
  * outfits holding that category low and names it the weakest piece (`jevAnswersWithWeakPiece`);
@@ -256,12 +273,7 @@ function flagValue(argv: readonly string[], flag: string): number | undefined {
  * it with Ctrl-C.
  */
 async function serveFromCli(argv: readonly string[]): Promise<void> {
-  const level = flagValue(argv, '--level') ?? 1;
-  const temp = flagValue(argv, '--temp');
-  const weakIndex = argv.indexOf('--weak');
-  const weak = weakIndex === -1 ? undefined : argv[weakIndex + 1];
-  if (level < 0 || level > 1) throw new Error('--level must be between 0 and 1');
-  if (weakIndex !== -1 && (weak === undefined || !/^[a-z_]+$/.test(weak))) throw new Error('--weak needs a category');
+  const { level, temp, weak } = serveOptionsFrom(argv);
   const mock = await startMockServices();
   mock.jev((body) => ({
     status: 200,
@@ -276,8 +288,8 @@ async function serveFromCli(argv: readonly string[]): Promise<void> {
       },
     });
   }
-  const details = [`level ${String(level)}`, temp === undefined ? null : `${String(temp)} °C`, weak === undefined ? null : `weak ${weak}`];
-  console.log(`mock Jev and Open-Meteo on :54498 (${details.filter((part) => part !== null).join(', ')})`);
+  const details = [weak === undefined ? `level ${String(level)}` : `weak ${weak}`, ...(temp === undefined ? [] : [`${String(temp)} °C`])];
+  console.log(`mock Jev and Open-Meteo on :54498 (${details.join(', ')})`);
   process.once('SIGINT', () => {
     void mock.close().then(() => {
       console.log(`served ${String(mock.calls(JEV_PATH))} Jev call(s)`);

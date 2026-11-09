@@ -2,9 +2,10 @@
 // scripts/__tests__/e2e.test.ts
 import { delimiter, join } from 'node:path';
 
-import { jevAnswersWithWeakPiece } from '../../integration/mockServices.ts';
+import { jevAnswersWithWeakPiece, serveOptionsFrom } from '../../integration/mockServices.ts';
 import {
   addMediaArgs,
+  addMediaProblem,
   bootedSimulators,
   e2eEmail,
   envValue,
@@ -169,5 +170,55 @@ describe('the weak-piece Jev mock', () => {
     const { answers } = jevAnswersWithWeakPiece(request(['shirt', 'jeans']), 't_shirt', 0.4);
     expect(answers.color_harmony).toEqual({ type: 'score', score: 4, confidence: 0.8 });
     expect(answers.weakest_piece).toEqual({ type: 'choice', choice: 'none', confidence: 0.6 });
+  });
+});
+
+describe('addMediaProblem', () => {
+  test('a zero exit is no problem', () => {
+    expect(addMediaProblem({ status: 0, signal: null }, 60_000)).toBeNull();
+  });
+
+  test('a timeout names the time limit', () => {
+    const timedOut = Object.assign(new Error('spawnSync xcrun ETIMEDOUT'), { code: 'ETIMEDOUT' });
+    expect(addMediaProblem({ status: null, signal: 'SIGTERM', error: timedOut }, 60_000)).toBe(
+      "xcrun simctl addmedia didn't finish within 60 s.",
+    );
+  });
+
+  test('a signal without a timeout names the signal', () => {
+    expect(addMediaProblem({ status: null, signal: 'SIGKILL' }, 60_000)).toBe('xcrun simctl addmedia was stopped by SIGKILL.');
+  });
+
+  test('a non-zero exit names the exit code', () => {
+    expect(addMediaProblem({ status: 2, signal: null }, 60_000)).toBe('xcrun simctl addmedia exited with 2.');
+  });
+
+  test('a command that could not start names the error', () => {
+    const missing = Object.assign(new Error('spawnSync xcrun ENOENT'), { code: 'ENOENT' });
+    expect(addMediaProblem({ status: null, signal: null, error: missing }, 60_000)).toBe(
+      "xcrun simctl addmedia couldn't start: spawnSync xcrun ENOENT.",
+    );
+  });
+});
+
+describe('serveOptionsFrom (the mock services CLI)', () => {
+  test('defaults to level 1 with no weak piece', () => {
+    expect(serveOptionsFrom(['--serve'])).toEqual({ level: 1 });
+  });
+
+  test('reads --level, --temp and --weak', () => {
+    expect(serveOptionsFrom(['--serve', '--level', '0.4', '--temp', '12'])).toEqual({ level: 0.4, temp: 12 });
+    expect(serveOptionsFrom(['--serve', '--weak', 't_shirt'])).toEqual({ level: 1, weak: 't_shirt' });
+  });
+
+  test('refuses --level together with --weak, which would ignore the level', () => {
+    expect(() => serveOptionsFrom(['--serve', '--level', '0.4', '--weak', 't_shirt'])).toThrow(
+      '--level and --weak are exclusive: --weak sets its own answers',
+    );
+  });
+
+  test('refuses a level out of range and a weak flag without a category', () => {
+    expect(() => serveOptionsFrom(['--serve', '--level', '2'])).toThrow('--level must be between 0 and 1');
+    expect(() => serveOptionsFrom(['--serve', '--weak'])).toThrow('--weak needs a category');
   });
 });

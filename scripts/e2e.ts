@@ -97,6 +97,20 @@ export function addMediaArgs(udid: string, files: readonly string[]): string[] {
   return ['simctl', 'addmedia', udid, ...files];
 }
 
+/** How a child process ended, as `spawnSync` reports it. */
+export type RunResult = { status: number | null; signal: NodeJS.Signals | null; error?: Error };
+
+/** Why `xcrun simctl addmedia` failed, telling a timeout apart from an exit code, or null. */
+export function addMediaProblem(result: RunResult, timeoutMs: number): string | null {
+  const command = 'xcrun simctl addmedia';
+  if (result.status === 0) return null;
+  const code = result.error !== undefined && 'code' in result.error ? result.error.code : undefined;
+  if (code === 'ETIMEDOUT') return `${command} didn't finish within ${String(timeoutMs / 1000)} s.`;
+  if (result.error !== undefined) return `${command} couldn't start: ${result.error.message}.`;
+  if (result.signal !== null) return `${command} was stopped by ${result.signal}.`;
+  return `${command} exited with ${String(result.status)}.`;
+}
+
 export type Simulator = { udid: string; name: string };
 
 /** The booted simulators in `xcrun simctl list devices booted -j` output. */
@@ -218,14 +232,20 @@ function run(
   args: readonly string[],
   env: Env,
   timeout?: number,
-): { ok: boolean; stdout: string } {
+): RunResult & { ok: boolean; stdout: string } {
   const result = spawnSync(command, args, {
     env: { ...process.env, ...env },
     encoding: 'utf8',
     cwd: repoRoot(),
     ...(timeout === undefined ? {} : { timeout }),
   });
-  return { ok: result.status === 0, stdout: result.stdout };
+  return {
+    ok: result.status === 0,
+    stdout: result.stdout,
+    status: result.status,
+    signal: result.signal,
+    ...(result.error === undefined ? {} : { error: result.error }),
+  };
 }
 
 /**
@@ -243,9 +263,8 @@ async function addFixtures(udid: string, env: Env): Promise<void> {
         return target;
       }),
     );
-    if (!run('xcrun', addMediaArgs(udid, files), env, ADD_MEDIA_TIMEOUT_MS).ok) {
-      throw new CheckFailed(`xcrun simctl addmedia didn't finish within ${String(ADD_MEDIA_TIMEOUT_MS / 1000)} s.`);
-    }
+    const problem = addMediaProblem(run('xcrun', addMediaArgs(udid, files), env, ADD_MEDIA_TIMEOUT_MS), ADD_MEDIA_TIMEOUT_MS);
+    if (problem !== null) throw new CheckFailed(problem);
   } finally {
     await rm(staging, { recursive: true, force: true });
   }
