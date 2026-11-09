@@ -32,7 +32,11 @@ export type DataExport = {
 };
 
 export const SIGNED_URL_TTL_S = 7 * 24 * 60 * 60;
-/** PostgREST answers at most `max_rows` (1000) rows per request, so every table is read in pages. */
+/**
+ * PostgREST answers at most `max_rows` (1000 here) rows per request, so every table is read in pages
+ * until one comes back empty; the offset advances by the rows received, so a smaller hosted
+ * `max_rows` still reads every row.
+ */
 export const PAGE = 1000;
 
 function json(status: number, body: unknown): Response {
@@ -56,13 +60,14 @@ async function readAll(
 ): Promise<Row[]> {
   const rows: Row[] = [];
   const base = `${env.supabaseUrl}/rest/v1/${table}?select=${encodeURIComponent(select)}&user_id=eq.${userId}&order=${order}`;
-  for (let offset = 0; ; offset += PAGE) {
+  for (let offset = 0; ; ) {
     const page = await restRows(fetchFn, `${base}&limit=${String(PAGE)}&offset=${String(offset)}`, userHeaders(env, auth));
+    if (page.length === 0) return rows;
     for (const row of page) {
       // RLS already scopes every read to the caller; this keeps a policy mistake out of the file.
       if (isRecord(row) && row.user_id === userId) rows.push(row);
     }
-    if (page.length < PAGE) return rows;
+    offset += page.length;
   }
 }
 
