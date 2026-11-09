@@ -15,6 +15,7 @@ import {
   type ColorFilter,
 } from '../../closet/closetSelectors';
 import { PALETTE_HEX, SLOTS, type Slot } from '../../closet/catalog';
+import { DiarySegment } from '../../closet/DiarySegment';
 import { SegmentTabs } from '../../closet/SegmentTabs';
 import { StatsSegment } from '../../closet/StatsSegment';
 import { CLOSET_GOAL, GoalCard } from '../../closet/GoalCard';
@@ -316,12 +317,7 @@ function RealCloset(): React.JSX.Element {
     <Screen title={t('screen.closet')}>
       <View style={styles.segmentBody}>
         {tabs}
-        {segment === 'stats' ? (
-          <StatsSegment onColorSelect={onColorSelect} />
-        ) : (
-          // A placeholder until the Diary segment's month calendar replaces it.
-          <Text style={styles.offline}>{t('diary.comingSoon')}</Text>
-        )}
+        {segment === 'stats' ? <StatsSegment onColorSelect={onColorSelect} /> : <DiarySegment />}
       </View>
     </Screen>
   );

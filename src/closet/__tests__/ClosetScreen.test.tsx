@@ -32,6 +32,8 @@ jest.mock('react-native-reanimated', () => require('../../test/reanimatedMock'))
 jest.mock('../../outfits/aiClient', () => require('../../test/outfitClientsMock'));
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
 jest.mock('../../stats/wearsRepository', () => require('../../test/statsClientsMock'));
+// The Diary segment reads the signed-in user (its deletes clear Today's worn record).
+jest.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
 jest.mock('../garmentRepository', () => ({ updateGarment: jest.fn() }));
 
 type ClosetState = {

@@ -1,7 +1,7 @@
 // "I'll wear it" across screens: Today and the rating share one worn-today record, so an outfit
 // logged on either shows "Logged ✓" on both, also after a restart. Today and the rating screen are
 // rendered together the way the stack keeps Today mounted under /rate.
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { randomUUID } from 'expo-crypto';
 
 import TodayScreen from '../app/(tabs)/index';
@@ -11,6 +11,7 @@ import { kvRemove } from '../lib/kv';
 import { fetchLuckyList, rateOutfit } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
 import type { LuckyOutfit, RatingResult } from '../outfits/types';
+import { isWornToday, markWornToday, unmarkWornToday } from '../outfits/wornToday';
 import { getProfile, type Profile } from '../profile/profileRepository';
 import { garment } from '../test/garmentFixture';
 
@@ -159,4 +160,44 @@ test("another user's record isn't read", async () => {
   mockAuth.userId = 'user-1';
   await render(stack(false));
   expect(await screen.findByRole('button', { name: "I'll wear it" })).toBeEnabled();
+});
+
+test("a deleted wear (the diary's Delete) clears Logged ✓ on Today and the rating, so it can be logged again", async () => {
+  const view = await render(stack(false));
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+  await screen.findByRole('button', { name: 'Logged ✓' });
+
+  mockFocus.focused = false;
+  mockParams.ids = [JEANS, TOP, SNEAKERS].join(',');
+  await view.rerender(stack(true));
+  await screen.findByText('78%');
+  expect(screen.getAllByRole('button', { name: 'Logged ✓' })).toHaveLength(2);
+
+  // The diary hands the wear's garment ids in yet another order.
+  await act(() => {
+    unmarkWornToday('user-1', [TOP, SNEAKERS, JEANS]);
+  });
+  expect(screen.queryByRole('button', { name: 'Logged ✓' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: "I'll wear it" })).toHaveLength(2);
+});
+
+describe('unmarkWornToday', () => {
+  test("removes only that outfit and keeps the record's day", () => {
+    markWornToday('user-1', '2026-11-08', [TOP, JEANS, SNEAKERS]);
+    markWornToday('user-1', '2026-11-08', [TOP, SKIRT, SNEAKERS]);
+
+    unmarkWornToday('user-1', [SNEAKERS, JEANS, TOP]);
+
+    expect(isWornToday('user-1', '2026-11-08', [TOP, JEANS, SNEAKERS])).toBe(false);
+    expect(isWornToday('user-1', '2026-11-08', [TOP, SKIRT, SNEAKERS])).toBe(true);
+  });
+
+  test("leaves another user's record alone and is a no-op without a record", () => {
+    markWornToday('user-2', '2026-11-08', [TOP, JEANS, SNEAKERS]);
+
+    unmarkWornToday('user-1', [TOP, JEANS, SNEAKERS]);
+
+    expect(isWornToday('user-2', '2026-11-08', [TOP, JEANS, SNEAKERS])).toBe(true);
+    expect(isWornToday('user-1', '2026-11-08', [TOP, JEANS, SNEAKERS])).toBe(false);
+  });
 });

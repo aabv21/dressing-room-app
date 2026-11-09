@@ -60,7 +60,8 @@ describe('listWears', () => {
     );
     expect(builder['gte']).toHaveBeenCalledWith('worn_on', '2026-11-01');
     expect(builder['lte']).toHaveBeenCalledWith('worn_on', '2026-11-09');
-    expect(builder['order']).toHaveBeenCalledWith('worn_on', { ascending: false });
+    expect(builder['order']).toHaveBeenNthCalledWith(1, 'worn_on', { ascending: false });
+    expect(builder['order']).toHaveBeenNthCalledWith(2, 'created_at', { ascending: false });
     expect(result).toEqual([
       { id: 'w-2', wornOn: '2026-11-09', occasion: 'office', score: 82, garmentIds: ['g-1', 'g-2'] },
       { id: 'w-1', wornOn: '2026-11-01', occasion: null, score: null, garmentIds: ['g-3'] },

@@ -26,14 +26,16 @@ type WearRow = {
   outfits: { outfit_items: { garment_id: string }[] } | null;
 };
 
-/** The signed-in user's wears (and their outfit's garment ids) with `worn_on` in `[from, to]`, newest first. */
+/** The signed-in user's wears (and their outfit's garment ids) with `worn_on` in `[from, to]`, newest first (by day, then by when they were logged). */
 export async function listWears(from: string, to: string, client: Client = supabase): Promise<WearWithItems[]> {
   const { data, error } = await client
     .from('wears')
     .select('id, worn_on, occasion, score, outfit_id, outfits(outfit_items(garment_id))')
     .gte('worn_on', from)
     .lte('worn_on', to)
-    .order('worn_on', { ascending: false });
+    .order('worn_on', { ascending: false })
+    // Within a day the latest logged wear comes first (the diary's thumbnail is the latest one's).
+    .order('created_at', { ascending: false });
   if (error !== null) {
     throw error;
   }

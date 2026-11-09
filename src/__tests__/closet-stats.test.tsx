@@ -29,6 +29,8 @@ jest.mock('expo-router', () => ({
 jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
 jest.mock('../outfits/aiClient', () => ({ localDate: () => '2026-11-08' }));
 jest.mock('../stats/wearsRepository', () => ({ listWears: jest.fn() }));
+// The Diary segment reads the signed-in user (its deletes clear Today's worn record).
+jest.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
 jest.mock('../closet/garmentRepository', () => ({ updateGarment: jest.fn() }));
 
 const mockStore: { garments: Garment[]; listeners: Set<() => void> } = { garments: [], listeners: new Set() };
