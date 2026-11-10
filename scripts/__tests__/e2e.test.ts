@@ -12,6 +12,7 @@ import {
   bootedSimulators,
   connectedEmulators,
   e2eEmail,
+  e2ePassword,
   e2ePlatform,
   envValue,
   HOMEBREW_JAVA_HOME,
@@ -21,6 +22,14 @@ import {
   pickSimulator,
   stackProblem,
 } from '../e2e.ts';
+
+describe('e2ePassword', () => {
+  test('is 16 URL-safe characters, fresh on every run', () => {
+    expect(e2ePassword(new Uint8Array(12).fill(255))).toBe('________________');
+    expect(e2ePassword()).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(e2ePassword()).not.toBe(e2ePassword());
+  });
+});
 
 describe('e2eEmail', () => {
   test('is a fresh example.com address per run', () => {

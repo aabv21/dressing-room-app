@@ -22,7 +22,8 @@ import {
   verifyBackup,
 } from '../backup.ts';
 
-const DB_PASSWORD = 'hunter2-db-password';
+// Every credential in this file is a fictional example value.
+const DB_PASSWORD = 'example-db-password';
 const DB_URL = `postgresql://postgres.abcdefgh:${DB_PASSWORD}@aws-0-eu-west-1.pooler.supabase.com:5432/postgres`;
 const DB_URL_NO_PASSWORD = 'postgresql://postgres.abcdefgh@aws-0-eu-west-1.pooler.supabase.com:5432/postgres';
 const SERVICE_KEY = 'service-role-key-never-logged';
@@ -152,11 +153,11 @@ describe('backupConfigFrom', () => {
   });
 
   test('percent-decodes the password and keeps the query string', () => {
-    const url = 'postgresql://postgres.abcdefgh:p%40ss%2Fw%3Ard@db.example.com:5432/postgres?sslmode=require';
+    const url = 'postgresql://postgres.abcdefgh:example-p%40ss%2Fw%3Ard@db.example.com:5432/postgres?sslmode=require';
 
     expect(backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot)).toMatchObject({
       dbUrl: 'postgresql://postgres.abcdefgh@db.example.com:5432/postgres?sslmode=require',
-      dbPassword: 'p@ss/w:rd',
+      dbPassword: 'example-p@ss/w:rd',
     });
   });
 
@@ -177,21 +178,21 @@ describe('backupConfigFrom', () => {
   });
 
   test('refuses a DB URL that is not a Postgres URL, without echoing it', () => {
-    expect(backupConfigFrom({ ...env, BACKUP_DB_URL: 'https://user:hunter2@example.com/db' }, home, repoRoot)).toEqual({
+    expect(backupConfigFrom({ ...env, BACKUP_DB_URL: 'https://user:example-secret@example.com/db' }, home, repoRoot)).toEqual({
       error: 'BACKUP_DB_URL must be a postgresql:// connection string',
     });
   });
 
   test('an unparseable DB URL hints at percent-encoding the password, without echoing it', () => {
     // An unencoded `/` in the password ends the host early, so `pass` becomes an invalid port.
-    for (const url of ['not a url with hunter2', 'postgresql://postgres:pass/hunter2@db.example.com:5432/postgres']) {
+    for (const url of ['not a url with example-secret', 'postgresql://postgres:pass/example-secret@db.example.com:5432/postgres']) {
       const config = backupConfigFrom({ ...env, BACKUP_DB_URL: url }, home, repoRoot);
 
       expect(config).toEqual({
         error:
           "BACKUP_DB_URL is not a valid postgresql:// connection string: percent-encode its password's special characters (@ as %40, % as %25, / as %2F)",
       });
-      expect(JSON.stringify(config)).not.toContain('hunter2');
+      expect(JSON.stringify(config)).not.toContain('example-secret');
     }
   });
 
@@ -477,7 +478,7 @@ test('deletes .partial folders older than 7 days at the start of every run, even
 });
 
 test('no spawned command line carries the database password, decoded or percent-encoded', async () => {
-  const password = 'p@ss/w:rd hunter2';
+  const password = 'example p@ss/w:rd';
   const url = `postgresql://postgres.abcdefgh:${encodeURIComponent(password)}@db.example.com:5432/postgres`;
   const parsed = backupConfigFrom(
     { BACKUP_DB_URL: url, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY, BACKUP_DIR: root },
@@ -495,7 +496,7 @@ test('no spawned command line carries the database password, decoded or percent-
     const argv = [call.command, ...call.args].join(' ');
     expect(argv).not.toContain(password);
     expect(argv).not.toContain(encodeURIComponent(password));
-    expect(argv).not.toContain('hunter2');
+    expect(argv).not.toContain('p@ss');
     expect(call.env).toEqual({ PGPASSWORD: password });
   }
 });

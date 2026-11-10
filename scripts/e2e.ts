@@ -18,6 +18,7 @@
 //   node scripts/e2e.ts fixtures
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -35,8 +36,13 @@ export const METRO_STATUS_URL = 'http://127.0.0.1:8081/status';
  * with it offers a swap. `build-rate-swap.yaml` builds an outfit around the T-shirt and swaps it.
  */
 export const WEAK_CATEGORY = 't_shirt';
-/** A fictional password for the throwaway user; the local stack accepts 8 characters or more. */
-export const E2E_PASSWORD = 'e2e-closet-2026';
+/**
+ * A fresh random password for the run's throwaway user (16 URL-safe characters; the local stack
+ * wants 8 or more), so no password is committed.
+ */
+export function e2ePassword(random: Uint8Array = randomBytes(12)): string {
+  return Buffer.from(random).toString('base64url');
+}
 const MOCK_READY_TIMEOUT_MS = 20_000;
 const ADD_MEDIA_TIMEOUT_MS = 60_000;
 
@@ -458,7 +464,7 @@ async function runFlows(): Promise<number> {
 
     const email = e2eEmail(Date.now());
     console.log(`Running the flows on ${device.name} as ${email}`);
-    const maestro = spawn('maestro', maestroArgs(device.udid, email, E2E_PASSWORD), {
+    const maestro = spawn('maestro', maestroArgs(device.udid, email, e2ePassword()), {
       cwd: repoRoot(),
       env: { ...process.env, ...java.env },
       stdio: 'inherit',
