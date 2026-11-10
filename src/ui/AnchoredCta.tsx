@@ -89,7 +89,8 @@ export function AnchoredCta(props: {
           content scrolling under the buttons doesn't show through them. */}
       <LinearGradient
         colors={surface === 'dark' ? ['rgba(14,13,18,0)', '#0e0d12'] : ['rgba(235,227,255,0)', '#ebe3ff']}
-        locations={[0, 0.45]}
+        // Mockup 02's dark zone is solid from 60% down, the light one from 55%.
+        locations={surface === 'dark' ? [0, 0.4] : [0, 0.45]}
         testID="cta-fade"
         style={StyleSheet.absoluteFill}
         pointerEvents="none"

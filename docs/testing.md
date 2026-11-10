@@ -546,8 +546,8 @@ the in-app language choice, and the app follows the device.
   Google Play system image (ML Kit's segmentation model comes from Play services); this repo uses
   an `android-36` `google_apis_playstore` arm64 image on a Pixel 9 AVD. Start it with
   `-gpu host`: its default software renderer makes the flows several times slower.
-- **An English simulator.** Settings → General → Language & Region; the flows match English
-  text.
+- **An English device.** On the simulator, Settings → General → Language & Region; on the
+  emulator, Settings → System → Languages. The flows match English text.
 - **The local stack:** `pnpm db:start`, then `pnpm env:local` (the app must point at it; the script
   checks).
 - **Ports 54498 and 54499 free.** The script starts the mocks itself and stops them at the end.
@@ -567,7 +567,9 @@ the in-app language choice, and the app follows the device.
    exited with an error. The photos go in on every run, so the simulator's photo library grows by
    four each time (erasing the simulator empties it, and removes the dev build too); the flow picks
    the four newest. On Android they're pushed to `/sdcard/Pictures/` with `adb push`, under the
-   same names each run, and a media scan makes the system photo picker list them.
+   same names each run, then touched, since `adb push` keeps the Mac file's old time and the
+   picker shows the newest photos first, and scanned. The script then waits until the photo
+   library lists all four, and fails with their names if it never does.
 4. Runs `maestro --device <udid> test --config .maestro/config.yaml .maestro/flows` with `EMAIL`
    and `PASSWORD` passed to the flows, then stops the mocks and exits with Maestro's status.
 
@@ -594,9 +596,10 @@ the in-app language choice, and the app follows the device.
   platform`). Android's system photo picker labels each photo "Photo taken on <date>"; the subflow
   taps the first four and "Done". iOS's picker isn't the app's UI, so its subflow taps the cells by
   Apple's own accessibility id, `PXGGridLayout-Info` at indexes 0 to 3, after
-  waiting for its "Select up to 30 photos." prompt. Both are iOS internals, not a public API: an iOS
-  update can rename them, and the flow then fails at the gallery step. Check them with
-  `maestro hierarchy` on the open picker.
+  waiting for its "Select up to 30 photos." prompt. Each picker's text and ids are system
+  internals, not a public API: an iOS update, or a Play system update on Android, can rename them,
+  and the flow then fails at the gallery step. Check them with `maestro hierarchy` on the open
+  picker.
 - **Fixtures.** `node scripts/e2e.ts fixtures` regenerates the four JPEGs with `sharp`, drawn from
   `scripts/perf-fixtures.ts`'s garment shapes on a plain background. They're fictional, never
   real photos.

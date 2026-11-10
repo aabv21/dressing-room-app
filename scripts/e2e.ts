@@ -209,6 +209,17 @@ export function apiPort(appUrl: string): string {
   return url.port === '' ? (url.protocol === 'https:' ? '443' : '80') : url.port;
 }
 
+/** The fixtures `content query` output doesn't list yet, i.e. that the photo picker can't show. */
+export function missingPhotos(queryOutput: string, files: readonly string[]): string[] {
+  const listed = new Set(
+    queryOutput
+      .split('\n')
+      .map((line) => /_display_name=(.+)$/.exec(line.trim())?.[1])
+      .filter((name): name is string => name !== undefined),
+  );
+  return files.filter((file) => !listed.has(file));
+}
+
 /** Where a fixture goes on the emulator, so its media scan finds it. */
 export function androidPhotoPath(file: string): string {
   return `/sdcard/Pictures/${file}`;
@@ -280,7 +291,7 @@ function run(
   args: readonly string[],
   env: Env,
   timeout?: number,
-): RunResult & { ok: boolean; stdout: string } {
+): RunResult & { ok: boolean; stdout: string; stderr: string } {
   const result = spawnSync(command, args, {
     env: { ...process.env, ...env },
     encoding: 'utf8',
@@ -290,6 +301,7 @@ function run(
   return {
     ok: result.status === 0,
     stdout: result.stdout,
+    stderr: result.stderr,
     status: result.status,
     signal: result.signal,
     ...(result.error === undefined ? {} : { error: result.error }),
@@ -303,15 +315,24 @@ function run(
  */
 async function addFixtures(device: Device, env: Env): Promise<void> {
   if (device.platform === 'android') {
+    const adb = (args: readonly string[]) => run(device.adb, ['-s', device.udid, ...args], env);
     for (const { file } of FIXTURES) {
       const target = androidPhotoPath(file);
-      if (!run(device.adb, ['-s', device.udid, 'push', join(fixturesDir(), file), target], env).ok) {
-        throw new CheckFailed(`adb couldn't copy ${file} to ${device.name}.`);
-      }
-      // The media scan makes the photo show up in the system photo picker.
-      run(device.adb, ['-s', device.udid, 'shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', `file://${target}`], env);
+      const pushed = adb(['push', join(fixturesDir(), file), target]);
+      if (!pushed.ok) throw new CheckFailed(`adb couldn't copy ${file} to ${device.name}: ${pushed.stderr.trim()}`);
+      // `adb push` keeps the Mac file's (old) time; touching it makes the fixtures the newest photos,
+      // which are the ones the picker shows first and the flow picks. The scan indexes the new time.
+      adb(['shell', 'touch', target]);
+      adb(['shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', `file://${target}`]);
     }
-    return;
+    const files = FIXTURES.map(({ file }) => file);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const listed = adb(['shell', 'content', 'query', '--uri', 'content://media/external/images/media', '--projection', '_display_name']);
+      const missing = missingPhotos(listed.stdout, files);
+      if (missing.length === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new CheckFailed(`${device.name}'s photo library never listed ${files.join(', ')}: the picker couldn't offer them.`);
   }
   const udid = device.udid;
   const staging = await mkdtemp(join(tmpdir(), 'dressing-room-e2e-'));
@@ -376,9 +397,8 @@ async function checkPrerequisites(env: Env, platform: E2ePlatform): Promise<Devi
   if (problem !== null) throw new CheckFailed(problem);
   if (device.platform === 'android' && appUrl !== undefined) {
     for (const port of ['8081', apiPort(appUrl)]) {
-      if (!run(device.adb, ['-s', device.udid, 'reverse', `tcp:${port}`, `tcp:${port}`], env).ok) {
-        throw new CheckFailed(`adb couldn't map port ${port} into ${device.name}.`);
-      }
+      const mapped = run(device.adb, ['-s', device.udid, 'reverse', `tcp:${port}`, `tcp:${port}`], env);
+      if (!mapped.ok) throw new CheckFailed(`adb couldn't map port ${port} into ${device.name}: ${mapped.stderr.trim()}`);
     }
   }
   return device;
