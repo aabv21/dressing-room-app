@@ -276,7 +276,7 @@ Checks that need the owner's accounts or hardware, run once at the end, in this 
 
 - `main` holds released code and is the default branch; `develop` is the integration branch. Both take changes only through a pull request with CI green, and repository rulesets block direct pushes, force pushes, and deletion.
 - Work on a short-lived branch from `develop` (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and open the pull request into `develop`, titled in Conventional Commits form. It's squash-merged, so the title becomes the commit.
-- A release is a pull request from `develop` into `main`, merged with a merge commit, then tagged `vX.Y.Z` with a GitHub release.
+- A release is a pull request from `develop` into `main` titled `release: vX.Y.Z` (a summary may follow), merged with a merge commit. `.github/workflows/release.yml` then tags the merge commit `vX.Y.Z` and publishes a GitHub release with generated notes; a `release:` title without a version makes neither.
 - Dependabot opens its pull requests against `develop`.
 - Commits use the GitHub `noreply` address, never a personal email: set `git config user.email` to it in this clone.
 
