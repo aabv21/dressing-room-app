@@ -99,6 +99,20 @@ describe('WelcomeScreen', () => {
     expect(row.justifyContent).toBe('flex-end');
   });
 
+  test('at the largest text size the headline grows to 2x at most and the Google label wraps inside its button', async () => {
+    Platform.OS = 'ios';
+    await render(<WelcomeScreen />);
+
+    // A 900-weight hero at 3x breaks "WITHOUT" mid-word on a phone; 2x is the floor for content text.
+    expect(screen.getByText('DRESS\nWITHOUT DOUBT').props.maxFontSizeMultiplier).toBe(2);
+    const label = StyleSheet.flatten(screen.getByText('Continue with Google').props.style) as {
+      flexShrink?: number;
+      textAlign?: string;
+    };
+    expect(label.flexShrink).toBe(1);
+    expect(label.textAlign).toBe('center');
+  });
+
   test('hides Continue with Apple on Android', async () => {
     Platform.OS = 'android';
     await render(<WelcomeScreen />);

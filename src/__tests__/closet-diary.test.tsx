@@ -12,6 +12,7 @@ import { kvRemove } from '../lib/kv';
 import { isWornToday, markWornToday } from '../outfits/wornToday';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
+import { colors } from '../ui/theme';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
 jest.mock('@shopify/flash-list', () => require('../test/flashListMock'));
@@ -102,11 +103,19 @@ function october(): WearWithItems[] {
   return wears;
 }
 
+// The device's text size (iOS Dynamic Type, Android font scale).
+const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
 const mockedListWears = jest.mocked(listWears);
 const mockedDeleteWear = jest.mocked(deleteWear);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockWindow.fontScale = 1;
   mockCloset.garments = CLOSET;
   mockCloset.thumbUrls = new Map(CLOSET.map((g) => [g.id, thumbUrl(g.id)]));
   mockedListWears.mockImplementation((from) => Promise.resolve(from === '2026-10-01' ? october() : []));
@@ -139,6 +148,10 @@ describe('month view', () => {
 
     expect(mockedListWears).toHaveBeenCalledWith('2026-10-01', '2026-10-31');
     expect(screen.getByRole('header', { name: 'October 2026' })).toBeOnTheScreen();
+    // At a large text size the month title wraps between its arrows, and the count goes under it.
+    expect(screen.getByRole('header', { name: 'October 2026' })).toHaveStyle({ flexShrink: 1 });
+    expect(screen.getByTestId('diary-month-nav')).toHaveStyle({ flexShrink: 1 });
+    expect(screen.getByTestId('diary-month-row')).toHaveStyle({ flexWrap: 'wrap' });
     // Five Monday-first weeks: Sep 28 – Nov 1, no trailing week of November only. The other months'
     // days are hidden from screen readers.
     expect(screen.getAllByTestId(/^diary-cell-/, hidden)).toHaveLength(35);
@@ -160,6 +173,24 @@ describe('month view', () => {
       'Wednesday, October 28, Today, 1 outfit',
     );
     expect(screen.getByTestId('diary-cell-2026-10-21')).toHaveProp('accessibilityLabel', 'Wednesday, October 21, 2 outfits');
+  });
+
+  test('day numbers meet text contrast and stay inside their cells at a large text size', async () => {
+    await openDiary();
+    // Oct 3 is unworn, Oct 28 is worn: both read in the muted ink or darker, never the old light grey.
+    const unworn = within(screen.getByTestId('diary-cell-2026-10-03')).getByText('3');
+    expect(unworn).toHaveStyle({ color: colors.muted });
+    expect(unworn).toHaveProp('maxFontSizeMultiplier', 1.45);
+    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.45);
+    expect(screen.getByTestId('diary-thumb-2026-10-28')).toHaveStyle({ width: '58%' });
+  });
+
+  test('at the largest text size a worn day shrinks its thumbnail so the number and photo fit the cell', async () => {
+    mockWindow.fontScale = 2;
+    await openDiary();
+
+    expect(screen.getByTestId('diary-thumb-2026-10-28')).toHaveStyle({ width: '46%' });
+    expect(within(screen.getByTestId('diary-cell-2026-10-28')).getByText('28')).toHaveProp('maxFontSizeMultiplier', 1.45);
   });
 
   test('prev and next change the month and refetch; next stops at the current month', async () => {
@@ -204,6 +235,8 @@ describe('day detail', () => {
     const today = wearCard('w-28');
     expect(within(today).getByText('Wednesday 28')).toBeOnTheScreen();
     expect(within(today).getByText('Office · 78%')).toBeOnTheScreen();
+    // At a large text size the occasion and score wrap under the day instead of squeezing it.
+    expect(within(today).getByText('Wednesday 28').parent).toHaveStyle({ flexWrap: 'wrap' });
     for (const id of OFFICE_OUTFIT) {
       expect(within(today).getByTestId(`outfit-piece-${id}`)).toBeOnTheScreen();
     }

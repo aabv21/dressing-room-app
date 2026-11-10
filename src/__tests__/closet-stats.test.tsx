@@ -2,7 +2,7 @@
 // period chips, KPIs, most-worn bars, colors, balance and the unused list, and donated garments
 // hidden from the active closet. The closet is a small external store so `replaceLocal` re-renders
 // the screen as the real provider does.
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { Alert } from 'react-native';
 
@@ -122,6 +122,13 @@ function history(): WearWithItems[] {
   return wears.reverse();
 }
 
+// The device's text size (iOS Dynamic Type, Android font scale).
+const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
 const mockedListWears = jest.mocked(listWears);
 const mockedUpdate = jest.mocked(updateGarment);
 const mockedPush = jest.mocked(router.push);
@@ -129,6 +136,7 @@ const mockedLocalDate = jest.mocked(localDate);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockWindow.fontScale = 1;
   mockSetGarments(CLOSET);
   mockedListWears.mockResolvedValue(history());
   mockedUpdate.mockResolvedValue({ ok: true });
@@ -225,6 +233,30 @@ describe('stats', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Clear the White filter' }));
     expect(screen.getAllByTestId(/^grid-cell-/)).toHaveLength(5);
     expect(screen.queryByRole('button', { name: 'Clear the White filter' })).not.toBeOnTheScreen();
+  });
+
+  test("a card's title and its aside wrap onto two lines at a large text size, never squeezing the title out", async () => {
+    await openStats();
+    const header = screen.getByRole('header', { name: 'Your colors' }).parent;
+    expect(header).toHaveStyle({ flexWrap: 'wrap' });
+  });
+
+  test('an unused row keeps its label and buttons on one line at the default text size', async () => {
+    await openStats();
+    const row = screen.getByTestId(`unused-row-${OLD_COAT}`);
+    expect(row).toHaveStyle({ flexDirection: 'row' });
+    expect(within(row).getByText('Coat · Green')).toHaveProp('numberOfLines', 1);
+  });
+
+  test('at the largest text sizes an unused row puts its label on its own line, with the buttons wrapping under it', async () => {
+    mockWindow.fontScale = 3.1;
+    await openStats();
+    const row = screen.getByTestId(`unused-row-${OLD_COAT}`);
+    expect(row).toHaveStyle({ flexDirection: 'column' });
+    expect(within(row).getByText('Coat · Green').props.numberOfLines).toBeUndefined();
+    expect(screen.getByTestId(`unused-minis-${OLD_COAT}`)).toHaveStyle({ flexWrap: 'wrap' });
+    expect(within(row).getByRole('button', { name: 'Wear it, Coat · Green' })).toBeOnTheScreen();
+    expect(within(row).getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
   });
 
   test('balance shows the slot counts, and the insight opens For you', async () => {
@@ -363,6 +395,18 @@ describe('stats', () => {
     expect(screen.queryByText('Your colors')).not.toBeOnTheScreen();
     expect(screen.queryByText('Unused for 6 months')).not.toBeOnTheScreen();
     expect(screen.queryByText(/^Tip:/)).not.toBeOnTheScreen();
+  });
+
+  test('one outfit in the period reads in the singular', async () => {
+    mockedListWears.mockResolvedValue([
+      { id: 'w-one', wornOn: '2026-11-03', occasion: null, score: null, garmentIds: [SKIRT] },
+    ]);
+    await render(<ClosetScreen />);
+    await fireEvent.press(tab('Stats'));
+
+    expect(await screen.findByText('outfit logged')).toBeOnTheScreen();
+    expect(screen.getByLabelText('1 outfit logged')).toBeOnTheScreen();
+    expect(screen.queryByText('outfits logged')).not.toBeOnTheScreen();
   });
 
   test('a failed history fetch shows an error line', async () => {

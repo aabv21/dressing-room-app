@@ -34,12 +34,12 @@ const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 const DEFAULT_ROUTES: Record<RouteName, Handler> = {
-  garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending' }]),
+  garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: null }]),
   rpc: () => json(200, true),
   profile: () => json(200, [{ clothing_type: 'masculine' }]),
   storage: () => new Response(IMAGE, { status: 200, headers: { 'content-type': 'image/webp' } }),
   claude: () => json(200, fixture('claude-ok')),
-  patch: () => new Response(null, { status: 204 }),
+  patch: () => json(200, [{ id: GARMENT_ID }]),
 };
 
 function routeOf(method: string, url: URL): RouteName {
@@ -164,7 +164,7 @@ describe('extraction', () => {
 
     const [garment, rpc, profile, storage, claude, patch] = calls;
     expect(garment?.url).toBe(
-      `${ENV.supabaseUrl}/rest/v1/garments?id=eq.${GARMENT_ID}&select=id,user_id,extraction_status`,
+      `${ENV.supabaseUrl}/rest/v1/garments?id=eq.${GARMENT_ID}&select=id,user_id,extraction_status,reviewed_at`,
     );
     for (const call of [garment, rpc, profile, storage, patch]) {
       expect(call?.headers.get('apikey')).toBe(ENV.serviceRoleKey);
@@ -187,6 +187,11 @@ describe('extraction', () => {
 
     expect(patch?.url).toContain(`id=eq.${GARMENT_ID}`);
     expect(patch?.url).toContain('extraction_status=eq.pending');
+    // A review saved while the extraction ran (a device clock ahead, or a slow model) is never overwritten.
+    expect(patch?.url).toContain('reviewed_at=is.null');
+    // The write returns the ids it matched, so a write that matched nothing is reported as skipped.
+    expect(patch?.url).toContain('select=id');
+    expect(patch?.headers.get('prefer')).toBe('return=representation');
     expect(patchBody(calls)).toEqual({
       category: 'jeans',
       colors: ['navy', 'light_blue'],
@@ -200,6 +205,36 @@ describe('extraction', () => {
       uncertain_fields: [],
       extraction_status: 'done',
     });
+  });
+
+  test.each([
+    'claude-adversarial-extra-fields',
+    'claude-adversarial-out-of-enum',
+    'claude-adversarial-instruction',
+  ])('%s writes only the attribute columns, uncertain_fields and done, to a pending row', async (name) => {
+    const { fetch, calls } = fakeFetch({ claude: () => json(200, fixture(name)) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(await response.json()).toEqual({ outcome: 'done' });
+    const patch = calls.find((call) => call.route === 'patch');
+    expect(patch?.url).toContain(`id=eq.${GARMENT_ID}`);
+    expect(patch?.url).toContain('extraction_status=eq.pending');
+    const body = patchBody(calls);
+    expect(Object.keys(body).sort()).toEqual([
+      'category',
+      'colors',
+      'extraction_status',
+      'fit',
+      'formality',
+      'material',
+      'occasions',
+      'pattern',
+      'seasons',
+      'uncertain_fields',
+      'warmth',
+    ]);
+    expect(body.extraction_status).toBe('done');
+    expect(JSON.stringify(body)).not.toMatch(/ignore|system|override|update|javascript/i);
   });
 
   test('a profile without a clothing type offers every category', async () => {
@@ -267,13 +302,47 @@ describe('extraction', () => {
 
   test('a garment that is no longer pending is skipped with no further calls', async () => {
     const { fetch, calls } = fakeFetch({
-      garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'done' }]),
+      garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'done', reviewed_at: null }]),
     });
     const response = await handleExtract(webhook(), { env: ENV, fetch });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'skipped' });
     expect(calls.map((call) => call.route)).toEqual(['garment']);
+  });
+
+  test('a garment the user already reviewed is skipped with no quota, Claude or write-back', async () => {
+    const { fetch, calls } = fakeFetch({
+      garment: () =>
+        json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: '2026-11-09T12:00:00Z' }]),
+    });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'skipped' });
+    expect(calls.map((call) => call.route)).toEqual(['garment']);
+  });
+
+  test('a garment reviewed while Claude was answering is skipped: the guarded write matched no row', async () => {
+    const { fetch, calls } = fakeFetch({ patch: () => json(200, []) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'skipped' });
+    expect(calls.at(-1)?.route).toBe('patch');
+    expect(infoSpy.mock.calls).toEqual([[JSON.stringify({ garment_id: GARMENT_ID, outcome: 'skipped' })]]);
+  });
+
+  test('an over-quota write that matched no row is skipped too', async () => {
+    const { fetch } = fakeFetch({ rpc: () => json(200, false), patch: () => json(200, []) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+    expect(await response.json()).toEqual({ outcome: 'skipped' });
+  });
+
+  test('a write-back answer that is not an array answers 500', async () => {
+    const { fetch } = fakeFetch({ patch: () => json(200, { id: GARMENT_ID }) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+    expect(response.status).toBe(500);
   });
 
   test('a garment that does not exist is skipped', async () => {

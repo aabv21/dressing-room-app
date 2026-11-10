@@ -7,6 +7,17 @@ import { ProportionBar } from '../ProportionBar';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import; see src/test/reanimatedMock.ts's module doc
 jest.mock('react-native-reanimated', () => require('../../../test/reanimatedMock'));
 
+// The device's text size (iOS Dynamic Type, Android font scale), as the charts read it.
+const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
+afterEach(() => {
+  mockWindow.fontScale = 1;
+});
+
 describe('HorizontalBars', () => {
   const rows = [
     { id: 'sneakers', label: 'White sneakers', value: 30, valueLabel: '30' },
@@ -69,6 +80,40 @@ describe('HorizontalBars', () => {
     expect(screen.getByText('30')).toHaveStyle({ width: 62 });
   });
 
+  test('up to the large-text threshold the label and value columns grow with the text, which is never capped', async () => {
+    mockWindow.fontScale = 1.4;
+    await render(<HorizontalBars rows={rows} onSelect={jest.fn()} valueWidth={62} />);
+    expect(screen.getByTestId('bar-row-sneakers')).toHaveStyle({ flexDirection: 'row' });
+    expect(screen.getByText('30')).toHaveStyle({ width: 62 * 1.4 });
+    expect(screen.getByText('White sneakers')).toHaveStyle({ width: 92 * 1.4 });
+    expect(screen.getByText('30').props.maxFontSizeMultiplier).toBeUndefined();
+    expect(screen.getByText('White sneakers').props.maxFontSizeMultiplier).toBeUndefined();
+  });
+
+  test('above the large-text threshold a row stacks its label and value over a full-width bar, the label wrapping', async () => {
+    mockWindow.fontScale = 3.1;
+    await render(
+      <HorizontalBars rows={rows} selectedId="jeans" onSelect={jest.fn()} detail="21 wears" valueWidth={62} />,
+    );
+    expect(screen.getByTestId('bar-row-sneakers')).toHaveStyle({ flexDirection: 'column' });
+    const label = screen.getByText('White sneakers');
+    expect(label.props.numberOfLines).toBeUndefined();
+    expect(label.props.maxFontSizeMultiplier).toBeUndefined();
+    expect(label).not.toHaveStyle({ width: 92 });
+    expect(screen.getByText('30').props.maxFontSizeMultiplier).toBeUndefined();
+    expect(screen.getByText('30')).not.toHaveStyle({ width: 62 });
+    expect(screen.getByText('21 wears')).toHaveStyle({ marginLeft: 0 });
+    // Still one labeled button per row for a screen reader.
+    expect(screen.getByRole('button', { name: 'White sneakers, 30' })).toBeOnTheScreen();
+  });
+
+  test('a smaller text size keeps the default columns', async () => {
+    mockWindow.fontScale = 0.85;
+    await render(<HorizontalBars rows={rows} valueWidth={62} />);
+    expect(screen.getByText('30')).toHaveStyle({ width: 62 });
+    expect(screen.getByText('White sneakers')).toHaveStyle({ width: 92 });
+  });
+
   // Regression test: `Bar` used to read its reanimated shared value
   // straight into a plain style object during render. `withTiming`'s write happens on the UI
   // thread and never triggers a React re-render, so on a real device every bar stayed frozen at
@@ -106,8 +151,8 @@ describe('ProportionBar', () => {
 
   test('segment widths follow pct', async () => {
     await render(<ProportionBar segments={segments} onSelect={jest.fn()} />);
-    const blackSegment = screen.getByTestId('proportion-segment-black');
-    const oliveSegment = screen.getByTestId('proportion-segment-olive');
+    const blackSegment = screen.getByTestId('proportion-segment-black', { includeHiddenElements: true });
+    const oliveSegment = screen.getByTestId('proportion-segment-olive', { includeHiddenElements: true });
     const blackStyle = blackSegment.props.style as { flex?: number } | { flex?: number }[];
     const oliveStyle = oliveSegment.props.style as { flex?: number } | { flex?: number }[];
     const blackFlex = Array.isArray(blackStyle) ? blackStyle.find((s) => s.flex !== undefined)?.flex : blackStyle.flex;
@@ -129,8 +174,8 @@ describe('ProportionBar', () => {
 
   test('a light segment such as white gets a hairline border', async () => {
     await render(<ProportionBar segments={segments} onSelect={jest.fn()} />);
-    const whiteStyle = flattenStyle(screen.getByTestId('proportion-segment-white').props.style);
-    const blackStyle = flattenStyle(screen.getByTestId('proportion-segment-black').props.style);
+    const whiteStyle = flattenStyle(screen.getByTestId('proportion-segment-white', { includeHiddenElements: true }).props.style);
+    const blackStyle = flattenStyle(screen.getByTestId('proportion-segment-black', { includeHiddenElements: true }).props.style);
     expect(whiteStyle.borderWidth).toBeGreaterThan(0);
     expect(blackStyle.borderWidth === undefined || blackStyle.borderWidth === 0).toBe(true);
   });
@@ -143,18 +188,31 @@ describe('ProportionBar', () => {
     expect(screen.getByText('Other 22%')).toBeOnTheScreen();
   });
 
-  test('each segment and legend entry is a button that calls onSelect with its id', async () => {
+  test('each segment and legend entry calls onSelect with its id', async () => {
     const onSelect = jest.fn();
     await render(<ProportionBar segments={segments} onSelect={onSelect} />);
-    const segmentButton = screen.getByTestId('proportion-segment-black');
+    const segmentButton = screen.getByTestId('proportion-segment-black', { includeHiddenElements: true });
     const legendButton = screen.getByTestId('proportion-legend-blue');
-    expect(segmentButton).toHaveAccessibleName('Black 24%');
     expect(legendButton).toHaveAccessibleName('Blue 18%');
     await fireEvent.press(segmentButton);
     expect(onSelect).toHaveBeenCalledWith('black');
     onSelect.mockClear();
     await fireEvent.press(legendButton);
     expect(onSelect).toHaveBeenCalledWith('blue');
+  });
+
+  test('a screen reader reads each color once, through the legend, not again through the bar', async () => {
+    await render(<ProportionBar segments={segments} onSelect={jest.fn()} />);
+    expect(screen.getAllByRole('button').map((button) => button.props.accessibilityLabel as string)).toEqual([
+      'Black 24%',
+      'Blue 18%',
+      'White 15%',
+      'Camel 12%',
+      'Olive 9%',
+      'Other 22%',
+    ]);
+    expect(screen.queryByTestId('proportion-segment-black')).toBeNull();
+    expect(screen.getByTestId('proportion-segment-black', { includeHiddenElements: true })).toBeOnTheScreen();
   });
 
   test('segment and legend hit targets meet the 44pt minimum', async () => {
@@ -173,5 +231,21 @@ describe('KpiTile', () => {
     await render(<KpiTile value="62%" label="of your closet worn this month" />);
     expect(screen.getByText('62%')).toBeOnTheScreen();
     expect(screen.getByText('of your closet worn this month')).toBeOnTheScreen();
+  });
+
+  test('beside another tile at the default text size, a full row at a large one', async () => {
+    await render(<KpiTile value="62%" label="outfits logged" />);
+    expect(screen.getByLabelText('62% outfits logged')).toHaveStyle({ flexBasis: '48%' });
+    mockWindow.fontScale = 1.4;
+    await screen.rerender(<KpiTile value="62%" label="outfits logged" />);
+    expect(screen.getByLabelText('62% outfits logged')).toHaveStyle({ flexBasis: '48%' });
+    mockWindow.fontScale = 2;
+    await screen.rerender(<KpiTile value="62%" label="outfits logged" />);
+    expect(screen.getByLabelText('62% outfits logged')).toHaveStyle({ flexBasis: '100%' });
+  });
+
+  test('a screen reader reads the value and its label as one element', async () => {
+    await render(<KpiTile value="62%" label="of your closet worn this month" />);
+    expect(screen.getByLabelText('62% of your closet worn this month')).toHaveProp('accessible', true);
   });
 });

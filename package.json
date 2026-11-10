@@ -52,6 +52,7 @@
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-security": "^4.2.1",
+    "expo-doctor": "^1.21.6",
     "jest": "~30.5.2",
     "jest-expo": "58.0.13",
     "jiti": "^2.7.0",
@@ -79,6 +80,9 @@
     "db:test": "supabase test db",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
     "env:local": "node scripts/env-local.ts",
-    "check:supply-chain": "node scripts/check-supply-chain.ts"
+    "check:supply-chain": "node scripts/check-supply-chain.ts",
+    "calibrate": "node scripts/calibrate.ts",
+    "backup": "node scripts/backup.ts",
+    "e2e": "node scripts/e2e.ts"
   }
 }

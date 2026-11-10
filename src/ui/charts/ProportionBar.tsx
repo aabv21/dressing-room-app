@@ -33,7 +33,7 @@ function needsHairline(hex: string): boolean {
 /**
  * Mockup 04's "Tus colores" proportion bar: real garment hexes, since color is the data itself
  * (not a magnitude hue). Each segment and legend entry taps to the same `onSelect(id)`, both
- * with a 44pt hit target.
+ * with a 44pt hit target; screen readers get the legend entries only.
  */
 export function ProportionBar(props: {
   segments: readonly ProportionSegment[];
@@ -48,8 +48,10 @@ export function ProportionBar(props: {
           <Pressable
             key={segment.id}
             testID={`proportion-segment-${segment.id}`}
-            accessibilityRole="button"
-            accessibilityLabel={`${segment.label} ${String(segment.pct)}%`}
+            // The legend below names each color with its share; a screen reader reads it there once.
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+            accessibilityElementsHidden
             hitSlop={{
               top: SEGMENT_VERTICAL_SLOP,
               bottom: SEGMENT_VERTICAL_SLOP,

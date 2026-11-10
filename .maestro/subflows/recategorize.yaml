@@ -1,0 +1,18 @@
+# On a review card the mock Claude filled as jeans: open the Category row, clear "Jeans" so every
+# category is offered, and pick ${CATEGORY}.
+appId: com.aabv21.dressingroom
+---
+- tapOn: "Category · Jeans"
+- tapOn: "Jeans"
+- scrollUntilVisible:
+    element: ${CATEGORY}
+    direction: DOWN
+    timeout: 10000
+# A tap while the scroll still settles can miss the chip.
+- waitForAnimationToEnd
+- tapOn: ${CATEGORY}
+- extendedWaitUntil:
+    visible:
+      text: ${CATEGORY}
+      selected: true
+    timeout: 5000

@@ -1,0 +1,672 @@
+[
+  {
+    "id": "example-01",
+    "labeler": "alex",
+    "label": "good",
+    "description": "Saved 2026-10-10: top: sweater (cream); bottom: jeans (navy); shoes: sneakers (white)",
+    "state": {
+      "user": {
+        "clothing_type": "feminine",
+        "body_type": "pear",
+        "height_bucket": "medium",
+        "age_group": "25_34",
+        "styles": [
+          "casual",
+          "minimalist"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "autumn"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "sweater",
+          "colors": [
+            "cream"
+          ],
+          "pattern": "solid",
+          "formality": 2,
+          "fit": "loose"
+        },
+        {
+          "slot": "bottom",
+          "category": "jeans",
+          "colors": [
+            "navy"
+          ],
+          "pattern": "solid",
+          "formality": 2,
+          "fit": "fitted"
+        },
+        {
+          "slot": "shoes",
+          "category": "sneakers",
+          "colors": [
+            "white"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-02",
+    "labeler": "alex",
+    "label": "good",
+    "description": "Saved 2026-10-11: one_piece: dress (olive); shoes: flats (camel); bag: bag (camel)",
+    "state": {
+      "user": {
+        "clothing_type": "feminine",
+        "body_type": "pear",
+        "height_bucket": "medium",
+        "age_group": "25_34",
+        "styles": [
+          "casual",
+          "minimalist"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "spring"
+      },
+      "outfit": [
+        {
+          "slot": "one_piece",
+          "category": "dress",
+          "colors": [
+            "olive"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": "regular"
+        },
+        {
+          "slot": "shoes",
+          "category": "flats",
+          "colors": [
+            "camel"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": null
+        },
+        {
+          "slot": "bag",
+          "category": "bag",
+          "colors": [
+            "camel"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-03",
+    "labeler": "alex",
+    "label": "ok",
+    "description": "Saved 2026-10-12: top: t_shirt (white); bottom: skirt (black); shoes: sandals (brown)",
+    "state": {
+      "user": {
+        "clothing_type": "feminine",
+        "body_type": "pear",
+        "height_bucket": "medium",
+        "age_group": "25_34",
+        "styles": [
+          "casual",
+          "minimalist"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "summer"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "t_shirt",
+          "colors": [
+            "white"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": "regular"
+        },
+        {
+          "slot": "bottom",
+          "category": "skirt",
+          "colors": [
+            "black"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": "fitted"
+        },
+        {
+          "slot": "shoes",
+          "category": "sandals",
+          "colors": [
+            "brown"
+          ],
+          "pattern": "solid",
+          "formality": 2,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-04",
+    "labeler": "alex",
+    "label": "ok",
+    "description": "Saved 2026-10-13: top: blouse (pink); bottom: pants (gray); shoes: boots (black)",
+    "state": {
+      "user": {
+        "clothing_type": "feminine",
+        "body_type": "pear",
+        "height_bucket": "medium",
+        "age_group": "25_34",
+        "styles": [
+          "casual",
+          "minimalist"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "autumn"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "blouse",
+          "colors": [
+            "pink"
+          ],
+          "pattern": "floral",
+          "formality": 3,
+          "fit": "regular"
+        },
+        {
+          "slot": "bottom",
+          "category": "pants",
+          "colors": [
+            "gray"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": "regular"
+        },
+        {
+          "slot": "shoes",
+          "category": "boots",
+          "colors": [
+            "black"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-05",
+    "labeler": "alex",
+    "label": "bad",
+    "description": "Saved 2026-10-14: top: hoodie (red); bottom: skirt (orange); shoes: heels (purple)",
+    "state": {
+      "user": {
+        "clothing_type": "feminine",
+        "body_type": "pear",
+        "height_bucket": "medium",
+        "age_group": "25_34",
+        "styles": [
+          "casual",
+          "minimalist"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "winter"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "hoodie",
+          "colors": [
+            "red"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": "oversized"
+        },
+        {
+          "slot": "bottom",
+          "category": "skirt",
+          "colors": [
+            "orange"
+          ],
+          "pattern": "checked",
+          "formality": 4,
+          "fit": "fitted"
+        },
+        {
+          "slot": "shoes",
+          "category": "heels",
+          "colors": [
+            "purple"
+          ],
+          "pattern": "solid",
+          "formality": 5,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-06",
+    "labeler": "alex",
+    "label": "bad",
+    "description": "Saved 2026-10-15: top: blouse (yellow); bottom: pants (green); shoes: boots (brown)",
+    "state": {
+      "user": {
+        "clothing_type": "feminine",
+        "body_type": "pear",
+        "height_bucket": "medium",
+        "age_group": "25_34",
+        "styles": [
+          "casual",
+          "minimalist"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "summer"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "blouse",
+          "colors": [
+            "yellow"
+          ],
+          "pattern": "floral",
+          "formality": 3,
+          "fit": "loose"
+        },
+        {
+          "slot": "bottom",
+          "category": "pants",
+          "colors": [
+            "green"
+          ],
+          "pattern": "striped",
+          "formality": 3,
+          "fit": "loose"
+        },
+        {
+          "slot": "shoes",
+          "category": "boots",
+          "colors": [
+            "brown"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-07",
+    "labeler": "sam",
+    "label": "good",
+    "description": "Saved 2026-10-16: top: shirt (light_blue); bottom: pants (navy); shoes: loafers (brown); outerwear: blazer (gray)",
+    "state": {
+      "user": {
+        "clothing_type": "masculine",
+        "body_type": "rectangle",
+        "height_bucket": "tall",
+        "age_group": "35_44",
+        "styles": [
+          "classic",
+          "urban"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "autumn"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "shirt",
+          "colors": [
+            "light_blue"
+          ],
+          "pattern": "solid",
+          "formality": 4,
+          "fit": "fitted"
+        },
+        {
+          "slot": "bottom",
+          "category": "pants",
+          "colors": [
+            "navy"
+          ],
+          "pattern": "solid",
+          "formality": 4,
+          "fit": "regular"
+        },
+        {
+          "slot": "shoes",
+          "category": "loafers",
+          "colors": [
+            "brown"
+          ],
+          "pattern": "solid",
+          "formality": 4,
+          "fit": null
+        },
+        {
+          "slot": "outerwear",
+          "category": "blazer",
+          "colors": [
+            "gray"
+          ],
+          "pattern": "solid",
+          "formality": 5,
+          "fit": "fitted"
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-08",
+    "labeler": "sam",
+    "label": "good",
+    "description": "Saved 2026-10-17: top: t_shirt (black); bottom: jeans (gray); shoes: sneakers (white)",
+    "state": {
+      "user": {
+        "clothing_type": "masculine",
+        "body_type": "rectangle",
+        "height_bucket": "tall",
+        "age_group": "35_44",
+        "styles": [
+          "classic",
+          "urban"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "spring"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "t_shirt",
+          "colors": [
+            "black"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": "regular"
+        },
+        {
+          "slot": "bottom",
+          "category": "jeans",
+          "colors": [
+            "gray"
+          ],
+          "pattern": "solid",
+          "formality": 2,
+          "fit": "fitted"
+        },
+        {
+          "slot": "shoes",
+          "category": "sneakers",
+          "colors": [
+            "white"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-09",
+    "labeler": "sam",
+    "label": "ok",
+    "description": "Saved 2026-10-18: top: sweater (beige); bottom: jeans (blue); shoes: sneakers (red)",
+    "state": {
+      "user": {
+        "clothing_type": "masculine",
+        "body_type": "rectangle",
+        "height_bucket": "tall",
+        "age_group": "35_44",
+        "styles": [
+          "classic",
+          "urban"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "winter"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "sweater",
+          "colors": [
+            "beige"
+          ],
+          "pattern": "solid",
+          "formality": 2,
+          "fit": "regular"
+        },
+        {
+          "slot": "bottom",
+          "category": "jeans",
+          "colors": [
+            "blue"
+          ],
+          "pattern": "solid",
+          "formality": 2,
+          "fit": "regular"
+        },
+        {
+          "slot": "shoes",
+          "category": "sneakers",
+          "colors": [
+            "red"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-10",
+    "labeler": "sam",
+    "label": "ok",
+    "description": "Saved 2026-10-19: top: polo (green); bottom: shorts (beige); shoes: loafers (black)",
+    "state": {
+      "user": {
+        "clothing_type": "masculine",
+        "body_type": "rectangle",
+        "height_bucket": "tall",
+        "age_group": "35_44",
+        "styles": [
+          "classic",
+          "urban"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "summer"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "polo",
+          "colors": [
+            "green"
+          ],
+          "pattern": "solid",
+          "formality": 2,
+          "fit": "regular"
+        },
+        {
+          "slot": "bottom",
+          "category": "shorts",
+          "colors": [
+            "beige"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": "regular"
+        },
+        {
+          "slot": "shoes",
+          "category": "loafers",
+          "colors": [
+            "black"
+          ],
+          "pattern": "solid",
+          "formality": 4,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-11",
+    "labeler": "sam",
+    "label": "bad",
+    "description": "Saved 2026-10-20: top: shirt (white); bottom: shorts (red); shoes: boots (orange)",
+    "state": {
+      "user": {
+        "clothing_type": "masculine",
+        "body_type": "rectangle",
+        "height_bucket": "tall",
+        "age_group": "35_44",
+        "styles": [
+          "classic",
+          "urban"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "autumn"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "shirt",
+          "colors": [
+            "white"
+          ],
+          "pattern": "striped",
+          "formality": 4,
+          "fit": "oversized"
+        },
+        {
+          "slot": "bottom",
+          "category": "shorts",
+          "colors": [
+            "red"
+          ],
+          "pattern": "checked",
+          "formality": 1,
+          "fit": "loose"
+        },
+        {
+          "slot": "shoes",
+          "category": "boots",
+          "colors": [
+            "orange"
+          ],
+          "pattern": "solid",
+          "formality": 3,
+          "fit": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "example-12",
+    "labeler": "sam",
+    "label": "bad",
+    "description": "Saved 2026-10-21: top: tank_top (purple); bottom: pants (yellow); shoes: sandals (green)",
+    "state": {
+      "user": {
+        "clothing_type": "masculine",
+        "body_type": "rectangle",
+        "height_bucket": "tall",
+        "age_group": "35_44",
+        "styles": [
+          "classic",
+          "urban"
+        ]
+      },
+      "context": {
+        "occasion": null,
+        "weather": null,
+        "season": "winter"
+      },
+      "outfit": [
+        {
+          "slot": "top",
+          "category": "tank_top",
+          "colors": [
+            "purple"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": "fitted"
+        },
+        {
+          "slot": "bottom",
+          "category": "pants",
+          "colors": [
+            "yellow"
+          ],
+          "pattern": "solid",
+          "formality": 4,
+          "fit": "regular"
+        },
+        {
+          "slot": "shoes",
+          "category": "sandals",
+          "colors": [
+            "green"
+          ],
+          "pattern": "solid",
+          "formality": 1,
+          "fit": null
+        }
+      ]
+    }
+  }
+]

@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, layout, selectionRing } from './theme';
+import { colors, layout, selectionRing, textScale } from './theme';
 
 /** A large single-choice card (mockup 03 screen 2's `.opt`): emoji, bold title, muted subtitle. */
 export function OptionCard(props: {
@@ -21,7 +21,12 @@ export function OptionCard(props: {
       style={[styles.card, selected ? styles.cardOn : null]}
       testID={testID}
     >
-      <Text style={styles.emoji} importantForAccessibility="no" accessibilityElementsHidden>
+      <Text
+        style={styles.emoji}
+        importantForAccessibility="no"
+        accessibilityElementsHidden
+        maxFontSizeMultiplier={textScale.emoji}
+      >
         {emoji}
       </Text>
       <View style={styles.text}>

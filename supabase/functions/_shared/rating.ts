@@ -44,6 +44,21 @@ export type HardFailure = (typeof HARD_FAILURES)[number];
 export const WEAKEST_PIECE = 'weakest_piece';
 export const NO_WEAK_PIECE = 'none';
 
+/** How the per-dimension confidences become one: the weighted mean, or the minimum over dimensions. */
+export type ConfidenceAggregate = 'mean' | 'min';
+
+export type RatingBands = { readonly great: number; readonly good: number; readonly fair: number };
+
+export type RatingConfig = {
+  readonly weights: Readonly<Record<RatingDimension, number>>;
+  readonly hardFailureThreshold: number;
+  readonly hardFailureCap: number;
+  readonly swapBelow: number;
+  readonly swapMinGain: number;
+  readonly bands: RatingBands;
+  readonly confidenceAggregate: ConfidenceAggregate;
+};
+
 export const RATING_CONFIG = {
   weights: {
     color_harmony: 0.2,
@@ -60,22 +75,27 @@ export const RATING_CONFIG = {
   swapBelow: 70,
   swapMinGain: 5,
   bands: { great: 85, good: 70, fair: 50 },
-} as const;
+  confidenceAggregate: 'mean',
+} as const satisfies RatingConfig;
 
 export type RatingLabel = 'great' | 'good' | 'fair' | 'poor';
 
-/** `public.body_type`, `public.age_group` and `public.style` (SQL-only enums today, like `GarmentStatus`). */
-export type BodyType =
-  | 'hourglass'
-  | 'pear'
-  | 'apple'
-  | 'rectangle'
-  | 'inverted_triangle'
-  | 'trapezoid'
-  | 'triangle'
-  | 'oval';
-export type AgeGroup = 'under_18' | '18_24' | '25_34' | '35_44' | '45_54' | '55_plus';
-export type Style = 'casual' | 'elegant' | 'minimalist' | 'sporty' | 'urban' | 'bohemian' | 'classic';
+/** `public.body_type`, `public.age_group` and `public.style`, in their SQL order. */
+export const BODY_TYPES = [
+  'hourglass',
+  'pear',
+  'apple',
+  'rectangle',
+  'inverted_triangle',
+  'trapezoid',
+  'triangle',
+  'oval',
+] as const;
+export const AGE_GROUPS = ['under_18', '18_24', '25_34', '35_44', '45_54', '55_plus'] as const;
+export const STYLES = ['casual', 'elegant', 'minimalist', 'sporty', 'urban', 'bohemian', 'classic'] as const;
+export type BodyType = (typeof BODY_TYPES)[number];
+export type AgeGroup = (typeof AGE_GROUPS)[number];
+export type Style = (typeof STYLES)[number];
 
 export type HeightBucket = 'short' | 'medium' | 'tall';
 
@@ -379,8 +399,7 @@ export function neutralizeUnknownWeather(answers: RatingAnswers, weather: Weathe
   );
 }
 
-export function labelOf(score: number): RatingLabel {
-  const { bands } = RATING_CONFIG;
+export function labelOf(score: number, bands: RatingBands = RATING_CONFIG.bands): RatingLabel {
   if (score >= bands.great) return 'great';
   if (score >= bands.good) return 'good';
   if (score >= bands.fair) return 'fair';
@@ -389,23 +408,29 @@ export function labelOf(score: number): RatingLabel {
 
 /**
  * `score = round(100 · Σ wᵢ · normalizedᵢ)`, capped when a hard failure fired; the confidence is the
- * weighted mean of the per-dimension confidences, on 0..100.
+ * weighted mean (or, with `confidenceAggregate: 'min'`, the minimum) of the per-dimension
+ * confidences, on 0..100. `config` defaults to `RATING_CONFIG`; the calibration script passes
+ * candidate weights and bands.
  */
 export function composeRating(
   dims: DimensionScores,
   hardFailure: boolean,
+  config: RatingConfig = RATING_CONFIG,
 ): { score: number; confidence: number; label: RatingLabel } {
-  const weights = new Map<string, number>(Object.entries(RATING_CONFIG.weights));
+  const weights = new Map<string, number>(Object.entries(config.weights));
   let weightedScore = 0;
   let weightedConfidence = 0;
+  let minConfidence = 1;
   for (const [dimension, { normalized, confidence }] of Object.entries(dims)) {
     const weight = weights.get(dimension) ?? 0;
     weightedScore += weight * normalized;
     weightedConfidence += weight * confidence;
+    minConfidence = Math.min(minConfidence, confidence);
   }
   const raw = Math.round(100 * weightedScore);
-  const score = hardFailure ? Math.min(raw, RATING_CONFIG.hardFailureCap) : raw;
-  return { score, confidence: Math.round(100 * weightedConfidence), label: labelOf(score) };
+  const score = hardFailure ? Math.min(raw, config.hardFailureCap) : raw;
+  const confidence = config.confidenceAggregate === 'min' ? minConfidence : weightedConfidence;
+  return { score, confidence: Math.round(100 * confidence), label: labelOf(score, config.bands) };
 }
 
 const GOOD_AT_LEAST = 0.6;

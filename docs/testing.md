@@ -1,7 +1,8 @@
 # Testing
 
-Four Jest projects, one pgTAP suite. `pnpm test` runs the three that need no Docker; `pnpm test:int`
-and `pnpm db:test` need a running local Supabase stack (see `AGENTS.md`'s "Local backend").
+Four Jest projects, one pgTAP suite and three Maestro end-to-end flows. `pnpm test` runs the
+three Jest projects that need no Docker; `pnpm test:int` and `pnpm db:test` need a running local
+Supabase stack (see `AGENTS.md`'s "Local backend"), and `pnpm e2e` also needs an iOS simulator.
 
 ## Jest projects (`jest.config.ts`)
 
@@ -16,6 +17,8 @@ environment. `jest.setup.ts` mocks:
 - `expo-sqlite/kv-store` — replaced with an in-memory `Map` behind the same synchronous
   `getItemSync`/`setItemSync`/`removeItemSync`/`getAllKeysSync` API `src/lib/kv.ts` calls, since
   there is no native SQLite module under Jest.
+- `Dimensions` — the window and the screen report `fontScale` 1, since React Native's Jest preset
+  reports 2, which would render every large-text layout. A suite that tests large text mocks it.
 
 Uses `@testing-library/react-native` v14: `await render(...)` and `await fireEvent...` (both are
 async in v14).
@@ -24,32 +27,31 @@ The closet suites (Plan 3) render each screen directly, with the closet, upload 
 and profile seams mocked by `jest.mock`, and build garment rows with `src/test/garmentFixture.ts`:
 
 - `src/closet/__tests__/` — `catalog.test.ts` (the enums match `database.types.ts`, slots and the
-  per-clothing-type categories, every label translated), `closetSelectors.test.ts` (stale pending,
-  the review queue, the fields review asks about, slot counts, grid cells), `ClosetGrid.test.tsx`,
-  `GarmentFields.test.tsx` (each field's chips and what they store, a disabled editor,
-  `changedFields`), `garmentRepository.test.ts` (the queries and storage calls against a fake
-  client, error mapping, delete order), `ClosetProvider.test.tsx` (refresh, the kv offline copy,
-  re-signing, a bumped `photo_version` re-signed at once, a poll that found nothing new committing
-  nothing, polling, late results after sign-out or a user switch, a re-sign that lands after the
-  account's deletion leaving no kv copy, foreground and reconnect),
+  per-clothing-type categories, every label translated), `closetSelectors.test.ts` (stale and live
+  pending, a reviewed garment never live pending, the review queue, the fields review asks about,
+  slot counts, grid cells), `ClosetGrid.test.tsx`, `GarmentFields.test.tsx` (each field's chips and
+  what they store, a disabled editor, `changedFields`), `garmentRepository.test.ts` (the queries and
+  storage calls against a fake client, error mapping, delete order), `ClosetProvider.test.tsx`
+  (refresh, the kv offline copy, re-signing, a bumped `photo_version` re-signed at once, a poll that
+  found nothing new committing nothing, polling, late results after sign-out or a user switch, a
+  re-sign that lands after the account's deletion leaving no kv copy, foreground and reconnect),
   `GarmentPhoto.test.tsx` (the full photo signed once, and again for a new `photo_version`),
   `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer,
   `pause` waiting for the queue and keeping its photos, `clear`, `resume` with and without a run,
   and an unconfirmed deletion marker blocking every run and only verified on mount, foreground and
-  reconnect, never deleted and with no Alert) and
-  `ClosetScreen.test.tsx` (the goal card, slot chips, the review banner, the processing and failed
-  tiles, the gallery picker, opening a garment).
+  reconnect, never deleted and with no Alert), `ClosetScreen.test.tsx` (the goal card, slot chips,
+  the review banner, the processing and failed tiles, the gallery picker, opening a garment) and
+  `GoalCard.test.tsx` (the progress wraps under the title at a large text size).
 - `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
   enqueue, replacements, conditional saves, `clearQueue` dropping one user's rows and copies),
-  `runQueue.test.ts` (stages, resuming an interrupted
-  item, backoff, failing after 8 attempts or a permanent error, an attempt claimed before a stage
-  runs so a native crash still counts toward the 8, concurrency 2, and `pauseQueue`: a stage in
-  flight finishes but no upload, commit or next item starts, a stopped item keeps its stage and
-  attempts and is due at once, and nothing runs until `resumeQueue`), `preparePhoto.test.ts`
-  (the resize arguments for portrait, landscape and small photos, one decode capped at 784 px with
-  the thumbnail built from it, WebP qualities, the cut-out or the source photo), `cutout.test.ts` (the native
-  module present, missing, or throwing) and `queueSteps.test.ts` (the real steps, the session check,
-  replacements).
+  `runQueue.test.ts` (stages, resuming an interrupted item, backoff, failing after 8 attempts or a
+  permanent error, an attempt claimed before a stage runs so a native crash still counts toward the
+  8, concurrency 2, and `pauseQueue`: a stage in flight finishes but no upload, commit or next item
+  starts, a stopped item keeps its stage and attempts and is due at once, and nothing runs until
+  `resumeQueue`), `preparePhoto.test.ts` (the resize arguments for portrait, landscape and small
+  photos, one decode capped at 784 px with the thumbnail built from it, WebP qualities, the cut-out
+  or the source photo), `cutout.test.ts` (the native module present, missing, or throwing) and
+  `queueSteps.test.ts` (the real steps, the session check, replacements).
 - `src/__tests__/camera.test.tsx` — the burst camera: permissions, the shutter and shot strip, Done,
   and the Discard / Keep shooting confirm on Close and on a back gesture.
 - `src/__tests__/review.test.tsx` — the review queue: only the doubted fields are asked, Skip and
@@ -111,6 +113,92 @@ The Profile tab's Privacy section (data export and account deletion):
   locally, keeping the queued photos and the data; Sign out is disabled while an export or a
   deletion runs, and a late `reauth` after another account signed in neither signs it out nor
   alerts it.
+- `src/lib/__tests__/e2eLaunch.test.ts` — the Maestro launch check: `-e2e 1` in the user defaults
+  is an end-to-end launch (anything else, or no native settings module, isn't), and only then are
+  LogBox's toasts hidden.
+
+Accounts, onboarding and the profile:
+
+- `src/__tests__/auth-guards.test.tsx` — the root guard: no route and the splash screen while the
+  session loads, signed out to Welcome (a deep link too), and signed in to onboarding or the tabs.
+- `src/__tests__/root-layout-loading.test.tsx` — a later loading state keeps the auth screens
+  mounted instead of unmounting the navigator.
+- `src/__tests__/auth-screens.test.tsx` — Welcome, Sign in and Forgot password: field validation
+  before any call, the social buttons (no Apple on Android, cancel shows nothing, disabled while one
+  runs), service errors, and the reset code's two steps (format, invalid code, resend, change
+  email).
+- `src/auth/__tests__/authService.test.ts` — sign-up, sign-in, sign-out (offline falls back to a
+  local sign-out), the password-reset request (no account and the email rate limit both answer
+  ok) and its confirmation, against a fake client. `errors.test.ts` maps Auth and native errors to
+  message keys, `nonce.test.ts` checks the Apple nonce and its SHA-256, and
+  `signOutOffline.test.ts` signs out offline with an expired session and clears only the session's
+  storage keys.
+- `src/__tests__/onboarding.test.tsx` and `onboarding-arrival.test.tsx` — each step's saves, skips
+  and errors, the body-type helper and height slider, a relaunch mid-onboarding, never overwriting
+  a finished profile, and landing on the Closet after the last step.
+- `src/__tests__/profile.test.tsx` — the Profile tab: prefilled sections, Save sending only the
+  changed fields, inline validation, the language switch and its saves, another account signing in,
+  and sign-out.
+- `src/__tests__/city.test.tsx` — Today's city sheet: a typed city, the current location (or a
+  denied permission), an unchanged city, a failed save or profile read.
+- `src/profile/__tests__/` — `profileRepository.test.ts` (updates of only the patch, an update that
+  reaches no row as an error, the server-stamped onboarding time, error mapping),
+  `profileDraft.test.ts` (the form state, its patch and the changed fields), `validation.test.ts`
+  (the measurement ranges), `bodyType.test.ts` (the body-type table), `useCurrentCity.test.tsx`
+  (city-level precision only) and `ProfileForm.test.tsx` (the body-type grid and the height row at
+  a large text size).
+
+Outfits, Stats and Diary:
+
+- `src/__tests__/today.test.tsx` — Today's lucky list: the occasion chips, debounced refetches on
+  closet changes, one fetch at a time, "I'll wear it" with a reused wear id, the too-small, weather,
+  quota and error states, and the stored list offline (its note wraps at a large text size).
+- `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
+  row, unavailable garments left out, and a slot row at a large text size.
+- `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
+  the swap, Save, "I'll wear it", the quota and error states, and the ring named in Spanish too.
+- `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
+  quota and offline states, and one request at a time.
+- `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
+  shared by Today and the rating per user and day, also after a restart, and cleared for a deleted
+  wear.
+- `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping and
+  `localDate`), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
+  weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
+  and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
+  a large text size) and `ScoreRing.test.tsx` (one progressbar named "Score", the number and
+  caption capped for large text with the ring growing with them).
+- `src/__tests__/closet-stats.test.tsx` — the segments, the KPIs per period ("1 outfit logged",
+  "2 outfits logged"), most worn, a color opening the filtered closet, the balance, the unused list
+  (Wear it and Donate, its row at the largest text sizes) and donated garments left out of Items and
+  Build.
+- `src/__tests__/closet-diary.test.tsx` — the month calendar (worn days, month navigation, day
+  numbers that stay inside their cells at a large text size, where the thumbnail shrinks), a day's
+  wears, deleting a wear (today's too), and the empty and Spanish months.
+- `src/stats/__tests__/` — `periods.test.ts` (the period ranges and the Monday-first month grid),
+  `statsModel.test.ts` (the KPIs, most worn, color shares and slot balance) and
+  `wearsRepository.test.ts` (the wears query and Diary's delete).
+
+Shared UI, the app shell and helpers:
+
+- `src/ui/__tests__/` — `AnchoredCta.test.tsx` and `ChipGroup.test.tsx` (roles, states and the CTA
+  label's cap), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection and the
+  large content viewer), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
+  (`useBottomChrome` and `useLargeText`) and `theme.test.ts` (error text contrast).
+- `src/ui/charts/__tests__/charts.test.tsx` — `HorizontalBars` (rows as buttons, selection, the
+  columns growing with the text and the stacked rows above the large-text threshold),
+  `ProportionBar` (widths, each color read once, 44 pt targets) and `KpiTile` (a full row at a large
+  text size). `reducedMotion.test.tsx` — with Reduce Motion on, the bars and the score ring render
+  their final state without animating.
+- `src/i18n/__tests__/` — `i18n.test.ts` (es has exactly the en keys, every reason and label the
+  functions send has a message, neutral Spanish statuses) and `I18nProvider.test.tsx` (the device
+  language, the override and its persistence).
+- `src/lib/__tests__/` — `supabase.test.ts` (the client's options, a missing URL or key named in the
+  error, auto-refresh with the app state), `fetchWithTimeout.test.ts` (12 s, 45 s for function
+  POSTs, 60 s for uploads) and `storedSession.test.ts`.
+- `src/perf/__tests__/` — `frameStats.test.ts` (dropped frames at 60 and 120 Hz, the inferred
+  refresh rate) and `PerfHud.test.tsx` (tap to reset, long-press to clear the image caches).
+- `src/__tests__/smoke.test.tsx` — the Today screen renders.
 
 ### `scripts`
 
@@ -118,6 +206,63 @@ Tests for `scripts/**/*.test.ts` (repo tooling, e.g. `scripts/env-local.ts`), ru
 Node — no Expo globals, no React Native. Kept out of the `app` project because `jest-expo`'s preset
 installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `scripts` test file's own
 `@jest-environment node` docblock during teardown.
+
+- `scripts/__tests__/env-local.test.ts` — `pnpm env:local`: the four Supabase keys in a fixed order,
+  a half-configured env refused, and every other line of an existing `.env.local` kept.
+- `scripts/__tests__/db-start.test.ts` — the local Apple test key: a one-line P-256 PKCS#8 PEM,
+  written owner-only when missing and kept across restarts.
+- `scripts/__tests__/check-supply-chain.test.ts` — the repo's `pnpm-workspace.yaml` passes; a
+  missing or weakened `trustPolicy`, a missing `minimumReleaseAge` or any `trustPolicyExclude`
+  fails.
+- `scripts/__tests__/perf-fixtures.test.ts` — the 500 fixture specs and file names, a transparent
+  SVG, and `perf:serve` refusing paths outside the fixtures folder.
+- `scripts/__tests__/calibration.test.ts` — the Jev calibration: Spearman's ρ on a hand-computed set
+  with a tie (and null, never NaN, when undefined), the predicted band and the confusion matrix, the
+  weight search (on the 0.05 grid, summing to 1, deterministic, never lowering ρ, unchanged when
+  nothing improves, `weather_fit` never moved, a ρ tie broken by accuracy), the band search's tie
+  rule toward 70/50 and `great` kept above `good` (capped at 100, flagged in the report), the
+  confidence aggregate (`min` chosen when its ρ is higher, the current one kept on a tie or when
+  both are undefined), `evaluate` with unknown weather neutralized, and tiny, skewed or broken data
+  (all-`good` labels, 3 outfits, a missing answer, a malformed labels or answers file), each a
+  named error with no report and no NaN. `eval` on the
+  fictional `calibration/example.*.json` fixtures, through `runEval` and the real CLI (exit codes 0,
+  1 and 2). `export` and `collect` only through their helpers: rows built into the `rate-outfit`
+  state, the service-role reads against a fake `fetch`, merging into an existing labels file, and
+  which outfits still need an answer, against a fake Jev; the collect summary (a hint to check
+  `TYPESAFE_API_KEY` and `TYPESAFE_BASE_URL` when every call failed) and the owner-only (0600)
+  mode of a rewritten local file. The CLI runs with the Supabase and TypeSafe keys blanked, so it
+  can't reach either; nothing calls a real service.
+- `scripts/__tests__/backup.test.ts` — the hosted backup. The helpers come first: the UTC folder
+  name, rotation (the newest 14 kept, never a `.partial` or a foreign name), `stalePartials` (only
+  `.partial` folders more than 7 days old by their embedded time, the exact boundary kept, an
+  impossible time ignored), manifest entries, log redaction, and the env (`~/` expansion, missing
+  variables named, a relative or in-repo `BACKUP_DIR` refused, and so are the home folder and the
+  filesystem root; a password that isn't valid percent-encoding answered with an encoding hint that
+  doesn't echo it). `runBackup` runs in a temp folder with a fake command runner for the two
+  `pnpm exec supabase db dump` calls and a fake Storage `fetch`. A complete run checks the files,
+  `manifest.json`, the rename, the rotation and the newest backup's age in the log. Every file is
+  `0600` and every folder `0700`, and a looser existing root is tightened. It also covers an empty
+  bucket, more than a full list page, and a server that caps pages below the limit (the list pages
+  until an empty page). A run deletes `.partial` folders over 7 days old before it starts, also when
+  it then fails. After the first failed download, no new download starts. `verifyBackup` passes a
+  complete backup, names a changed or missing file, refuses a manifest path that leaves the folder,
+  and reports a missing or malformed manifest. Halfway failures cover a failed schema or data dump,
+  a refused list, a 500 or 404 on one object, `fetch` throwing, an unsafe object name, a missing
+  `pnpm`, and an existing `.partial`. Each exits non-zero, leaves only its `.partial` and rotates
+  nothing, and no log line holds the database URL, its password or the service-role key. No spawned
+  command line holds the password either, decoded or percent-encoded; the dump gets it in
+  `PGPASSWORD`, and a `BACKUP_DB_URL` that isn't a Postgres URL is refused with the percent-encoding
+  hint, without being echoed. The real dump, restore and photo upload are checked by hand against
+  the local stack (`docs/database.md`'s "Hosted backups").
+- `scripts/__tests__/e2e.test.ts` — `pnpm e2e`'s pure parts: the fresh `e2e-<epoch ms>@example.com`
+  address, `JAVA_HOME` (an existing one kept, Homebrew's `openjdk@17` used when it's unset or empty,
+  a message naming `brew install openjdk@17` when there's neither), the `maestro` and
+  `simctl addmedia` arguments, an `addmedia` timeout reported apart from a non-zero exit, the
+  booted simulators read from `simctl list -j` and the one picked (the only booted one, or
+  `E2E_SIMULATOR` by UDID or name; several booted with none named is an error), the stack check
+  (`supabase status -o json` failed, unreadable or without an API URL, and `.env.local` pointing the app elsewhere), and
+  `integration/mockServices.ts`'s weak-piece Jev mode (its `--serve` options refuse `--level`
+  together with `--weak`).
 
 ### `functions`
 
@@ -135,11 +280,65 @@ never called. See `docs/ai.md`. To run only this project:
   `max_tokens`, the category enum limited to the clothing type, the image block, a system prompt
   that ignores text in the image) and the response sanitizer: a refusal, `is_garment: false` or
   non-JSON fails; only enum values survive, at most 3 colors, and a dropped value marks its field
-  uncertain.
+  uncertain. The `claude-adversarial-*.json` fixtures pin it against a manipulated model: out-of-enum
+  values, extra fields aimed at server-only columns or prototype keys, instruction-like strings,
+  JSON wrapped in prose, and output cut off at `max_tokens`.
+- `supabase/functions/_shared/__tests__/rating.test.ts` — the Jev request (8 Score, 2 Noul and 1
+  Choice questions, the weakest-piece options shuffled, no measurement in the state), answer
+  parsing (a missing or out-of-range answer is null, a rounding error is clamped), unknown weather
+  neutralized, and the composite score with the hard-failure cap at 40.
+- `supabase/functions/_shared/__tests__/fallbackRater.test.ts` — the Claude fallback rater's
+  request (a JSON schema of level indices, two booleans and the weakest slot; no measurement) and
+  its parser.
+- `supabase/functions/_shared/__tests__/outfitRules.test.ts` — seasons by hemisphere, complete
+  outfits, missing slots, the occasions' formality ranges, the weather rules, the pre-score, this
+  week's wears, pinned garments and candidate generation.
+- `supabase/functions/_shared/__tests__/forYou.test.ts` — the archetypes per clothing type (valid
+  enums, no repeats), owning one, the combinatorial gain (formality, season, color and pattern
+  rules, one-pieces, outerwear, the cap on a large closet), the ranking, the Jev fit, the Claude
+  lines and their template fallbacks, and the store-search query.
+- `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs, weather bands and
+  conditions, and the forecast and geocoding parsers.
+- `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `mapLimit`, the
+  profile and garments read with the user's token (enums checked, non-uuid ids refused before any
+  request), and the cached weather.
+- `supabase/functions/_shared/__tests__/apple.test.ts` — `appleEnvFrom`, the ES256 client secret
+  (a PEM with literal `\n`s too), the id_token's Apple user, and the token exchange and revoke
+  calls.
+- `supabase/functions/_shared/__tests__/photoStore.test.ts` — the Storage boundary against a fake
+  `fetch`: photo paths (non-uuid ids refused), the URL, method and service-role headers of every
+  call, listing past 1000 entries and at most 5 folders at a time, removal in chunks of 1000,
+  signing one path or 500 per call, a missing object as `null` (a 404, or Storage's 400 with
+  `"statusCode": "404"`), a throw on a 5xx, and that no function file outside `photoStore.ts`
+  contains `/storage/v1/`.
+- `supabase/functions/_shared/__tests__/gateway.test.ts` — the gateway's JWT check, read from
+  `supabase/config.toml`: every function folder has its own `[functions.<name>]` section and no
+  section names a missing folder; every user-called function has `verify_jwt = true`, since
+  `userIdFromJwt` reads the token's `sub` without checking its signature; and `extract-attributes`,
+  the database webhook, is the only one with `verify_jwt = false`, checking its `x-webhook-secret`
+  header instead and never reading a JWT.
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
-  after 30 s (`failed`), a garment no longer pending or missing, and logs that carry only the garment
-  id and an outcome word.
+  after 30 s (`failed`), a garment no longer pending, already reviewed or missing, a guarded
+  write-back that matches no row because the user reviewed it meanwhile (`skipped`), adversarial
+  Claude responses (`claude-adversarial-*.json`) writing only the attribute columns, and logs that
+  carry only the garment id and an outcome word.
+- `supabase/functions/rate-outfit/__tests__/handler.test.ts` — the Jev score and its cache (keyed by
+  the garments, occasion and profile, not by a logged wear), the quota (fails closed), Jev and
+  Claude both failing (503), unknown weather, a foreign garment id (404 before any quota), the swap
+  search, and no measurement reaching Jev or Claude.
+- `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
+  outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
+  deterministic candidate order, the cache per occasion and date, and a garment edit recomputing it.
+- `supabase/functions/for-you/__tests__/handler.test.ts` — too small, the 3–5 ideas in gain × fit
+  order with Claude lines and store queries (Spanish too), what Jev and Claude see, each model
+  failing (template lines or gain-only order, cached degraded), and laundry or donated garments.
+- `supabase/functions/apple-token/__tests__/handler.test.ts` — the code exchange stored with the
+  service role and never returned, an identity mismatch, no Apple env (`skipped`), 401 and 405.
+- `supabase/functions/export-data/__tests__/handler.test.ts` — every section, rows read with the
+  caller's token and only the caller's paths signed for 7 days, another user's rows dropped, paging
+  until an empty page (also when the server caps a page below 1000 rows), a brand-new account, a
+  failed read or signing answering 500, and a log of only an outcome word.
 - `supabase/functions/delete-account/__tests__/handler.test.ts` — the order (photos, Apple revoke,
   user), paging and chunks, the caller check (only `user_not_found` means already deleted), a
   retry after the user is gone sweeping only the caller's folder (photos that landed while the
@@ -205,9 +404,11 @@ Supabase stack:
   `garments` select shows. Needs the Edge Runtime.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
-it, after starting Supabase. Run it manually with `pnpm db:start && pnpm env:local && pnpm test:int`
-when touching auth, RLS, profile or garment persistence, the extraction function or the outfit functions; `--runInBand` because the suites share one
-database and create/delete real `auth.users` rows.
+it, after starting Supabase. Run it manually with
+`pnpm db:start && pnpm db:reset && pnpm env:local && pnpm test:int` when touching auth, RLS,
+profile or garment persistence, the extraction function, the outfit functions or the account
+functions; `--runInBand` because the suites share one database and create/delete real
+`auth.users` rows.
 
 `integration/mockAnthropic.ts` is the mock Claude: `startMockAnthropic(port = 54499)` serves
 `POST /v1/messages` on `0.0.0.0` (the function calls it from inside a container, as
@@ -226,8 +427,10 @@ composite score is `round(100 · level)`; each Noul at 0.02; each Choice `none`,
 `criteria` keys). `calls(path)` counts the calls on a path; `close()` drops hung connections.
 Until set, Jev answers every Score at its best level, the forecast is `MILD_FORECAST` (a dry 19 °C
 day, band `mild`) and geocoding finds Madrid. For a manual simulator check,
-`node integration/mockServices.ts --serve [--level <0..1>] [--temp <°C>]` keeps it running with
-every Jev answer at `level` (default 1) and, with `--temp`, a clear, dry day around that temperature.
+`node integration/mockServices.ts --serve [--level <0..1> | --weak <category>] [--temp <°C>]` keeps
+it running with every Jev answer at `level` (default 1) or, with `--weak`, the weak-piece answers
+`pnpm e2e` uses (the two can't be combined), and, with `--temp`, a clear, dry day around that
+temperature.
 
 `integration/fixtures/garment.webp` is a 784 px, ~9 KB WebP of a garment silhouette, encoded once
 with sharp from `scripts/perf-fixtures.ts`'s `fixtureSvg` and committed.
@@ -268,12 +471,116 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   `extraction_status`, `wear_count` or `user_id`; `updated_at` moves on update.
 - `usage_quota.test.sql` — `consume_quota()`'s per-user, per-day counter and its limit, and that
   clients can neither call it nor read `usage_counters`.
+- `ai_caches.test.sql` — `rating_cache`, `lucky_cache` and `weather_cache` are server-only (no
+  client select or insert, anon included), and the `rating` and `lucky` quota kinds count
+  separately.
+- `outfits_wears.test.sql` — `log_wear()` and `save_outfit()`: one outfit, its items and a wear,
+  `wear_count` and `last_worn_at` kept on insert and delete, idempotent on the wear id (never
+  adopting another user's), another user's garments or outfit refused, too few or duplicate items
+  refused, cross-user isolation on `outfits`, `outfit_items` and `wears`, no client update, a wear
+  deleted only by its owner, and a garment delete cascading its outfit items.
+- `insights_account.test.sql` — the `donated` status and the client-writable `pinned_on`, the
+  `for_you` quota kind, the server-only `for_you_cache` and `apple_tokens`, and that every public
+  table with a `user_id` cascades from `auth.users` (deleting a user empties them all).
 - `garment_extraction_trigger.test.sql` — the garments insert trigger's shape and privileges, the
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
   queueing the request fails.
+- `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
+  is executable by a client role, and no index is made redundant by another that starts with the
+  same columns.
 
 See `docs/database.md` for how these tests impersonate a user and create test rows without a real
 JWT.
+
+## End-to-end flows (Maestro)
+
+`pnpm e2e` (`scripts/e2e.ts`) runs the three Maestro flows in `.maestro/flows/` on an iOS
+simulator, against the local stack and the mocks, as a fresh user:
+
+1. `onboarding-closet-lucky.yaml` — sign up, onboarding, four garments from the gallery, review,
+   "I'll wear it" on Today's "feeling lucky" outfit, and the wear in Stats ("1 outfit logged").
+2. `build-rate-swap.yaml` — Build an outfit around the T-shirt, rate it, "Try the swap".
+3. `delete-account.yaml` — delete the account (both confirms), land on Welcome, and fail to sign
+   in with it.
+
+They share one account, created by the first and deleted by the last, so `.maestro/config.yaml`
+runs them in that order and stops at the first failure. Each run signs up as
+`e2e-<epoch ms>@example.com`, so a run that failed halfway (and left its user behind) never
+collides with the next. Flows wait on visible text with `extendedWaitUntil`, never a fixed sleep.
+The text is English, so the simulator's language must be English: `launchApp`'s `clearState`
+drops the in-app language choice, and the app follows the device.
+
+### Prerequisites
+
+- **Maestro and Java 17.** `brew install maestro openjdk@17`. Both are machine tools, not repo
+  dependencies. `openjdk@17` is keg-only, so it isn't on `PATH`. `pnpm e2e` uses `JAVA_HOME` when
+  it's set; when it isn't, it uses `/opt/homebrew/opt/openjdk@17` (its `bin` first on `PATH`), and
+  it fails with a message when neither exists. That fallback is Apple silicon's Homebrew prefix;
+  on an Intel Mac, set `JAVA_HOME` yourself, to `$(brew --prefix openjdk@17)` or
+  `$(/usr/libexec/java_home -v 17)`. To run `maestro` by hand, set it in that shell:
+
+  ```bash
+  export JAVA_HOME=/opt/homebrew/opt/openjdk@17   # Intel: "$(brew --prefix openjdk@17)"
+  export PATH="$JAVA_HOME/bin:$PATH"
+  ```
+
+- **A booted iOS simulator with the dev build** (`pnpm ios` once; rebuild after native changes)
+  **and Metro running** on `:8081`. With several simulators booted, name one:
+  `E2E_SIMULATOR=<udid or name> pnpm e2e`.
+- **An English simulator.** Settings → General → Language & Region; the flows match English
+  text.
+- **The local stack:** `pnpm db:start`, then `pnpm env:local` (the app must point at it; the script
+  checks).
+- **Ports 54498 and 54499 free.** The script starts the mocks itself and stops them at the end.
+
+### What the script does
+
+1. Checks Java, Maestro, the simulator and the installed app, Metro, and the local stack, failing
+   with what to run instead of timing out in a flow.
+2. Starts `node integration/mockServices.ts --serve --weak t_shirt` and
+   `node integration/mockAnthropic.ts --serve ok`, and waits for each to print that it's listening.
+3. Copies the fictional photos in `.maestro/fixtures/` to a temporary folder and adds them to the
+   simulator's library with `xcrun simctl addmedia <udid>`. The copy is needed because the
+   simulator's media bridge can't open files under `~/Documents`, and `addmedia` then hangs
+   instead of failing, so the script stops it after a time limit and says whether it timed out or
+   exited with an error. The photos go in on every run, so the simulator's photo library grows by
+   four each time (erasing the simulator empties it, and removes the dev build too); the flow picks
+   the four newest.
+4. Runs `maestro --device <udid> test --config .maestro/config.yaml .maestro/flows` with `EMAIL`
+   and `PASSWORD` passed to the flows, then stops the mocks and exits with Maestro's status.
+
+### How the flows drive the app
+
+- **Extraction.** The mock Claude reads every photo as navy jeans (`claude-ok.json`), so review
+  keeps the first as jeans and turns the others into a T-shirt, a shirt and sneakers through each
+  card's Category row (`.maestro/subflows/recategorize.yaml`). Which photo gets which category
+  depends on upload order, so a thumbnail may not match its label; the mock never looks at it.
+  There's no cut-out on the simulator (no Vision), so each garment keeps its original photo.
+- **The swap.** `--weak t_shirt` makes the mock Jev score any outfit holding the T-shirt at 40 and
+  name the top as its weakest piece; every other outfit scores at the best level. A rating of the
+  T-shirt outfit then offers the shirt, and the swapped outfit "Looks great".
+- **Sign-up.** Email confirmation is off locally (`[auth.email].enable_confirmations = false`), so
+  "Create account" signs in at once and no Mailpit step is needed. The password field is switched
+  to plain text before typing, since typing into a secure field can drop characters.
+- **Dev warnings.** Every `launchApp` passes `-e2e 1`. iOS puts it in the app's user defaults, and
+  in a dev build `src/lib/e2eLaunch.ts` then hides LogBox's warning toasts. They sit over the
+  anchored CTAs, so a tap there would open the debugger instead of pressing the button.
+- **The photo picker.** iOS's picker isn't the app's UI, so the flow taps its cells by Apple's
+  own accessibility id, `PXGGridLayout-Info` at indexes 0 to 3, after
+  waiting for its "Select up to 30 photos." prompt. Both are iOS internals, not a public API: an iOS
+  update can rename them, and the flow then fails at the gallery step. Check them with
+  `maestro hierarchy` on the open picker.
+- **Fixtures.** `node scripts/e2e.ts fixtures` regenerates the four JPEGs with `sharp`, drawn from
+  `scripts/perf-fixtures.ts`'s garment shapes on a plain background. They're fictional, never
+  real photos.
+
+### Why CI doesn't run it
+
+There's no reliable simulator or emulator job yet: a macOS runner with a simulator, a dev build
+and the local stack in Docker is slow and flaky, and the Linux runner has no iOS simulator. So
+`pnpm e2e` runs locally before a release and after changes to the flows it covers. The flows are
+iOS only for now. On Android, `addmedia` becomes `adb push` plus a media scan, and the launch
+argument needs another channel (see the NOTE in `src/lib/e2eLaunch.ts`).
 
 ## Which tests need Docker
 
@@ -282,6 +589,7 @@ JWT.
 | `pnpm test`     | no                              | no                    |
 | `pnpm db:test`  | yes                             | no (connects directly) |
 | `pnpm test:int` | yes                             | yes (`pnpm env:local` first) |
+| `pnpm e2e`      | yes, plus a simulator and Metro | yes (`pnpm env:local` first) |
 
 `pnpm typecheck`, `pnpm lint`, and `pnpm test` need nothing beyond `pnpm install`.
 
@@ -312,9 +620,11 @@ To check a code by hand during manual testing, open `http://127.0.0.1:54424` in 
 ```bash
 pnpm typecheck && pnpm lint && pnpm test
 pnpm db:start
+pnpm db:reset
 pnpm db:test
 pnpm env:local
 pnpm test:int
+pnpm e2e        # also needs the booted simulator with the dev build and Metro
 pnpm db:stop
 ```
 

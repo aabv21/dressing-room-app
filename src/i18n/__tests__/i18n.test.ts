@@ -63,3 +63,10 @@ test('every rating reason and label the functions send has a message', () => {
     expect(keys).toContain(`rating.label.${label}`);
   }
 });
+
+test('garment statuses read as neutral Spanish, the same for any garment', () => {
+  expect(es['garment.status.available']).toBe('Disponible');
+  expect(es['garment.status.laundry']).toBe('En la lavandería');
+  expect(es['garment.status.lent']).toBe('En préstamo');
+  expect(es['garment.status.donated']).toBe('Donación');
+});

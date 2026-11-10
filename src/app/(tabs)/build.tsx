@@ -23,6 +23,7 @@ import { pieceLabel } from '../../outfits/outfitDisplay';
 import type { AnchoredCta } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen, ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
+import { useLargeText } from '../../ui/layout';
 import { colors, layout, selectionRing, spacing } from '../../ui/theme';
 
 type RowKey = 'top' | 'bottom' | 'shoes' | 'extra';
@@ -59,6 +60,8 @@ function SlotRow({
   onPress: () => void;
 }): React.JSX.Element {
   const { t } = useI18n();
+  // At the largest text sizes the value goes whole under the label instead of being cut to one line.
+  const largeText = useLargeText();
   return (
     <Pressable
       accessibilityRole="button"
@@ -66,10 +69,15 @@ function SlotRow({
       accessibilityHint={t('build.slot.hint')}
       accessibilityState={{ selected: active }}
       onPress={onPress}
-      style={[styles.slot, chosen ? null : styles.slotEmpty, active ? styles.slotActive : null]}
+      style={[
+        styles.slot,
+        largeText ? styles.slotStacked : null,
+        chosen ? null : styles.slotEmpty,
+        active ? styles.slotActive : null,
+      ]}
     >
       <Text style={styles.slotLabel}>{label}</Text>
-      <Text style={chosen ? styles.slotValue : styles.slotPlaceholder} numberOfLines={1}>
+      <Text style={chosen ? styles.slotValue : styles.slotPlaceholder} {...(largeText ? {} : { numberOfLines: 1 })}>
         {value}
       </Text>
     </Pressable>
@@ -249,6 +257,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 13,
+  },
+  slotStacked: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: 2,
   },
   // `.slot.empty`: no fill, a dashed outline.
   slotEmpty: {

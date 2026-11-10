@@ -138,3 +138,17 @@ test('emptyText replaces the closet empty state', async () => {
   expect(screen.getByText('No shoes available.')).toBeOnTheScreen();
   expect(screen.queryByText('Add your 10 favorites to get started.')).not.toBeOnTheScreen();
 });
+
+test('the badge and wear count over a thumbnail are capped for large text, and iOS shows the cell enlarged on a long press', async () => {
+  await render(
+    <ClosetGrid
+      items={[{ id: 'a', thumbUri: 'https://x/a', wearCount: 2, label: 'Jeans', badge: 'In the laundry' }]}
+      onPressItem={jest.fn()}
+    />,
+  );
+  expect(screen.getByText('In the laundry', { includeHiddenElements: true })).toHaveProp('maxFontSizeMultiplier', 1.3);
+  expect(screen.getByText('2 wears', { includeHiddenElements: true })).toHaveProp('maxFontSizeMultiplier', 1.3);
+  const cell = screen.getByRole('button', { name: 'Jeans, In the laundry, 2 wears' });
+  expect(cell).toHaveProp('accessibilityShowsLargeContentViewer', true);
+  expect(cell).toHaveProp('accessibilityLargeContentTitle', 'Jeans, In the laundry, 2 wears');
+});

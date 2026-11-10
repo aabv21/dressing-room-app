@@ -56,6 +56,10 @@ function uniform(normalized: number, confidence = 1): DimensionScores {
   return Object.fromEntries(RATING_DIMENSIONS.map((dimension) => [dimension, { normalized, confidence }])) as DimensionScores;
 }
 
+function uniformWeights(weight: number): Record<RatingDimension, number> {
+  return Object.fromEntries(RATING_DIMENSIONS.map((dimension) => [dimension, weight])) as Record<RatingDimension, number>;
+}
+
 describe('buildJevRequest', () => {
   it('asks 8 score, 2 noul and 1 choice questions of jev-latest', () => {
     const request = buildJevRequest(STATE, seeded(1));
@@ -276,6 +280,33 @@ describe('composeRating', () => {
     expect(parsed.weakestSlot).toBe('top');
   });
 
+  it('takes the weights, cap and bands from an injected config', () => {
+    const config = {
+      ...RATING_CONFIG,
+      weights: { ...uniformWeights(0), color_harmony: 1 },
+      hardFailureCap: 30,
+      bands: { great: 90, good: 60, fair: 40 },
+    };
+    const dims: DimensionScores = { ...uniform(1, 0.9), color_harmony: { normalized: 0.55, confidence: 0.4 } };
+    expect(composeRating(dims, false, config)).toEqual({ score: 55, confidence: 40, label: 'fair' });
+    expect(composeRating(uniform(1), false, config)).toEqual({ score: 100, confidence: 100, label: 'great' });
+    expect(composeRating(uniform(1), true, config)).toMatchObject({ score: 30, label: 'poor' });
+    // The default is still RATING_CONFIG.
+    expect(composeRating(dims, false)).toEqual(composeRating(dims, false, RATING_CONFIG));
+  });
+
+  it('aggregates the confidence as the weighted mean or the minimum over dimensions', () => {
+    const dims: DimensionScores = { ...uniform(0.8, 0.9), style_match: { normalized: 0.8, confidence: 0.3 } };
+    // Weighted mean: 0.95 · 0.9 + 0.05 · 0.3 = 0.87.
+    expect(composeRating(dims, false).confidence).toBe(87);
+    expect(composeRating(dims, false, { ...RATING_CONFIG, confidenceAggregate: 'mean' }).confidence).toBe(87);
+    expect(composeRating(dims, false, { ...RATING_CONFIG, confidenceAggregate: 'min' })).toEqual({
+      score: 80,
+      confidence: 30,
+      label: 'good',
+    });
+  });
+
   it('applies the label bands at their edges', () => {
     expect(composeRating(uniform(0.85), false).label).toBe('great');
     expect(composeRating(uniform(0.84), false).label).toBe('good');
@@ -299,6 +330,7 @@ describe('RATING_CONFIG', () => {
       swapBelow: 70,
       swapMinGain: 5,
       bands: { great: 85, good: 70, fair: 50 },
+      confidenceAggregate: 'mean',
     });
   });
 });

@@ -1,0 +1,18 @@
+{
+  "id": "msg_fixture_adversarial_truncated",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"is_garment\":true,\"category\":\"jeans\",\"colors\":[\"navy\"],\"pattern\":\"solid\",\"material\":\"denim\",\"formality\":2,\"seasons\":[\"a"
+    }
+  ],
+  "stop_reason": "max_tokens",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1240,
+    "output_tokens": 180
+  }
+}

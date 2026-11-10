@@ -18,7 +18,8 @@ import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
-import { colors, layout, radii, selectionRing, spacing } from '../ui/theme';
+import { useLargeText } from '../ui/layout';
+import { colors, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
 import { slotOf } from './catalog';
 import { useCloset } from './ClosetProvider';
 import type { Garment } from './garmentRepository';
@@ -30,8 +31,9 @@ const NAV_SIZE = 32;
 const NAV_SLOP = (layout.minHitTarget - NAV_SIZE) / 2;
 const MINI_HEIGHT = 28;
 const MINI_SLOP = (layout.minHitTarget - MINI_HEIGHT) / 2;
-// Mockup 04's calendar greys (`.cal .h`, `.d`) and a worn day's darker number (`.d.w`).
-const DAY_MUTED = '#8a8695';
+// Mockup 04's calendar greys (`.cal .h`, `.d`) and a worn day's darker number (`.d.w`). The light
+// grey is the theme's muted ink, the lightest that keeps 4.5:1 on the translucent day cells.
+const DAY_MUTED = colors.muted;
 const DAY_INK = '#4a4656';
 
 const formats = new Map<string, Intl.DateTimeFormat>();
@@ -120,6 +122,7 @@ function DayCell({
   onPress: ((day: string) => void) | undefined;
 }): React.JSX.Element {
   const worn = onPress !== undefined;
+  const largeText = useLargeText();
   const style = [
     styles.cell,
     worn ? styles.cellWorn : null,
@@ -129,14 +132,17 @@ function DayCell({
   ];
   const content = (
     <>
-      <Text style={[styles.cellNumber, worn ? styles.cellNumberWorn : null, today ? styles.cellNumberToday : null]}>
+      <Text
+        style={[styles.cellNumber, worn ? styles.cellNumberWorn : null, today ? styles.cellNumberToday : null]}
+        maxFontSizeMultiplier={textScale.calendar}
+      >
         {Number(cell.day.slice(8, 10))}
       </Text>
       {thumb === undefined || thumbUri === undefined ? null : (
         <Image
           testID={`diary-thumb-${cell.day}`}
           source={{ uri: thumbUri, cacheKey: `${thumb.id}:thumb:${String(thumb.photo_version)}` }}
-          style={styles.cellThumb}
+          style={[styles.cellThumb, largeText ? styles.cellThumbLarge : null]}
           cachePolicy="disk"
           contentFit="contain"
           accessibilityIgnoresInvertColors
@@ -343,8 +349,8 @@ export function DiarySegment(): React.JSX.Element {
 
   return (
     <View style={styles.body}>
-      <View style={styles.monthRow}>
-        <View style={styles.monthNav}>
+      <View style={styles.monthRow} testID="diary-month-row">
+        <View style={styles.monthNav} testID="diary-month-nav">
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={prevLabel}
@@ -380,7 +386,7 @@ export function DiarySegment(): React.JSX.Element {
         <View style={styles.week} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
           {weekdays.map((letter, index) => (
             // The letters repeat (M, T … S, S): the position is the identity.
-            <Text key={`weekday-${String(index)}`} style={styles.weekday}>
+            <Text key={`weekday-${String(index)}`} style={styles.weekday} maxFontSizeMultiplier={textScale.calendar}>
               {letter}
             </Text>
           ))}
@@ -444,13 +450,17 @@ const styles = StyleSheet.create({
   body: {
     gap: spacing.sm + 2,
   },
+  // At a large text size the month title wraps between its arrows and the count goes under it,
+  // so the next arrow never leaves the screen.
   monthRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
   monthNav: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
@@ -463,6 +473,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
   },
   monthTitle: {
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: '800',
     color: colors.ink,
@@ -526,6 +537,10 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     borderRadius: 6,
   },
+  // Leaves room for the enlarged day number in the square cell.
+  cellThumbLarge: {
+    width: '46%',
+  },
   loading: {
     paddingVertical: spacing.md,
   },
@@ -543,11 +558,13 @@ const styles = StyleSheet.create({
     padding: spacing.sm + 4,
     gap: spacing.sm,
   },
+  // Wraps the occasion and score under the day when a large text size leaves no room for both.
   wearHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    gap: spacing.sm,
+    columnGap: spacing.sm,
   },
   wearTitle: {
     flexShrink: 1,

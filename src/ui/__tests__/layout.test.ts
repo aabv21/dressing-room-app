@@ -1,7 +1,14 @@
 import { renderHook } from '@testing-library/react-native';
+import { Dimensions } from 'react-native';
 
-import { useBottomChrome } from '../layout';
+import { LARGE_TEXT_FONT_SCALE, useBottomChrome, useLargeText } from '../layout';
 import { layout } from '../theme';
+
+const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
 
 // Under the jest-expo project's safe-area-context mock (jest.setup.ts), useSafeAreaInsets()
 // resolves all-zero insets with no provider, so `insets.bottom` is 0 here.
@@ -25,5 +32,27 @@ describe('useBottomChrome', () => {
 
     expect(result.current.tabBarBottom).toBe(0 + layout.tabBarGap);
     expect(result.current.ctaBottom).toBe(result.current.tabBarBottom + layout.tabBarHeight + layout.ctaGap);
+  });
+});
+
+describe('the Jest default text size', () => {
+  test('is the standard one, so a large-text test has to ask for it (jest.setup.ts)', () => {
+    expect(Dimensions.get('window').fontScale).toBe(1);
+    expect(Dimensions.get('screen').fontScale).toBe(1);
+  });
+});
+
+describe('useLargeText', () => {
+  test.each([
+    [1, false],
+    [1.35, false],
+    [LARGE_TEXT_FONT_SCALE, false],
+    [1.65, true],
+    [2, true],
+    [3.1, true],
+  ])('fontScale %d → %s', async (fontScale, expected) => {
+    mockWindow.fontScale = fontScale;
+    const { result } = await renderHook(() => useLargeText());
+    expect(result.current).toBe(expected);
   });
 });

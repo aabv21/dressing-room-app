@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -7,6 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useLargeText } from '../layout';
 import { colors, layout, spacing } from '../theme';
 
 const GROW_DURATION_MS = 450;
@@ -19,7 +20,7 @@ const VERTICAL_SLOP = (layout.minHitTarget - ROW_HEIGHT) / 2;
 
 export type HorizontalBarRow = { id: string; label: string; value: number; valueLabel: string };
 
-function Bar({ id, pct, color }: { id: string; pct: number; color: string }) {
+function Bar({ id, pct, color, stacked }: { id: string; pct: number; color: string; stacked: boolean }) {
   const reducedMotion = useReducedMotion();
   const width = useSharedValue(reducedMotion ? pct : 0);
 
@@ -43,7 +44,7 @@ function Bar({ id, pct, color }: { id: string; pct: number; color: string }) {
   }, [pct]);
 
   return (
-    <View style={styles.track}>
+    <View style={[styles.track, stacked ? null : styles.trackInRow]}>
       <Animated.View testID={`bar-fill-${id}`} style={[styles.fill, { backgroundColor: color }, fillStyle]} />
     </View>
   );
@@ -55,6 +56,10 @@ function Bar({ id, pct, color }: { id: string; pct: number; color: string }) {
  * selected one shows `detail` beneath it (the mockup's floating tip, flattened to an inline line
  * for touch); without it the rows are read-only (mockup 04's "Balance del clóset").
  * `valueWidth` widens the value column for spelled-out values ("21 wears").
+ *
+ * The text is never capped. Up to `LARGE_TEXT_FONT_SCALE` the label and value columns grow with it
+ * (every row shares the same widths); above it a row stacks its label and value over a full-width
+ * bar, the label wrapping as far as it needs.
  */
 export function HorizontalBars(props: {
   rows: readonly HorizontalBarRow[];
@@ -66,27 +71,54 @@ export function HorizontalBars(props: {
 }): React.JSX.Element {
   const { rows, selectedId = null, onSelect, detail, color = colors.accent, valueWidth = VALUE_WIDTH } = props;
   const max = Math.max(1, ...rows.map((row) => row.value));
+  const { fontScale } = useWindowDimensions();
+  const stacked = useLargeText();
+  const scale = Math.max(fontScale, 1);
+  const rowStyle = stacked ? styles.rowStacked : styles.row;
+  const labelStyle = stacked ? [styles.label, styles.labelStacked] : [styles.label, { width: LABEL_WIDTH * scale }];
+  const valueStyle = stacked ? styles.value : [styles.value, { width: valueWidth * scale }];
+  const detailIndent = stacked ? 0 : LABEL_WIDTH * scale + spacing.sm - 2;
 
   return (
     <View style={styles.list}>
       {rows.map((row) => {
         const isSelected = row.id === selectedId;
         const pct = (row.value / max) * 100;
-        const content = (
+        const label = (
+          <Text style={labelStyle} {...(stacked ? {} : { numberOfLines: 1 })}>
+            {row.label}
+          </Text>
+        );
+        const value = (
+          <Text style={valueStyle} {...(stacked ? {} : { numberOfLines: 1 })}>
+            {row.valueLabel}
+          </Text>
+        );
+        const content = stacked ? (
           <>
-            <Text style={styles.label} numberOfLines={1}>
-              {row.label}
-            </Text>
-            <Bar id={row.id} pct={pct} color={color} />
-            <Text style={[styles.value, { width: valueWidth }]} numberOfLines={1}>
-              {row.valueLabel}
-            </Text>
+            <View style={styles.stackedHeader}>
+              {label}
+              {value}
+            </View>
+            <Bar id={row.id} pct={pct} color={color} stacked={stacked} />
+          </>
+        ) : (
+          <>
+            {label}
+            <Bar id={row.id} pct={pct} color={color} stacked={stacked} />
+            {value}
           </>
         );
         const accessibilityLabel = `${row.label}, ${row.valueLabel}`;
         if (onSelect === undefined) {
           return (
-            <View key={row.id} accessible accessibilityLabel={accessibilityLabel} style={styles.row}>
+            <View
+              key={row.id}
+              testID={`bar-row-${row.id}`}
+              accessible
+              accessibilityLabel={accessibilityLabel}
+              style={rowStyle}
+            >
               {content}
             </View>
           );
@@ -101,11 +133,14 @@ export function HorizontalBars(props: {
               onPress={() => {
                 onSelect(row.id);
               }}
-              style={styles.row}
+              testID={`bar-row-${row.id}`}
+              style={rowStyle}
             >
               {content}
             </Pressable>
-            {isSelected && detail !== undefined ? <Text style={styles.detail}>{detail}</Text> : null}
+            {isSelected && detail !== undefined ? (
+              <Text style={[styles.detail, { marginLeft: detailIndent }]}>{detail}</Text>
+            ) : null}
           </View>
         );
       })}
@@ -123,17 +158,34 @@ const styles = StyleSheet.create({
     gap: spacing.sm - 2,
     minHeight: ROW_HEIGHT,
   },
+  // Above the large-text threshold: the label and value on one line (wrapping), the bar under them.
+  rowStacked: {
+    flexDirection: 'column',
+    gap: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  stackedHeader: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    columnGap: spacing.sm,
+  },
   label: {
-    width: LABEL_WIDTH,
     fontSize: 12,
     color: colors.ink,
   },
+  labelStacked: {
+    flexShrink: 1,
+  },
   track: {
-    flex: 1,
     height: BAR_HEIGHT,
     borderRadius: BAR_HEIGHT / 2,
     backgroundColor: colors.track,
     overflow: 'hidden',
+  },
+  trackInRow: {
+    flex: 1,
   },
   fill: {
     height: BAR_HEIGHT,
@@ -150,6 +202,5 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: -2,
     marginBottom: spacing.xs,
-    marginLeft: LABEL_WIDTH + spacing.sm - 2,
   },
 });

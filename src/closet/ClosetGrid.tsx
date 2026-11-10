@@ -4,7 +4,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatWearCount, useI18n, type Locale } from '../i18n';
-import { colors, radii, selectionRing, spacing } from '../ui/theme';
+import { colors, radii, selectionRing, spacing, textScale } from '../ui/theme';
 
 export type GridItem = {
   id: string;
@@ -75,6 +75,9 @@ const GridCell = memo(function GridCell({
         accessibilityRole={onPress ? 'button' : undefined}
         accessibilityLabel={accessibilityLabel}
         accessibilityState={selected === undefined ? undefined : { selected }}
+        // The overlays are capped to stay in their corners; a long press shows the cell enlarged (iOS).
+        accessibilityShowsLargeContentViewer
+        accessibilityLargeContentTitle={accessibilityLabel}
       >
         {showImage ? (
           <Image
@@ -90,11 +93,11 @@ const GridCell = memo(function GridCell({
           />
         ) : null}
         {item.badge === undefined ? null : (
-          <Text style={styles.badge} numberOfLines={1}>
+          <Text style={styles.badge} numberOfLines={1} maxFontSizeMultiplier={textScale.overlay}>
             {item.badge}
           </Text>
         )}
-        <Text style={styles.wearCount} numberOfLines={1}>
+        <Text style={styles.wearCount} numberOfLines={1} maxFontSizeMultiplier={textScale.overlay}>
           {wearCountText}
         </Text>
       </Pressable>
