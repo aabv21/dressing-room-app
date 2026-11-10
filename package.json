@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@react-native-community/slider": "5.2.1",
+    "@react-native-community/slider": "5.2.2",
     "@react-native-google-signin/google-signin": "^17.0.0",
     "@shopify/flash-list": "2.3.2",
     "@supabase/supabase-js": "^2.118.0",
