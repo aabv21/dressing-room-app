@@ -590,6 +590,7 @@ describe('an account deletion under way when the session ends', () => {
     allowUserKeys(DELETED);
     kvRemove(`account.deleting.${DELETED}`);
     kvRemove(`closet.v1.${DELETED}`);
+    kvRemove(`queue.purge.${DELETED}`);
   });
 
   test('that account signing in again (it still exists) can write its kv data again', async () => {
@@ -627,6 +628,8 @@ describe('an account deletion under way when the session ends', () => {
 
     expect(kvGet(`account.deleting.${DELETED}`)).toBeNull();
     expect(kvGet(`closet.v1.${DELETED}`)).toBeNull();
+    // Its queued photos are left to the next upload queue provider to mount.
+    expect(kvGet(`queue.purge.${DELETED}`)).not.toBeNull();
   });
 
   test('a deletion waiting for the user to sign in again (reauth) keeps the data and the marker', async () => {
@@ -643,6 +646,7 @@ describe('an account deletion under way when the session ends', () => {
 
     expect(kvGet(`account.deleting.${DELETED}`)).toBe('reauth');
     expect(kvGet(`closet.v1.${DELETED}`)).toBe('x');
+    expect(kvGet(`queue.purge.${DELETED}`)).toBeNull();
   });
 
   test('a kv error while dropping that data still reaches the signed-out and signed-in states', async () => {

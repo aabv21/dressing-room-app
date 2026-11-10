@@ -39,7 +39,9 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer,
   `pause` waiting for the queue and keeping its photos, `clear`, `resume` with and without a run,
   and an unconfirmed deletion marker blocking every run and only verified on mount, foreground and
-  reconnect, never deleted and with no Alert), `ClosetScreen.test.tsx` (the goal card, slot chips,
+  reconnect, never deleted and with no Alert; on mount, each other account's `queue.purge.<id>`
+  request clears that queue and is dropped, the provider's own user's is dropped without a clear,
+  and a request whose clear failed stays), `ClosetScreen.test.tsx` (the goal card, slot chips,
   the review banner, the processing and failed tiles, the gallery picker, opening a garment) and
   `GoalCard.test.tsx` (the progress wraps under the title at a large text size).
 - `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
@@ -77,7 +79,8 @@ The Profile tab's Privacy section (data export and account deletion):
   `exportData`'s document and failures, and `exportFileName`'s local-day name.
 - `src/account/__tests__/deletionMarker.test.ts` — the `account.deleting.<id>` marker's states, and
   `forgetInterruptedDeletions` dropping a `deleting` account's data and marker while keeping a
-  `reauth` one's and the active user's own.
+  `reauth` one's and the active user's own, and recording a `queue.purge.<id>` request only for the
+  dropped account.
 - `src/account/__tests__/deletionFlow.test.ts` — `runDeletion`: the marker is written before the
   pause; deleted clears the queue, signs out, drops the data and marker and clears the device files,
   and a failing queue clear or kv cleanup still signs out; a per-user kv write after the cleanup is
@@ -90,12 +93,14 @@ The Profile tab's Privacy section (data export and account deletion):
   whose time can't be trusted (missing, malformed, or more than the settle window in the future) is
   stamped anew and stays pending, so the window starts over; `unknown` keeps both.
 - `src/auth/__tests__/AuthProvider.test.tsx` (its interrupted-deletion part) — a session lost while
-  a deletion is marked `deleting` drops that account's kv data; a `reauth` one keeps it; another
+  a deletion is marked `deleting` drops that account's kv data and records a queue purge request; a
+  `reauth` one keeps its data and records none; another
   user signing in drops a `deleting` account's kv data and keeps their own marker for their
   session's check; that account signing in again can write its kv data again.
 - `src/account/__tests__/forgetAccount.test.ts` — every kv key under the user's id goes (each day's
   `today.occasion.<id>.<date>` too), with the onboarding status and pending language save; another
-  account's keys and the device's language preference stay; the user's later writes are refused
+  account's keys, the device's language preference and a `queue.purge.<id>` request stay; the
+  user's later writes are refused
   (also the id-less onboarding and language entries), and lifted once that account signs in again.
 - `src/auth/__tests__/signOutLocally.test.ts` — against a real supabase-js client and a fake
   `fetch`: a deleted user's valid token (`user_not_found`), an expired token whose refresh is

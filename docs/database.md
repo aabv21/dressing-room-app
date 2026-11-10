@@ -674,11 +674,12 @@ inside them, never in `src/`.
   app's 45 s timeout, up to the Edge Functions wall clock), removes the marker and lets the queue
   run; anything else keeps the marker for the next check. A session that ends while the marker says
   `deleting` (supabase-js signs out by itself once the account is gone) drops that account's kv
-  data, but not the queue's local photo copies.
-
-  NOTE: on that lost-session path the upload queue's SQLite rows and their photo copies stay on the
-  device; they never upload without that user's session, and run again if the account turns out to
-  exist. Upgrade path: a `queue.purge.<uid>` sweep when the queue provider mounts.
+  data and records the kv request `queue.purge.<uid>` (the queue store isn't loaded at that point).
+  The next upload queue provider to mount, for whichever user signs in next, clears that account's
+  queued rows and photo copies and then drops the request; a failed clear keeps it for the next
+  mount. Until then the photos never upload without that user's session. If that same account signs
+  in again, its session shows the account still exists, so the request is only dropped and its
+  queue runs as before. The request survives the account's kv cleanup until it has been carried out.
 - **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
   and `wears` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the

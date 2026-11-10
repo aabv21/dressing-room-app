@@ -17,6 +17,7 @@ import {
   resetFailed,
   type QueueItem,
 } from './upload/queueStore';
+import { dropQueuePurgeRequest, queuePurgeRequests } from './upload/queuePurge';
 import { createQueueSteps } from './upload/queueSteps';
 import { pauseQueue, resumeQueue, runQueue } from './upload/runQueue';
 
@@ -75,7 +76,7 @@ function nextRetryAt(items: readonly QueueItem[], now: number): number | null {
  * `src/account/deletionMarker.ts`) the queue never runs, and mounting (a launch or sign-in with the
  * marker present), the app returning to the foreground and a reconnect only check whether the
  * account still exists (`confirmPendingDeletion`); they never delete anything without the user's
- * tap.
+ * tap. Mounting also carries out queue purge requests for other accounts (see `upload/queuePurge.ts`).
  */
 export function UploadQueueProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { userId: sessionUserId } = useAuth();
@@ -185,6 +186,23 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
       clearTimeout(timer);
     };
   }, [nextRetry, run]);
+
+  // An account forgotten after a lost session mid-deletion left its queued photos behind
+  // (`queue.purge.<uid>`); this mount clears them. A request for this provider's own user is only
+  // dropped: their session shows the account still exists, so their queue runs as before. A
+  // request whose clear failed stays for the next mount.
+  useEffect(() => {
+    for (const requested of queuePurgeRequests()) {
+      try {
+        if (requested !== userId) {
+          clearQueue(requested);
+        }
+        dropQueuePurgeRequest(requested);
+      } catch {
+        // Retried at the next mount.
+      }
+    }
+  }, [userId]);
 
   useEffect(() => {
     mounted.current = true;
