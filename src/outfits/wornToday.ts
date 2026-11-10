@@ -69,6 +69,29 @@ export function markWornToday(userId: string, day: string, garmentIds: readonly 
 }
 
 /**
+ * Forgets that `userId` logged the outfit `garmentIds` (its wear was deleted from the diary), so
+ * Today and the rating offer "I'll wear it" again. The record keeps its day; mounted screens update
+ * through the same subscription as a mark.
+ */
+export function unmarkWornToday(userId: string, garmentIds: readonly string[]): void {
+  const key = wornTodayKey(userId);
+  const raw = kvGet(key);
+  if (raw === null) return;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!isWornRecord(value)) return;
+  const identity = outfitIdentity(garmentIds);
+  if (!value.outfits.includes(identity)) return;
+  const record: WornRecord = { day: value.day, outfits: value.outfits.filter((outfit) => outfit !== identity) };
+  kvSet(key, JSON.stringify(record));
+  for (const listener of listeners) listener();
+}
+
+/**
  * The signed-in user's worn-today record for `day`, re-read whenever any screen marks an outfit,
  * so a screen left mounted under another (Today under the rating) updates too.
  */

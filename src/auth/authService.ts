@@ -9,6 +9,8 @@ export {
   requestPasswordReset,
   signInWithEmail,
   signOut,
+  signOutLocally,
   signUpWithEmail,
+  storedSessionUserId,
 } from './emailAuth';
 export { signInWithApple, signInWithGoogle } from './socialAuth';

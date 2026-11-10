@@ -215,7 +215,7 @@ test('a network error shows the message by the buttons, announces it and keeps t
   announce.mockRestore();
 });
 
-test('an older garment joining the queue keeps the card on screen and its draft (I1)', async () => {
+test('an older garment joining the queue keeps the card on screen and its draft', async () => {
   mockCloset.garments = three();
   await renderReview();
   await fireEvent.press(screen.getByRole('radio', { name: 'Formal' }));
@@ -248,7 +248,7 @@ test('the garment on screen removed elsewhere moves to the next one by position'
   expect(screen.getByText('1 of 2')).toBeOnTheScreen();
 });
 
-test('a doubted category offers every category, not only its slot (P3-R12)', async () => {
+test('a doubted category offers every category, not only its slot', async () => {
   mockCloset.garments = [extracted('g-1', 1, { uncertain_fields: ['category'] })];
   await renderReview();
 

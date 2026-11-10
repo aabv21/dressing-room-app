@@ -82,6 +82,9 @@ beforeEach(() => {
     enqueueReplacement: jest.fn(),
     retryFailed: jest.fn(),
     discardFailed: jest.fn(),
+    pause: jest.fn(() => Promise.resolve()),
+    clear: jest.fn(),
+    resume: jest.fn(),
   });
 });
 

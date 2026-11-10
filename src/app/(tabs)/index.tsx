@@ -178,7 +178,7 @@ function useWearLog(
   const [pending, setPending] = useState(false);
   const { isWorn, markWorn } = useWornToday(day);
   const [wearError, setWearError] = useState<{ key: string; error: RequestError } | null>(null);
-  // P4-R5: one id per outfit until its wear succeeds, kept across retries (also after trying another
+  // One id per outfit until its wear succeeds, kept across retries (also after trying another
   // outfit in between), so a lost response can't log it twice.
   const wearIds = useRef(new Map<string, string>());
 

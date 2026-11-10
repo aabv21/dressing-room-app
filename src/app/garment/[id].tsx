@@ -1,6 +1,6 @@
 // A garment's detail (spec §3.3 "Garment CRUD"): every attribute editable, the status, replacing
 // the photo and deleting. No mockup of its own: it reuses mockup 02 review's photo, chip editors and
-// anchored CTA. A root Stack screen inside the tabs guard (P3-R3), so there's no tab bar.
+// anchored CTA. A root Stack screen inside the tabs guard, so there's no tab bar.
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused, useLocalSearchParams } from 'expo-router';
@@ -29,7 +29,8 @@ import { colors, gradients, layout, radii, spacing } from '../../ui/theme';
 
 type GarmentStatus = Garment['status'];
 
-const STATUSES = Constants.public.Enums.garment_status;
+// Donating happens only from Stats' unused list, a deliberate action; the picker never offers it.
+const STATUSES = Constants.public.Enums.garment_status.filter((value) => value !== 'donated');
 const CLOCK_TICK_MS = 30_000;
 // Room for a message shown above the buttons, so it never covers the last field.
 const ERROR_ROOM = 56;
@@ -246,19 +247,23 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
         <Text style={styles.wears}>{formatWearCount(garment.wear_count, locale)}</Text>
         <View style={styles.section}>
           <Text style={styles.label}>{t('garment.status')}</Text>
-          <ChipGroup
-            options={statusOptions}
-            selected={[status]}
-            multiple={false}
-            accessibilityLabel={t('garment.status')}
-            onChange={(next) => {
-              // A radio that can't be cleared: tapping the chosen status again does nothing.
-              const picked = next[0];
-              if (picked !== undefined) {
-                void changeStatus(picked);
-              }
-            }}
-          />
+          {garment.status === 'donated' ? (
+            <Text style={styles.donated}>{t('garment.status.donated')}</Text>
+          ) : (
+            <ChipGroup
+              options={statusOptions}
+              selected={[status]}
+              multiple={false}
+              accessibilityLabel={t('garment.status')}
+              onChange={(next) => {
+                // A radio that can't be cleared: tapping the chosen status again does nothing.
+                const picked = next[0];
+                if (picked !== undefined) {
+                  void changeStatus(picked);
+                }
+              }}
+            />
+          )}
         </View>
         {reading ? <Text style={styles.notice}>{t('garment.reading')}</Text> : null}
         {GARMENT_FIELDS.map((field) => (
@@ -269,7 +274,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
               values={values}
               onChange={onChange}
               clothingType={clothingType}
-              // P3-R13: every category, so a shirt can become a jacket in one tap.
+              // Every category, so a shirt can become a jacket in one tap.
               narrowCategory={false}
               disabled={reading}
             />
@@ -398,6 +403,11 @@ const styles = StyleSheet.create({
   label: {
     color: colors.muted,
     fontSize: 14,
+  },
+  donated: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: '700',
   },
   notice: {
     paddingHorizontal: 14,

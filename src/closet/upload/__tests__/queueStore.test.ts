@@ -125,7 +125,7 @@ const mockFiles = new Map<string, FakeFile>();
 
 // Tracks every directory the fake filesystem has created, so a second `create()` call on the same
 // path reproduces expo-file-system 58's real behavior: it throws unless `idempotent: true` (see
-// the C1 fix in queueStore.ts's `copyIntoUploads`, and the "already exists" tests below).
+// `copyIntoUploads` in queueStore.ts, and the "already exists" tests below).
 const mockDirectories = new Set<string>();
 
 function registerSourceFile(uri: string): void {
@@ -248,7 +248,7 @@ test('enqueuePhotos returns items in order, captured, copied under uploads/', as
 });
 
 test('enqueuing a second batch does not fail on the already-created uploads/ directory', async () => {
-  // C1 regression: expo-file-system's Directory.create() throws "already exists" on a second
+  // Regression: expo-file-system's Directory.create() throws "already exists" on a second
   // call unless `idempotent: true` — the fake Directory above reproduces that, so this would have
   // failed before copyIntoUploads passed `idempotent: true` instead of `overwrite: false`.
   const { enqueuePhotos, listQueue } = await loadQueueStore();
@@ -299,7 +299,7 @@ test('enqueueReplacement deletes the old row files when it had already failed', 
 });
 
 test('enqueueReplacement leaves the old row files for a run that is still in progress', async () => {
-  // I1: an item whose worker may still be mid-run (not failed, past 'captured') keeps its files —
+  // An item whose worker may still be mid-run (not failed, past 'captured') keeps its files —
   // the worker's own saveItem/removeItem (keyed by source_uri) clean them up once it finishes.
   const { enqueuePhotos, enqueueReplacement, saveItem } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
@@ -323,7 +323,7 @@ test('enqueueReplacement leaves the old row files for a run that is still in pro
 });
 
 test('saveItem no-ops when the row has moved on to a different source_uri', async () => {
-  // I1: a worker holding a stale snapshot (pre-replacement) must not clobber the replacement row.
+  // A worker holding a stale snapshot (pre-replacement) must not clobber the replacement row.
   const { enqueuePhotos, enqueueReplacement, saveItem, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
   const [stale] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
@@ -339,7 +339,7 @@ test('saveItem no-ops when the row has moved on to a different source_uri', asyn
 });
 
 test('removeItem no-ops (and deletes nothing) when the row has moved on to a different source_uri', async () => {
-  // I1: a worker finishing a run it started before a replacement landed must not delete the
+  // A worker finishing a run it started before a replacement landed must not delete the
   // replacement's row or files — only its own (already-renamed-away) source_uri still matches.
   const { enqueuePhotos, enqueueReplacement, removeItem, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
@@ -391,6 +391,25 @@ test('removeItem ignores files that are already gone', async () => {
   expect(listQueue('user-1')).toHaveLength(0);
 });
 
+test('clearQueue removes every row and copied file of one user, and only that user', async () => {
+  const { enqueuePhotos, listQueue, clearQueue } = await loadQueueStore();
+  registerSourceFile('file:///cache/a.jpg');
+  registerSourceFile('file:///cache/b.jpg');
+  registerSourceFile('file:///cache/c.jpg');
+
+  const mine = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/b.jpg']);
+  const [theirs] = enqueuePhotos('user-2', ['file:///cache/c.jpg']) as [QueueItem];
+
+  clearQueue('user-1');
+
+  expect(listQueue('user-1')).toHaveLength(0);
+  for (const item of mine) {
+    expect(mockFiles.has(item.sourceUri)).toBe(false);
+  }
+  expect(listQueue('user-2')).toEqual([theirs]);
+  expect(mockFiles.has(theirs.sourceUri)).toBe(true);
+});
+
 test('resetFailed clears failure, attempts and backoff', async () => {
   const { enqueuePhotos, saveItem, resetFailed, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
@@ -407,8 +426,8 @@ test('resetFailed clears failure, attempts and backoff', async () => {
 });
 
 test('a replacement enqueued mid-run does not interrupt the running upload or lose the new photo', async () => {
-  // I1 end-to-end, against the real queueStore (not the simplified FakeStore runQueue.test.ts
-  // uses): gate `prepare` for garment g, call enqueueReplacement(g) while that first run is still
+  // The replacement race end to end, against the real queueStore (not the simplified FakeStore
+  // runQueue.test.ts uses): gate `prepare` for garment g, call enqueueReplacement(g) while that first run is still
   // mid-`prepare`, then release. The old run must still commit (using the data it already read),
   // removing only its own row/files; the replacement row must survive untouched and be picked up
   // by a follow-up pass.

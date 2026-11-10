@@ -12,13 +12,20 @@ jest.mock('../upload/queueStore', () => ({
   listQueue: jest.fn(() => []),
   resetFailed: jest.fn(),
   removeItem: jest.fn(),
+  clearQueue: jest.fn(),
 }));
 jest.mock('../upload/runQueue', () => ({
   runQueue: jest.fn(() => Promise.resolve({ committed: 0, failed: 0, waiting: 0 })),
+  pauseQueue: jest.fn(() => Promise.resolve()),
+  resumeQueue: jest.fn(),
 }));
 const mockSteps = { prepare: jest.fn(), upload: jest.fn(), commit: jest.fn() };
 jest.mock('../upload/queueSteps', () => ({
   createQueueSteps: () => mockSteps,
+}));
+jest.mock('../../account/deletionFlow', () => ({
+  runDeletion: jest.fn(),
+  confirmPendingDeletion: jest.fn(() => Promise.resolve('pending')),
 }));
 jest.mock('expo-network', () => ({
   addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
@@ -27,11 +34,21 @@ jest.mock('expo-network', () => ({
 import { act, render, screen } from '@testing-library/react-native';
 import * as Network from 'expo-network';
 import { useEffect } from 'react';
-import { AppState, Text, type AppStateStatus } from 'react-native';
+import { Alert, AppState, Text, type AppStateStatus } from 'react-native';
 
+import { confirmPendingDeletion, runDeletion } from '../../account/deletionFlow';
+import { clearDeletionMarker, markDeletion } from '../../account/deletionMarker';
 import { UploadQueueProvider, useUploadQueue } from '../UploadQueueProvider';
-import { enqueuePhotos, enqueueReplacement, listQueue, removeItem, resetFailed, type QueueItem } from '../upload/queueStore';
-import { runQueue } from '../upload/runQueue';
+import {
+  clearQueue,
+  enqueuePhotos,
+  enqueueReplacement,
+  listQueue,
+  removeItem,
+  resetFailed,
+  type QueueItem,
+} from '../upload/queueStore';
+import { pauseQueue, resumeQueue, runQueue } from '../upload/runQueue';
 
 const mockedRunQueue = jest.mocked(runQueue);
 const mockedListQueue = jest.mocked(listQueue);
@@ -98,6 +115,7 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+  clearDeletionMarker('user-1');
 });
 
 test('runs the queue once on mount with the real steps', async () => {
@@ -191,7 +209,7 @@ test('a pass that committed something refreshes the closet; one that did not, do
   expect(mockRefresh).toHaveBeenCalledTimes(1);
 });
 
-test('schedules one run at the earliest future retry of a non-failed item (P3-R9)', async () => {
+test('schedules one run at the earliest future retry of a non-failed item', async () => {
   jest.useFakeTimers({ now: 1_000_000 });
   mockedListQueue.mockReturnValue([
     item({ garmentId: 'later', nextAttemptAt: 1_000_000 + 20_000 }),
@@ -301,4 +319,151 @@ test("once another account's session is active, triggers no longer start passes 
   });
 
   expect(mockedRunQueue).not.toHaveBeenCalled();
+});
+
+test('pause waits for the queue to pause and keeps every queued photo', async () => {
+  mockedListQueue.mockReturnValue([item()]);
+  await renderProvider();
+  let release: () => void = () => undefined;
+  jest.mocked(pauseQueue).mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  );
+
+  let done = false;
+  await act(async () => {
+    void queue?.pause().then(() => {
+      done = true;
+    });
+    await Promise.resolve();
+  });
+  expect(pauseQueue).toHaveBeenCalledWith('user-1');
+  expect(done).toBe(false);
+
+  await act(async () => {
+    release();
+    await Promise.resolve();
+  });
+
+  expect(done).toBe(true);
+  expect(clearQueue).not.toHaveBeenCalled();
+  expect(removeItem).not.toHaveBeenCalled();
+  expect(screen.getByTestId('counts')).toHaveTextContent('pending 1 failed 0');
+});
+
+test('clear drops the queued photos and the counts', async () => {
+  mockedListQueue.mockReturnValue([item()]);
+  await renderProvider();
+
+  mockedListQueue.mockReturnValue([]);
+  await act(async () => {
+    queue?.clear();
+    await Promise.resolve();
+  });
+
+  expect(clearQueue).toHaveBeenCalledWith('user-1');
+  expect(screen.getByTestId('counts')).toHaveTextContent('pending 0 failed 0');
+});
+
+test('resume unpauses the queue and runs it', async () => {
+  await renderProvider();
+  mockedRunQueue.mockClear();
+
+  await act(async () => {
+    queue?.resume();
+    await Promise.resolve();
+  });
+
+  expect(resumeQueue).toHaveBeenCalledWith('user-1');
+  expect(mockedRunQueue).toHaveBeenCalledTimes(1);
+});
+
+test('resume with run: false only unpauses (a user who is signing out)', async () => {
+  await renderProvider();
+  mockedRunQueue.mockClear();
+
+  await act(async () => {
+    queue?.resume({ run: false });
+    await Promise.resolve();
+  });
+
+  expect(resumeQueue).toHaveBeenCalledWith('user-1');
+  expect(mockedRunQueue).not.toHaveBeenCalled();
+});
+
+describe('an unconfirmed account deletion (account.deleting.<id>)', () => {
+  test('never lets the queue run, on mount or any trigger', async () => {
+    markDeletion('user-1', 'deleting');
+    jest.mocked(confirmPendingDeletion).mockReturnValueOnce(new Promise(() => undefined));
+    await renderProvider();
+
+    await act(async () => {
+      appStateHandler?.('active');
+      queue?.enqueue(['file:///new.jpg']);
+      await Promise.resolve();
+    });
+
+    expect(mockedRunQueue).not.toHaveBeenCalled();
+  });
+
+  test.each(['deleting', 'reauth'] as const)(
+    'is only verified once on mount (marker %s), never deleted, and shows nothing',
+    async (state) => {
+      markDeletion('user-1', state);
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+
+      await renderProvider();
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(confirmPendingDeletion).toHaveBeenCalledTimes(1);
+      const [userId, controls] = jest.mocked(confirmPendingDeletion).mock.calls[0] ?? [];
+      expect(userId).toBe('user-1');
+      expect(typeof controls?.pause).toBe('function');
+      expect(typeof controls?.clear).toBe('function');
+      expect(typeof controls?.resume).toBe('function');
+      expect(runDeletion).not.toHaveBeenCalled();
+      expect(alertSpy).not.toHaveBeenCalled();
+      alertSpy.mockRestore();
+    },
+  );
+
+  test('the foreground and a reconnect verify it again instead of running the queue', async () => {
+    markDeletion('user-1', 'deleting');
+    await renderProvider();
+    expect(confirmPendingDeletion).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      appStateHandler?.('active');
+      networkHandler?.({ isConnected: false, isInternetReachable: false });
+      networkHandler?.({ isConnected: true, isInternetReachable: true });
+      await Promise.resolve();
+    });
+
+    expect(confirmPendingDeletion).toHaveBeenCalledTimes(3);
+    expect(mockedRunQueue).not.toHaveBeenCalled();
+    expect(runDeletion).not.toHaveBeenCalled();
+  });
+
+  test('without a marker, the foreground runs the queue and verifies nothing', async () => {
+    await renderProvider();
+    mockedRunQueue.mockClear();
+
+    await act(async () => {
+      appStateHandler?.('active');
+      await Promise.resolve();
+    });
+
+    expect(mockedRunQueue).toHaveBeenCalledTimes(1);
+    expect(confirmPendingDeletion).not.toHaveBeenCalled();
+  });
+
+  test('nothing is verified without a marker', async () => {
+    await renderProvider();
+
+    expect(confirmPendingDeletion).not.toHaveBeenCalled();
+    expect(runDeletion).not.toHaveBeenCalled();
+  });
 });

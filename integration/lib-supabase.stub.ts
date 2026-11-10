@@ -20,6 +20,13 @@ export function clearPersistedAuth(): never {
   );
 }
 
+/** Same idea for `emailAuth.storedSessionUserId`'s default reader: never meant to run here. */
+export function readStoredSession(): never {
+  throw new Error(
+    'integration/lib-supabase.stub.ts: `readStoredSession` was used — the default client\'s storage does not exist in integration tests.',
+  );
+}
+
 export const supabase = new Proxy(
   {},
   {

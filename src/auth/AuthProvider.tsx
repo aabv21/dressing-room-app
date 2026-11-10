@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { forgetInterruptedDeletions } from '../account/deletionMarker';
 import { useLocalePreference } from '../i18n/I18nProvider';
 import type { LocalePreference } from '../i18n/I18nProvider';
+import { allowUserKeys } from '../lib/kv';
 import { readStoredSession, startAuthAutoRefresh, supabase } from '../lib/supabase';
 import { getProfile, saveProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
@@ -145,6 +147,14 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       }
 
       if (nextUserId === null) {
+        // An account whose deletion was under way when its session ended (supabase-js signs out
+        // by itself once the account is gone) leaves no kv data on the device. Best effort: a
+        // storage error must never keep the app from reaching the signed-out state.
+        try {
+          forgetInterruptedDeletions(null);
+        } catch {
+          // Retried at the next sign-out or sign-in.
+        }
         currentUserIdRef.current = null;
         unconfirmedSessionRef.current = false;
         languageSyncedForRef.current = null;
@@ -169,7 +179,15 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setUserId(nextUserId);
       setEmail(nextEmail);
       if (userChanged) {
+        // A session for this account means it still exists: an earlier cleanup of an interrupted
+        // deletion stops refusing its kv writes.
+        allowUserKeys(nextUserId);
         forgetOtherAccounts(nextUserId);
+        try {
+          forgetInterruptedDeletions(nextUserId);
+        } catch {
+          // Best effort, as on sign-out: retried at the next sign-out or sign-in.
+        }
         // Clear any previous user's onboarding flag immediately, so a slow `loadProfile` for the
         // new user can't leave the old user's value on screen in the meantime.
         setOnboardingComplete(false);

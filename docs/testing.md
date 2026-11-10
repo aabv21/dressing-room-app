@@ -14,8 +14,8 @@ environment. `jest.setup.ts` mocks:
 - `expo-localization` — `getLocales()` returns a fixed `en-US` locale, so i18n-dependent tests don't
   depend on the host machine's language.
 - `expo-sqlite/kv-store` — replaced with an in-memory `Map` behind the same synchronous
-  `getItemSync`/`setItemSync`/`removeItemSync` API `src/lib/kv.ts` calls, since there is no native
-  SQLite module under Jest.
+  `getItemSync`/`setItemSync`/`removeItemSync`/`getAllKeysSync` API `src/lib/kv.ts` calls, since
+  there is no native SQLite module under Jest.
 
 Uses `@testing-library/react-native` v14: `await render(...)` and `await fireEvent...` (both are
 async in v14).
@@ -30,15 +30,22 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   `changedFields`), `garmentRepository.test.ts` (the queries and storage calls against a fake
   client, error mapping, delete order), `ClosetProvider.test.tsx` (refresh, the kv offline copy,
   re-signing, a bumped `photo_version` re-signed at once, a poll that found nothing new committing
-  nothing, polling, late results after sign-out or a user switch, foreground and reconnect),
+  nothing, polling, late results after sign-out or a user switch, a re-sign that lands after the
+  account's deletion leaving no kv copy, foreground and reconnect),
   `GarmentPhoto.test.tsx` (the full photo signed once, and again for a new `photo_version`),
-  `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer) and
+  `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer,
+  `pause` waiting for the queue and keeping its photos, `clear`, `resume` with and without a run,
+  and an unconfirmed deletion marker blocking every run and only verified on mount, foreground and
+  reconnect, never deleted and with no Alert) and
   `ClosetScreen.test.tsx` (the goal card, slot chips, the review banner, the processing and failed
   tiles, the gallery picker, opening a garment).
 - `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
-  enqueue, replacements, conditional saves), `runQueue.test.ts` (stages, resuming an interrupted
+  enqueue, replacements, conditional saves, `clearQueue` dropping one user's rows and copies),
+  `runQueue.test.ts` (stages, resuming an interrupted
   item, backoff, failing after 8 attempts or a permanent error, an attempt claimed before a stage
-  runs so a native crash still counts toward the 8, concurrency 2), `preparePhoto.test.ts`
+  runs so a native crash still counts toward the 8, concurrency 2, and `pauseQueue`: a stage in
+  flight finishes but no upload, commit or next item starts, a stopped item keeps its stage and
+  attempts and is due at once, and nothing runs until `resumeQueue`), `preparePhoto.test.ts`
   (the resize arguments for portrait, landscape and small photos, one decode capped at 784 px with
   the thumbnail built from it, WebP qualities, the cut-out or the source photo), `cutout.test.ts` (the native
   module present, missing, or throwing) and `queueSteps.test.ts` (the real steps, the session check,
@@ -53,6 +60,57 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   and reverts on error, delete confirms first and goes back (or to the closet with no history), a
   failed delete keeps the screen, Replace photo queues the picked photo, editors are disabled while
   the AI is still reading, and an unknown id shows "not found".
+
+The Profile tab's Privacy section (data export and account deletion):
+
+- `src/account/__tests__/accountClient.test.ts` — `deleteAccount` against a fake client: the
+  function's 200 `{ outcome: 'deleted' }` is a deletion and any other 200 body isn't; a 500 or a
+  network error is a failure with no Auth check; the session's token is sent explicitly, and no
+  session is `reauth` without a call (a refresh that fails offline is `network`); a 401 is a
+  deletion only when Auth answers `user_not_found` for that same token, and `reauth` on
+  `session_not_found`, `refresh_token_not_found`, a missing session, an expired token, any other
+  Auth error or a user who still exists; Auth unreachable is `network`. `verifyAccount` calls no
+  function: `user_not_found` for the session token is `gone`, the same user is `exists`, and
+  another user, Auth unreachable, an expired token, a lost session or no session is `unknown`.
+  `exportData`'s document and failures, and `exportFileName`'s local-day name.
+- `src/account/__tests__/deletionMarker.test.ts` — the `account.deleting.<id>` marker's states, and
+  `forgetInterruptedDeletions` dropping a `deleting` account's data and marker while keeping a
+  `reauth` one's and the active user's own.
+- `src/account/__tests__/deletionFlow.test.ts` — `runDeletion`: the marker is written before the
+  pause; deleted clears the queue, signs out, drops the data and marker and clears the device files,
+  and a failing queue clear or kv cleanup still signs out; a per-user kv write after the cleanup is
+  refused; `reauth` keeps the queue and data, marks `reauth` (not when supabase-js's own sign-out
+  already dropped the data) and signs out; neither answer signs out another account that signed in
+  meanwhile; `network` and `unknown` both keep the marker and the blocked queue; a second call while
+  one runs is `busy`; the messages. `confirmPendingDeletion` never calls `deleteAccount`: `gone`
+  gets the confirmed deletion's local cleanup and sign-out; `exists` within the 10-minute settle
+  window of the marker stays pending, and past it removes the marker and runs the queue; a marker
+  whose time can't be trusted (missing, malformed, or more than the settle window in the future) is
+  stamped anew and stays pending, so the window starts over; `unknown` keeps both.
+- `src/auth/__tests__/AuthProvider.test.tsx` (its interrupted-deletion part) — a session lost while
+  a deletion is marked `deleting` drops that account's kv data; a `reauth` one keeps it; another
+  user signing in drops a `deleting` account's kv data and keeps their own marker for their
+  session's check; that account signing in again can write its kv data again.
+- `src/account/__tests__/forgetAccount.test.ts` — every kv key under the user's id goes (each day's
+  `today.occasion.<id>.<date>` too), with the onboarding status and pending language save; another
+  account's keys and the device's language preference stay; the user's later writes are refused
+  (also the id-less onboarding and language entries), and lifted once that account signs in again.
+- `src/auth/__tests__/signOutLocally.test.ts` — against a real supabase-js client and a fake
+  `fetch`: a deleted user's valid token (`user_not_found`), an expired token whose refresh is
+  refused (`refresh_token_not_found`), and offline with an expired token (the stored session is
+  cleared directly) all end in SIGNED_OUT with nothing left in storage; `storedSessionUserId`.
+- `src/__tests__/profile-privacy.test.tsx` — through the real route tree: the section's note and
+  buttons; Export replaces earlier exports in the cache directory and opens the share sheet as
+  `public.json`, no share sheet on the device has its own message, and a failed export, file write
+  or share shows the export message; a second Delete or an Export while the delete confirms are
+  open does nothing, and two "Delete forever" presses delete once; Delete's two confirms (cancel at
+  either does nothing), the upload queue paused before the function and cleared only after a
+  deletion, then the local sign-out, the kv cleanup, the exports and image caches removed and the
+  queue resumed; a failed deletion keeps the session, the queued photos and the data and can be
+  retried; `reauth` shows "Sign in again, then delete your account again to finish." and signs out
+  locally, keeping the queued photos and the data; Sign out is disabled while an export or a
+  deletion runs, and a late `reauth` after another account signed in neither signs it out nor
+  alerts it.
 
 ### `scripts`
 
@@ -82,6 +140,12 @@ never called. See `docs/ai.md`. To run only this project:
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
   after 30 s (`failed`), a garment no longer pending or missing, and logs that carry only the garment
   id and an outcome word.
+- `supabase/functions/delete-account/__tests__/handler.test.ts` — the order (photos, Apple revoke,
+  user), paging and chunks, the caller check (only `user_not_found` means already deleted), a
+  retry after the user is gone sweeping only the caller's folder (photos that landed while the
+  answer was lost), a 404 from the user deletion sweeping again, the final best-effort sweep after
+  the deletion (a photo uploaded meanwhile is removed; a failed sweep still answers `deleted`),
+  failures answering 500 so the app retries, and logs with outcome words only.
 
 ### `integration`
 
@@ -90,6 +154,12 @@ Supabase stack:
 
 - `auth.int.test.ts` — email/password sign-up and sign-in, the server's 8-character password
   minimum, and the password-reset code flow (via Mailpit; see below).
+- `account.int.test.ts` — the account functions end to end through the gateway: `apple-token`
+  exchanges a code with the mock Apple and stores the refresh token (and stores nothing for a code
+  whose Apple user isn't the caller's); `export-data` returns the
+  caller's rows and signed photo URLs; `delete-account` removes the caller's photos, revokes the
+  Apple token with the mock and deletes the auth user, whose rows cascade, and a retry with the
+  same token answers `deleted` without calling Apple again. A second user is untouched throughout.
 - `rls.int.test.ts` — the cross-user RLS boundary: user A can never read, update, list or delete
   user B's `profiles` row or storage objects. Also: A can't insert a profile row or delete their own,
   and uploads outside the three image MIME types or over 2 MiB are rejected.
@@ -116,18 +186,23 @@ Supabase stack:
   inserting the same id again makes no second Claude call; and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
-- `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the
-  mock Jev and Open-Meteo below. User A has six reviewed garments (two tops, two bottoms, two pairs
-  of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'` with
-  the service role) and stored city coordinates; B has none. `lucky-list` answers `kind: 'ok'` with
-  complete outfits (one top, one bottom, one pair of shoes each) rated by the mock Jev, and a second
-  call is served from `lucky_cache` with no Jev call; the forecast lands in `weather_cache` for the
-  hour (fetched once, no geocoding for stored coordinates). `rate-outfit` answers Jev's score; a call
-  without a session gets 401 (the anon key passes the gateway, and the function finds no user in
-  it); B rating A's garment ids gets 404 `garment_not_found` (RLS hides them) with no Jev call; and
-  with A's `usage_counters` row for the day pre-filled to 50, a new outfit gets 429 `over_quota`
-  with no Jev call. `log_wear` called from supabase-js bumps `wear_count` on exactly the worn
-  garments, as A's own `garments` select shows. Needs the Edge Runtime.
+- `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
+  Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two
+  pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`
+  with the service role) and stored city coordinates; B has none. `lucky-list` answers `kind: 'ok'`
+  with complete outfits (one top, one bottom, one pair of shoes each) rated by the mock Jev, and a
+  second call is served from `lucky_cache` with no Jev call; the forecast lands in `weather_cache`
+  for the hour (fetched once, no geocoding for stored coordinates). `rate-outfit` answers Jev's
+  score; a call without a session gets 401 (the anon key passes the gateway, and the function finds
+  no user in it); B rating A's garment ids gets 404 `garment_not_found` (RLS hides them) with no Jev
+  call; and with A's `usage_counters` row for the day pre-filled to 50, a new outfit gets 429
+  `over_quota` with no Jev call. `for-you` answers 3–5 ideas whose lines are the mock Claude's
+  (`mockAnthropic.ts`, answering a line for every archetype id), after at most 10 mock Jev fits and
+  one Claude call; A's `for_you` usage counter is 1 and `for_you_cache` holds one entry (a seeded
+  older entry is pruned), a second call returns the same body with no Jev or Claude call, and a
+  Spanish call with the day's miss spent gets that newest entry back (`stale`), not a 429.
+  `log_wear` called from supabase-js bumps `wear_count` on exactly the worn garments, as A's own
+  `garments` select shows. Needs the Edge Runtime.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with `pnpm db:start && pnpm env:local && pnpm test:int`
@@ -242,6 +317,10 @@ pnpm env:local
 pnpm test:int
 pnpm db:stop
 ```
+
+`pnpm db:start` (like `db:start:ci`) goes through `scripts/db-start.ts`, which first writes a
+local-only Apple test key to gitignored `supabase/.temp/apple-test-key.pem` if it's missing;
+`account.int.test.ts` needs it, so start the stack with the script, not a bare `supabase start`.
 
 CI's `database` job (`.github/workflows/ci.yml`) runs the Docker-dependent steps in the same order,
 on the same ports, since the config in `supabase/config.toml` applies in CI too (the stack runs

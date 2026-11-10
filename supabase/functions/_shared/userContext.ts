@@ -1,7 +1,8 @@
-// What the user-called outfit functions (`rate-outfit`, `lucky-list`) share: who is calling, the
-// caller's profile and garments (read with the caller's own token, so RLS applies), today's
-// weather (cached per location and UTC hour), the daily quota, the result caches (service role),
-// the Jev and Claude calls with their timeouts, and a concurrency-limited map.
+// What the user-called functions share: who is calling, the caller's profile and garments (read
+// with the caller's own token, so RLS applies), today's weather (cached per location and UTC hour),
+// the daily quota, the result caches (service role), the Jev and Claude calls with their timeouts,
+// and a concurrency-limited map. The account functions (`apple-token`, `delete-account`,
+// `export-data`) use only the caller and the PostgREST helpers, with `SupabaseEnv`.
 //
 // Runtime-neutral: every effect goes through the injected `fetch`, and only web-standard globals
 // (`crypto.subtle`, `atob`, `TextEncoder`, `AbortController`) are used, so Jest drives it under
@@ -57,6 +58,9 @@ export type FnEnv = {
   geocodingUrl: string;
 };
 
+/** The part of `FnEnv` every function has: the project URL and its two keys. */
+export type SupabaseEnv = Pick<FnEnv, 'supabaseUrl' | 'anonKey' | 'serviceRoleKey'>;
+
 type FetchFn = typeof fetch;
 
 export const JEV_TIMEOUT_MS = 10_000;
@@ -106,28 +110,35 @@ export function userIdFromJwt(authHeader: string | null): string | null {
 
 // --- PostgREST ---------------------------------------------------------------------------------
 
-function userHeaders(env: FnEnv, auth: string): Record<string, string> {
+/** Headers for a request made as the caller: RLS applies. */
+export function userHeaders(env: SupabaseEnv, auth: string): Record<string, string> {
   return { apikey: env.anonKey, authorization: auth };
 }
 
-function serviceHeaders(env: FnEnv): Record<string, string> {
+/** Headers for a request made with the service role, which bypasses RLS. */
+export function serviceHeaders(env: SupabaseEnv): Record<string, string> {
   return { apikey: env.serviceRoleKey, authorization: `Bearer ${env.serviceRoleKey}` };
 }
 
-async function restJson(fetchFn: FetchFn, url: string, init: RequestInit): Promise<unknown> {
+export async function restJson(fetchFn: FetchFn, url: string, init: RequestInit): Promise<unknown> {
   const response = await fetchFn(url, init);
   if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
   return (await response.json()) as unknown;
 }
 
-async function restRows(fetchFn: FetchFn, url: string, headers: Record<string, string>): Promise<unknown[]> {
+export async function restRows(fetchFn: FetchFn, url: string, headers: Record<string, string>): Promise<unknown[]> {
   const rows = await restJson(fetchFn, url, { headers });
   if (!Array.isArray(rows)) throw new UpstreamError('not an array');
   return rows as unknown[];
 }
 
 /** POST with `Prefer: resolution=merge-duplicates`: an insert that updates the row on a primary-key conflict. */
-async function upsert(env: FnEnv, fetchFn: FetchFn, table: string, row: Record<string, unknown>): Promise<boolean> {
+export async function upsert(
+  env: SupabaseEnv,
+  fetchFn: FetchFn,
+  table: string,
+  row: Record<string, unknown>,
+): Promise<boolean> {
   try {
     const response = await fetchFn(`${env.supabaseUrl}/rest/v1/${table}`, {
       method: 'POST',
@@ -200,8 +211,11 @@ export async function loadProfile(env: FnEnv, fetchFn: FetchFn, auth: string): P
 
 // --- Garments ----------------------------------------------------------------------------------
 
-const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at';
-const GARMENT_STATUSES = ['available', 'laundry', 'lent'] as const satisfies readonly GarmentStatus[];
+const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at,pinned_on';
+const GARMENT_STATUSES = ['available', 'laundry', 'lent', 'donated'] as const satisfies readonly GarmentStatus[];
+
+/** `pinned_on`, read as a plain `YYYY-MM-DD` the way the lucky-list cache key and request dates are compared. */
+const pinnedOnOf = (value: unknown): string | null => (isIsoDate(value) ? value : null);
 
 function garmentFrom(row: unknown): RuleGarment {
   if (!isRecord(row) || typeof row.id !== 'string' || typeof row.updated_at !== 'string') {
@@ -221,6 +235,7 @@ function garmentFrom(row: unknown): RuleGarment {
     status,
     last_worn_at: stringOrNull(row.last_worn_at),
     updated_at: row.updated_at,
+    pinned_on: pinnedOnOf(row.pinned_on),
   };
 }
 
@@ -385,7 +400,7 @@ export async function consumeQuota(
   env: FnEnv,
   fetchFn: FetchFn,
   userId: string,
-  kind: 'rating' | 'lucky',
+  kind: 'rating' | 'lucky' | 'for_you',
   limit: number,
 ): Promise<boolean> {
   const allowed = await restJson(fetchFn, `${env.supabaseUrl}/rest/v1/rpc/consume_quota`, {
@@ -396,16 +411,73 @@ export async function consumeQuota(
   return allowed === true;
 }
 
-export type ResultCache = 'rating_cache' | 'lucky_cache';
+export type ResultCache = 'rating_cache' | 'lucky_cache' | 'for_you_cache';
 
 /** How long a result marked `degraded: true` (a fallback, a skipped or failed step) is served from the cache. */
 export const DEGRADED_TTL_MS = 60 * 60 * 1000;
 
+/** A stored cache row: the result as stored (marker included) and its `created_at` in ms, null when unreadable. */
+export type CacheRow = { result: unknown; createdAt: number | null };
+
+/** The first row a cache read answered, or null when there is none or any request fails. */
+async function firstCacheRow(fetchFn: FetchFn, url: string, env: FnEnv): Promise<CacheRow | null> {
+  try {
+    const [row] = await restRows(fetchFn, url, serviceHeaders(env));
+    if (!isRecord(row) || row.result === undefined || row.result === null) return null;
+    const createdAt = typeof row.created_at === 'string' ? Date.parse(row.created_at) : Number.NaN;
+    return { result: row.result, createdAt: Number.isNaN(createdAt) ? null : createdAt };
+  } catch {
+    return null;
+  }
+}
+
+/** The stored row for `key` whatever its age, or null on a miss or any error. */
+export function cacheRead(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  table: ResultCache,
+  userId: string,
+  key: string,
+): Promise<CacheRow | null> {
+  return firstCacheRow(
+    fetchFn,
+    `${env.supabaseUrl}/rest/v1/${table}?select=result,created_at&user_id=eq.${userId}&cache_key=eq.${encodeURIComponent(key)}`,
+    env,
+  );
+}
+
+/** The user's most recently written row, whatever its key or age; null when there is none or on any error. */
+export function cacheReadNewest(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  table: ResultCache,
+  userId: string,
+): Promise<CacheRow | null> {
+  return firstCacheRow(
+    fetchFn,
+    `${env.supabaseUrl}/rest/v1/${table}?select=result,created_at&user_id=eq.${userId}&order=created_at.desc&limit=1`,
+    env,
+  );
+}
+
+/**
+ * True when a row still counts as a hit: no older than `maxAgeMs`, and no older than
+ * `DEGRADED_TTL_MS` when its result is marked `degraded: true`. A row of unknown age is fresh only
+ * when neither limit applies to it.
+ */
+export function cacheFresh(row: CacheRow, now: number, maxAgeMs: number = Number.POSITIVE_INFINITY): boolean {
+  const degraded = isRecord(row.result) && row.result.degraded === true;
+  const limit = Math.min(maxAgeMs, degraded ? DEGRADED_TTL_MS : Number.POSITIVE_INFINITY);
+  if (limit === Number.POSITIVE_INFINITY) return true;
+  return row.createdAt !== null && now - row.createdAt <= limit;
+}
+
 /**
  * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
  * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
- * unknown), so a better answer is tried again; any other result never expires (ruling P4-R12).
- * The marker is returned as stored; callers strip it before answering.
+ * unknown), so a better answer is tried again; any other result expires only after `maxAgeMs`
+ * (never by default). The marker is returned as stored; callers strip it before
+ * answering.
  */
 export async function cacheGet(
   env: FnEnv,
@@ -414,23 +486,10 @@ export async function cacheGet(
   userId: string,
   key: string,
   now: number = Date.now(),
+  maxAgeMs: number = Number.POSITIVE_INFINITY,
 ): Promise<unknown> {
-  try {
-    const rows = await restRows(
-      fetchFn,
-      `${env.supabaseUrl}/rest/v1/${table}?select=result,created_at&user_id=eq.${userId}&cache_key=eq.${encodeURIComponent(key)}`,
-      serviceHeaders(env),
-    );
-    const [row] = rows;
-    if (!isRecord(row) || row.result === undefined || row.result === null) return null;
-    if (isRecord(row.result) && row.result.degraded === true) {
-      const createdAt = typeof row.created_at === 'string' ? Date.parse(row.created_at) : Number.NaN;
-      if (Number.isNaN(createdAt) || now - createdAt > DEGRADED_TTL_MS) return null;
-    }
-    return row.result;
-  } catch {
-    return null;
-  }
+  const row = await cacheRead(env, fetchFn, table, userId, key);
+  return row !== null && cacheFresh(row, now, maxAgeMs) ? row.result : null;
 }
 
 /**
@@ -455,6 +514,25 @@ export function cachePut(
   });
 }
 
+/** Deletes the user's rows under every key but `keep`; best effort, so a failure is ignored. */
+export async function cachePrune(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  table: ResultCache,
+  userId: string,
+  keep: string,
+): Promise<void> {
+  try {
+    const filter = `user_id=eq.${userId}&cache_key=neq.${encodeURIComponent(keep)}`;
+    await fetchFn(`${env.supabaseUrl}/rest/v1/${table}?${filter}`, {
+      method: 'DELETE',
+      headers: { ...serviceHeaders(env), prefer: 'return=minimal' },
+    });
+  } catch {
+    // A row left behind is only an older entry; the next write prunes it again.
+  }
+}
+
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -476,8 +554,16 @@ export function runJev(env: FnEnv, fetchFn: FetchFn, request: unknown): Promise<
   );
 }
 
-/** The Messages API response body, or null on a non-2xx answer, a network error or 20 s passing. */
-export function runClaude(env: FnEnv, fetchFn: FetchFn, request: unknown): Promise<unknown> {
+/**
+ * The Messages API response body, or null on a non-2xx answer, a network error or `timeoutMs`
+ * (default 20 s) passing.
+ */
+export function runClaude(
+  env: FnEnv,
+  fetchFn: FetchFn,
+  request: unknown,
+  timeoutMs: number = CLAUDE_TIMEOUT_MS,
+): Promise<unknown> {
   return fetchJson(
     fetchFn,
     `${trimSlash(env.anthropicBaseUrl)}/v1/messages`,
@@ -490,7 +576,7 @@ export function runClaude(env: FnEnv, fetchFn: FetchFn, request: unknown): Promi
       },
       body: JSON.stringify(request),
     },
-    CLAUDE_TIMEOUT_MS,
+    timeoutMs,
   );
 }
 

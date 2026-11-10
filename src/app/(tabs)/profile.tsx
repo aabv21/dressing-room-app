@@ -1,7 +1,8 @@
-import { Check, LogOut } from 'lucide-react-native';
+import { Check, Download, LogOut, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { usePrivacyActions } from '../../account/usePrivacyActions';
 import { useAuth } from '../../auth/AuthProvider';
 import { clearLanguageSavePending, markLanguageSavePending } from '../../auth/deviceState';
 import { useSignOut } from '../../auth/useSignOut';
@@ -27,11 +28,15 @@ function SectionHeading({ children }: { children: string }): React.JSX.Element {
   );
 }
 
-/** "Account": the signed-in email and Sign out (account deletion and data export come later). */
-function AccountSection(): React.JSX.Element {
+/**
+ * "Account": the signed-in email and Sign out. Sign out waits while an export or a deletion runs,
+ * so a deletion's late answer can't land on the next account to sign in.
+ */
+function AccountSection({ privacyBusy }: { privacyBusy: boolean }): React.JSX.Element {
   const { t } = useI18n();
   const { email } = useAuth();
   const signOut = useSignOut();
+  const disabled = signOut.signingOut || privacyBusy;
   return (
     <>
       <SectionHeading>{t('profile.section.account')}</SectionHeading>
@@ -46,10 +51,10 @@ function AccountSection(): React.JSX.Element {
         ) : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: signOut.signingOut, busy: signOut.signingOut }}
-          disabled={signOut.signingOut}
+          accessibilityState={{ disabled, busy: signOut.signingOut }}
+          disabled={disabled}
           onPress={signOut.signOut}
-          style={[styles.signOut, signOut.signingOut ? styles.disabled : null]}
+          style={[styles.signOut, disabled ? styles.disabled : null]}
         >
           <LogOut size={16} color={colors.ink} />
           <Text style={styles.signOutLabel}>{t('auth.signOut')}</Text>
@@ -60,6 +65,65 @@ function AccountSection(): React.JSX.Element {
           </Text>
         ) : null}
       </View>
+    </>
+  );
+}
+
+/**
+ * "Privacy": what happens to body data, then "Export my data" (a JSON file through the share
+ * sheet) and the destructive "Delete account" (two confirms). Both stay disabled while either runs.
+ */
+function PrivacySection({ exporting, deleting }: ReturnType<typeof usePrivacyActions>): React.JSX.Element {
+  const { t } = useI18n();
+  const busy = exporting.busy || deleting.busy;
+  return (
+    <>
+      <SectionHeading>{t('profile.section.privacy')}</SectionHeading>
+      <View style={styles.card}>
+        <Text style={styles.privacyNote}>{t('profile.privacy.note')}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.privacy.export')}
+          accessibilityState={{ disabled: busy, busy: exporting.busy }}
+          disabled={busy}
+          onPress={exporting.run}
+          style={[styles.signOut, busy ? styles.disabled : null]}
+        >
+          {exporting.busy ? <ActivityIndicator size="small" color={colors.ink} /> : <Download size={16} color={colors.ink} />}
+          <Text style={styles.signOutLabel}>{exporting.busy ? t('profile.privacy.exporting') : t('profile.privacy.export')}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('profile.privacy.delete')}
+          accessibilityState={{ disabled: busy, busy: deleting.busy }}
+          disabled={busy}
+          onPress={deleting.run}
+          style={[styles.signOut, styles.danger, busy ? styles.disabled : null]}
+        >
+          {deleting.busy ? <ActivityIndicator size="small" color={colors.error} /> : <Trash2 size={16} color={colors.error} />}
+          <Text style={[styles.signOutLabel, styles.dangerLabel]}>
+            {deleting.busy ? t('profile.privacy.deleting') : t('profile.privacy.delete')}
+          </Text>
+        </Pressable>
+        {[exporting.error, deleting.error].map((error) =>
+          error !== undefined ? (
+            <Text key={error} style={styles.error} accessibilityLiveRegion="polite">
+              {t(error)}
+            </Text>
+          ) : null,
+        )}
+      </View>
+    </>
+  );
+}
+
+/** Account and Privacy, which share the Privacy actions' busy state. */
+function AccountAndPrivacy(): React.JSX.Element {
+  const privacy = usePrivacyActions();
+  return (
+    <>
+      <AccountSection privacyBusy={privacy.exporting.busy || privacy.deleting.busy} />
+      <PrivacySection {...privacy} />
     </>
   );
 }
@@ -234,7 +298,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         <SectionHeading>{t('profile.section.style')}</SectionHeading>
         <StyleSection value={draft} onChange={edit} />
         <LanguageSection onSave={saveLanguage} />
-        <AccountSection />
+        <AccountAndPrivacy />
         {saveError !== undefined ? (
           <Text style={styles.error} accessibilityLiveRegion="polite">
             {t(saveError)}
@@ -312,7 +376,7 @@ export default function ProfileScreen() {
       ) : (
         <ActivityIndicator style={styles.spinner} color={colors.accent} accessibilityLabel={t('onboarding.loading')} />
       )}
-      <AccountSection />
+      <AccountAndPrivacy />
     </Screen>
   );
 }
@@ -398,6 +462,20 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.5,
+  },
+  privacyNote: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    paddingTop: 8,
+  },
+  danger: {
+    marginTop: 0,
+    borderColor: colors.errorTint,
+    backgroundColor: colors.errorTint,
+  },
+  dangerLabel: {
+    color: colors.error,
   },
   message: {
     color: colors.ink,

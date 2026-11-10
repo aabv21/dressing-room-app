@@ -75,7 +75,14 @@ export function formatWearCount(count: number, locale: Locale): string {
   return translate(locale, key, { count });
 }
 
-export type PluralBase = 'closet.processing' | 'closet.failed' | 'closet.reviewBanner' | 'camera.count';
+export type PluralBase =
+  | 'closet.processing'
+  | 'closet.failed'
+  | 'closet.reviewBanner'
+  | 'camera.count'
+  | 'stats.kpi.streak'
+  | 'diary.outfits'
+  | 'forYou.outfits';
 
 /** `{base}.one` for exactly 1, otherwise `{base}.other` — the same en/es rule as `formatWearCount`. */
 export function pluralKey(base: PluralBase, count: number): MessageKey {

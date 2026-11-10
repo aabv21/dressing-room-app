@@ -427,6 +427,19 @@ TYPESAFE_API_KEY = "local-only-not-a-key"
 TYPESAFE_BASE_URL = "http://host.docker.internal:54498"
 OPEN_METEO_URL = "http://host.docker.internal:54498"
 OPEN_METEO_GEOCODING_URL = "http://host.docker.internal:54498"
+# Apple's /auth/token and /auth/revoke point at integration/mockServices.ts too. The team, key and
+# client ids are made up. APPLE_PRIVATE_KEY comes from the environment: `pnpm db:start` (and
+# db:start:ci) run scripts/db-start.ts, which generates a local-only P-256 key into gitignored
+# supabase/.temp/apple-test-key.pem (kept across restarts, never registered with Apple) and passes it
+# as LOCAL_APPLE_PRIVATE_KEY. No key is ever committed. A bare `supabase start` without it leaves
+# APPLE_PRIVATE_KEY unset or, depending on the CLI, the literal "env(LOCAL_APPLE_PRIVATE_KEY)";
+# appleEnvFrom treats both as missing, so apple-token answers `skipped` and deletion skips the
+# revoke. Hosted projects set their own with `supabase secrets set` (AGENTS.md).
+APPLE_TEAM_ID = "LOCALTEAM0"
+APPLE_KEY_ID = "LOCALKEY00"
+APPLE_CLIENT_ID = "local.dressing-room.test"
+APPLE_BASE_URL = "http://host.docker.internal:54498"
+APPLE_PRIVATE_KEY = "env(LOCAL_APPLE_PRIVATE_KEY)"
 
 # Called by the garments insert webhook (pg_net), which authenticates with the
 # `x-webhook-secret` header checked inside the function, not with a user JWT.
@@ -440,6 +453,22 @@ verify_jwt = true
 
 # Called by signed-in users like rate-outfit; reads the closet and the profile with that token.
 [functions.lucky-list]
+verify_jwt = true
+
+# Called by signed-in users like rate-outfit; reads the closet and the profile with that token.
+[functions.for-you]
+verify_jwt = true
+
+# Called by signed-in users right after Sign in with Apple; stores the Apple refresh token (service role).
+[functions.apple-token]
+verify_jwt = true
+
+# Called by signed-in users; removes their photos, revokes Apple, then deletes the auth user (service role).
+[functions.delete-account]
+verify_jwt = true
+
+# Called by signed-in users; reads their rows with that token and signs their own photo URLs (service role).
+[functions.export-data]
 verify_jwt = true
 
 [analytics]

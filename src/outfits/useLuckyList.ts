@@ -90,13 +90,14 @@ export function useTodayOccasion(): [Occasion | null, (next: Occasion | null) =>
   return [occasion, choose];
 }
 
-/** How long closet changes settle before they refetch the list (P4-R15): an upload burst is one call. */
+/** How long closet changes settle before they refetch the list: an upload burst is one call. */
 export const CLOSET_REFETCH_DELAY_MS = 3_000;
 
 /**
  * `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): the candidate garments (a category
- * and `available`, P4-R15) and their rating columns, not wear counts or `last_worn_at` (P4-R6). A
- * change here is one the server's list can reflect.
+ * and `available`) and their rating columns, not wear counts or `last_worn_at` (logging a wear
+ * bumps them, and wearing an outfit mustn't reshuffle today's list). A change here is one the
+ * server's list can reflect.
  */
 function closetFingerprint(garments: readonly Garment[]): string {
   return JSON.stringify(
@@ -116,7 +117,7 @@ const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
 type Settled = { query: string; outcome: AiOutcome<LuckyResponse>; failed: AiError | null };
 
 /**
- * Fetches the list once the closet has loaded (P4-R15: never against a closet still on its way),
+ * Fetches the list once the closet has loaded (never against a closet still on its way),
  * and again when the occasion or the day changes, when the screen comes back into focus (e.g. after
  * the city modal), after `reload`, and 3 s after the closet last changed in a way the list depends
  * on (a piece put in the laundry, deleted, edited or newly read elsewhere). At most one request is

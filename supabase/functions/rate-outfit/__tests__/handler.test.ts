@@ -690,9 +690,24 @@ describe('swaps', () => {
     expect(count(calls, 'jev')).toBe(2);
     expect(body).toMatchObject({ swap: { fromId: SHOES, toId: BOOTS, score: 44 } });
   });
+
+  test('a donated garment in the weakest slot is never a swap candidate', async () => {
+    const DONATED_HEELS = '10000000-0000-4000-8000-000000000009';
+    const w = world({ jev: lowWith({ boots: jevAt(0.44), loafers: jevAt(0.39) }) });
+    w.garments.set(DONATED_HEELS, garment(DONATED_HEELS, 'heels', { status: 'donated' }));
+    const { body, calls } = await rate(w);
+    expect(body).toMatchObject({ swap: { fromId: SHOES, toId: BOOTS, score: 44 } });
+    // Still just the selected outfit plus boots and loafers: not the laundry heels, not the donated ones.
+    expect(count(calls, 'jev')).toBe(3);
+    const swapStates = calls
+      .filter((call) => call.route === 'jev')
+      .slice(1)
+      .map((call) => (JSON.parse(call.body ?? '') as { state: JevState }).state);
+    expect(swapStates.map(shoesOf).sort()).toEqual(['boots', 'loafers']);
+  });
 });
 
-describe('degraded results (P4-R12)', () => {
+describe('degraded results', () => {
   const lowShoes = (): Response => json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes')));
   const minutesAgo = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString();
   const age = (w: World, minutes: number): void => {
@@ -760,7 +775,7 @@ describe('degraded results (P4-R12)', () => {
   });
 });
 
-describe('a cached swap is re-checked (M1)', () => {
+describe('a cached swap is re-checked', () => {
   const withSwap = (): World =>
     world({
       jev: (state) =>
@@ -801,7 +816,7 @@ describe('a cached swap is re-checked (M1)', () => {
   });
 });
 
-describe('latency budget (P4-R11)', () => {
+describe('latency budget', () => {
   const { drive, trackDigests, untrackDigests } = fakeTime(jest);
 
   beforeEach(() => {

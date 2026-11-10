@@ -14,9 +14,9 @@ export const REQUEST_TIMEOUT_MS = 12_000;
 export const UPLOAD_TIMEOUT_MS = 60_000;
 
 /**
- * `rate-outfit` and `lucky-list` (ruling P4-R11b) can take up to ~40 s in the rare all-slow case
- * (weather 10 s + Jev 10 s + the Claude fallback 20 s; see `supabase/functions/_shared/userContext.ts`
- * and `rate-outfit/handler.ts`'s `SWAP_BUDGET_MS`), so a `POST` to `/functions/v1/` (supabase-js's
+ * `rate-outfit` and `lucky-list` can take up to ~40 s in the rare all-slow case (weather 10 s +
+ * Jev 10 s + the Claude fallback 20 s; see `supabase/functions/_shared/userContext.ts` and
+ * `rate-outfit/handler.ts`'s `SWAP_BUDGET_MS`), so a `POST` to `/functions/v1/` (supabase-js's
  * `functions.invoke`) gets longer than the default 12 s.
  */
 export const FUNCTION_TIMEOUT_MS = 45_000;

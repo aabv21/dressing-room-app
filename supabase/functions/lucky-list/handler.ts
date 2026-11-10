@@ -64,7 +64,7 @@ type OkResponse = Extract<LuckyResponse, { kind: 'ok' }>;
 /**
  * What `lucky_cache` stores: the response plus an internal marker, stripped before answering. A
  * degraded list (a failed or skipped Jev rating, or a forecast that failed for a known location)
- * is served from the cache for an hour only (ruling P4-R12; see `cacheGet`).
+ * is served from the cache for an hour only, so a better list is tried again soon (see `cacheGet`).
  */
 type CachedLucky = OkResponse & { degraded: boolean };
 
@@ -73,14 +73,20 @@ type Outcome = 'cached' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_
 export const LUCKY_DAILY_LIMIT = 10;
 /** How many of the best pre-scored candidates are rated with Jev. */
 export const MAX_RANKED = 30;
-/** At most this many of the ranked outfits share the same base (the same pieces but the extra; P4-R13). */
+/**
+ * At most this many of the ranked outfits share the same base (the same pieces but the extra), so
+ * the list spreads.
+ */
 export const MAX_PER_BASE = 2;
 /**
  * The floor of the per-garment cap among the ranked outfits (raised for a slot with few
  * garments; see `selectForRanking`), applied while enough other candidates remain.
  */
 export const MAX_PER_PIECE = 4;
-/** No Jev ranking call starts once this long has passed since the request arrived (ruling P4-R11). */
+/**
+ * No Jev ranking call starts once this long has passed since the request arrived, so the answer
+ * lands inside the app's function deadline.
+ */
 export const RANK_BUDGET_MS = 15_000;
 const CACHE_VERSION = 1;
 
@@ -117,17 +123,30 @@ const locationOf = (profile: ProfileRow | null): string | null =>
 
 /**
  * The cache key. The closet fingerprint hashes each candidate garment's id and rating-relevant
- * columns (not `updated_at` or `last_worn_at`, which logging a wear bumps; ruling P4-R6), so
- * wearing an outfit doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit
- * instead.
+ * columns (not `updated_at` or `last_worn_at`, which logging a wear bumps), so wearing an outfit
+ * doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit instead. The tuple
+ * carries whether `pinned_on` equals *this request's* date, not the raw value: "Wear it" sets
+ * `pinned_on` to tomorrow, and the raw date would otherwise change today's fingerprint too,
+ * spending quota and re-ranking a list that "Wear it" was never meant to touch.
  */
 function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, input: LuckyInput): Promise<string> {
-  // Only garments that can be candidates count (P4-R15): an upload still being read (no category
+  // Only garments that can be candidates count: an upload still being read (no category
   // yet) or a piece in the laundry or lent can't change today's list, so it doesn't change the key.
   const fingerprint = garments
     .filter((g) => g.category !== null && g.status === 'available')
     .sort(byId)
-    .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status]);
+    .map((g) => [
+      g.id,
+      g.category,
+      g.colors,
+      g.pattern,
+      g.formality,
+      g.fit,
+      g.seasons,
+      g.warmth,
+      g.status,
+      g.pinned_on === input.date,
+    ]);
   return sha256Hex(
     JSON.stringify({
       v: CACHE_VERSION,
@@ -138,6 +157,29 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
       profile: profile?.updated_at ?? null,
     }),
   );
+}
+
+/**
+ * The garments `pinned_on` equals the request's date, among the ones `generateCandidates` can
+ * ever place (`available` and categorized); a pin on a garment that's in the laundry, lent,
+ * donated, or still being read simply has no effect. `keepPinned` below accepts a candidate
+ * containing any one of these, so a seeded draw biased towards one pinned piece doesn't starve
+ * the others out of the final list — they can still turn up in an unforced draw.
+ */
+function pinnedFor(garments: readonly RuleGarment[], date: string): RuleGarment[] {
+  return garments.filter((g) => g.category !== null && g.status === 'available' && g.pinned_on === date);
+}
+
+/**
+ * Candidates containing any of `pinned`, when at least one candidate does; otherwise `candidates`
+ * unfiltered — a pin with no complete rule-passing candidate behind it is simply ignored, rather
+ * than emptying today's list.
+ */
+function keepPinned(candidates: readonly Outfit[], pinned: readonly RuleGarment[]): Outfit[] {
+  if (pinned.length === 0) return [...candidates];
+  const pinnedIds = new Set(pinned.map((g) => g.id));
+  const withPin = candidates.filter((outfit) => outfit.some((item) => pinnedIds.has(item.id)));
+  return withPin.length > 0 ? withPin : [...candidates];
 }
 
 /**
@@ -299,9 +341,20 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
       return reply('over_quota', 429, { error: 'over_quota' });
     }
 
-    // `generateCandidates` sets `outerwearAvailable` from the closet itself (ruling P4-R7).
+    // `generateCandidates` sets `outerwearAvailable` from the closet itself, so a closet with no
+    // outerwear still gets candidates on a cold day.
     const rules: RuleContext = { occasion: input.occasion, season: seasonOf(input.date, lat), weather, today: input.date };
-    const candidates = selectForRanking(generateCandidates(garments, rules, userId + input.date), input.date);
+    const pinned = pinnedFor(garments, input.date);
+    // `generateCandidates` rotates the forced draw across every pinned garment that's admissible
+    // for this context on its own; `keepPinned` then accepts a candidate containing any of them.
+    const generated = generateCandidates(
+      garments,
+      rules,
+      userId + input.date,
+      undefined,
+      pinned.map((g) => g.id),
+    );
+    const candidates = selectForRanking(keepPinned(generated, pinned), input.date);
     const { ranked, complete } = await rank(
       { env, fetch: fetchFn, rand: deps.rand ?? Math.random, profile, occasion: input.occasion, weather, rules, startedAt },
       candidates,

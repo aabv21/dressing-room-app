@@ -372,6 +372,94 @@ describe('signInWithApple', () => {
     expect(result).toEqual({ ok: true });
   });
 
+  describe('sending the authorization code to apple-token', () => {
+    function mockAppleCredential(authorizationCode: string | null): void {
+      (AppleAuthentication.signInAsync as jest.Mock).mockResolvedValue({
+        identityToken: 'apple-id-token',
+        user: 'apple-user',
+        email: null,
+        fullName: null,
+        state: null,
+        realUserStatus: 0,
+        authorizationCode,
+      });
+    }
+
+    /** `fakeClient` plus the `functions.invoke` surface, answering with `invoke`. */
+    function clientWithFunctions(invoke: jest.Mock): { auth: FakeAuth; functions: { invoke: jest.Mock } } {
+      return { ...fakeClient(), functions: { invoke } };
+    }
+
+    let infoSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      infoSpy.mockRestore();
+    });
+
+    const flush = () => new Promise((resolve) => setImmediate(resolve));
+    const logged = (): string => infoSpy.mock.calls.map((args: unknown[]) => args.map(String).join(' ')).join('\n');
+
+    test('invokes apple-token with the code after a successful sign-in, logging only the outcome', async () => {
+      mockAppleCredential('apple-auth-code');
+      const invoke = jest.fn(() => Promise.resolve({ data: { outcome: 'stored' }, error: null }));
+      const client = clientWithFunctions(invoke);
+
+      const result = await signInWithApple(client as unknown as Client);
+      await flush();
+
+      expect(result).toEqual({ ok: true });
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledWith('apple-token', { body: { code: 'apple-auth-code' } });
+      expect(logged()).toContain('stored');
+      expect(logged()).not.toContain('apple-auth-code');
+    });
+
+    test('never waits for apple-token: sign-in resolves while the call is still pending', async () => {
+      mockAppleCredential('apple-auth-code');
+      const invoke = jest.fn(() => new Promise(() => undefined));
+      const client = clientWithFunctions(invoke);
+
+      await expect(signInWithApple(client as unknown as Client)).resolves.toEqual({ ok: true });
+      expect(invoke).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ['rejects', () => Promise.reject(new Error('network down apple-auth-code'))],
+      ['answers an error', () => Promise.resolve({ data: null, error: new Error('FunctionsHttpError apple-auth-code') })],
+      ['throws synchronously', () => {
+        throw new Error('boom apple-auth-code');
+      }],
+    ])('a call that %s leaves the sign-in successful and logs no code', async (_name, impl) => {
+      mockAppleCredential('apple-auth-code');
+      const client = clientWithFunctions(jest.fn(impl));
+
+      await expect(signInWithApple(client as unknown as Client)).resolves.toEqual({ ok: true });
+      await flush();
+
+      expect(logged()).toContain('failed');
+      expect(logged()).not.toContain('apple-auth-code');
+    });
+
+    test('is not invoked without a code, or when the sign-in itself fails', async () => {
+      mockAppleCredential(null);
+      const invoke = jest.fn(() => Promise.resolve({ data: { outcome: 'stored' }, error: null }));
+      const withoutCode = clientWithFunctions(invoke);
+      await signInWithApple(withoutCode as unknown as Client);
+
+      mockAppleCredential('apple-auth-code');
+      const failing = clientWithFunctions(invoke);
+      failing.auth.signInWithIdToken.mockResolvedValue({ data: {}, error: new AuthError('Invalid id token', 400) });
+      const result = await signInWithApple(failing as unknown as Client);
+
+      expect(result.ok).toBe(false);
+      expect(invoke).not.toHaveBeenCalled();
+    });
+  });
+
   test('maps the cancel code to cancelled', async () => {
     const client = fakeClient();
     (AppleAuthentication.signInAsync as jest.Mock).mockRejectedValue(

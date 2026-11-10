@@ -51,12 +51,33 @@ const inFlight = new Map<string, Promise<RunQueueResult>>();
  */
 const rerunRequested = new Set<string>();
 
+/** Users whose queue is paused: no pass, item or network stage starts for them. */
+const paused = new Set<string>();
+
+/**
+ * Pauses `userId`'s queue and resolves once a pass already running has stopped. A stage in flight
+ * finishes, but nothing after it starts (no upload, no commit, no next item), so once this
+ * resolves nothing more of this user's reaches the server until `resumeQueue`. Account deletion
+ * uses it so no photo lands after the server has listed the user's storage.
+ */
+export async function pauseQueue(userId: string): Promise<void> {
+  paused.add(userId);
+  await inFlight.get(userId)?.catch(() => undefined);
+}
+
+export function resumeQueue(userId: string): void {
+  paused.delete(userId);
+}
+
 export function runQueue(
   userId: string,
   steps: QueueSteps,
   store: QueueStoreApi = defaultStore,
   now: () => number = Date.now,
 ): Promise<RunQueueResult> {
+  if (paused.has(userId)) {
+    return Promise.resolve({ committed: 0, failed: 0, waiting: 0 });
+  }
   const existing = inFlight.get(userId);
   if (existing !== undefined) {
     rerunRequested.add(userId);
@@ -86,7 +107,7 @@ async function runQueuePasses(
     committed += sweep.committed;
     failed += sweep.failed;
     waiting += sweep.waiting;
-    if (!rerunRequested.has(userId)) break;
+    if (!rerunRequested.has(userId) || paused.has(userId)) break;
   }
   return { committed, failed, waiting };
 }
@@ -114,16 +135,18 @@ async function runQueuePass(
     }
   }
 
+  const stopped = (): boolean => paused.has(userId);
   let nextIndex = 0;
   async function worker(): Promise<void> {
     for (;;) {
       const index = nextIndex;
       nextIndex += 1;
       const item = due.at(index);
-      if (item === undefined) return;
-      if (await advanceToCommit(item, steps, store, now)) {
+      if (item === undefined || stopped()) return;
+      const outcome = await advanceToCommit(item, steps, store, now, stopped);
+      if (outcome === 'committed') {
         committed += 1;
-      } else {
+      } else if (outcome === 'failed') {
         failed += 1;
       }
     }
@@ -136,7 +159,9 @@ async function runQueuePass(
 }
 
 /**
- * Advances one item through every remaining stage. Returns whether it committed.
+ * Advances one item through every remaining stage. Returns whether it committed, failed, or was
+ * stopped by `pauseQueue` between two stages (its row keeps the last stage reached and its
+ * attempts, due at once).
  *
  * Each call is one attempt, and it is claimed (persisted as `attempts + 1` with its backoff)
  * before any stage runs: a native crash or OOM in `prepare`, or a kill mid-upload, never reaches
@@ -150,16 +175,23 @@ async function advanceToCommit(
   steps: QueueSteps,
   store: QueueStoreApi,
   now: () => number,
-): Promise<boolean> {
+  stopped: () => boolean,
+): Promise<'committed' | 'failed' | 'stopped'> {
   // Only a crashed run can leave an item at the limit without `failed` set: give up instead of
   // running it a ninth time.
   if (item.attempts >= MAX_ATTEMPTS) {
     store.saveItem({ ...item, failed: true });
-    return false;
+    return 'failed';
   }
   const attempts = item.attempts + 1;
   let current: QueueItem = { ...item, attempts, nextAttemptAt: now() + backoffMs(attempts) };
   store.saveItem(current);
+  // A pause isn't a failure: the item keeps its stage, gives back the claimed attempt and is due
+  // again as soon as the queue runs.
+  const stop = (): 'stopped' => {
+    store.saveItem({ ...current, attempts: item.attempts, nextAttemptAt: 0 });
+    return 'stopped';
+  };
   try {
     if (current.stage === 'captured') {
       const { fullUri, thumbUri } = await steps.prepare(current.sourceUri);
@@ -167,6 +199,7 @@ async function advanceToCommit(
       store.saveItem(current);
     }
     if (current.stage === 'prepared') {
+      if (stopped()) return stop();
       const { fullUri, thumbUri } = current;
       if (fullUri === null || thumbUri === null) {
         throw new PermanentUploadError('prepared item is missing its resized images');
@@ -175,9 +208,10 @@ async function advanceToCommit(
       current = { ...current, stage: 'uploaded' };
       store.saveItem(current);
     }
+    if (stopped()) return stop();
     await steps.commit(current);
     store.removeItem(current);
-    return true;
+    return 'committed';
   } catch (error) {
     const permanent = error instanceof PermanentUploadError;
     const failedItem: QueueItem = {
@@ -186,6 +220,6 @@ async function advanceToCommit(
       failed: permanent || attempts >= MAX_ATTEMPTS,
     };
     store.saveItem(failedItem);
-    return false;
+    return 'failed';
   }
 }

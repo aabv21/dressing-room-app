@@ -18,6 +18,15 @@ jest.mock('../profile/profileRepository', () => ({
   completeOnboarding: jest.fn(),
 }));
 
+// The Privacy section's client calls the functions through the real Supabase client.
+jest.mock('../account/accountClient', () => ({
+  deleteAccount: jest.fn(),
+  exportData: jest.fn(),
+  exportFileName: jest.fn(),
+}));
+
+jest.mock('expo-sharing', () => ({ shareAsync: jest.fn() }));
+
 jest.mock('expo-splash-screen', () => ({
   preventAutoHideAsync: jest.fn(() => Promise.resolve()),
   hideAsync: jest.fn(() => Promise.resolve()),
