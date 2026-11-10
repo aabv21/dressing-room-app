@@ -12,7 +12,11 @@ A digital closet and AI outfit rater, built with Expo and Supabase.
 - Accounts: email/password sign-up and sign-in, Sign in with Google and Sign in with Apple (iOS), and a 6-digit password-reset code sent by email.
 - A three-step onboarding flow (clothing type, body measurements, style and occasions) with a skip action on all but the first step, backed by a Postgres profile row protected by row-level security.
 - An editable Profile tab (clothing, body, style sections) sharing its form with onboarding, plus the language override and sign-out.
-- A Closet tab with a virtualized three-column grid (FlashList + expo-image). With no garments yet it shows an empty state.
+- A Closet tab with a virtualized three-column grid (FlashList + expo-image), a "Your 10 favorites" goal card and slot filter chips.
+- Adding clothes: a burst camera (one garment per shot, no forms) and a gallery multi-select. Each photo goes through a queue kept on the phone: on-device background removal (iOS Vision, Android ML Kit), a resized WebP and thumbnail, then an upload to private storage. The queue resumes after the app is closed or offline, without losing or duplicating a photo.
+- AI attributes: inserting a garment triggers an Edge Function that asks Claude for its category, colors, pattern, material, formality, seasons, warmth, fit and occasions (100 reads per user per day). Locally a mock Claude answers; nothing calls the real API until the owner sets the hosted keys.
+- A review queue ("1 of 3") that asks only what the AI doubted, as quick choices, and shows the rest confirmed.
+- Garment detail: edit any attribute, set it as available, in the laundry or lent out, replace its photo, or delete it (its photos are removed from storage too).
 - Fixture mode for performance testing: with `EXPO_PUBLIC_PERF_FIXTURES_URL` set, the Closet grid shows 500 generated thumbnails served from your computer, a disabled upload CTA, and a frame-stats HUD (frames, dropped frames, p95 and median frame time, inferred refresh rate). Tap the HUD to reset it; long-press it to also clear the image caches for a cold pass.
 - Performance gate: [`docs/performance-gate.md`](./docs/performance-gate.md) — protocol for the on-device scroll-performance go/no-go call. Status: pending.
 
@@ -24,12 +28,12 @@ pnpm expo run:ios
 pnpm test
 ```
 
-### Local backend (accounts, onboarding, profile)
+### Local backend (accounts, profile, closet)
 
-The app's accounts and profile features need a running local Supabase stack:
+The app's accounts, profile and closet features need a running local Supabase stack:
 
 ```bash
-pnpm db:start   # starts Postgres, Auth, Storage, Studio and Mailpit in Docker (first run pulls images)
+pnpm db:start   # starts Postgres, Auth, Storage, Studio, Mailpit and the Edge Runtime in Docker (first run pulls images)
 pnpm env:local  # writes .env.local with the app's Supabase URL/anon key
 pnpm expo run:ios
 ```

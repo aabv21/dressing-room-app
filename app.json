@@ -7,12 +7,17 @@
     "icon": "./assets/images/icon.png",
     "scheme": "dressingroom",
     "userInterfaceStyle": "light",
+    "locales": {
+      "en": "./locales/en.json",
+      "es": "./locales/es.json"
+    },
     "ios": {
       "bundleIdentifier": "com.aabv21.dressingroom",
       "icon": "./assets/expo.icon",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSLocalNetworkUsageDescription": "Loads test images from your computer during development."
+        "NSLocalNetworkUsageDescription": "Loads test images from your computer during development.",
+        "CFBundleAllowMixedLocalizations": true
       }
     },
     "android": {
@@ -38,6 +43,20 @@
       ["expo-localization", { "supportedLocales": ["en", "es"] }],
       "expo-sqlite",
       "expo-apple-authentication",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Dressing Room uses the photos you pick to add your clothes to your closet.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Dressing Room uses your camera to photograph your clothes for your closet.",
+          "microphonePermission": false
+        }
+      ],
       [
         "expo-location",
         {

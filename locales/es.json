@@ -1,0 +1,7 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Dressing Room usa tu cámara para fotografiar tu ropa para tu clóset.",
+    "NSPhotoLibraryUsageDescription": "Dressing Room usa las fotos que elijas para agregar tu ropa a tu clóset.",
+    "NSLocationWhenInUseUsageDescription": "Dressing Room usa tu ubicación una vez para encontrar tu ciudad, así las sugerencias de outfits pueden ajustarse al clima."
+  }
+}

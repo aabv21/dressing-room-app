@@ -1,51 +1,23 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database, Tables } from '../lib/database.types';
+import { runRequest, type RequestError, type RequestOutcome } from '../lib/requestResult';
 import { supabase } from '../lib/supabase';
 
 export type Profile = Tables<'profiles'>;
 export type ProfilePatch = Partial<Omit<Profile, 'user_id' | 'created_at' | 'updated_at'>>;
 
-export type ProfileErrorKey = 'profile.error.network' | 'profile.error.invalid' | 'profile.error.unknown';
+export type ProfileErrorKey = `profile.error.${RequestError}`;
 export type Result = { ok: true } | { ok: false; error: ProfileErrorKey };
 
 type Client = SupabaseClient<Database>;
-type PostgrestLikeError = { code?: string };
-
-/**
- * Postgres error classes that mean "the values were rejected" rather than "the request failed":
- * 23514 check_violation (the CHECK ranges), 23502 not_null_violation, 22P02 invalid enum/number
- * text, 22003 numeric out of range, 22001 string too long.
- */
-const INVALID_VALUE_CODES: ReadonlySet<string> = new Set(['23514', '23502', '22P02', '22003', '22001']);
-
-function toProfileErrorKey(error: PostgrestLikeError, status: number): ProfileErrorKey {
-  // postgrest-js reports a rejected `fetch` (offline, DNS, timeout) as status 0 with an empty code.
-  if (status === 0) {
-    return 'profile.error.network';
-  }
-  if (error.code !== undefined && INVALID_VALUE_CODES.has(error.code)) {
-    return 'profile.error.invalid';
-  }
-  return 'profile.error.unknown';
-}
-
-type Outcome = { error: PostgrestLikeError | null; status: number; data?: unknown };
 
 async function run(
-  request: () => PromiseLike<Outcome>,
-  /** Whether a successful response actually did the work (e.g. an update reached a row). */
-  applied: (response: Outcome) => boolean = () => true,
+  request: () => PromiseLike<RequestOutcome>,
+  applied?: (response: RequestOutcome) => boolean,
 ): Promise<Result> {
-  try {
-    const response = await request();
-    if (response.error !== null) {
-      return { ok: false, error: toProfileErrorKey(response.error, response.status) };
-    }
-    return applied(response) ? { ok: true } : { ok: false, error: 'profile.error.unknown' };
-  } catch (error) {
-    return { ok: false, error: error instanceof TypeError ? 'profile.error.network' : 'profile.error.unknown' };
-  }
+  const result = await runRequest(request, applied);
+  return result.ok ? result : { ok: false, error: `profile.error.${result.error}` };
 }
 
 /** Reads the signed-in user's profile row (RLS limits it to their own); `null` if there is none. */

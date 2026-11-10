@@ -4,6 +4,12 @@
 // down; `renderRouter` manages its own render lifecycle per call and doesn't expose a `rerender`
 // bound to a live `useAuth()` mock the way `@testing-library/react-native`'s own `render(...).rerender`
 // does.
+// The closet providers wrap the signed-in navigator; this suite doesn't test the closet.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvidersMock'));
+
 jest.mock('../auth/AuthProvider', () => ({
   AuthProvider: ({ children }: { children?: React.ReactNode }) => children,
   useAuth: jest.fn(() => ({

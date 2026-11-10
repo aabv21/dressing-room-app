@@ -7,6 +7,12 @@
 // the real navigator, `expo-router` itself must NOT be mocked here (unlike auth-screens.test.tsx,
 // which renders screens in isolation and mocks `router`); AuthProvider stays mocked at the
 // `useAuth()` seam so each case can drive an exact status/onboardingComplete combination.
+// The closet providers wrap the signed-in navigator; this suite doesn't test the closet.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvidersMock'));
+
 jest.mock('../auth/AuthProvider', () => ({
   AuthProvider: ({ children }: { children?: React.ReactNode }) => children,
   useAuth: jest.fn(() => ({

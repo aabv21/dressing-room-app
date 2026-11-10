@@ -1,0 +1,18 @@
+{
+  "id": "msg_fixture_not_garment",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"is_garment\":false,\"category\":\"accessory\",\"colors\":[],\"pattern\":null,\"material\":null,\"formality\":null,\"seasons\":[],\"warmth\":null,\"fit\":null,\"occasions\":[],\"confidence\":{\"category\":\"low\",\"colors\":\"low\",\"pattern\":\"low\",\"material\":\"low\",\"formality\":\"low\",\"seasons\":\"low\",\"warmth\":\"low\",\"fit\":\"low\",\"occasions\":\"low\"}}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1240,
+    "output_tokens": 180
+  }
+}
