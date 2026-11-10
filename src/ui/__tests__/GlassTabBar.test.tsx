@@ -72,3 +72,20 @@ test('the tabs sit in a tablist, and each one opens the large content viewer wit
     expect(tab).toHaveProp('accessibilityLargeContentTitle', tab.props.accessibilityLabel);
   }
 });
+
+test('only the selected tab shows its lens', async () => {
+  await render(
+    <GlassTabBar
+      {...({
+        state: { index: 1, routes },
+        emitter: { emit: jest.fn(() => ({ defaultPrevented: false })) },
+        navigateToTab: jest.fn(),
+        descriptors: {},
+        insets: { top: 0, bottom: 0, left: 0, right: 0 },
+      } as unknown as BottomTabBarProps)}
+    />,
+  );
+  const opacity = (route: string) => (screen.getByTestId(`tab-lens-${route}`).props.style as { opacity?: number }[]).at(-1)?.opacity;
+  expect(opacity('closet')).toBe(1);
+  expect(['index', 'build', 'for-you', 'profile'].map(opacity)).toEqual([0, 0, 0, 0]);
+});

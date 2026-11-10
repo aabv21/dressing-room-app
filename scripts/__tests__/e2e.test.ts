@@ -12,14 +12,24 @@ import {
   bootedSimulators,
   connectedEmulators,
   e2eEmail,
+  e2ePassword,
   e2ePlatform,
   envValue,
   HOMEBREW_JAVA_HOME,
   javaEnvironment,
   maestroArgs,
+  missingPhotos,
   pickSimulator,
   stackProblem,
 } from '../e2e.ts';
+
+describe('e2ePassword', () => {
+  test('is 16 URL-safe characters, fresh on every run', () => {
+    expect(e2ePassword(new Uint8Array(12).fill(255))).toBe('________________');
+    expect(e2ePassword()).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(e2ePassword()).not.toBe(e2ePassword());
+  });
+});
 
 describe('e2eEmail', () => {
   test('is a fresh example.com address per run', () => {
@@ -255,6 +265,12 @@ describe('Android target', () => {
     const several = pickSimulator(two, undefined, 'android');
     expect(!several.ok && several.message).toMatch(/E2E_SIMULATOR/);
     expect(pickSimulator(two, 'emulator-5556', 'android')).toEqual({ ok: true, simulator: { udid: 'emulator-5556', name: 'emulator-5556' } });
+  });
+
+  test('finds the fixtures the photo library doesn\'t list yet', () => {
+    const output = 'Row: 0 _display_name=jeans.jpg\nRow: 1 _display_name=holiday.jpg\nRow: 2 _display_name=shirt.jpg\n';
+    expect(missingPhotos(output, ['jeans.jpg', 'shirt.jpg', 'sneakers.jpg'])).toEqual(['sneakers.jpg']);
+    expect(missingPhotos('No result found.\n', ['jeans.jpg'])).toEqual(['jeans.jpg']);
   });
 
   test('maps the Supabase API port and puts fixtures where the media scan finds them', () => {

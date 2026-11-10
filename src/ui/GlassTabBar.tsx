@@ -92,7 +92,11 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
               >
                 {/* The lens is always mounted and only fades in: Android draws a background or
                     shadow added on selection without the border radius. */}
-                <View style={[styles.lens, { opacity: selected ? 1 : 0 }]} pointerEvents="none" />
+                <View
+                  style={[styles.lens, { opacity: selected ? 1 : 0 }]}
+                  pointerEvents="none"
+                  testID={`tab-lens-${tab.route}`}
+                />
                 <View style={styles.tabContent}>
                   <Icon size={18} color={selected ? '#6d28d9' : '#5f5b6b'} />
                   <Text

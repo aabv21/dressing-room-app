@@ -29,7 +29,8 @@ const ANTHROPIC_VERSION = '2023-06-01';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Garment = { id: string; userId: string; extractionStatus: string; reviewed: boolean };
+/** `updatedAt` is the row's `updated_at` as PostgREST wrote it, matched exactly by the write-back. */
+type Garment = { id: string; userId: string; extractionStatus: string; reviewed: boolean; updatedAt: string };
 type WriteBack = { outcome: Exclude<ExtractOutcome, 'skipped'>; patch: Record<string, unknown> };
 
 const FAILED: WriteBack = { outcome: 'failed', patch: { extraction_status: 'failed' } };
@@ -100,7 +101,7 @@ async function serviceJson(deps: ExtractDeps, path: string, init?: RequestInit):
 }
 
 async function loadGarment(deps: ExtractDeps, garmentId: string): Promise<Garment | null> {
-  const select = 'id,user_id,extraction_status,reviewed_at';
+  const select = 'id,user_id,extraction_status,reviewed_at,updated_at';
   const rows = await serviceJson(deps, `/rest/v1/garments?id=eq.${garmentId}&select=${select}`);
   if (!Array.isArray(rows)) throw new UpstreamError('garments: not an array');
   const [row] = rows as unknown[];
@@ -110,7 +111,8 @@ async function loadGarment(deps: ExtractDeps, garmentId: string): Promise<Garmen
     typeof row.user_id !== 'string' ||
     !UUID.test(row.user_id) ||
     typeof row.extraction_status !== 'string' ||
-    (row.reviewed_at !== null && typeof row.reviewed_at !== 'string')
+    (row.reviewed_at !== null && typeof row.reviewed_at !== 'string') ||
+    typeof row.updated_at !== 'string'
   ) {
     throw new UpstreamError('garments: unexpected row');
   }
@@ -119,6 +121,7 @@ async function loadGarment(deps: ExtractDeps, garmentId: string): Promise<Garmen
     userId: row.user_id,
     extractionStatus: row.extraction_status,
     reviewed: row.reviewed_at !== null,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -190,11 +193,19 @@ async function extract(deps: ExtractDeps, garment: Garment): Promise<WriteBack> 
 }
 
 /** Returns whether the guarded write matched the garment. */
-async function writeBack(deps: ExtractDeps, garmentId: string, patch: Record<string, unknown>): Promise<boolean> {
-  // The `pending` filter makes a duplicate webhook delivery a no-op instead of a second write, and
-  // the `reviewed_at` one keeps a review saved while Claude was answering (the app sends a garment
-  // to review after 10 minutes by the device's clock) from being overwritten by the model's guesses.
-  const filter = `id=eq.${garmentId}&extraction_status=eq.pending&reviewed_at=is.null&select=id`;
+async function writeBack(deps: ExtractDeps, garment: Garment, patch: Record<string, unknown>): Promise<boolean> {
+  // The `pending` filter makes a duplicate webhook delivery a no-op instead of a second write. The
+  // `reviewed_at` one keeps a review saved while Claude was answering (the app sends a garment to
+  // review after 10 minutes by the device's clock) from being overwritten by the model's guesses,
+  // and the `updated_at` one (the value read before the Claude call; every write to the row moves
+  // it) does the same for an edit saved in the garment detail, which leaves `reviewed_at` null.
+  const filter = [
+    `id=eq.${garment.id}`,
+    'extraction_status=eq.pending',
+    'reviewed_at=is.null',
+    `updated_at=eq.${encodeURIComponent(garment.updatedAt)}`,
+    'select=id',
+  ].join('&');
   const rows = await serviceJson(deps, `/rest/v1/garments?${filter}`, {
     method: 'PATCH',
     headers: { prefer: 'return=representation' },
@@ -219,7 +230,7 @@ export async function handleExtract(request: Request, deps: ExtractDeps): Promis
       outcome = 'skipped';
     } else {
       const result = await extract(deps, garment);
-      outcome = (await writeBack(deps, garmentId, result.patch)) ? result.outcome : 'skipped';
+      outcome = (await writeBack(deps, garment, result.patch)) ? result.outcome : 'skipped';
     }
   } catch {
     // The database itself failed (loading or writing back). The garment may stay `pending`; the app

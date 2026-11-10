@@ -1,4 +1,5 @@
 import { cacheOnboarding, cachedOnboarding, isLanguageSavePending, markLanguageSavePending } from '../../auth/deviceState';
+import { queuePurgeRequests, requestQueuePurge } from '../../closet/upload/queuePurge';
 import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
 import { forgetAccountOnDevice } from '../forgetAccount';
 
@@ -80,4 +81,14 @@ test('the account signing in again lifts the refusal', () => {
   kvSet(`closet.v1.${USER}`, 'x');
 
   expect(kvGet(`closet.v1.${USER}`)).toBe('x');
+});
+
+test("keeps a queue purge request for the user, which outlives the account's other data", () => {
+  requestQueuePurge(USER);
+  kvSet(`closet.v1.${USER}`, 'x');
+
+  forgetAccountOnDevice(USER);
+
+  expect(queuePurgeRequests()).toEqual([USER]);
+  expect(kvGet(`closet.v1.${USER}`)).toBeNull();
 });

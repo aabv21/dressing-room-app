@@ -8,6 +8,8 @@ const { jest } = import.meta;
 
 const GARMENT_ID = '3f0c9a52-6d1e-4c8b-9a77-2b1f5e0d4c11';
 const USER_ID = '8a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+// PostgREST's own timestamptz format, with microseconds and a `+` that must be percent-encoded.
+const UPDATED_AT = '2026-11-09T12:00:00.123456+00:00';
 
 const ENV: ExtractEnv = {
   supabaseUrl: 'http://supabase.test',
@@ -34,7 +36,8 @@ const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 const DEFAULT_ROUTES: Record<RouteName, Handler> = {
-  garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: null }]),
+  garment: () =>
+    json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: null, updated_at: UPDATED_AT }]),
   rpc: () => json(200, true),
   profile: () => json(200, [{ clothing_type: 'masculine' }]),
   storage: () => new Response(IMAGE, { status: 200, headers: { 'content-type': 'image/webp' } }),
@@ -164,7 +167,7 @@ describe('extraction', () => {
 
     const [garment, rpc, profile, storage, claude, patch] = calls;
     expect(garment?.url).toBe(
-      `${ENV.supabaseUrl}/rest/v1/garments?id=eq.${GARMENT_ID}&select=id,user_id,extraction_status,reviewed_at`,
+      `${ENV.supabaseUrl}/rest/v1/garments?id=eq.${GARMENT_ID}&select=id,user_id,extraction_status,reviewed_at,updated_at`,
     );
     for (const call of [garment, rpc, profile, storage, patch]) {
       expect(call?.headers.get('apikey')).toBe(ENV.serviceRoleKey);
@@ -189,6 +192,8 @@ describe('extraction', () => {
     expect(patch?.url).toContain('extraction_status=eq.pending');
     // A review saved while the extraction ran (a device clock ahead, or a slow model) is never overwritten.
     expect(patch?.url).toContain('reviewed_at=is.null');
+    // Neither is an edit saved in the garment detail meanwhile: any write moves `updated_at`.
+    expect(new URL(patch?.url ?? '').searchParams.get('updated_at')).toBe(`eq.${UPDATED_AT}`);
     // The write returns the ids it matched, so a write that matched nothing is reported as skipped.
     expect(patch?.url).toContain('select=id');
     expect(patch?.headers.get('prefer')).toBe('return=representation');
@@ -302,7 +307,7 @@ describe('extraction', () => {
 
   test('a garment that is no longer pending is skipped with no further calls', async () => {
     const { fetch, calls } = fakeFetch({
-      garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'done', reviewed_at: null }]),
+      garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'done', reviewed_at: null, updated_at: UPDATED_AT }]),
     });
     const response = await handleExtract(webhook(), { env: ENV, fetch });
 
@@ -314,7 +319,9 @@ describe('extraction', () => {
   test('a garment the user already reviewed is skipped with no quota, Claude or write-back', async () => {
     const { fetch, calls } = fakeFetch({
       garment: () =>
-        json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: '2026-11-09T12:00:00Z' }]),
+        json(200, [
+          { id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: '2026-11-09T12:00:00Z', updated_at: UPDATED_AT },
+        ]),
     });
     const response = await handleExtract(webhook(), { env: ENV, fetch });
 
@@ -331,6 +338,27 @@ describe('extraction', () => {
     expect(await response.json()).toEqual({ outcome: 'skipped' });
     expect(calls.at(-1)?.route).toBe('patch');
     expect(infoSpy.mock.calls).toEqual([[JSON.stringify({ garment_id: GARMENT_ID, outcome: 'skipped' })]]);
+  });
+
+  test('a garment edited in the detail while Claude was answering keeps the edit: the write matched no row', async () => {
+    // The edit moved `updated_at` past the value read before the Claude call, so PostgREST's
+    // `updated_at=eq.<that value>` filter matches nothing and the model's guesses are dropped.
+    const { fetch, calls } = fakeFetch({ patch: () => json(200, []) });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(await response.json()).toEqual({ outcome: 'skipped' });
+    const patch = calls.find((call) => call.route === 'patch');
+    expect(new URL(patch?.url ?? '').searchParams.get('updated_at')).toBe(`eq.${UPDATED_AT}`);
+  });
+
+  test('a garment row without a readable updated_at answers 500 without calling Claude', async () => {
+    const { fetch, calls } = fakeFetch({
+      garment: () => json(200, [{ id: GARMENT_ID, user_id: USER_ID, extraction_status: 'pending', reviewed_at: null }]),
+    });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(response.status).toBe(500);
+    expect(calls.map((call) => call.route)).toEqual(['garment']);
   });
 
   test('an over-quota write that matched no row is skipped too', async () => {

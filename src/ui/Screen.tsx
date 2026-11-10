@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ComponentProps } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnchoredCta } from './AnchoredCta';
@@ -79,18 +79,27 @@ export function Screen(props: ScreenProps): React.JSX.Element {
       {props.scroll === false ? (
         <View style={styles.fill}>{props.children}</View>
       ) : (
-        <ScrollView
-          style={styles.fill}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[
-            styles.content,
-            { paddingTop: contentInsets.top, paddingBottom: contentInsets.bottom },
-          ]}
-        >
-          {headerAccessory ? <View style={styles.headerRow}>{headerAccessory}</View> : null}
-          <ScreenTitle title={props.title} variant={titleVariant} />
-          {props.children}
-        </ScrollView>
+        // Android draws edge to edge, so the window no longer resizes for the keyboard: the padding
+        // behavior shrinks the scroll view instead. iOS insets the scroll view itself (below).
+        <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'android' ? 'padding' : undefined}>
+          <ScrollView
+            style={styles.fill}
+            testID="screen-scroll"
+            keyboardShouldPersistTaps="handled"
+            // The fields below the focused one stay reachable above the keyboard, and a drag dismisses
+            // it: a number pad has no return key.
+            automaticallyAdjustKeyboardInsets
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={[
+              styles.content,
+              { paddingTop: contentInsets.top, paddingBottom: contentInsets.bottom },
+            ]}
+          >
+            {headerAccessory ? <View style={styles.headerRow}>{headerAccessory}</View> : null}
+            <ScreenTitle title={props.title} variant={titleVariant} />
+            {props.children}
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
       {cta ? <AnchoredCta {...cta} chrome={chrome} /> : null}
     </LinearGradient>

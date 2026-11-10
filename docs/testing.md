@@ -39,7 +39,9 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer,
   `pause` waiting for the queue and keeping its photos, `clear`, `resume` with and without a run,
   and an unconfirmed deletion marker blocking every run and only verified on mount, foreground and
-  reconnect, never deleted and with no Alert), `ClosetScreen.test.tsx` (the goal card, slot chips,
+  reconnect, never deleted and with no Alert; on mount, each other account's `queue.purge.<id>`
+  request clears that queue and is dropped, the provider's own user's is dropped without a clear,
+  and a request whose clear failed stays), `ClosetScreen.test.tsx` (the goal card, slot chips,
   the review banner, the processing and failed tiles, the gallery picker, opening a garment) and
   `GoalCard.test.tsx` (the progress wraps under the title at a large text size).
 - `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
@@ -77,7 +79,8 @@ The Profile tab's Privacy section (data export and account deletion):
   `exportData`'s document and failures, and `exportFileName`'s local-day name.
 - `src/account/__tests__/deletionMarker.test.ts` — the `account.deleting.<id>` marker's states, and
   `forgetInterruptedDeletions` dropping a `deleting` account's data and marker while keeping a
-  `reauth` one's and the active user's own.
+  `reauth` one's and the active user's own, and recording a `queue.purge.<id>` request only for the
+  dropped account.
 - `src/account/__tests__/deletionFlow.test.ts` — `runDeletion`: the marker is written before the
   pause; deleted clears the queue, signs out, drops the data and marker and clears the device files,
   and a failing queue clear or kv cleanup still signs out; a per-user kv write after the cleanup is
@@ -90,12 +93,14 @@ The Profile tab's Privacy section (data export and account deletion):
   whose time can't be trusted (missing, malformed, or more than the settle window in the future) is
   stamped anew and stays pending, so the window starts over; `unknown` keeps both.
 - `src/auth/__tests__/AuthProvider.test.tsx` (its interrupted-deletion part) — a session lost while
-  a deletion is marked `deleting` drops that account's kv data; a `reauth` one keeps it; another
+  a deletion is marked `deleting` drops that account's kv data and records a queue purge request; a
+  `reauth` one keeps its data and records none; another
   user signing in drops a `deleting` account's kv data and keeps their own marker for their
   session's check; that account signing in again can write its kv data again.
 - `src/account/__tests__/forgetAccount.test.ts` — every kv key under the user's id goes (each day's
   `today.occasion.<id>.<date>` too), with the onboarding status and pending language save; another
-  account's keys and the device's language preference stay; the user's later writes are refused
+  account's keys, the device's language preference and a `queue.purge.<id>` request stay; the
+  user's later writes are refused
   (also the id-less onboarding and language entries), and lifted once that account signs in again.
 - `src/auth/__tests__/signOutLocally.test.ts` — against a real supabase-js client and a fake
   `fetch`: a deleted user's valid token (`user_not_found`), an expired token whose refresh is
@@ -177,7 +182,8 @@ Outfits, Stats and Diary:
   wears, deleting a wear (today's too), and the empty and Spanish months.
 - `src/stats/__tests__/` — `periods.test.ts` (the period ranges and the Monday-first month grid),
   `statsModel.test.ts` (the KPIs, most worn, color shares and slot balance) and
-  `wearsRepository.test.ts` (the wears query and Diary's delete).
+  `wearsRepository.test.ts` (the wears query, its paging in ranges of 1000 until a short page,
+  at most 20 pages, a failed later page throwing, and Diary's delete).
 
 Shared UI, the app shell and helpers:
 
@@ -320,7 +326,9 @@ never called. See `docs/ai.md`. To run only this project:
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
   after 30 s (`failed`), a garment no longer pending, already reviewed or missing, a guarded
-  write-back that matches no row because the user reviewed it meanwhile (`skipped`), adversarial
+  write-back that matches no row because the user reviewed or edited it meanwhile (`skipped`; the
+  `updated_at` filter carries the exact value read before the Claude call), a row without a
+  readable `updated_at` (500, no Claude call), adversarial
   Claude responses (`claude-adversarial-*.json`) writing only the attribute columns, and logs that
   carry only the garment id and an outcome word.
 - `supabase/functions/rate-outfit/__tests__/handler.test.ts` — the Jev score and its cache (keyed by
@@ -382,7 +390,9 @@ Supabase stack:
   `extract-attributes` Edge Function through pg_net, and the function calls the mock Claude below.
   Claude's `ok` fixture gives `done` with its category within 20 s; a 500 or a refusal gives
   `failed`; a Claude that never answers gives `failed` within 40 s (the function's 30 s timeout);
-  inserting the same id again makes no second Claude call; and a user whose daily quota is already
+  inserting the same id again makes no second Claude call; an edit saved through A's client while
+  the mock Claude holds its answer for 4 s keeps the user's category (the garment stays `pending`);
+  and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
@@ -413,8 +423,8 @@ functions; `--runInBand` because the suites share one database and create/delete
 `integration/mockAnthropic.ts` is the mock Claude: `startMockAnthropic(port = 54499)` serves
 `POST /v1/messages` on `0.0.0.0` (the function calls it from inside a container, as
 `http://host.docker.internal:54499`, the local `ANTHROPIC_BASE_URL` in `supabase/config.toml`).
-`respondWith({ status, body })` or `respondWith({ hang: true })` sets the reply for every following
-call; `calls()` counts the calls; `close()` also drops hung connections. Replies reuse the recorded
+`respondWith({ status, body })` (with an optional `delayMs` before the answer) or
+`respondWith({ hang: true })` sets the reply for every following call; `calls()` counts the calls; `close()` also drops hung connections. Replies reuse the recorded
 fixtures in `supabase/functions/_shared/__tests__/fixtures/`, so the real API is never called.
 `integration/mockServices.ts` stands in for TypeSafe's System One API (Jev) and Open-Meteo:
 `startMockServices(port = 54498)` serves `POST /v1/systemone`, `GET /v1/forecast` and
@@ -485,6 +495,9 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `garment_extraction_trigger.test.sql` — the garments insert trigger's shape and privileges, the
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
   queueing the request fails.
+- `cache_cleanup.test.sql` — `prune_expired_caches()` deletes cache rows past each lifetime and
+  keeps fresh ones and each user's newest For you row; the daily `pg_cron` job exists once; no
+  client role can call the function.
 - `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
   is executable by a client role, and no index is made redundant by another that starts with the
   same columns.
@@ -534,8 +547,8 @@ the in-app language choice, and the app follows the device.
   Google Play system image (ML Kit's segmentation model comes from Play services); this repo uses
   an `android-36` `google_apis_playstore` arm64 image on a Pixel 9 AVD. Start it with
   `-gpu host`: its default software renderer makes the flows several times slower.
-- **An English simulator.** Settings → General → Language & Region; the flows match English
-  text.
+- **An English device.** On the simulator, Settings → General → Language & Region; on the
+  emulator, Settings → System → Languages. The flows match English text.
 - **The local stack:** `pnpm db:start`, then `pnpm env:local` (the app must point at it; the script
   checks).
 - **Ports 54498 and 54499 free.** The script starts the mocks itself and stops them at the end.
@@ -555,7 +568,9 @@ the in-app language choice, and the app follows the device.
    exited with an error. The photos go in on every run, so the simulator's photo library grows by
    four each time (erasing the simulator empties it, and removes the dev build too); the flow picks
    the four newest. On Android they're pushed to `/sdcard/Pictures/` with `adb push`, under the
-   same names each run, and a media scan makes the system photo picker list them.
+   same names each run, then touched, since `adb push` keeps the Mac file's old time and the
+   picker shows the newest photos first, and scanned. The script then waits until the photo
+   library lists all four, and fails with their names if it never does.
 4. Runs `maestro --device <udid> test --config .maestro/config.yaml .maestro/flows` with `EMAIL`
    and `PASSWORD` passed to the flows, then stops the mocks and exits with Maestro's status.
 
@@ -582,9 +597,10 @@ the in-app language choice, and the app follows the device.
   platform`). Android's system photo picker labels each photo "Photo taken on <date>"; the subflow
   taps the first four and "Done". iOS's picker isn't the app's UI, so its subflow taps the cells by
   Apple's own accessibility id, `PXGGridLayout-Info` at indexes 0 to 3, after
-  waiting for its "Select up to 30 photos." prompt. Both are iOS internals, not a public API: an iOS
-  update can rename them, and the flow then fails at the gallery step. Check them with
-  `maestro hierarchy` on the open picker.
+  waiting for its "Select up to 30 photos." prompt. Each picker's text and ids are system
+  internals, not a public API: an iOS update, or a Play system update on Android, can rename them,
+  and the flow then fails at the gallery step. Check them with `maestro hierarchy` on the open
+  picker.
 - **Fixtures.** `node scripts/e2e.ts fixtures` regenerates the four JPEGs with `sharp`, drawn from
   `scripts/perf-fixtures.ts`'s garment shapes on a plain background. They're fictional, never
   real photos.

@@ -167,8 +167,8 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | `public.outfits`, `outfit_items`, `public.wears` | Saved and worn outfits, their pieces, and each wear's day, occasion and score | Until deleted (a wear from the diary) or the account |
 | `garments` bucket | `full.webp` (784 px) and `thumb.webp` (256 px) per garment | Until the garment or the account is deleted |
 | `public.usage_counters` | Per user, UTC day and kind: extraction, rating, lucky, for_you | Until the account is deleted |
-| `public.rating_cache`, `lucky_cache`, `for_you_cache` | AI results by cache key; a degraded entry is served for an hour, a For you entry for 7 days | Until the account is deleted; `for_you_cache` keeps one row per user |
-| `public.weather_cache` | Forecast summaries by place and hour, with no user id | Not pruned yet ([`database.md`](database.md) has the cleanup upgrade) |
+| `public.rating_cache`, `lucky_cache`, `for_you_cache` | AI results by cache key; a degraded entry is served for an hour, a For you entry for 7 days | A daily `pg_cron` job deletes degraded entries after 2 hours, rating and lucky entries after 30 days and For you entries after 8 days, except each user's newest For you entry; the account's deletion removes the rest |
+| `public.weather_cache` | Forecast summaries by place and hour, with no user id | 2 days (the same daily job; [`database.md`](database.md) has the details) |
 | `public.apple_tokens` | The Sign in with Apple refresh token, for revocation | Until the account is deleted |
 | Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list and For you ideas, cached images | Copies go after upload; the rest until sign-out or deletion clears it |
 | `~/dressing-room-backups/` | Nightly dumps and photos on the owner's Mac | The newest 14 complete backups |
@@ -234,8 +234,9 @@ limits it would meet first:
 - **Supabase free tier.** At the time of writing it allows 500 MB of database, 1 GB of storage and
   5 GB of egress, and the family needs about 100 MB of photos. Thumbnails download once into expo-image's
   disk cache. Free projects pause after a week without use. The upgrade is Supabase Pro.
-- **Cache tables.** `rating_cache`, `lucky_cache` and `weather_cache` are never pruned; at 4 users
-  that's a few thousand small rows a month. The upgrade is a scheduled `pg_cron` cleanup.
+- **Cache tables.** A daily `pg_cron` job prunes them (`prune_expired_caches()`), so they stay at
+  about a month of rows. Its deletes scan each table, which is fine at a few thousand rows; an index
+  on `created_at` would be the upgrade if they ever grow far larger.
 - **TypeSafe rate limits.** A lucky-list miss makes up to 30 Jev requests, a swap search up to 8 and
   a For you miss up to 10, each at most 5 at once. A 429 from Jev looks like a failure, and each
   path degrades as the table above says.

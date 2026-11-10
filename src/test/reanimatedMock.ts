@@ -24,7 +24,8 @@ import { View } from 'react-native';
 // - `useAnimatedStyle`: records which shared values its factory reads (as reanimated's Babel plugin
 //   finds a worklet's shared values on a device) and re-renders whenever one of them changes,
 //   re-invoking the factory with the latest values. Callers pass no deps array: on native,
-//   reanimated ignores it and warns. On a device, reanimated's real
+//   reanimated ignores it and warns. NOTE: a factory that reads shared values conditionally changes
+//   how many it subscribes to between renders, which React warns about; none does today. On a device, reanimated's real
 //   `useAnimatedStyle` instead runs the worklet on the UI thread and pushes the result to the
 //   native view directly, bypassing React — this mock's re-render is the nearest JS-only
 //   equivalent of "the latest value becomes visible without the owning component re-rendering

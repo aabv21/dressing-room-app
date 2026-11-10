@@ -207,6 +207,9 @@ isOneToOne: false
 "log_wear":
 { Args: { "p_garment_ids": (string)[],"p_occasion"?: Database["public"]['Enums']["occasion"],"p_score"?: number,"p_wear_id": string,"p_worn_on": string }; Returns: string
                            },
+"prune_expired_caches":
+{ Args: Record<PropertyKey, never>; Returns: undefined
+                           },
 "save_outfit":
 { Args: { "p_garment_ids": (string)[] }; Returns: string
                            }

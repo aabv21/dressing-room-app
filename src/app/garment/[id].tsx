@@ -142,7 +142,9 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   // no two `replaceLocal` calls race from different snapshots and a late save can't re-add a
   // deleted garment.
   const busy = saving || statusSaving !== null;
-  const statusLocked = busy || deleting;
+  // While the AI reads the photo the status waits too: any write moves `updated_at`, and the
+  // extraction's guarded write-back would then skip, losing what it read.
+  const statusLocked = busy || deleting || reading;
   const statusOptions = useMemo(
     () => STATUSES.map((value) => ({ value, label: t(`garment.status.${value}`), disabled: statusLocked })),
     [t, statusLocked],

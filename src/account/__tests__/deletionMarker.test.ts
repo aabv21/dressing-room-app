@@ -1,5 +1,6 @@
 import { cacheOnboarding, cachedOnboarding } from '../../auth/deviceState';
-import { kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
+import { queuePurgeRequests } from '../../closet/upload/queuePurge';
+import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
 import {
   clearDeletionMarker,
   deletionState,
@@ -17,6 +18,7 @@ const ACTIVE = '0b7f6d7e-3333-4c4c-9a9a-000000000003';
 
 beforeEach(() => {
   for (const key of kvKeys()) kvRemove(key);
+  allowUserKeys(DELETING);
 });
 
 test('marks, reads and clears a deletion under account.deleting.<id>', () => {
@@ -84,4 +86,23 @@ test("the signed-in user's own unfinished deletion is left for their session to 
 
   expect(deletionState(ACTIVE)).toBe('deleting');
   expect(kvGet(`closet.v1.${ACTIVE}`)).toBe('x');
+});
+
+test("a session that ended asks the next queue provider to purge a deleting account's queue", () => {
+  markDeletion(DELETING, 'deleting');
+  markDeletion(REAUTH, 'reauth');
+
+  forgetInterruptedDeletions(null);
+
+  // Recorded even though that account's kv writes are refused from now on.
+  expect(queuePurgeRequests()).toEqual([DELETING]);
+  expect(deletionState(DELETING)).toBeNull();
+});
+
+test("the signed-in user's own unfinished deletion records no purge", () => {
+  markDeletion(ACTIVE, 'deleting');
+
+  forgetInterruptedDeletions(ACTIVE);
+
+  expect(queuePurgeRequests()).toEqual([]);
 });
