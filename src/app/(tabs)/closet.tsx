@@ -1,13 +1,23 @@
 import * as ImagePicker from 'expo-image-picker';
 import { router, useIsFocused } from 'expo-router';
-import { Camera, ChevronRight, ImageIcon } from 'lucide-react-native';
+import { Camera, ChevronRight, ImageIcon, X } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ClosetGrid, type LeadingTile } from '../../closet/ClosetGrid';
 import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
-import { reviewQueue, slotCounts, toGridItems } from '../../closet/closetSelectors';
-import { SLOTS, type Slot } from '../../closet/catalog';
+import {
+  hasAnyColor,
+  isActive,
+  reviewQueue,
+  slotCounts,
+  toGridItems,
+  type ColorFilter,
+} from '../../closet/closetSelectors';
+import { PALETTE_HEX, SLOTS, type Slot } from '../../closet/catalog';
+import { DiarySegment } from '../../closet/DiarySegment';
+import { SegmentTabs } from '../../closet/SegmentTabs';
+import { StatsSegment } from '../../closet/StatsSegment';
 import { CLOSET_GOAL, GoalCard } from '../../closet/GoalCard';
 import { perfFixtureItems } from '../../closet/perfFixtureItems';
 import { useUploadQueue } from '../../closet/UploadQueueProvider';
@@ -95,31 +105,77 @@ function ReviewBanner({ count }: { count: number }): React.JSX.Element {
   );
 }
 
-function RealCloset(): React.JSX.Element {
+type Segment = 'items' | 'stats' | 'diary';
+
+const SEGMENTS: readonly Segment[] = ['items', 'stats', 'diary'];
+const OTHER_SWATCH = '#d4d0dc';
+
+/** Mockup 04's segment pills under the Closet title. */
+function ClosetTabs({ value, onChange }: { value: Segment; onChange: (next: Segment) => void }): React.JSX.Element {
+  const { t } = useI18n();
+  const options = useMemo(() => SEGMENTS.map((segment) => ({ value: segment, label: t(`closet.segment.${segment}`) })), [t]);
+  return <SegmentTabs options={options} value={value} onChange={onChange} accessibilityLabel={t('closet.segments')} />;
+}
+
+/** The Items segment's dismissible chip for Stats' color filter. */
+function ColorFilterChip({ filter, onClear }: { filter: ColorFilter; onClear: () => void }): React.JSX.Element {
+  const { t } = useI18n();
+  const label = filter.id === 'other' ? t('stats.colors.other') : t(`garment.color.${filter.id}`);
+  const swatch = filter.id === 'other' ? OTHER_SWATCH : PALETTE_HEX[filter.id];
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={t('closet.colorFilter.clear', { color: label })}
+      hitSlop={CHIP_SLOP}
+      onPress={onClear}
+      style={styles.colorChip}
+    >
+      <View style={[styles.colorSwatch, { backgroundColor: swatch }]} />
+      <Text style={styles.colorChipText}>{label}</Text>
+      <X size={14} color={colors.accentText} />
+    </Pressable>
+  );
+}
+
+function ItemsSegment({
+  tabs,
+  colorFilter,
+  onClearColor,
+}: {
+  tabs: React.ReactNode;
+  colorFilter: ColorFilter | null;
+  onClearColor: () => void;
+}): React.JSX.Element {
   const { t } = useI18n();
   const insets = useScreenContentInsets();
-  const focused = useIsFocused();
   const { garments, thumbUrls, status } = useCloset();
   const queue = useUploadQueue();
   const [filter, setFilter] = useState<Slot | 'all'>('all');
-  usePendingPolling(focused);
 
   // A pending garment joins the review queue once it turns stale (10 minutes), so the clock
   // ticks the banner forward even when the list itself doesn't change.
   const now = useNow(CLOCK_TICK_MS);
   const reviewCount = useMemo(() => reviewQueue(garments, now).length, [garments, now]);
 
-  const counts = useMemo(() => new Map(Object.entries(slotCounts(garments))), [garments]);
+  const activeCount = useMemo(() => garments.filter(isActive).length, [garments]);
+  const colorSet = useMemo(() => (colorFilter === null ? undefined : new Set(colorFilter.colors)), [colorFilter]);
+  // The chips count what the color filter leaves, so "All" matches the grid.
+  const visible = useMemo(
+    () => (colorSet === undefined ? garments : garments.filter((g) => hasAnyColor(g, colorSet))),
+    [garments, colorSet],
+  );
+  const visibleCount = useMemo(() => visible.filter(isActive).length, [visible]);
+  const counts = useMemo(() => new Map(Object.entries(slotCounts(visible))), [visible]);
   // A filter whose slot just emptied (e.g. its last garment was deleted) falls back to everything.
   const activeFilter = filter !== 'all' && !counts.has(filter) ? 'all' : filter;
   const items = useMemo(
-    () => toGridItems(garments, thumbUrls, activeFilter, t),
-    [garments, thumbUrls, activeFilter, t],
+    () => toGridItems(garments, thumbUrls, activeFilter, t, colorSet),
+    [garments, thumbUrls, activeFilter, t, colorSet],
   );
 
   const chipOptions = useMemo(() => {
     const options: { value: Slot | 'all'; label: string }[] = [
-      { value: 'all', label: t('closet.chip.all', { count: garments.length }) },
+      { value: 'all', label: t('closet.chip.all', { count: visibleCount }) },
     ];
     for (const slot of SLOTS) {
       const count = counts.get(slot);
@@ -128,7 +184,7 @@ function RealCloset(): React.JSX.Element {
       }
     }
     return options;
-  }, [counts, garments.length, t]);
+  }, [counts, visibleCount, t]);
 
   const onChipChange = useCallback((next: (Slot | 'all')[]) => {
     // Tapping the selected chip clears a single-select ChipGroup; that means "All" here.
@@ -158,10 +214,12 @@ function RealCloset(): React.JSX.Element {
   const header = (
     <View style={styles.header}>
       <ScreenTitle title={t('screen.closet')} />
+      {tabs}
       {status === 'offline' ? <Text style={styles.offline}>{t('closet.offline')}</Text> : null}
-      {garments.length < CLOSET_GOAL ? <GoalCard count={garments.length} /> : null}
+      {activeCount < CLOSET_GOAL ? <GoalCard count={activeCount} /> : null}
       {reviewCount > 0 ? <ReviewBanner count={reviewCount} /> : null}
-      {garments.length > 0 ? (
+      {colorFilter === null ? null : <ColorFilterChip filter={colorFilter} onClear={onClearColor} />}
+      {activeCount > 0 ? (
         // One row that scrolls sideways, as in mockup 02, rather than wrapping under the header.
         <ScrollView
           horizontal
@@ -233,6 +291,38 @@ function RealCloset(): React.JSX.Element {
   );
 }
 
+/** Mockup 04: the Closet tab's Items | Stats | Diary segments, each under the same title and pills. */
+function RealCloset(): React.JSX.Element {
+  const { t } = useI18n();
+  const focused = useIsFocused();
+  const [segment, setSegment] = useState<Segment>('items');
+  const [colorFilter, setColorFilter] = useState<ColorFilter | null>(null);
+  // Polls pending extractions whichever segment shows, so Items is current on return.
+  usePendingPolling(focused);
+
+  const onColorSelect = useCallback((next: ColorFilter) => {
+    setColorFilter(next);
+    setSegment('items');
+  }, []);
+  const clearColor = useCallback(() => {
+    setColorFilter(null);
+  }, []);
+
+  const tabs = <ClosetTabs value={segment} onChange={setSegment} />;
+
+  if (segment === 'items') {
+    return <ItemsSegment tabs={tabs} colorFilter={colorFilter} onClearColor={clearColor} />;
+  }
+  return (
+    <Screen title={t('screen.closet')}>
+      <View style={styles.segmentBody}>
+        {tabs}
+        {segment === 'stats' ? <StatsSegment onColorSelect={onColorSelect} /> : <DiarySegment />}
+      </View>
+    </Screen>
+  );
+}
+
 export default function ClosetScreen() {
   const baseUrl = perfFixturesUrl();
   return baseUrl ? <PerfFixtureCloset baseUrl={baseUrl} /> : <RealCloset />;
@@ -241,6 +331,34 @@ export default function ClosetScreen() {
 const styles = StyleSheet.create({
   header: {
     gap: spacing.sm + 2,
+  },
+  // Screen's own 8 pt gap sits between the title and this block; the rest matches Items' header.
+  segmentBody: {
+    gap: spacing.sm + 2,
+  },
+  colorChip: {
+    alignSelf: 'flex-start',
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.tintBorder,
+    backgroundColor: colors.tint,
+  },
+  colorSwatch: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.15)',
+  },
+  colorChipText: {
+    color: colors.accentText,
+    fontSize: 13,
+    fontWeight: '700',
   },
   // Bleeds to the screen edges so chips scroll out under them, while the first chip still lines up
   // with the title. The vertical padding keeps the chips' 44 pt hitSlop inside the scroll view,

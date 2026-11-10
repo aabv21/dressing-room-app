@@ -4,8 +4,8 @@ jest.mock('../../lib/supabase', () => ({
 
 import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 
-import { fetchLuckyList, localDate, rateOutfit } from '../aiClient';
-import type { LuckyResponse } from '../types';
+import { fetchForYou, fetchLuckyList, localDate, rateOutfit } from '../aiClient';
+import type { ForYouResponse, LuckyResponse } from '../types';
 import type { RatingResult } from '../types';
 
 type InvokeResult = { data: unknown; error: unknown };
@@ -108,6 +108,34 @@ describe('fetchLuckyList', () => {
     const client = fakeClient(() => Promise.reject(new TypeError('Network request failed')));
 
     expect(await fetchLuckyList(LUCKY_INPUT, client)).toEqual({ ok: false, error: 'network' });
+  });
+});
+
+describe('fetchForYou', () => {
+  test('a successful call sends the language and returns the ideas', async () => {
+    const result: ForYouResponse = { kind: 'too_small' };
+    const invoke = jest.fn(() => Promise.resolve({ data: result, error: null }));
+    const client = fakeClient(invoke);
+
+    const outcome = await fetchForYou({ language: 'es' }, client);
+
+    expect(outcome).toEqual({ ok: true, result });
+    expect(invoke).toHaveBeenCalledWith('for-you', { body: { language: 'es' } });
+  });
+
+  test.each([
+    [429, 'over_quota'],
+    [500, 'unknown'],
+  ] as const)('an HTTP %i response maps to %s', async (status, expected) => {
+    const client = fakeClient(() => Promise.resolve({ data: null, error: httpError(status) }));
+
+    expect(await fetchForYou({ language: 'en' }, client)).toEqual({ ok: false, error: expected });
+  });
+
+  test('a fetch failure maps to network', async () => {
+    const client = fakeClient(() => Promise.resolve({ data: null, error: new FunctionsFetchError(new TypeError('offline')) }));
+
+    expect(await fetchForYou({ language: 'en' }, client)).toEqual({ ok: false, error: 'network' });
   });
 });
 

@@ -1,6 +1,6 @@
 // Mockup 02 screen 3: the review queue. The AI has already filled in each garment; the user goes
 // through them one at a time and is only asked about what the AI doubted (`fieldsToAsk`). No tab
-// bar (the mockup's `.cta.nobar`): a root Stack screen registered inside the tabs guard (P3-R3).
+// bar (the mockup's `.cta.nobar`): a root Stack screen registered inside the tabs guard.
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from 'expo-router';
 import { Check } from 'lucide-react-native';

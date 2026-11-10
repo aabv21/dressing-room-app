@@ -1,10 +1,11 @@
 // integration/outfits.int.test.ts
 //
-// The outfit functions end to end on the full local stack: signed-in users call `lucky-list` and
-// `rate-outfit` through the real gateway (JWT check) with supabase-js `functions.invoke`; the
-// functions read the closet and the profile with the caller's token (RLS), spend the daily quota,
-// fill `lucky_cache`/`rating_cache`/`weather_cache`, and call Jev and Open-Meteo, here
-// `mockServices.ts` on the host. Also: `log_wear` from supabase-js bumps the garments' wear count.
+// The outfit functions end to end on the full local stack: signed-in users call `lucky-list`,
+// `rate-outfit` and `for-you` through the real gateway (JWT check) with supabase-js
+// `functions.invoke`; the functions read the closet and the profile with the caller's token (RLS),
+// spend the daily quota, fill `lucky_cache`/`rating_cache`/`weather_cache`/`for_you_cache`, and
+// call Jev and Open-Meteo, here `mockServices.ts` on the host, and Claude, here `mockAnthropic.ts`.
+// Also: `log_wear` from supabase-js bumps the garments' wear count.
 //
 // Needs the Edge Runtime: `pnpm db:start` (or `db:start:ci`, which keeps it) and `pnpm env:local`.
 
@@ -14,7 +15,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { signInWithEmail } from '../src/auth/emailAuth';
 import type { Database } from '../src/lib/database.types';
+import { ARCHETYPES } from '../supabase/functions/_shared/archetypes.ts';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, serviceClient, uniqueEmail } from './helpers';
+import { type MockAnthropic, startMockAnthropic } from './mockAnthropic';
 import { jevAnswers, MILD_FORECAST, type MockServices, startMockServices } from './mockServices';
 
 loadIntegrationEnv();
@@ -30,6 +33,7 @@ const LOCATION_KEY = '40.42,-3.70';
 const FUNCTION_TIMEOUT_MS = 60_000;
 
 let mock: MockServices;
+let anthropic: MockAnthropic;
 let userA: SignedInUser;
 let userB: SignedInUser;
 const createdUserIds: string[] = [];
@@ -100,10 +104,31 @@ async function addReviewedGarment(user: SignedInUser, id: string, attributes: Ga
   expect(update.error).toBeNull();
 }
 
+/** For you's line for an archetype, as the mock Claude writes it. */
+const lineFor = (id: string): string => `Pairs easily with what you already own (${id})`;
+
+/**
+ * The mock Claude's answer to For you's lines request: a line for every archetype id, since the mock
+ * can't read which ideas were asked for (`parseLines` keeps only the ones requested).
+ */
+const CLAUDE_LINES = {
+  id: 'msg_mock',
+  type: 'message',
+  role: 'assistant',
+  model: 'claude-haiku-5-5',
+  content: [{ type: 'text', text: JSON.stringify({ lines: ARCHETYPES.map(({ id }) => ({ id, text: lineFor(id) })) }) }],
+  stop_reason: 'end_turn',
+  usage: { input_tokens: 400, output_tokens: 300 },
+};
+
 type Invoked = { status: number | undefined; body: unknown };
 
 /** `functions.invoke` with the status and JSON body of any answer, 2xx or not. */
-async function invoke(client: Client, name: 'lucky-list' | 'rate-outfit', body: Record<string, unknown>): Promise<Invoked> {
+async function invoke(
+  client: Client,
+  name: 'lucky-list' | 'rate-outfit' | 'for-you',
+  body: Record<string, unknown>,
+): Promise<Invoked> {
   // `error` is typed `any` by functions-js; only its presence matters here.
   const result = await client.functions.invoke<unknown>(name, { body });
   const { response } = result;
@@ -118,6 +143,8 @@ const rate = (user: SignedInUser | { client: Client }, garmentIds: readonly stri
 beforeAll(async () => {
   mock = await startMockServices();
   mock.jev((request) => ({ status: 200, body: jevAnswers(request, 0.9) }));
+  anthropic = await startMockAnthropic();
+  anthropic.respondWith({ status: 200, body: CLAUDE_LINES });
   mock.forecast({ status: 200, body: MILD_FORECAST });
 
   userA = await signedInUser('outfits-user-a');
@@ -138,6 +165,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await mock.close();
+  await anthropic.close();
   await serviceClient().from('weather_cache').delete().eq('location_key', LOCATION_KEY);
   await Promise.all(createdUserIds.map((id) => deleteUser(id)));
 });
@@ -234,6 +262,60 @@ describe('rate-outfit', () => {
     expect(status).toBe(429);
     expect(body).toEqual({ error: 'over_quota' });
     expect(mock.calls('/v1/systemone')).toBe(jevCalls);
+  }, FUNCTION_TIMEOUT_MS);
+});
+
+describe('for-you', () => {
+  type Idea = { id: string; newOutfits: number; line: string | null; lineKey: string | null; searchQuery: string };
+
+  test('ranks 3–5 ideas with the mock Jev fit and the mock Claude lines, then serves them from for_you_cache', async () => {
+    const jevBefore = mock.calls('/v1/systemone');
+    const claudeBefore = anthropic.calls();
+    // An entry from an older closet state, which the new entry replaces.
+    const seeded = await serviceClient().from('for_you_cache').insert({
+      user_id: userA.id,
+      cache_key: 'an-older-closet',
+      result: { kind: 'ok', ideas: [], degraded: false },
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    expect(seeded.error).toBeNull();
+
+    const first = await invoke(userA.client, 'for-you', { language: 'en' });
+
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ kind: 'ok' });
+    const { ideas } = first.body as { ideas: Idea[] };
+    expect(ideas.length).toBeGreaterThanOrEqual(3);
+    expect(ideas.length).toBeLessThanOrEqual(5);
+    for (const idea of ideas) {
+      expect(idea.line).toBe(lineFor(idea.id));
+      expect(idea.lineKey).toBeNull();
+      expect(idea.newOutfits).toBeGreaterThan(0);
+      expect(idea.searchQuery.length).toBeGreaterThan(0);
+    }
+    const jevCalls = mock.calls('/v1/systemone') - jevBefore;
+    expect(jevCalls).toBeGreaterThanOrEqual(ideas.length);
+    expect(jevCalls).toBeLessThanOrEqual(10);
+    expect(anthropic.calls()).toBe(claudeBefore + 1);
+
+    const service = serviceClient();
+    const usage = await service.from('usage_counters').select('count').eq('user_id', userA.id).eq('kind', 'for_you');
+    expect(usage.error).toBeNull();
+    expect(usage.data).toEqual([{ count: 1 }]);
+    const cached = await service.from('for_you_cache').select('cache_key').eq('user_id', userA.id);
+    expect(cached.data).toHaveLength(1);
+    expect(cached.data?.[0]?.cache_key).not.toBe('an-older-closet');
+
+    // A cache hit: no quota (the day's one miss is spent), no Jev, no Claude.
+    const second = await invoke(userA.client, 'for-you', { language: 'en' });
+    expect(second).toEqual(first);
+    expect(mock.calls('/v1/systemone')).toBe(jevBefore + jevCalls);
+    expect(anthropic.calls()).toBe(claudeBefore + 1);
+
+    // Another key (Spanish) with the day's miss spent: the newest entry, as stale, not a 429.
+    const spent = await invoke(userA.client, 'for-you', { language: 'es' });
+    expect(spent).toEqual(first);
+    expect(mock.calls('/v1/systemone')).toBe(jevBefore + jevCalls);
   }, FUNCTION_TIMEOUT_MS);
 });
 

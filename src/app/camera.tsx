@@ -1,6 +1,6 @@
 // Mockup 02 screen 2: the burst camera. A dark full-screen modal (registered as such in
-// `_layout.tsx`, P3-R3) where the user shoots one garment per photo with no forms, then hands every
-// shot to the upload queue at once. The simulator has no camera, so this screen is exercised here
+// `_layout.tsx`, without the tab bar) where the user shoots one garment per photo with no forms,
+// then hands every shot to the upload queue at once. The simulator has no camera, so this screen is exercised here
 // through its permission/denied states and its own logic (shutter debounce, the running shot list,
 // Close's confirmation) — the real capture flow is an owner-session check (see AGENTS.md).
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -78,7 +78,7 @@ function BurstCamera(): React.JSX.Element {
     [t],
   );
 
-  // I2: a hardware back press, the system back gesture, or (on iOS) swiping the modal away all
+  // A hardware back press, the system back gesture, or (on iOS) swiping the modal away all
   // bypass the Close button — `presentation: 'fullScreenModal'` falls back to a plain `modal` on
   // Android, whose back gesture/button would otherwise leave with unsaved shots and skip the
   // Discard confirmation entirely. `usePreventRemove` intercepts any such removal attempt while

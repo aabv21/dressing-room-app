@@ -97,7 +97,7 @@ describe('FieldEditor', () => {
     ]);
   });
 
-  test('category: a doubted category is not narrowed, so a current jeans also offers tops (P3-R12)', async () => {
+  test('category: a doubted category is not narrowed, so a current jeans also offers tops', async () => {
     await render(
       <FieldEditor
         field="category"

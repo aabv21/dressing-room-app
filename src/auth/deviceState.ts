@@ -1,4 +1,4 @@
-import { kvGet, kvRemove, kvSet } from '../lib/kv';
+import { kvGet, kvRemove, kvSet, kvUserRefused } from '../lib/kv';
 
 /**
  * Small per-account facts kept on the device so an offline launch behaves like the last online
@@ -39,7 +39,9 @@ export function cachedOnboarding(userId: string): boolean | null {
   return entry !== null && entry.userId === userId ? entry.complete : null;
 }
 
+// These two keys don't carry the user's id, so they check the deleted-account refusal themselves.
 export function cacheOnboarding(userId: string, complete: boolean): void {
+  if (kvUserRefused(userId)) return;
   kvSet(ONBOARDING_KEY, JSON.stringify({ userId, complete } satisfies OnboardingEntry));
 }
 
@@ -49,6 +51,7 @@ export function clearCachedOnboarding(): void {
 
 /** Records that `userId`'s language choice is newer on this device than on the server. */
 export function markLanguageSavePending(userId: string): void {
+  if (kvUserRefused(userId)) return;
   kvSet(LANGUAGE_PENDING_KEY, userId);
 }
 
@@ -72,4 +75,12 @@ export function forgetOtherAccounts(userId: string): void {
   if (pendingFor !== null && pendingFor !== userId) {
     kvRemove(LANGUAGE_PENDING_KEY);
   }
+}
+
+/** Drops everything kept here for `userId`, once that account is deleted. */
+export function forgetAccount(userId: string): void {
+  if (readOnboardingEntry()?.userId === userId) {
+    kvRemove(ONBOARDING_KEY);
+  }
+  clearLanguageSavePending(userId);
 }

@@ -8,10 +8,20 @@ import { PermanentUploadError } from './upload/permanentUploadError';
 
 export type Garment = Tables<'garments'>;
 
-/** The attribute and status columns the closet UI edits (the column grants allow a few more). */
+/** The attribute, status and pin columns the closet UI edits (the column grants allow a few more). */
 export type GarmentPatch = Pick<
   TablesUpdate<'garments'>,
-  'category' | 'colors' | 'pattern' | 'material' | 'formality' | 'seasons' | 'warmth' | 'fit' | 'occasions' | 'status'
+  | 'category'
+  | 'colors'
+  | 'pattern'
+  | 'material'
+  | 'formality'
+  | 'seasons'
+  | 'warmth'
+  | 'fit'
+  | 'occasions'
+  | 'status'
+  | 'pinned_on'
 >;
 
 export type PhotoVariant = 'full' | 'thumb';

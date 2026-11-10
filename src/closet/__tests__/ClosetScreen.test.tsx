@@ -25,6 +25,16 @@ jest.mock('expo-router', () => ({
 jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn(),
 }));
+// The Stats segment's seams; its own suite is src/__tests__/closet-stats.test.tsx.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('react-native-reanimated', () => require('../../test/reanimatedMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../../outfits/aiClient', () => require('../../test/outfitClientsMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../../stats/wearsRepository', () => require('../../test/statsClientsMock'));
+// The Diary segment reads the signed-in user (its deletes clear Today's worn record).
+jest.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
+jest.mock('../garmentRepository', () => ({ updateGarment: jest.fn() }));
 
 type ClosetState = {
   garments: Garment[];

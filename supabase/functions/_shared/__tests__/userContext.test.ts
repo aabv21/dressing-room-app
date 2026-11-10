@@ -3,6 +3,7 @@
 import {
   cacheGet,
   cachePut,
+  cacheRead,
   consumeQuota,
   type FnEnv,
   getLocalWeather,
@@ -184,6 +185,7 @@ describe('loadProfile and loadGarments', () => {
       status: 'available',
       last_worn_at: null,
       updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: null,
       name: 'my jeans',
     };
     const { fetch, calls } = fakeFetch(() => json(200, [row]));
@@ -202,6 +204,70 @@ describe('loadProfile and loadGarments', () => {
   test('loadGarments throws on a database error', async () => {
     const { fetch } = fakeFetch(() => json(503, { message: 'unavailable' }));
     await expect(loadGarments(ENV, fetch, AUTH)).rejects.toThrow();
+  });
+
+  test('loadGarments accepts a donated garment (not yet excluded here; the rules exclude it)', async () => {
+    const row = {
+      id: GARMENT_A,
+      category: 'jeans',
+      colors: ['navy'],
+      pattern: 'solid',
+      formality: 2,
+      seasons: [],
+      warmth: 2,
+      fit: 'regular',
+      status: 'donated',
+      last_worn_at: null,
+      updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: null,
+    };
+    const { fetch } = fakeFetch(() => json(200, [row]));
+    const [garment] = await loadGarments(ENV, fetch, AUTH);
+    expect(garment?.status).toBe('donated');
+  });
+
+  test('loadGarments reads a valid pinned_on date', async () => {
+    const row = {
+      id: GARMENT_A,
+      category: 'jeans',
+      colors: ['navy'],
+      pattern: 'solid',
+      formality: 2,
+      seasons: [],
+      warmth: 2,
+      fit: 'regular',
+      status: 'available',
+      last_worn_at: null,
+      updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: '2026-11-09',
+    };
+    const { fetch } = fakeFetch(() => json(200, [row]));
+    const [garment] = await loadGarments(ENV, fetch, AUTH);
+    expect(garment?.pinned_on).toBe('2026-11-09');
+  });
+
+  test.each([
+    ['null', null],
+    ['not a date', 'soon'],
+    ['a datetime', '2026-11-09T00:00:00Z'],
+  ])('loadGarments reads pinned_on %s as null', async (_label, value) => {
+    const row = {
+      id: GARMENT_A,
+      category: 'jeans',
+      colors: ['navy'],
+      pattern: 'solid',
+      formality: 2,
+      seasons: [],
+      warmth: 2,
+      fit: 'regular',
+      status: 'available',
+      last_worn_at: null,
+      updated_at: '2026-11-02T00:00:00Z',
+      pinned_on: value,
+    };
+    const { fetch } = fakeFetch(() => json(200, [row]));
+    const [garment] = await loadGarments(ENV, fetch, AUTH);
+    expect(garment?.pinned_on).toBeNull();
   });
 });
 
@@ -366,6 +432,42 @@ describe('consumeQuota and the caches', () => {
     });
   });
 
+  test('with a max age, any entry older than it (or of unknown age) is a miss', async () => {
+    const now = Date.parse('2026-11-08T10:00:00Z');
+    const daysAgo = (days: number): string => new Date(now - days * 86_400_000).toISOString();
+    const entry = (result: unknown, createdAt: unknown) =>
+      fakeFetch(() => json(200, [{ result, created_at: createdAt }])).fetch;
+    const week = 7 * 86_400_000;
+    const fine = { ideas: [], degraded: false };
+
+    expect(await cacheGet(ENV, entry(fine, daysAgo(6.9)), 'for_you_cache', USER_ID, 'k', now, week)).toEqual(fine);
+    expect(await cacheGet(ENV, entry(fine, daysAgo(7.1)), 'for_you_cache', USER_ID, 'k', now, week)).toBeNull();
+    expect(await cacheGet(ENV, entry(fine, null), 'for_you_cache', USER_ID, 'k', now, week)).toBeNull();
+    // The degraded hour still applies inside the max age.
+    const degraded = { ideas: [], degraded: true };
+    expect(await cacheGet(ENV, entry(degraded, daysAgo(0.5)), 'for_you_cache', USER_ID, 'k', now, week)).toBeNull();
+  });
+
+  test('cacheRead returns the stored row with its age whatever it is, null on a miss or an error', async () => {
+    const createdAt = '2026-10-01T10:00:00.000Z';
+    const old = fakeFetch(() => json(200, [{ result: { degraded: true }, created_at: createdAt }]));
+    expect(await cacheRead(ENV, old.fetch, 'for_you_cache', USER_ID, 'k')).toEqual({
+      result: { degraded: true },
+      createdAt: Date.parse(createdAt),
+    });
+    expect(old.calls[0]?.url.pathname).toBe('/rest/v1/for_you_cache');
+    const unknownAge = fakeFetch(() => json(200, [{ result: { ideas: [] }, created_at: 'nope' }]));
+    expect(await cacheRead(ENV, unknownAge.fetch, 'for_you_cache', USER_ID, 'k')).toEqual({ result: { ideas: [] }, createdAt: null });
+    expect(await cacheRead(ENV, fakeFetch(() => json(200, [])).fetch, 'for_you_cache', USER_ID, 'k')).toBeNull();
+    expect(await cacheRead(ENV, fakeFetch(() => json(500, {})).fetch, 'for_you_cache', USER_ID, 'k')).toBeNull();
+  });
+
+  test('consumeQuota passes the for_you kind through', async () => {
+    const { fetch, calls } = fakeFetch(() => json(200, true));
+    expect(await consumeQuota(ENV, fetch, USER_ID, 'for_you', 1)).toBe(true);
+    expect(JSON.parse(calls[0]?.body ?? '')).toEqual({ p_user_id: USER_ID, p_kind: 'for_you', p_limit: 1 });
+  });
+
   test('cachePut upserts with the service role and reports failure instead of throwing', async () => {
     const ok = fakeFetch(() => new Response(null, { status: 201 }));
     const now = Date.parse('2026-11-08T10:00:00Z');
@@ -443,6 +545,20 @@ describe('runJev and runClaude', () => {
       return value;
     });
     await jest.advanceTimersByTimeAsync(19_999);
+    expect(settled).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await pending).toBeNull();
+  });
+
+  test('runClaude takes a shorter timeout', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    const { fetch } = fakeFetch(hanging);
+    let settled = false;
+    const pending = runClaude(ENV, fetch, {}, 5_000).then((value) => {
+      settled = true;
+      return value;
+    });
+    await jest.advanceTimersByTimeAsync(4_999);
     expect(settled).toBe(false);
     await jest.advanceTimersByTimeAsync(1);
     expect(await pending).toBeNull();

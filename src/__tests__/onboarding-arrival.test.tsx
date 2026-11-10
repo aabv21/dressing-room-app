@@ -27,6 +27,10 @@ jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvider
 jest.mock('../outfits/aiClient', () => require('../test/outfitClientsMock'));
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
 jest.mock('../outfits/outfitRepository', () => require('../test/outfitClientsMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../stats/wearsRepository', () => require('../test/statsClientsMock'));
+// The Closet's Stats segment saves pins and donations through it; this suite never gets there.
+jest.mock('../closet/garmentRepository', () => ({ updateGarment: jest.fn() }));
 
 jest.mock('../auth/AuthProvider', () => {
   const { useSyncExternalStore } = jest.requireActual<typeof import('react')>('react');

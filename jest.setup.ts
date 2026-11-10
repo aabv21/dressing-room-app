@@ -4,7 +4,7 @@ jest.mock('expo-localization', () => ({ getLocales: () => [{ languageTag: 'en-US
 
 // `expo-sqlite/kv-store` wraps a native SQLite database; under Jest there is no native module to
 // back it, so replace it with a plain in-memory map that implements the same synchronous methods
-// `src/lib/kv.ts` calls (`getItemSync`/`setItemSync`/`removeItemSync`).
+// `src/lib/kv.ts` calls (`getItemSync`/`setItemSync`/`removeItemSync`/`getAllKeysSync`).
 jest.mock('expo-sqlite/kv-store', () => {
   const store = new Map<string, string>();
   return {
@@ -17,6 +17,7 @@ jest.mock('expo-sqlite/kv-store', () => {
       removeItemSync: (key: string): void => {
         store.delete(key);
       },
+      getAllKeysSync: (): string[] => [...store.keys()],
     },
   };
 });

@@ -108,7 +108,7 @@ function getRow(garmentId: string): QueueRow | null {
   return db.getFirstSync<QueueRow>('SELECT * FROM upload_queue WHERE garment_id = ?;', [garmentId]);
 }
 
-// NOTE (P3-R8): named `<garmentId>-<uuid>-source.<ext>`, not the brief's `<garmentId>-source.<ext>`.
+// NOTE: named `<garmentId>-<uuid>-source.<ext>`, not a fixed `<garmentId>-source.<ext>`.
 // A fixed name would let a replacement's copy collide with (and be deleted alongside) the row a
 // worker already in flight for the same garment is using — see `saveItem`/`removeItem` below,
 // which key on `source_uri` instead of only `garment_id` to survive that race. Ceiling: file names
@@ -246,6 +246,13 @@ export function removeItem(item: QueueItem): void {
   deleteIfExists(item.sourceUri);
   deleteIfExists(item.fullUri);
   deleteIfExists(item.thumbUri);
+}
+
+/** Removes every queued photo of `userId`, rows and on-device copies (pause the queue first). */
+export function clearQueue(userId: string): void {
+  for (const item of listQueue(userId)) {
+    removeItem(item);
+  }
 }
 
 export function resetFailed(userId: string): void {

@@ -141,3 +141,38 @@ describe('toGridItems', () => {
     expect(item).not.toHaveProperty('badge');
   });
 });
+
+describe('donated garments', () => {
+  const donated = garment({ id: 'gone', category: 'jeans', colors: ['blue'], status: 'donated', extraction_status: 'done' });
+  const kept = garment({ id: 'kept', category: 'jeans', colors: ['black'], extraction_status: 'done' });
+
+  test('are left out of the grid', () => {
+    expect(toGridItems([donated, kept], new Map(), 'all', t).map((item) => item.id)).toEqual(['kept']);
+  });
+
+  test('are left out of the slot counts', () => {
+    expect(slotCounts([donated, kept])).toEqual({ bottom: 1 });
+  });
+
+  test('never wait for review', () => {
+    expect(reviewQueue([donated, kept], NOW).map((g) => g.id)).toEqual(['kept']);
+  });
+});
+
+describe('toGridItems color filter', () => {
+  const navyBlack = garment({ id: 'a', category: 'blouse', colors: ['navy', 'black'] });
+  const white = garment({ id: 'b', category: 'jeans', colors: ['white'] });
+  const fourth = garment({ id: 'c', category: 'skirt', colors: ['red', 'green', 'blue', 'black'] });
+
+  test('keeps garments with any of the colors among their first three', () => {
+    const items = toGridItems([navyBlack, white, fourth], new Map(), 'all', t, new Set(['black']));
+    expect(items.map((item) => item.id)).toEqual(['a']);
+    const red = toGridItems([navyBlack, white, fourth], new Map(), 'all', t, new Set(['red']));
+    expect(red.map((item) => item.id)).toEqual(['c']);
+  });
+
+  test('combines with the slot filter', () => {
+    const items = toGridItems([navyBlack, white, fourth], new Map(), 'bottom', t, new Set(['white', 'black']));
+    expect(items.map((item) => item.id)).toEqual(['b']);
+  });
+});

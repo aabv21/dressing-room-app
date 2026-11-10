@@ -41,5 +41,8 @@ export function useUploadQueue() {
     enqueueReplacement: noop,
     retryFailed: noop,
     discardFailed: noop,
+    pause: () => Promise.resolve(),
+    clear: noop,
+    resume: noop,
   };
 }

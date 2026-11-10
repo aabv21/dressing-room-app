@@ -22,7 +22,7 @@ const BOOTS = '00000000-0000-4000-8000-000000000004';
 
 const mockParams: { ids?: string; occasion?: string } = {};
 jest.mock('expo-router', () => ({
-  router: { back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
+  router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
 }));
 
@@ -98,6 +98,7 @@ beforeEach(() => {
   mockedCanGoBack.mockReturnValue(true);
   jest.mocked(router.back).mockClear();
   jest.mocked(router.replace).mockClear();
+  jest.mocked(router.push).mockClear();
   mockRefresh.mockClear();
   kvRemove('outfit.worn.user-1');
 });
@@ -247,6 +248,52 @@ test('a low fallback result without a swap search shows neither the swap nor the
   expect(await screen.findByText('55%')).toBeOnTheScreen();
   expect(screen.queryByText('It already works, no better swap')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Try the swap' })).toBeNull();
+});
+
+describe('the "Missing something?" link', () => {
+  const LINK = 'Missing something? → For you';
+
+  test.each([
+    ['no better swap', result({ score: 64, label: 'fair', weakestSlot: 'shoes', noBetterSwap: true })],
+    [
+      'a fallback result with no swap search',
+      result({ score: 55, label: 'fair', estimated: true, confidence: null, weakestSlot: 'shoes', swap: null }),
+    ],
+  ])('shows under 70 with %s, and opens For you', async (_name, value) => {
+    mockedRate.mockReturnValue(ok(value));
+    await render(<RateScreen />);
+
+    await fireEvent.press(await screen.findByRole('link', { name: LINK }));
+
+    expect(router.push).toHaveBeenCalledWith('/for-you');
+  });
+
+  test.each([
+    ['a swap is offered', result({ score: 64, label: 'fair', weakestSlot: 'shoes', swap: { fromId: HEELS, toId: BOOTS, score: 81 } })],
+    ['the score is 70', result({ score: 70, label: 'good', noBetterSwap: true })],
+    ['the score is high', result()],
+  ])('is hidden when %s', async (_name, value) => {
+    mockedRate.mockReturnValue(ok(value));
+    await render(<RateScreen />);
+
+    await screen.findByText(`${String(value.score)}%`);
+    expect(screen.queryByRole('link', { name: LINK })).toBeNull();
+  });
+
+  test('reads "¿Te falta algo? → Para ti" in Spanish', async () => {
+    mockedRate.mockReturnValue(ok(result({ score: 64, label: 'fair', noBetterSwap: true })));
+    kvSet('locale-preference', 'es');
+    try {
+      await render(
+        <I18nProvider>
+          <RateScreen />
+        </I18nProvider>,
+      );
+      expect(await screen.findByRole('link', { name: '¿Te falta algo? → Para ti' })).toBeOnTheScreen();
+    } finally {
+      kvSet('locale-preference', 'system');
+    }
+  });
 });
 
 test('renders the outfit pieces in slot order with their wear counts', async () => {

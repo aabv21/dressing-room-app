@@ -2,7 +2,8 @@
 
 The local backend is Supabase (Postgres 17) run via `pnpm db:*` scripts (see `AGENTS.md`). This
 document covers the `public.profiles`, `public.garments` and `public.usage_counters` tables, their
-enums, the signup trigger, row level security, and the `garments` storage bucket. See
+enums, the signup trigger, row level security, the `garments` storage bucket, and what account
+deletion and data export do to them. See
 `docs/testing.md` for how these are exercised by pgTAP and the integration Jest project.
 
 ## Tables and enums
@@ -73,6 +74,7 @@ desc)` backs the closet grid's per-user, newest-first query.
 | `photo_version`              | `smallint`                 | `not null default 1`; CHECK `>= 1`                                   |
 | `wear_count`                 | `integer`                  | `not null default 0`; CHECK `>= 0`; server/function-only (Plan 4)    |
 | `last_worn_at`                | `timestamptz`              | nullable; server/function-only (Plan 4)                             |
+| `pinned_on`                   | `date`                     | nullable; client-writable (Plan 5)                                   |
 | `created_at`, `updated_at`   | `timestamptz`              | `not null default now()`; kept/set by the same triggers as `profiles` |
 
 Enums added here (exact values):
@@ -92,7 +94,10 @@ Enums added here (exact values):
   `other`.
 - `garment_fit`: `fitted`, `regular`, `loose`, `oversized`.
 - `season`: `spring`, `summer`, `autumn`, `winter`.
-- `garment_status`: `available`, `laundry`, `lent`.
+- `garment_status`: `available`, `laundry`, `lent`, `donated` (`donated` added by `alter type …
+  add value` in `20261109000000_insights_account.sql`, Plan 5). A donated garment is hidden from the
+  closet grid, Build, review, slot counts, the goal card, colors, balance and the unused list, but
+  its past wears stay in the diary and stats history.
 - `extraction_status`: `pending`, `done`, `failed`, `over_quota`.
 - `garment_field`: `category`, `colors`, `pattern`, `material`, `formality`, `seasons`, `warmth`,
   `fit`, `occasions` — the subset of fields extraction can mark `uncertain_fields` for review.
@@ -125,8 +130,9 @@ Indexes: `outfits_user_id_idx` on `outfits (user_id)`; on `outfit_items`, `outfi
 on `outfit_items (garment_id)` — no separate index on `outfit_id` alone, since the primary key
 `(outfit_id, garment_id)` already leads with `outfit_id` and serves that lookup; on `wears`,
 `wears_user_id_idx` on `wears (user_id)`, `wears_user_id_worn_on_idx` on `wears (user_id, worn_on
-desc)` (backs the diary/Today queries added in later plans) and `wears_outfit_id_idx` on `wears
-(outfit_id)` (backs the wear-count trigger's and the RPCs' per-outfit lookups).
+desc)` (backs Stats' and Diary's reads of a user's wears by date, `src/stats/wearsRepository.ts`'s
+`listWears`) and `wears_outfit_id_idx` on `wears (outfit_id)` (backs the wear-count trigger's and
+the RPCs' per-outfit lookups).
 
 **Clients never insert or update these tables directly in the documented path** —
 `public.log_wear()` and `public.save_outfit()` (below) are the RPCs the app calls. Clients may
@@ -147,45 +153,60 @@ references public.outfits on delete cascade`'s cascade into `wears` and fires
 rows it would join through to find "which garments" are already gone, so its `where … and g.id in
 (select oi.garment_id from public.outfit_items oi where oi.outfit_id = old.outfit_id)` matches
 nothing and no garment's `wear_count`/`last_worn_at` moves. There is no client path to delete an
-`outfits` row today (no delete policy, and delete is revoked outright — see above), so this can't
-happen yet. **Plan 5, which adds the diary undo, must delete the `wears` row(s) first** (the
-existing `wears_delete_own` policy already allows that) and only then, if it ever deletes the
-outfit at all, delete `outfits` — never the other order.
+`outfits` row (no delete policy, and delete is revoked outright — see above), so this can't happen.
+Diary's Delete (`deleteWear`) deletes only the `wears` row, through `wears_delete_own`, and the
+trigger lowers the counts; the outfit stays. Any future outfit deletion must delete its `wears`
+rows first and only then the `outfits` row — never the other order.
 
-### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5)
 
-Server-only caches for the rating, feeling-lucky and weather Edge Functions; no client ever reads or
-writes them. `public.rating_cache` and `public.lucky_cache` share the same shape: `(user_id uuid
-references auth.users on delete cascade, cache_key text, result jsonb not null, created_at
-timestamptz not null default now())`, primary key `(user_id, cache_key)`. `public.weather_cache` is
-not user-scoped (weather is shared across users at the same place and hour): `(location_key text not
-null, hour timestamptz not null, payload jsonb not null)`, primary key `(location_key, hour)`. All
-three have RLS enabled with **no policies at all** and `revoke all` from both `anon` and
-`authenticated` — same "no API surface" pattern as `usage_counters` below, except nothing reads or
-writes them through a `security definer` function either; only `service_role` (the Edge Functions)
-ever touches them, bypassing RLS entirely as that role.
+Server-only caches for the rating, feeling-lucky, weather and For-you Edge Functions; no client ever
+reads or writes them. `public.rating_cache`, `public.lucky_cache` and `public.for_you_cache` share
+the same shape: `(user_id uuid references auth.users on delete cascade, cache_key text, result jsonb
+not null, created_at timestamptz not null default now())`, primary key `(user_id, cache_key)`.
+`public.weather_cache` is not user-scoped (weather is shared across users at the same place and
+hour): `(location_key text not null, hour timestamptz not null, payload jsonb not null)`, primary key
+`(location_key, hour)`. All four have RLS enabled with **no policies at all** and `revoke all` from
+both `anon` and `authenticated` — same "no API surface" pattern as `usage_counters` below, except
+nothing reads or writes them through a `security definer` function either; only `service_role` (the
+Edge Functions) ever touches them, bypassing RLS entirely as that role.
 
-NOTE: all three grow without bound. An expired degraded entry is overwritten only when the same
-key is asked for again, any other entry never expires, and nothing deletes old rows: a new day,
-occasion, closet edit or profile save writes new keys, and `weather_cache` gains a row per place
-and hour. At 4 users that's a few thousand small rows a month, with user deletion cascading the
-user-scoped two away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
+`for_you_cache` holds one row per user: each new entry deletes the user's rows under every other key
+once it is written (best effort, so a failed delete can leave an older row until the next write).
+
+NOTE: the other three grow without bound. An expired degraded entry is overwritten only when the
+same key is asked for again, any other entry never expires, and nothing deletes old rows: a new
+day, occasion, closet edit or profile save writes new keys, and `weather_cache` gains a row per
+place and hour. At 4 users that's a few thousand small rows a month, with user deletion cascading
+the user-scoped two away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
 `delete from public.rating_cache where created_at < now() - interval '30 days'`, the same for
 `lucky_cache`, and `delete from public.weather_cache where hour < now() - interval '2 days'`), in
 an append-only migration.
+
+### `public.apple_tokens` (Plan 5)
+
+Server-only: one row per user who signed in with Apple, holding the refresh token account deletion
+revokes with Apple before removing the `auth.users` row. `(user_id uuid primary key references
+auth.users on delete cascade, refresh_token text not null, created_at timestamptz not null default
+now())`. RLS is enabled with **no policies at all** and `revoke all` from both `anon` and
+`authenticated` — same server-only pattern as the caches above; only `service_role` (the
+`apple-token` and `delete-account` Edge Functions) ever touches it. See "Account deletion and data
+export" below for how the row is written and used.
 
 ### `public.usage_counters`
 
 Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
 `supabase/functions/extract-attributes/handler.ts`), the Plan 4 rating quota (50 per user per UTC
-day) and the Plan 4 feeling-lucky quota (10 per user per UTC day).
+day), the Plan 4 feeling-lucky quota (10 per user per UTC day) and the Plan 5 For-you quota (1 per
+user per UTC day, counting cache misses only).
 `(user_id uuid references auth.users on delete cascade, day date, kind quota_kind, count integer
-not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has three
-values: `extraction` (Plan 3), and `rating`/`lucky` (Plan 4, added by `alter type … add value` in
-`20261108120000_outfits_wears_caches.sql` — each `add value` is its own statement, and neither value
-is referenced anywhere else in that migration, so both commit in the same transaction as the rest of
-it; Postgres only forbids using a brand new enum value in the same transaction that added it, not
-adding several values together). RLS is enabled with **no policies at all** and `revoke all` from
+not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has four
+values: `extraction` (Plan 3), `rating`/`lucky` (Plan 4, added by `alter type … add value` in
+`20261108120000_outfits_wears_caches.sql`) and `for_you` (Plan 5, added the same way in
+`20261109000000_insights_account.sql` — each `add value` is its own statement, and the new value
+isn't referenced anywhere else in that migration, so it commits in the same transaction as the rest
+of it; Postgres only forbids using a brand new enum value in the same transaction that added it, not
+adding it). RLS is enabled with **no policies at all** and `revoke all` from
 both `anon` and `authenticated` — the table has no API surface of its own; every read and write goes
 through `public.consume_quota()`.
 
@@ -212,11 +233,11 @@ RLS is enabled with two policies for `authenticated`, both comparing `user_id = 
 
 **There is no insert policy** (the first migration had one; `20261107171540_profiles_value_limits_and_write_rules`
 dropped it): the signup trigger creates every row, so a client insert — including the insert half
-of an upsert — is rejected with `42501`. **There is no delete policy** either: account deletion is
-not yet implemented, so a client delete removes nothing, and a profile row only goes away via
-`on delete cascade` from `auth.users`. The `anon` role has no privileges on the table at all
-(nothing reads profiles while signed out), and neither client role has `truncate`, `trigger` or
-`references`.
+of an upsert — is rejected with `42501`. **There is no delete policy** either: a client delete
+removes nothing, and a profile row only goes away via `on delete cascade` from `auth.users`
+(account deletion goes through the `delete-account` function; see "Account deletion and data
+export"). The `anon` role has no privileges on the table at all (nothing reads profiles while
+signed out), and neither client role has `truncate`, `trigger` or `references`.
 
 ### `public.garments`
 
@@ -251,6 +272,10 @@ privileges), the client gets back only:
   whole statement, even if the row would otherwise be the caller's own — a column-privilege
   violation is checked before row filtering, so it fails the same way regardless of which row is
   targeted.
+- `grant update (pinned_on)` (Plan 5, `20261109000000_insights_account.sql`) — the client can also
+  set `pinned_on` on their own garment. Unused-for-6-months' "Wear it" sets it to tomorrow's local
+  date; `lucky-list` includes the garment in that day's outfits when any complete outfit with it
+  passes the rules. Nothing clears it automatically — the day simply passes.
 
 `created_at`/`updated_at` follow the same pair of trigger functions `profiles` uses:
 `garments_set_updated_at` (`public.set_updated_at()`) sets `updated_at = now()` before every
@@ -306,12 +331,13 @@ part), so this is a self-inflicted data-integrity gap, never a cross-tenant one 
 it's the reason `log_wear()`/`save_outfit()` are documented as the only intended path rather than
 merely "a convenience."
 
-### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4)
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache`, `public.apple_tokens` (Plan 5)
 
-RLS is enabled with **zero policies** on all three, and `revoke all on <table> from anon,
+RLS is enabled with **zero policies** on all five, and `revoke all on <table> from anon,
 authenticated` — same "no RLS-mediated access path at all" pattern as `usage_counters` below, except
 nothing reads or writes them through a `security definer` function either: only `service_role`
-(the rating/lucky/weather Edge Functions) ever touches them, bypassing RLS entirely as that role. A
+(the rating, lucky, weather and For-you Edge Functions for the caches; `apple-token` and
+`delete-account` for `apple_tokens`) ever touches them, bypassing RLS entirely as that role. A
 direct `select`/`insert`/`update`/`delete` from `authenticated` or `anon` is rejected by the table
 grant revoke before RLS is even consulted.
 
@@ -466,7 +492,7 @@ can — see the garments column grants above) and `execute` is revoked from `pub
   belonging to the same user as the wear** (`g.user_id = new.user_id`) gets `wear_count =
   wear_count + 1`, and `last_worn_at` moves forward to the wear's `worn_on` if that's later than
   what's stored (`greatest(coalesce(last_worn_at, worn_on), worn_on)`, so a `null` `last_worn_at`
-  is always replaced). This also bumps `updated_at` on every affected garment — see the P4-R6 note
+  is always replaced). This also bumps `updated_at` on every affected garment — see the note
   below, "Logging a wear bumps garments.updated_at," before keying any cache on that column.
 - **On delete:** every garment referenced by the deleted wear's outfit **and belonging to the same
   user as the wear** (`g.user_id = old.user_id`) gets `wear_count = greatest(wear_count - 1, 0)`
@@ -499,7 +525,7 @@ on delete cascade` from `outfit_items`), but the trigger is on `wears`, not `out
 other garment that shared an outfit with it is unaffected (its own wear_count/last_worn_at came from
 its own wears, not from what else was in the outfit).
 
-**P4-R6: logging a wear bumps `garments.updated_at` (confirmed empirically — see below), so neither
+**Logging a wear bumps `garments.updated_at` (confirmed empirically — see below), so neither
 the rating cache (`rate-outfit`) nor the lucky fingerprint (`lucky-list`) may key on it.** The trigger's `update
 public.garments set wear_count = …, last_worn_at = …` is an ordinary `update` statement, which fires
 `garments_set_updated_at` (`public.set_updated_at()`, `before update on public.garments`) exactly
@@ -536,6 +562,100 @@ back into onboarding. The app's `completeOnboarding` sends Postgres's `'now'` li
 NOTE: the trigger also blocks the service role, so an admin reset of onboarding (back to null) must
 run with the trigger disabled: `set local session_replication_role = replica;` in the same
 transaction as the `update` (as the table owner).
+
+### Account deletion and data export (Plan 5)
+
+Three Edge Functions, all `verify_jwt = true` and called by the signed-in user
+(`supabase/functions/{apple-token,delete-account,export-data}/`). The service-role key is used only
+inside them, never in `src/`.
+
+- **`apple-token`** — `signInWithIdToken` keeps no Apple refresh token, and Apple's `/auth/revoke`
+  needs one. Right after Sign in with Apple the app sends the credential's one-time
+  `authorizationCode` (fire-and-forget, `src/auth/socialAuth.ts`); the function exchanges it at
+  Apple's `/auth/token` with an ES256 client secret (`_shared/apple.ts`, signed with WebCrypto from
+  the `.p8` key). The token is bound to the caller: the exchange's id_token must be issued by Apple
+  (`iss`) for this app (`aud` = `APPLE_CLIENT_ID`), and its `sub` must be one of the caller's
+  `auth.identities` with provider `apple` (read with the service role through
+  `GET /auth/v1/admin/users/{uid}`). Only then does it upsert `public.apple_tokens (user_id,
+  refresh_token)` with the service role; otherwise it stores nothing and revokes the new token, best
+  effort. It answers 200 with an outcome word (`stored`, `skipped` without the `APPLE_*` secrets,
+  `invalid`, `exchange_failed`, `identity_mismatch`, `lookup_failed`, `store_failed`); the token
+  never leaves the server.
+- **`delete-account`** — in this order:
+  0. confirms the caller with `GET /auth/v1/user` and the caller's own token, before anything
+     irreversible; only Auth's `user_not_found` means an earlier attempt already finished, so it
+     sweeps `garments/{uid}/` once more (a photo that landed while that attempt's answer was lost)
+     and answers `deleted`, with no revoke or user deletion; any other failure, a bare 404
+     included, answers 500;
+  1. with the service role, lists every object under `garments/{uid}/` (Storage's list, 1000 entries
+     a page, the garment folders 5 at a time) and only then removes them, 1000 paths per call;
+  2. revokes the `apple_tokens` refresh token with Apple, if there is one — a failed revoke (or a
+     failed read of the row) is logged as `revoke_failed` and never blocks the deletion;
+  3. with the service role, `DELETE /auth/v1/admin/users/{uid}`, after which every public table cascades away:
+     `profiles`, `garments` (and through them `outfit_items`), `outfits`, `wears`,
+     `usage_counters`, `rating_cache`, `lucky_cache`, `for_you_cache` and `apple_tokens` all
+     reference `auth.users` with `on delete cascade` (pinned by `insights_account.test.sql`).
+  4. once this call has deleted the user, sweeps `garments/{uid}/` one last time, best effort:
+     another device (or a token that is still valid) can upload between steps 1 and 3, because the
+     storage insert policy only checks the folder's uid. A failed final sweep still answers
+     `deleted`; a retry sweeps again at step 0.
+
+  Safe to retry: a failed caller check, listing, removal or user deletion answers 500 with the user
+  still there, so the next attempt starts over with whatever is left; once the user is gone, a retry
+  (the access token stays valid until it expires) sweeps the folder at step 0 and answers 200
+  `{ outcome: 'deleted' }`; a 404 from the admin delete (a concurrent attempt won) sweeps the folder
+  again and counts as deleted too; a failed sweep on either path answers 500. The uid is always the
+  verified JWT's `sub`. Storage objects are removed first because nothing cascades into
+  `storage.objects`.
+
+  The app (`src/account/`) first writes the kv marker `account.deleting.<uid>`, then pauses its
+  upload queue (a stage in flight finishes), so no photo lands after the listing, and sends the
+  session's access token explicitly. It reports the account deleted only on
+  `{ outcome: 'deleted' }`, or on a 401 for which Auth's `GET /user` with that same token answers
+  `user_not_found` (a retry after a lost 200). Any other 401 (an expired token,
+  `session_not_found`, a refresh token that's gone) or no session at all doesn't prove the account
+  is gone, so the app tells the user to sign in again and then delete the account again
+  (`reauth`), and signs out locally, keeping the queue and the kv entries (the marker turns
+  `reauth`). Signing in doesn't finish anything by itself: the check below sees the account still
+  there and removes the marker, and the user taps "Delete account" again. On a deletion the app
+  clears the queue, signs out locally, clears every kv key under the user's id (the marker
+  included) and refuses that user's later kv writes for the rest of the process, so a request still
+  in flight can't write them back; then it removes the data exports from the cache directory and
+  clears expo-image's memory and disk caches. Either sign-out happens only while the stored session
+  is still that user's (or there is none): an answer that arrives after another account signed in
+  never signs it out, and the Profile tab's Sign out is disabled while a deletion runs.
+  Any other failure (network, a 500, a gateway 502/504) may come after the server already deleted
+  the user, so the marker stays: the user stays signed in, is told the deletion couldn't be
+  confirmed and that photo uploads are paused, and can tap again.
+
+  While the marker exists that user's queue never runs. The marker holds its state and the time it
+  was written (`deleting:<ms>` / `reauth:<ms>`). Any value whose state is `deleting` or `reauth`
+  counts, whatever its time; a missing or malformed time, or one more than the settle window in the
+  future, is stamped anew at the next check, so the window below starts over instead of being
+  skipped.
+  A launch, sign-in, return to the foreground or reconnect with the marker present only asks Auth,
+  with that session's token, whether the account still exists, and never deletes anything without a
+  tap: `user_not_found` gets the same local cleanup and sign-out as a confirmed deletion; the same
+  user, more than 10 minutes after the marker (the function may still be sweeping storage after the
+  app's 45 s timeout, up to the Edge Functions wall clock), removes the marker and lets the queue
+  run; anything else keeps the marker for the next check. A session that ends while the marker says
+  `deleting` (supabase-js signs out by itself once the account is gone) drops that account's kv
+  data, but not the queue's local photo copies.
+
+  NOTE: on that lost-session path the upload queue's SQLite rows and their photo copies stay on the
+  device; they never upload without that user's session, and run again if the account turns out to
+  exist. Upgrade path: a `queue.purge.<uid>` sweep when the queue provider mounts.
+- **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
+  and `wears` with the caller's own token, so RLS applies, in pages of 1000 (`max_rows`), and drops
+  any row whose `user_id` isn't the caller's. Photo URLs are signed with the service role for 7 days,
+  only for `{uid}/{garmentId}/{full,thumb}.webp` paths built from the caller's own garments (a
+  missing variant is `null`, and a garment with no photo at all is left out of `photos`). The answer
+  is `{ exportedAt, profile, garments, outfits, wears, photos: [{ garmentId, full, thumb }] }`.
+
+NOTE: locally the signed export URLs start with the Edge Runtime's internal `SUPABASE_URL`
+(`http://kong:8000`), so they only open after swapping in `http://127.0.0.1:54421`; hosted, it's the
+public project URL. Upgrade path: a public-URL function secret, if a local export ever needs to
+open on a device.
 
 ## New table checklist
 
@@ -639,10 +759,10 @@ discards both the user and its profile row — no cleanup step is needed.
   its row.
 - `outfits_wears.test.sql` — `log_wear` for A with 3 garments creates one outfit, 3 `outfit_items`
   and one wear (returning the caller-supplied wear id), and sets `wear_count`/`last_worn_at` on all
-  3 garments; **calling it again with the same wear id is idempotent** (P4-R5): it returns the same
-  id, logs no additional wear or outfit, and the counts stay put; a second, distinct `log_wear`
-  reusing 2 of the 3 garments bumps those to `wear_count` 2 and moves `last_worn_at` to the later
-  date; **A deleting that second wear as `authenticated` (not `postgres`)** restores both garments
+  3 garments; **calling it again with the same wear id is idempotent** (a retry after a lost
+  response must not log the wear twice): it returns the same id, logs no additional wear or
+  outfit, and the counts stay put; a second, distinct `log_wear` reusing 2 of the 3 garments bumps
+  those to `wear_count` 2 and moves `last_worn_at` to the later date; **A deleting that second wear as `authenticated` (not `postgres`)** restores both garments
   to `wear_count` 1 and falls `last_worn_at` back to the remaining wear's date (not null, since each
   is still in the first wear) — proving the `security definer` trigger fires correctly for a real
   client-issued delete, not just one run as the table owner; deleting a garment's only remaining
@@ -666,6 +786,18 @@ discards both the user and its profile row — no cleanup step is needed.
   roles, so an unrevoked insert path on either role can't pass silently); `consume_quota(A, 'rating',
   1)` returns `true` then `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though
   `'rating'` is exhausted for the same user — the two `quota_kind` values are tracked independently.
+- `insights_account.test.sql` (Plan 5) — the client can set their own `pinned_on` and `status =
+  'donated'` on `garments`; `authenticated` and `anon` can neither select nor insert
+  `apple_tokens`/`for_you_cache`; `consume_quota(A, 'for_you', 1)` returns `true` then `false`, same
+  independence as the other kinds; **the cascade assertion**, checked generically against
+  `pg_constraint`/`pg_attribute` rather than one hand-written assertion per table: every `public`
+  table with a `user_id` column (`profiles`, `garments`, `outfits`, `wears`, `usage_counters`,
+  `rating_cache`, `lucky_cache`, `for_you_cache`, `apple_tokens` — a second assertion pins this exact
+  set, so a future table quietly dropping or renaming `user_id` fails loudly instead of shrinking the
+  checked set) has a foreign key to `auth.users` with `confdeltype = 'c'` (`ON DELETE CASCADE`); and,
+  with a full fixture (a garment, an outfit, an outfit item, a wear, a usage counter and all three
+  user-scoped caches) built for a second user as `postgres` (bypassing RLS), deleting that
+  `auth.users` row leaves 0 matching rows in every one of those tables.
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.

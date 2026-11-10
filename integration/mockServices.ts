@@ -1,11 +1,12 @@
 // integration/mockServices.ts
 //
-// Stand-ins for TypeSafe's System One API (Jev) and Open-Meteo's forecast and geocoding APIs, so
-// the local `rate-outfit` and `lucky-list` Edge Functions run end to end without a key or the
-// network. The local Edge Runtime points `TYPESAFE_BASE_URL`, `OPEN_METEO_URL` and
-// `OPEN_METEO_GEOCODING_URL` at `http://host.docker.internal:54498` (see `supabase/config.toml`),
-// so this listens on every interface, not only loopback: the requests come from inside a
-// container. One server answers all three, routed by path.
+// Stand-ins for TypeSafe's System One API (Jev), Open-Meteo's forecast and geocoding APIs and Sign
+// in with Apple's `/auth/token` and `/auth/revoke`, so the local `rate-outfit`, `lucky-list`,
+// `for-you`, `apple-token` and `delete-account` Edge Functions run end to end without a key or the
+// network. The local Edge Runtime points `TYPESAFE_BASE_URL`, `OPEN_METEO_URL`,
+// `OPEN_METEO_GEOCODING_URL` and `APPLE_BASE_URL` at `http://host.docker.internal:54498` (see
+// `supabase/config.toml`), so this listens on every interface, not only loopback: the requests come
+// from inside a container. One server answers them all, routed by path.
 
 import { createServer, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +18,9 @@ export type { MockReply };
 /** A Jev reply, or one computed from each request's parsed JSON body (`undefined` if it isn't JSON). */
 export type JevReply = MockReply | ((body: unknown) => MockReply);
 
+/** An Apple reply, or one computed from each request's form fields. */
+export type AppleReply = MockReply | ((form: URLSearchParams) => MockReply);
+
 export type MockServices = {
   /** Sets the reply for every following `POST /v1/systemone`, until changed again. */
   jev(next: JevReply): void;
@@ -24,7 +28,16 @@ export type MockServices = {
   forecast(next: MockReply): void;
   /** Sets the reply for every following `GET /v1/search` (geocoding). */
   geocode(next: MockReply): void;
-  /** How many calls have arrived so far on `path` (`/v1/systemone`, `/v1/forecast` or `/v1/search`). */
+  /** Sets the reply for every following Apple `POST /auth/token` (the authorization-code exchange). */
+  appleToken(next: AppleReply): void;
+  /** Sets the reply for every following Apple `POST /auth/revoke`. */
+  appleRevoke(next: AppleReply): void;
+  /** The form fields of every call so far on an Apple path (`/auth/token` or `/auth/revoke`), oldest first. */
+  appleForms(path: string): URLSearchParams[];
+  /**
+   * How many calls have arrived so far on `path` (`/v1/systemone`, `/v1/forecast`, `/v1/search`,
+   * `/auth/token` or `/auth/revoke`).
+   */
   calls(path: string): number;
   close(): Promise<void>;
 };
@@ -32,6 +45,38 @@ export type MockServices = {
 const JEV_PATH = '/v1/systemone';
 const FORECAST_PATH = '/v1/forecast';
 const GEOCODE_PATH = '/v1/search';
+const APPLE_TOKEN_PATH = '/auth/token';
+const APPLE_REVOKE_PATH = '/auth/revoke';
+
+/** The refresh token the default Apple mock hands out for `code`, so each user's is distinct. */
+export const mockAppleRefreshToken = (code: string): string => `mock-apple-refresh-${code}`;
+
+/** The Apple user id (`sub`) the default Apple mock's id_token names for `code`. */
+export const mockAppleSubject = (code: string): string => `000000.mock-${code}.0000`;
+
+const segment = (value: unknown): string => Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+
+/**
+ * An id_token shaped like Apple's: issued by Apple for `clientId`, naming `sub`. Unsigned (a fixed
+ * dummy signature): the functions read it from their own call to Apple and don't check it.
+ */
+export function mockAppleIdToken(clientId: string, sub: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const claims = { iss: 'https://appleid.apple.com', aud: clientId, sub, iat: now, exp: now + 600 };
+  return `${segment({ alg: 'RS256', kid: 'mock' })}.${segment(claims)}.bW9jaw`;
+}
+
+const DEFAULT_APPLE_TOKEN: AppleReply = (form) => ({
+  status: 200,
+  body: {
+    access_token: 'mock-apple-access',
+    token_type: 'Bearer',
+    expires_in: 3600,
+    refresh_token: mockAppleRefreshToken(form.get('code') ?? ''),
+    id_token: mockAppleIdToken(form.get('client_id') ?? '', mockAppleSubject(form.get('code') ?? '')),
+  },
+});
+const DEFAULT_APPLE_REVOKE: AppleReply = { status: 200, body: {} };
 
 /** A mild, dry, clear day: (22 + 16) / 2 = 19 °C is `mild`, 10 % rain chance, WMO code 1. */
 export const MILD_FORECAST = {
@@ -90,13 +135,21 @@ function parseJson(text: string): unknown {
 
 /**
  * Starts the mock on `port`. Until a test sets its own, Jev answers every question at the best
- * level, the forecast is `MILD_FORECAST` and geocoding finds Madrid.
+ * level, the forecast is `MILD_FORECAST`, geocoding finds Madrid, Apple's token exchange answers a
+ * refresh token and an id_token named after the code (`mockAppleRefreshToken`, `mockAppleSubject`)
+ * and Apple's revoke answers 200.
  */
 export function startMockServices(port = 54498): Promise<MockServices> {
   let jevReply: JevReply = DEFAULT_JEV;
   let forecastReply: MockReply = { status: 200, body: MILD_FORECAST };
   let geocodeReply: MockReply = { status: 200, body: MADRID_GEOCODE };
+  let appleTokenReply: AppleReply = DEFAULT_APPLE_TOKEN;
+  let appleRevokeReply: AppleReply = DEFAULT_APPLE_REVOKE;
   const callCounts = new Map<string, number>();
+  const appleForms = new Map<string, URLSearchParams[]>([
+    [APPLE_TOKEN_PATH, []],
+    [APPLE_REVOKE_PATH, []],
+  ]);
 
   const server = createServer((request, response) => {
     const chunks: Buffer[] = [];
@@ -112,6 +165,11 @@ export function startMockServices(port = 54498): Promise<MockServices> {
         reply = forecastReply;
       } else if (request.method === 'GET' && path === GEOCODE_PATH) {
         reply = geocodeReply;
+      } else if (request.method === 'POST' && (path === APPLE_TOKEN_PATH || path === APPLE_REVOKE_PATH)) {
+        const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+        appleForms.get(path)?.push(form);
+        const next = path === APPLE_TOKEN_PATH ? appleTokenReply : appleRevokeReply;
+        reply = typeof next === 'function' ? next(form) : next;
       } else {
         sendJson(response, 404, { error: 'not_found' });
         return;
@@ -136,6 +194,13 @@ export function startMockServices(port = 54498): Promise<MockServices> {
         geocode(next) {
           geocodeReply = next;
         },
+        appleToken(next) {
+          appleTokenReply = next;
+        },
+        appleRevoke(next) {
+          appleRevokeReply = next;
+        },
+        appleForms: (path) => [...(appleForms.get(path) ?? [])],
         calls: (path) => callCounts.get(path) ?? 0,
         close: () =>
           new Promise<void>((resolveClose, rejectClose) => {

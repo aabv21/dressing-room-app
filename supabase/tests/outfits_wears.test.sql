@@ -1,6 +1,6 @@
 -- public.log_wear() and public.save_outfit(): happy path (one outfit, its
 -- items and a wear; wear_count/last_worn_at maintained on insert and delete),
--- idempotency on p_wear_id (P4-R5), cross-user rejection (42501), validation
+-- idempotency on p_wear_id, cross-user rejection (42501), validation
 -- (22023 for too few items or a duplicate), cross-user isolation on
 -- outfits/outfit_items/wears (including a real outfit_items assertion, not
 -- a vacuous one hidden by the outfits join), save_outfit stamping saved_at
@@ -69,8 +69,8 @@ select is(
 );
 
 -- Calling log_wear again with the same wear id is idempotent: it returns
--- the same id and logs nothing new (P4-R5 — a retry after a lost response
--- must never double-log).
+-- the same id and logs nothing new (a retry after a lost response must
+-- never double-log).
 select is(
   public.log_wear(
     'dddddddd-0000-0000-0000-000000000001'::uuid,

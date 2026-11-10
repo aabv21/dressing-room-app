@@ -1,14 +1,15 @@
-// The outfit AI client: thin wrappers over `supabase.functions.invoke('rate-outfit' | 'lucky-list')`
-// that map the functions' HTTP error bodies (see `supabase/functions/{rate-outfit,lucky-list}/handler.ts`)
+// The outfit AI client: thin wrappers over `supabase.functions.invoke('rate-outfit' | 'lucky-list' |
+// 'for-you')` that map the functions' HTTP error bodies (see `supabase/functions/*/handler.ts`)
 // onto a small translated-error union the UI renders through i18n, instead of leaking HTTP
 // status codes or Supabase's error classes into the screens.
 
 import { FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
 
 import type { Occasion } from '../closet/catalog';
+import type { Locale } from '../i18n';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';
-import type { LuckyResponse, RatingResult } from './types';
+import type { ForYouResponse, LuckyResponse, RatingResult } from './types';
 
 type Client = SupabaseClient<Database>;
 
@@ -35,7 +36,7 @@ function errorFrom(error: unknown): AiError {
 }
 
 async function invoke<T>(
-  name: 'rate-outfit' | 'lucky-list',
+  name: 'rate-outfit' | 'lucky-list' | 'for-you',
   body: Record<string, unknown>,
   client: Client,
 ): Promise<AiOutcome<T>> {
@@ -66,6 +67,11 @@ export function fetchLuckyList(
   client: Client = supabase,
 ): Promise<AiOutcome<LuckyResponse>> {
   return invoke<LuckyResponse>('lucky-list', { occasion: input.occasion, date: input.date }, client);
+}
+
+/** For you's ideas, with the lines and store-search words in `language` (the app's current locale). */
+export function fetchForYou(input: { language: Locale }, client: Client = supabase): Promise<AiOutcome<ForYouResponse>> {
+  return invoke<ForYouResponse>('for-you', { language: input.language }, client);
 }
 
 /** The device's local calendar day as `YYYY-MM-DD`, matching the functions' `isIsoDate` input. */
