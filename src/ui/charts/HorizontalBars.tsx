@@ -26,11 +26,10 @@ function Bar({ id, pct, color, stacked }: { id: string; pct: number; color: stri
 
   // `width` is a shared value: mutating `.value` runs on the UI thread and never triggers a
   // React re-render, so the growing width has to be read inside a worklet (`useAnimatedStyle`)
-  // rather than baked into a plain style object read once at mount. The explicit deps array is
-  // reanimated's documented fallback for when the Babel plugin can't statically detect which
-  // shared values a worklet reads (harmless, and belt-and-suspenders here). Declared before the
-  // effect below so it subscribes to `width` before anything has a chance to write to it.
-  const fillStyle = useAnimatedStyle(() => ({ width: `${String(width.value)}%` }), [width]);
+  // rather than baked into a plain style object read once at mount. No deps array: reanimated
+  // ignores it on native and warns. Declared before the effect below so it subscribes to `width`
+  // before anything has a chance to write to it.
+  const fillStyle = useAnimatedStyle(() => ({ width: `${String(width.value)}%` }));
 
   useEffect(() => {
     if (reducedMotion) {

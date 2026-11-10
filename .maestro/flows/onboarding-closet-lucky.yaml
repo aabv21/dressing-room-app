@@ -50,22 +50,14 @@ appId: com.aabv21.dressingroom
     visible: "Gallery"
     timeout: 30000
 - tapOn: "Gallery"
-- extendedWaitUntil:
-    visible: "Select up to 30 photos."
-    timeout: 15000
-- tapOn:
-    id: "PXGGridLayout-Info"
-    index: 0
-- tapOn:
-    id: "PXGGridLayout-Info"
-    index: 1
-- tapOn:
-    id: "PXGGridLayout-Info"
-    index: 2
-- tapOn:
-    id: "PXGGridLayout-Info"
-    index: 3
-- tapOn: "Done"
+- runFlow:
+    when:
+      platform: iOS
+    file: ../subflows/pick-photos-ios.yaml
+- runFlow:
+    when:
+      platform: Android
+    file: ../subflows/pick-photos-android.yaml
 
 # Each photo uploads and the mock Claude reads it; then all four wait for review.
 - extendedWaitUntil:

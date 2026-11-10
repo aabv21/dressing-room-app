@@ -5,6 +5,7 @@
 // Close's confirmation) — the real capture flow is an owner-session check (see AGENTS.md).
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router, usePreventRemove } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { Check, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -178,7 +179,7 @@ function BurstCamera(): React.JSX.Element {
 
       <Text style={styles.caption}>{t('camera.caption')}</Text>
 
-      <AnchoredCta {...cta} chrome="none" />
+      <AnchoredCta {...cta} chrome="none" surface="dark" />
     </View>
   );
 }
@@ -186,6 +187,8 @@ function BurstCamera(): React.JSX.Element {
 export default function CameraScreen(): React.JSX.Element {
   return (
     <View style={styles.screen}>
+      {/* The camera is dark: light icons while it's open. */}
+      <StatusBar style="light" />
       <PermissionGate>
         <BurstCamera />
       </PermissionGate>

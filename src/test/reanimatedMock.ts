@@ -21,10 +21,10 @@ import { View } from 'react-native';
 //   value it's reading changes — there is no UI thread here to push the update straight to a
 //   native view, so a React re-render is the only way this mock can make a later write visible
 //   at all, and only through `useAnimatedStyle`, never through a plain style read.
-// - `useAnimatedStyle`: takes an explicit `deps` array (reanimated's own documented fallback for
-//   when its Babel plugin can't statically detect which shared values a worklet reads — there's
-//   no worklet runtime under Jest, so this mock always needs it) and re-renders whenever one of
-//   them changes, re-invoking the factory with the latest values. On a device, reanimated's real
+// - `useAnimatedStyle`: records which shared values its factory reads (as reanimated's Babel plugin
+//   finds a worklet's shared values on a device) and re-renders whenever one of them changes,
+//   re-invoking the factory with the latest values. Callers pass no deps array: on native,
+//   reanimated ignores it and warns. On a device, reanimated's real
 //   `useAnimatedStyle` instead runs the worklet on the UI thread and pushes the result to the
 //   native view directly, bypassing React — this mock's re-render is the nearest JS-only
 //   equivalent of "the latest value becomes visible without the owning component re-rendering
@@ -46,6 +46,9 @@ export function useReducedMotion(): boolean {
 type Listener = () => void;
 type SharedValueBox<T> = { value: T; _listeners: Set<Listener> };
 
+// The boxes a `useAnimatedStyle` factory reads while it runs; null outside a factory.
+const tracker: { reading: Set<SharedValueBox<unknown>> | null } = { reading: null };
+
 export function useSharedValue<T>(initial: T): { value: T } {
   const [box] = useState<SharedValueBox<T>>(() => {
     const listeners = new Set<Listener>();
@@ -53,6 +56,7 @@ export function useSharedValue<T>(initial: T): { value: T } {
     return {
       _listeners: listeners,
       get value() {
+        tracker.reading?.add(this);
         return current;
       },
       set value(next: T) {
@@ -66,18 +70,26 @@ export function useSharedValue<T>(initial: T): { value: T } {
   return box;
 }
 
-export function useAnimatedStyle<T>(factory: () => T, deps?: readonly unknown[]): T {
+export function useAnimatedStyle<T>(factory: () => T): T {
   const [, forceRender] = useState(0);
-  const boxes = (deps ?? []).filter(
-    (dep): dep is SharedValueBox<unknown> =>
-      typeof dep === 'object' && dep !== null && '_listeners' in dep,
-  );
+  const previous = tracker.reading;
+  const read = new Set<SharedValueBox<unknown>>();
+  // A test mock standing in for reanimated's Babel plugin, which finds a worklet's shared values
+  // at build time; recording them while the factory runs is the nearest runtime equivalent.
+  // eslint-disable-next-line react-hooks/immutability
+  tracker.reading = read;
+  let style: T;
+  try {
+    style = factory();
+  } finally {
+    tracker.reading = previous;
+  }
+  const boxes = [...read];
 
-  // Subscribes once per box identity (`deps` is expected to list the shared values the factory
-  // reads, same as reanimated's own fallback API). The caller must declare this hook before any
-  // effect that writes to one of `deps` in the same component (`HorizontalBars.tsx`'s `Bar`
-  // does), so this effect's subscription is in place before that write fires — React runs
-  // same-component effects in hook-declaration order.
+  // Subscribes once per box identity. The caller must declare this hook before any effect that
+  // writes to one of the boxes in the same component (`HorizontalBars.tsx`'s `Bar` does), so this
+  // effect's subscription is in place before that write fires — React runs same-component effects
+  // in hook-declaration order.
   useEffect(() => {
     const onChange = () => {
       forceRender((tick) => tick + 1);
@@ -93,7 +105,7 @@ export function useAnimatedStyle<T>(factory: () => T, deps?: readonly unknown[])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, boxes);
 
-  return factory();
+  return style;
 }
 
 export function withTiming<T>(toValue: T): T {

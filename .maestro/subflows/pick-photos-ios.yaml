@@ -1,0 +1,20 @@
+# iOS's photo picker: select the four newest photos (the fixtures `pnpm e2e` just added) and confirm.
+# Its ids are picker internals, the first thing to check when an iOS update breaks this step.
+appId: com.aabv21.dressingroom
+---
+- extendedWaitUntil:
+    visible: "Select up to 30 photos."
+    timeout: 15000
+- tapOn:
+    id: "PXGGridLayout-Info"
+    index: 0
+- tapOn:
+    id: "PXGGridLayout-Info"
+    index: 1
+- tapOn:
+    id: "PXGGridLayout-Info"
+    index: 2
+- tapOn:
+    id: "PXGGridLayout-Info"
+    index: 3
+- tapOn: "Done"

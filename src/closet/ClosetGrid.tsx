@@ -244,9 +244,10 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     boxShadow: selectionRing,
   },
+  // A cut-out is cropped to the garment, so it gets a margin inside the cell, as in the mockup.
   image: {
-    width: '100%',
-    height: '100%',
+    width: '84%',
+    height: '84%',
   },
   badge: {
     position: 'absolute',
@@ -279,10 +280,15 @@ const styles = StyleSheet.create({
   leadingTextError: {
     color: colors.error,
   },
+  // Over the garment's edge: a translucent backing keeps it readable.
   wearCount: {
     position: 'absolute',
     bottom: 3,
-    right: 6,
+    right: 4,
+    paddingHorizontal: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    overflow: 'hidden',
     fontSize: 9,
     color: colors.muted,
   },
