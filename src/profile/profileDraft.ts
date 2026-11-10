@@ -103,19 +103,24 @@ function unique<T>(values: readonly T[]): T[] {
   return [...new Set(values)];
 }
 
+export type CityPatch = Required<Pick<ProfilePatch, 'city_name' | 'city_lat' | 'city_lon'>>;
+
 /**
- * The Style section's columns. Styles and occasions are sent once each; the city is trimmed, and an
- * empty one clears the name and coordinates.
+ * The city columns: the name is trimmed and an empty one clears the name and coordinates. Callers
+ * pass `coords` only with the name they were geocoded to; a typed name comes with `null`.
  */
+export function cityToPatch(name: string, coords: ProfileDraft['cityCoords']): CityPatch {
+  const cityName = name.trim();
+  const kept = cityName === '' ? null : coords;
+  return { city_name: cityName === '' ? null : cityName, city_lat: kept?.lat ?? null, city_lon: kept?.lon ?? null };
+}
+
+/** The Style section's columns. Styles and occasions are sent once each; the city per `cityToPatch`. */
 export function styleToPatch(draft: ProfileDraft): ProfilePatch {
-  const cityName = draft.cityName.trim();
-  const coords = cityName === '' ? null : draft.cityCoords;
   return {
     styles: unique(draft.styles),
     occasions: unique(draft.occasions),
-    city_name: cityName === '' ? null : cityName,
-    city_lat: coords?.lat ?? null,
-    city_lon: coords?.lon ?? null,
+    ...cityToPatch(draft.cityName, draft.cityCoords),
   };
 }
 

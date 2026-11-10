@@ -116,10 +116,22 @@ Supabase stack:
   inserting the same id again makes no second Claude call; and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
+- `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the
+  mock Jev and Open-Meteo below. User A has six reviewed garments (two tops, two bottoms, two pairs
+  of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'` with
+  the service role) and stored city coordinates; B has none. `lucky-list` answers `kind: 'ok'` with
+  complete outfits (one top, one bottom, one pair of shoes each) rated by the mock Jev, and a second
+  call is served from `lucky_cache` with no Jev call; the forecast lands in `weather_cache` for the
+  hour (fetched once, no geocoding for stored coordinates). `rate-outfit` answers Jev's score; a call
+  without a session gets 401 (the anon key passes the gateway, and the function finds no user in
+  it); B rating A's garment ids gets 404 `garment_not_found` (RLS hides them) with no Jev call; and
+  with A's `usage_counters` row for the day pre-filled to 50, a new outfit gets 429 `over_quota`
+  with no Jev call. `log_wear` called from supabase-js bumps `wear_count` on exactly the worn
+  garments, as A's own `garments` select shows. Needs the Edge Runtime.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with `pnpm db:start && pnpm env:local && pnpm test:int`
-when touching auth, RLS, profile or garment persistence, or the extraction function; `--runInBand` because the suites share one
+when touching auth, RLS, profile or garment persistence, the extraction function or the outfit functions; `--runInBand` because the suites share one
 database and create/delete real `auth.users` rows.
 
 `integration/mockAnthropic.ts` is the mock Claude: `startMockAnthropic(port = 54499)` serves
@@ -128,10 +140,25 @@ database and create/delete real `auth.users` rows.
 `respondWith({ status, body })` or `respondWith({ hang: true })` sets the reply for every following
 call; `calls()` counts the calls; `close()` also drops hung connections. Replies reuse the recorded
 fixtures in `supabase/functions/_shared/__tests__/fixtures/`, so the real API is never called.
+`integration/mockServices.ts` stands in for TypeSafe's System One API (Jev) and Open-Meteo:
+`startMockServices(port = 54498)` serves `POST /v1/systemone`, `GET /v1/forecast` and
+`GET /v1/search` (geocoding) on `0.0.0.0`, where the local `TYPESAFE_BASE_URL`, `OPEN_METEO_URL`
+and `OPEN_METEO_GEOCODING_URL` point (`http://host.docker.internal:54498`). `jev(next)`,
+`forecast(next)` and `geocode(next)` set each route's reply (`MockReply`, the same shape as the
+mock Claude's); `jev` also takes a function of the request body, and `jevAnswers(request, level)`
+builds a well-formed answer to every question in it (each Score at `level` of its range, so the
+composite score is `round(100 · level)`; each Noul at 0.02; each Choice `none`, using the
+`criteria` keys). `calls(path)` counts the calls on a path; `close()` drops hung connections.
+Until set, Jev answers every Score at its best level, the forecast is `MILD_FORECAST` (a dry 19 °C
+day, band `mild`) and geocoding finds Madrid. For a manual simulator check,
+`node integration/mockServices.ts --serve [--level <0..1>] [--temp <°C>]` keeps it running with
+every Jev answer at `level` (default 1) and, with `--temp`, a clear, dry day around that temperature.
+
 `integration/fixtures/garment.webp` is a 784 px, ~9 KB WebP of a garment silhouette, encoded once
 with sharp from `scripts/perf-fixtures.ts`'s `fixtureSvg` and committed.
 
-Function logs (one line per call: the garment id and an outcome word) are in
+Function logs (one line per call: an outcome word, plus the garment id for `extract-attributes`;
+the words are listed in `docs/ai.md`) are in
 `docker logs supabase_edge_runtime_dressing-room-app`; pg_net's view of each call is in
 `net._http_response` (a `timed_out` row is expected for the hang case, since pg_net stops waiting
 after 5 s while the function carries on).

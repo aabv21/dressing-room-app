@@ -117,3 +117,24 @@ test('a leading tile alone still renders the grid instead of the empty state', a
   expect(screen.getByText('Processing 1 photo…')).toBeOnTheScreen();
   expect(screen.queryByText('Add your 10 favorites to get started.')).not.toBeOnTheScreen();
 });
+
+test('selectedIds marks the chosen cells with a ring and as selected; without it no cell is', async () => {
+  const items = [
+    { id: 'a', thumbUri: '', wearCount: 6, label: 'Heels' },
+    { id: 'b', thumbUri: '', wearCount: 30, label: 'Sneakers' },
+  ];
+  const view = await render(<ClosetGrid items={items} onPressItem={jest.fn()} selectedIds={new Set(['a'])} />);
+  expect(screen.getByLabelText('Heels, 6 wears')).toBeSelected();
+  expect(screen.getByLabelText('Sneakers, 30 wears')).not.toBeSelected();
+  expect(screen.getByLabelText('Heels, 6 wears')).toHaveStyle({ borderColor: '#7c3aed' });
+
+  await view.rerender(<ClosetGrid items={items} onPressItem={jest.fn()} />);
+  expect(screen.getByLabelText('Heels, 6 wears')).not.toBeSelected();
+  expect(screen.getByLabelText('Heels, 6 wears')).not.toHaveStyle({ borderColor: '#7c3aed' });
+});
+
+test('emptyText replaces the closet empty state', async () => {
+  await render(<ClosetGrid items={[]} emptyText="No shoes available." />);
+  expect(screen.getByText('No shoes available.')).toBeOnTheScreen();
+  expect(screen.queryByText('Add your 10 favorites to get started.')).not.toBeOnTheScreen();
+});

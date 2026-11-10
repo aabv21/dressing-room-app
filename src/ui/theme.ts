@@ -14,6 +14,9 @@ export const colors = {
   tint: '#f3edff',
   tintBorder: '#d9c9ff',
   errorTint: '#fdecea',
+  // Mockup 01 screen 3's reason marks: `.ok` (✓) and `.warn` (!).
+  positive: '#16a34a',
+  warning: '#e11d48',
 } as const;
 
 /** Mockup 03's selected-card halo (`box-shadow: 0 0 0 3px rgba(124,58,237,.12)`). */

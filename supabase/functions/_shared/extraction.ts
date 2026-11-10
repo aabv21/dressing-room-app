@@ -144,7 +144,7 @@ function memberOf<T extends string | number>(allowed: readonly T[], value: unkno
   return allowed.find((candidate) => candidate === value);
 }
 
-function firstText(content: unknown): string | null {
+export function firstText(content: unknown): string | null {
   if (!Array.isArray(content)) return null;
   for (const block of content as unknown[]) {
     if (isRecord(block) && block.type === 'text' && typeof block.text === 'string') return block.text;

@@ -4,7 +4,7 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatWearCount, useI18n, type Locale } from '../i18n';
-import { colors, radii, spacing } from '../ui/theme';
+import { colors, radii, selectionRing, spacing } from '../ui/theme';
 
 export type GridItem = {
   id: string;
@@ -39,10 +39,13 @@ const GridCell = memo(function GridCell({
   item,
   locale,
   onPress,
+  selected,
 }: {
   item: GridItem;
   locale: Locale;
   onPress?: ((id: string) => void) | undefined;
+  /** Undefined when the grid has no selection (the closet); otherwise whether this cell is chosen. */
+  selected?: boolean | undefined;
 }): React.JSX.Element {
   // Keyed on the URI rather than a plain boolean: FlashList recycles this component instance for
   // other items, and a `failed` flag would otherwise hide every later item's image in this cell.
@@ -67,10 +70,11 @@ const GridCell = memo(function GridCell({
   return (
     <View style={styles.cell} testID={`grid-cell-${item.id}`}>
       <Pressable
-        style={styles.cellInner}
+        style={[styles.cellInner, selected === true ? styles.cellSelected : null]}
         onPress={onPress ? onCellPress : undefined}
         accessibilityRole={onPress ? 'button' : undefined}
         accessibilityLabel={accessibilityLabel}
+        accessibilityState={selected === undefined ? undefined : { selected }}
       >
         {showImage ? (
           <Image
@@ -125,8 +129,12 @@ export function ClosetGrid(props: {
   onScrollActiveChange?: (active: boolean) => void;
   /** A status cell placed before the garments; with it, an empty closet still renders the grid. */
   leadingTile?: LeadingTile;
+  /** Cells to show as chosen (an accent ring and `accessibilityState.selected`); unset, cells have no selection state. */
+  selectedIds?: ReadonlySet<string>;
+  /** The text shown when there are no cells; defaults to the closet's "add your favorites". */
+  emptyText?: string;
 }): React.JSX.Element {
-  const { items, header, contentInset, onPressItem, onScrollActiveChange, leadingTile } = props;
+  const { items, header, contentInset, onPressItem, onScrollActiveChange, leadingTile, selectedIds, emptyText } = props;
   const { t, locale } = useI18n();
   const insetTop = contentInset?.top ?? 0;
   const insetBottom = contentInset?.bottom ?? 0;
@@ -150,9 +158,9 @@ export function ClosetGrid(props: {
       item === LEADING_KEY ? (
         leadingTile === undefined ? null : <LeadingCell tile={leadingTile} />
       ) : (
-        <GridCell item={item} locale={locale} onPress={onPressItem} />
+        <GridCell item={item} locale={locale} onPress={onPressItem} selected={selectedIds?.has(item.id)} />
       ),
-    [onPressItem, locale, leadingTile],
+    [onPressItem, locale, leadingTile, selectedIds],
   );
 
   const keyExtractor = useCallback((item: Cell) => (item === LEADING_KEY ? LEADING_KEY : item.id), []);
@@ -179,7 +187,7 @@ export function ClosetGrid(props: {
       <View style={[styles.emptyScreen, { paddingTop: insetTop }]}>
         {header}
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>{t('grid.empty', { count: 10 })}</Text>
+          <Text style={styles.emptyText}>{emptyText ?? t('grid.empty', { count: 10 })}</Text>
         </View>
       </View>
     );
@@ -195,6 +203,8 @@ export function ClosetGrid(props: {
       // the first visible cell in place, which scrolled the title and goal card off-screen on every
       // upload; the closet reads top-down, so the content stays put instead.
       maintainVisibleContentPosition={MVCP_DISABLED}
+      // The selection lives outside `data`, so a change must still re-render the visible cells.
+      extraData={selectedIds}
       numColumns={NUM_COLUMNS}
       ListHeaderComponent={header}
       ListHeaderComponentStyle={styles.header}
@@ -224,6 +234,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     position: 'relative',
+  },
+  // Mockup 01's `.g.sel`: a 2 pt violet border with a soft halo.
+  cellSelected: {
+    borderWidth: 2,
+    borderColor: colors.accent,
+    boxShadow: selectionRing,
   },
   image: {
     width: '100%',

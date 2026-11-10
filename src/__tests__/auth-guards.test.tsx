@@ -12,6 +12,10 @@
 jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
 jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvidersMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../outfits/aiClient', () => require('../test/outfitClientsMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../outfits/outfitRepository', () => require('../test/outfitClientsMock'));
 
 jest.mock('../auth/AuthProvider', () => ({
   AuthProvider: ({ children }: { children?: React.ReactNode }) => children,
