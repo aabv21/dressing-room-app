@@ -18,6 +18,7 @@ import { type RuleGarment, seasonOf } from '../../_shared/outfitRules.ts';
 import { RATING_LEVELS } from '../../_shared/rating.ts';
 import type { FnEnv } from '../../_shared/userContext.ts';
 import { FOR_YOU_DAILY_LIMIT, type ForYouCard, handleForYou } from '../handler.ts';
+import { fakeTime } from '../../_shared/__tests__/fakeTime.ts';
 
 const { jest } = import.meta;
 
@@ -784,20 +785,17 @@ describe('cache and quota', () => {
 });
 
 describe('latency budget (the 15 s fit budget, the lines deadline)', () => {
+  const { drive, trackDigests, untrackDigests } = fakeTime(jest);
+
   beforeEach(() => {
     jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    trackDigests();
   });
   afterEach(() => {
     jest.useRealTimers();
+    untrackDigests();
   });
 
-  /** Advances fake time in small steps, letting real macrotasks (`crypto.subtle.digest`) run between them. */
-  async function drive(ms: number, step = 50): Promise<void> {
-    for (let elapsed = 0; elapsed < ms; elapsed += step) {
-      for (let turn = 0; turn < 3; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-      await jest.advanceTimersByTimeAsync(Math.min(step, ms - elapsed));
-    }
-  }
 
   test('no Jev fit starts after 15 s: the skipped ideas rank at the floor, cached degraded', async () => {
     // The closet read takes 14 s, each fit 6 s: the first wave starts at ~14 s, the second would at ~20 s.

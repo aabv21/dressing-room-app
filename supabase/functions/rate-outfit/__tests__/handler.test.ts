@@ -6,6 +6,7 @@ import { mulberry32 } from '../../_shared/outfitRules.ts';
 import { composeRating, parseJevAnswers, pickReasons, RATING_DIMENSIONS, RATING_LEVELS } from '../../_shared/rating.ts';
 import type { FnEnv } from '../../_shared/userContext.ts';
 import { handleRate, type RatingResult } from '../handler.ts';
+import { fakeTime } from '../../_shared/__tests__/fakeTime.ts';
 
 const { jest } = import.meta;
 
@@ -816,11 +817,15 @@ describe('a cached swap is re-checked', () => {
 });
 
 describe('latency budget', () => {
+  const { drive, trackDigests, untrackDigests } = fakeTime(jest);
+
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    trackDigests();
   });
   afterEach(() => {
     jest.useRealTimers();
+    untrackDigests();
   });
 
   const after = <T,>(ms: number, init: RequestInit, value: () => T): Promise<T> =>
@@ -843,12 +848,6 @@ describe('latency budget', () => {
    * key's `crypto.subtle.digest` settles on a real event-loop turn, so one big jump would pass
    * timers the handler hasn't scheduled yet.
    */
-  async function drive(ms: number, step = 50): Promise<void> {
-    for (let elapsed = 0; elapsed < ms; elapsed += step) {
-      for (let turn = 0; turn < 3; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-      await jest.advanceTimersByTimeAsync(Math.min(step, ms - elapsed));
-    }
-  }
 
   test('Jev times out at 10 s, then Claude answers at 19 s → 200, estimated', async () => {
     const fake = fakeFetch(world());
