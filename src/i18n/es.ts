@@ -125,6 +125,8 @@ export const es: Record<MessageKey, string> = {
   'onboarding.body.height': 'Estatura',
   'onboarding.body.heightValue': '{meters} m',
   'onboarding.body.heightSpoken': '{meters} metros',
+  'onboarding.body.heightUnset': 'Sin definir',
+  'onboarding.body.heightUnsetHint': 'Mueve la barra para indicar tu estatura.',
   'onboarding.body.heightOutOfRange': 'Tu estatura guardada está fuera de la barra ({min}–{max} m). Si la mueves, se reemplaza.',
   'onboarding.body.optional': 'Medidas, tallas y edad (opcional)',
   'onboarding.body.chest': 'Pecho (cm)',

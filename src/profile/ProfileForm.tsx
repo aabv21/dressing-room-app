@@ -62,7 +62,7 @@ export function ClothingSection({ value, onChange }: SectionProps): React.JSX.El
 // ---------------------------------------------------------------------------------------------
 // Body
 
-// Global constraints: the slider runs 140–210 cm in steps of 1. Saved heights may be anywhere in
+// The slider runs 140–210 cm in steps of 1. Saved heights may be anywhere in
 // the DB's 120–230 range, so one outside the slider keeps its true value in the label (and in what
 // a screen reader says) while the thumb rests at the nearest end, with a note explaining why.
 export const SLIDER_MIN = 140;
@@ -107,15 +107,22 @@ export function BodySection({
   onChange,
   errors = {},
   onFieldBlur,
+  unsetHeight = 'default',
 }: SectionProps & {
   errors?: BodyErrors;
   /** Lets a screen show a field's error once the user leaves it, instead of on every keystroke. */
   onFieldBlur?: (field: BodyField) => void;
+  /**
+   * How a height that was never saved reads: as the clothing type's default (onboarding, where Next
+   * saves what the slider shows), or as "not set" (Profile, where an untouched slider saves nothing).
+   */
+  unsetHeight?: 'default' | 'notSet';
 }): React.JSX.Element {
   const { t, locale } = useI18n();
   const clothing = value.clothingType ?? 'everything';
   const silhouettes = silhouettesFor(clothing);
   const heightCm = value.heightCm ?? defaultHeightFor(value.clothingType);
+  const heightNotSet = value.heightCm === null && unsetHeight === 'notSet';
   const heightOutOfRange = heightCm < SLIDER_MIN || heightCm > SLIDER_MAX;
 
   // Open from the start when something optional is already saved, so it's visible.
@@ -247,8 +254,8 @@ export function BodySection({
       <View style={styles.card}>
         <View style={styles.heightRow}>
           <Text style={styles.muted}>{t('onboarding.body.height')}</Text>
-          <Text style={styles.heightValue} testID="body-height-value">
-            {t('onboarding.body.heightValue', { meters })}
+          <Text style={[styles.heightValue, heightNotSet ? styles.heightNotSet : null]} testID="body-height-value">
+            {heightNotSet ? t('onboarding.body.heightUnset') : t('onboarding.body.heightValue', { meters })}
           </Text>
         </View>
         <Slider
@@ -262,7 +269,7 @@ export function BodySection({
             min: SLIDER_MIN,
             max: SLIDER_MAX,
             now: Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, heightCm)),
-            text: t('onboarding.body.heightSpoken', { meters }),
+            text: heightNotSet ? t('onboarding.body.heightUnset') : t('onboarding.body.heightSpoken', { meters }),
           }}
           {...(heightOutOfRange ? { accessibilityHint: outOfRangeNote } : {})}
           minimumValue={SLIDER_MIN}
@@ -282,6 +289,7 @@ export function BodySection({
             {outOfRangeNote}
           </Text>
         ) : null}
+        {heightNotSet ? <Text style={styles.note}>{t('onboarding.body.heightUnsetHint')}</Text> : null}
         {errors.heightCm !== undefined ? <Text style={styles.error}>{message(errors.heightCm)}</Text> : null}
       </View>
 
@@ -609,6 +617,9 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 15,
     fontWeight: '800',
+  },
+  heightNotSet: {
+    color: colors.muted,
   },
   slider: {
     height: layout.minHitTarget,

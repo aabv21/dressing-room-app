@@ -58,6 +58,7 @@ const mockedSaveProfile = jest.mocked(saveProfile);
 
 const USER_ID = 'user-1';
 const LOCALE_PREFERENCE_KEY = 'locale-preference';
+const LANGUAGE_PENDING_KEY = 'language-save-pending';
 
 function profileRow(overrides: Partial<Profile> = {}): Profile {
   return {
@@ -99,6 +100,7 @@ function saveButton() {
 beforeEach(() => {
   jest.clearAllMocks();
   kvRemove(LOCALE_PREFERENCE_KEY);
+  kvRemove(LANGUAGE_PENDING_KEY);
   mockedUseAuth.mockReturnValue({
     status: 'signedIn',
     userId: USER_ID,
@@ -142,6 +144,25 @@ test('edits enable Save, and Save sends only the changed fields', async () => {
   expect(await screen.findByRole('button', { name: 'Saved' })).toBeDisabled();
   // The saved values become the new baseline: the trimmed size shows, and nothing is dirty.
   expect(screen.getByTestId('body-top-size').props.value).toBe('L');
+});
+
+test('a height never saved shows as not set (not the slider default) until the slider moves', async () => {
+  // e.g. the user skipped the Body step during onboarding.
+  await openProfile(profileRow({ height_cm: null }));
+
+  expect(screen.getByTestId('body-height-value')).toHaveTextContent('Not set');
+  expect(screen.getByText('Move the slider to set your height.')).toBeTruthy();
+  expect(screen.getByTestId('body-height-slider').props.accessibilityValue).toMatchObject({ text: 'Not set' });
+  expect(saveButton()).toBeDisabled();
+
+  await fireEvent(screen.getByTestId('body-height-slider'), 'valueChange', 172);
+
+  expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.72 m');
+  expect(screen.queryByText('Move the slider to set your height.')).toBeNull();
+  await fireEvent.press(saveButton());
+  await waitFor(() => {
+    expect(mockedSaveProfile).toHaveBeenCalledWith(USER_ID, { height_cm: 172 });
+  });
 });
 
 test('undoing an edit makes the form clean again', async () => {
@@ -260,6 +281,19 @@ test('a language that fails to save still applies, and says it was not saved', a
 
   expect(screen.getByText('PERFIL')).toBeTruthy();
   expect(await screen.findByText(translate('es', 'profile.error.network'))).toBeTruthy();
+  // Remembered, so the next launch retries it instead of reverting to the server's value.
+  expect(kvGet(LANGUAGE_PENDING_KEY)).toBe(USER_ID);
+});
+
+test('a language save that goes through clears an earlier pending one', async () => {
+  kvSet(LANGUAGE_PENDING_KEY, USER_ID);
+  await openProfile();
+
+  await fireEvent.press(screen.getByRole('tab', { name: 'Español' }));
+
+  await waitFor(() => {
+    expect(kvGet(LANGUAGE_PENDING_KEY)).toBeNull();
+  });
 });
 
 test('language saves run in order, and a superseded failure is not shown', async () => {

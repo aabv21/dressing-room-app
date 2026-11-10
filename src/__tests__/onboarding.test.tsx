@@ -122,7 +122,7 @@ describe('Clothing step', () => {
     expect(mockedSaveProfile).toHaveBeenCalledWith(USER_ID, { clothing_type: 'masculine' });
   });
 
-  test('has a sign-out link, so onboarding is not a dead end (P2-R9)', async () => {
+  test('has a sign-out link, so onboarding is not a dead end', async () => {
     await launch();
     await screen.findByText('WHAT CLOTHES DO YOU WEAR?');
 
@@ -131,7 +131,7 @@ describe('Clothing step', () => {
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  test('a network failure shows profile.error.network, keeps the choice and stays put (Review Focus 4)', async () => {
+  test('a network failure shows profile.error.network, keeps the choice and stays put', async () => {
     mockedSaveProfile.mockResolvedValueOnce({ ok: false, error: 'profile.error.network' });
     const router = await launch();
     await screen.findByText('WHAT CLOTHES DO YOU WEAR?');
@@ -225,7 +225,7 @@ describe('Body step', () => {
     expect(router.getPathname()).toBe('/body');
   });
 
-  test('a network failure shows profile.error.network and keeps every entry (Review Focus 4)', async () => {
+  test('a network failure shows profile.error.network and keeps every entry', async () => {
     mockedSaveProfile.mockResolvedValueOnce({ ok: false, error: 'profile.error.network' });
     const router = await openBody('feminine');
 
@@ -355,10 +355,11 @@ describe('Style step', () => {
     });
     await fireEvent.press(screen.getByRole('button', { name: 'Start' }));
 
+    // Rounded to city precision (2 decimals) before it is saved.
     await waitFor(() => {
       expect(mockedSaveProfile).toHaveBeenCalledWith(
         USER_ID,
-        expect.objectContaining({ city_name: 'Bogotá', city_lat: 4.711, city_lon: -74.0721 }),
+        expect.objectContaining({ city_name: 'Bogotá', city_lat: 4.71, city_lon: -74.07 }),
       );
     });
   });
@@ -375,7 +376,7 @@ describe('Style step', () => {
     expect(mockedSaveProfile).not.toHaveBeenCalled();
   });
 
-  test('a failed save keeps the chips and does not complete onboarding (Review Focus 4)', async () => {
+  test('a failed save keeps the chips and does not complete onboarding', async () => {
     mockedSaveProfile.mockResolvedValueOnce({ ok: false, error: 'profile.error.network' });
     await openStyle();
 
@@ -389,7 +390,7 @@ describe('Style step', () => {
   });
 });
 
-describe('Relaunch mid-onboarding (Review Focus 3)', () => {
+describe('Relaunch mid-onboarding', () => {
   test('lands back in onboarding at Body with the saved values prefilled, with Clothing underneath', async () => {
     const router = await launch(
       profileRow({ clothing_type: 'feminine', height_cm: 172, body_type: 'pear', chest_cm: 88, age_group: '35_44' }),
@@ -418,7 +419,7 @@ describe('Relaunch mid-onboarding (Review Focus 3)', () => {
   });
 });
 
-describe('Never clobbering a finished profile (P2 binding item a)', () => {
+describe('Never clobbering a finished profile', () => {
   test('a failed profile read shows a retry instead of the steps, and nothing is saved', async () => {
     mockedGetProfile.mockRejectedValueOnce(new TypeError('Network request failed'));
     await renderRouter({ appDir: 'src/app', overrides: {} }, { initialUrl: '/' });
@@ -448,7 +449,7 @@ describe('Never clobbering a finished profile (P2 binding item a)', () => {
   });
 });
 
-describe('Task 6 follow-ups (P2-R12)', () => {
+describe('Edge cases across the steps', () => {
   const GRANTED = { status: Location.PermissionStatus.GRANTED, granted: true, canAskAgain: true, expires: 'never' } as const;
   const COORDS = { latitude: 4.711, longitude: -74.0721, altitude: null, accuracy: 100, altitudeAccuracy: null, heading: null, speed: null };
   const ADDRESS = {
@@ -578,7 +579,7 @@ describe('Task 6 follow-ups (P2-R12)', () => {
       expect(slider.props.value).toBe(172);
       expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.72 m');
       expect(slider.props.accessibilityValue).toEqual({ min: 140, max: 210, now: 172, text: '1.72 meters' });
-      // Never the slider's own spoken-increment props: Android parses them as integers (P2-R13 I1).
+      // Never the slider's own spoken-increment props: Android parses them as integers.
       expect(slider.props.accessibilityIncrements).toBeUndefined();
       expect(slider.props.accessibilityUnits).toBeUndefined();
       expect(screen.queryByTestId('body-height-note', { includeHiddenElements: true })).toBeNull();

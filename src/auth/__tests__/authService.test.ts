@@ -88,7 +88,7 @@ describe('signUpWithEmail', () => {
     expect(result).toEqual({ ok: true, needsConfirmation: false });
   });
 
-  test('resolves needsConfirmation true when sign-up returns no session (P2-R6, confirmations on)', async () => {
+  test('resolves needsConfirmation true when sign-up returns no session (confirmations on)', async () => {
     const client = fakeClient();
     client.auth.signUp.mockResolvedValue({ data: { session: null }, error: null });
 
@@ -190,6 +190,35 @@ describe('signOut', () => {
     expect(result).toEqual({ ok: false, error: 'auth.error.unknown' });
   });
 
+  test('when the local fallback also fails offline, clears the stored session and signs out locally again', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: null });
+    const clearStoredAuth = jest.fn();
+
+    const result = await signOut(asClient(client), clearStoredAuth);
+
+    expect(result).toEqual({ ok: true });
+    expect(clearStoredAuth).toHaveBeenCalledTimes(1);
+    expect(client.auth.signOut).toHaveBeenCalledTimes(3);
+    expect(client.auth.signOut).toHaveBeenNthCalledWith(3, { scope: 'local' });
+    expect(clearStoredAuth.mock.invocationCallOrder[0]).toBeLessThan(client.auth.signOut.mock.invocationCallOrder[2] ?? 0);
+  });
+
+  test('a non-network local failure does not clear storage', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: new AuthError('storage failed', 500, 'unexpected_failure') });
+    const clearStoredAuth = jest.fn();
+
+    await signOut(asClient(client), clearStoredAuth);
+
+    expect(clearStoredAuth).not.toHaveBeenCalled();
+  });
+
   test('surfaces a non-network failure without retrying', async () => {
     const client = fakeClient();
     client.auth.signOut.mockResolvedValueOnce({ error: new AuthError('rate limited', 429, 'over_request_rate_limit') });
@@ -223,7 +252,7 @@ describe('requestPasswordReset', () => {
     expect(result).toEqual({ ok: true });
   });
 
-  test('resolves ok on a rate limit, per P2-R6: a code was already sent', async () => {
+  test('resolves ok on an email rate limit: a code was already sent', async () => {
     const client = fakeClient();
     client.auth.resetPasswordForEmail.mockResolvedValue({
       data: {},
@@ -288,7 +317,7 @@ describe('confirmPasswordReset', () => {
     expect(result).toEqual({ ok: false, error: 'auth.error.weakPassword' });
   });
 
-  test('signs out locally when updateUser fails after a successful verify, per P2-R5', async () => {
+  test('signs out locally when updateUser fails after a successful verify', async () => {
     const client = fakeClient();
     client.auth.updateUser.mockResolvedValue({
       data: {},

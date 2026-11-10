@@ -1,11 +1,11 @@
 -- CHECK constraints on public.profiles: out-of-range measurements, oversized
--- size text, a half-set city coordinate pair, and onboarding completed
+-- size or city text, a half-set city coordinate pair, and onboarding completed
 -- without a clothing type must all raise check_violation; valid values pass.
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(7);
+select plan(10);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-a@example.com', crypt('password', gen_salt('bf')), '{}', '{}');
@@ -42,6 +42,20 @@ select throws_ok(
 );
 
 select throws_ok(
+  $$ update public.profiles set city_name = repeat('a', 81) where user_id = '11111111-1111-1111-1111-111111111111' $$,
+  '23514',
+  null,
+  'an 81-character city_name raises a check_violation'
+);
+
+select throws_ok(
+  $$ update public.profiles set city_name = '   ' where user_id = '11111111-1111-1111-1111-111111111111' $$,
+  '23514',
+  null,
+  'a whitespace-only city_name raises a check_violation'
+);
+
+select throws_ok(
   $$ update public.profiles set city_lat = 40.4 where user_id = '11111111-1111-1111-1111-111111111111' $$,
   '23514',
   null,
@@ -64,6 +78,7 @@ set
   top_size = 'M',
   bottom_size = '32',
   shoe_size = '42',
+  city_name = repeat('a', 80),
   city_lat = 40.4,
   city_lon = -3.7,
   clothing_type = 'masculine',
@@ -74,6 +89,12 @@ select is(
   (select onboarding_completed_at is not null from public.profiles where user_id = '11111111-1111-1111-1111-111111111111'),
   true,
   'valid values pass every constraint'
+);
+
+-- With both coordinates stored, an update of one alone keeps the pair complete.
+select lives_ok(
+  $$ update public.profiles set city_lat = 41.0 where user_id = '11111111-1111-1111-1111-111111111111' $$,
+  'updating one coordinate of a complete pair passes'
 );
 
 select * from finish();

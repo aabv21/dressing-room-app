@@ -13,6 +13,13 @@
 // specifically rather than let a `TypeError` on `undefined.auth` or a real native-module crash
 // obscure what went wrong.
 
+/** Same idea for `emailAuth.signOut`'s default storage cleanup: never meant to run here. */
+export function clearPersistedAuth(): never {
+  throw new Error(
+    'integration/lib-supabase.stub.ts: `clearPersistedAuth` was used — the default client\'s storage does not exist in integration tests.',
+  );
+}
+
 export const supabase = new Proxy(
   {},
   {

@@ -10,12 +10,18 @@ const mockCreateClient = jest.fn(() => ({
 jest.mock('@supabase/supabase-js', () => ({ createClient: mockCreateClient }));
 // The real module's only job is a side effect (installing `globalThis.localStorage`); reproduce
 // that here since there is no native SQLite to back the real implementation under Jest.
+const mockStoredItems = new Map<string, string>();
 jest.mock('expo-sqlite/localStorage/install', () => {
-  (globalThis as { localStorage?: unknown }).localStorage = {};
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (key: string): string | null => mockStoredItems.get(key) ?? null,
+  };
   return {};
 });
 
 const ORIGINAL_ENV = process.env;
+// Imported for identity only: jest.resetModules() below gives `../supabase` a fresh registry, so the
+// comparison goes through the same module instance the client was created with.
+let fetchWithTimeout: unknown;
 
 beforeEach(() => {
   jest.resetModules();
@@ -32,6 +38,7 @@ test('creates a client with the expected auth options when both env vars are set
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'anon-key';
 
   await import('../supabase');
+  ({ fetchWithTimeout } = await import('../fetchWithTimeout'));
 
   expect(mockCreateClient).toHaveBeenCalledTimes(1);
   const [url, anonKey, options] = mockCreateClient.mock.calls[0] as unknown as [
@@ -45,7 +52,25 @@ test('creates a client with the expected auth options when both env vars are set
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // supabase-js's own default key for this URL, spelled out so readStoredSession reads the same entry.
+    storageKey: 'sb-127-auth-token',
   });
+  expect(options['global']).toEqual({ fetch: fetchWithTimeout });
+});
+
+test('readStoredSession reads the persisted session without a network call', async () => {
+  process.env.EXPO_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:54421';
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'anon-key';
+  const { readStoredSession } = await import('../supabase');
+
+  expect(readStoredSession()).toBeNull();
+
+  mockStoredItems.set(
+    'sb-127-auth-token',
+    JSON.stringify({ access_token: 'a', refresh_token: 'r', expires_at: 1, user: { id: 'user-1', email: 'ana@example.com' } }),
+  );
+  expect(readStoredSession()).toEqual({ userId: 'user-1', email: 'ana@example.com' });
+  mockStoredItems.clear();
 });
 
 test('throws naming the missing variable when the anon key is unset', async () => {

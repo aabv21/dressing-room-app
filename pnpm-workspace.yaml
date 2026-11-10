@@ -7,8 +7,6 @@ packages:
 minimumReleaseAge: 4320 # minutes (3 days); blocks installing a package version published more recently
 minimumReleaseAgeExclude: [] # override pnpm's default exclusions; nothing is exempt from the age gate
 trustPolicy: no-downgrade # installs fail if a package's trust evidence regresses from an earlier release
-trustPolicyExclude:
-  - 'semver@6.3.1' # 2023-07-10 backport on the 6.x line, published without provenance after 7.5.x had it; pulled in by @babel/core (expo-constants -> @expo/require-utils -> @babel/core). Owner-approved temporary exception: remove it once semver 6.3.2 (published 2026-11-02 with provenance) clears minimumReleaseAge on 2026-11-05.
 blockExoticSubdeps: true # only direct dependencies may resolve from a git/tarball URL
 strictDepBuilds: true # a dependency's unapproved build script fails the install instead of running or skipping silently
 dangerouslyAllowAllBuilds: false # never bypass the allowBuilds approval model

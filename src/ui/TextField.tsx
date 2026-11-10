@@ -30,7 +30,7 @@ type TextFieldProps = {
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: () => void;
   onBlur?: () => void;
-  /** 'submit' keeps focus in this field after `onSubmitEditing` fires (M3's focus-chaining fields
+  /** 'submit' keeps focus in this field after `onSubmitEditing` fires (focus-chaining fields
    * call this, then move focus themselves); default (unset) is the platform's normal
    * blur-and-submit behavior. Replaces the deprecated `blurOnSubmit` prop. */
   submitBehavior?: TextInputProps['submitBehavior'];
@@ -45,7 +45,7 @@ type TextFieldProps = {
 };
 
 /** `ref` forwards to the underlying `TextInput` so a screen can chain focus between fields
- * (email → password → submit, M3) with `onSubmitEditing`/`ref.current?.focus()`. */
+ * (email → password → submit) with `onSubmitEditing`/`ref.current?.focus()`. */
 export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function TextField(props, ref) {
   const {
     label,

@@ -1,4 +1,4 @@
-// M1: uses expo-router's own testing library against the REAL route tree and navigator (not a
+// Uses expo-router's own testing library against the REAL route tree and navigator (not a
 // Stack/Stack.Protected test double), confirmed to work with this repo's installed expo-router
 // 58.0.29: `renderRouter({ appDir: 'src/app', overrides: {} }, options)` resolves against the real
 // filesystem tree under `src/app` (see node_modules/expo-router/build/testing-library/
@@ -86,7 +86,7 @@ test('signedOut resolves to /welcome and hides the splash screen once settled', 
   });
 });
 
-test('a deep link to /closet while signed out lands on /welcome instead (M1)', async () => {
+test('a deep link to /closet while signed out lands on /welcome instead', async () => {
   mockedUseAuth.mockReturnValue(authState({ status: 'signedOut' }));
   const result = await renderAt('/closet');
 

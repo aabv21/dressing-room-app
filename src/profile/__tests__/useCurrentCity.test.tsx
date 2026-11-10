@@ -49,8 +49,16 @@ test('reverse-geocodes the position to the city name', async () => {
   getPosition.mockResolvedValue(position(4.711, -74.0721));
   reverseGeocode.mockResolvedValue(address({ city: 'Bogotá', subregion: 'Bogotá D.C.', region: 'Bogotá' }));
 
-  expect(await request()).toEqual({ ok: true, city: { name: 'Bogotá', lat: 4.711, lon: -74.0721 } });
+  expect(await request()).toEqual({ ok: true, city: { name: 'Bogotá', lat: 4.71, lon: -74.07 } });
   expect(reverseGeocode).toHaveBeenCalledWith({ latitude: 4.711, longitude: -74.0721 });
+});
+
+test('keeps only city-level precision: coordinates are rounded to 2 decimals (about 1 km)', async () => {
+  requestPermission.mockResolvedValue(granted(true));
+  getPosition.mockResolvedValue(position(-33.868_819, 151.209_295));
+  reverseGeocode.mockResolvedValue(address({ city: 'Sydney' }));
+
+  expect(await request()).toEqual({ ok: true, city: { name: 'Sydney', lat: -33.87, lon: 151.21 } });
 });
 
 test('falls back to subregion, then region', async () => {

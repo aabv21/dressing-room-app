@@ -30,13 +30,19 @@ function toProfileErrorKey(error: PostgrestLikeError, status: number): ProfileEr
   return 'profile.error.unknown';
 }
 
-async function run(request: PromiseLike<{ error: PostgrestLikeError | null; status: number }>): Promise<Result> {
+type Outcome = { error: PostgrestLikeError | null; status: number; data?: unknown };
+
+async function run(
+  request: () => PromiseLike<Outcome>,
+  /** Whether a successful response actually did the work (e.g. an update reached a row). */
+  applied: (response: Outcome) => boolean = () => true,
+): Promise<Result> {
   try {
-    const { error, status } = await request;
-    if (error !== null) {
-      return { ok: false, error: toProfileErrorKey(error, status) };
+    const response = await request();
+    if (response.error !== null) {
+      return { ok: false, error: toProfileErrorKey(response.error, response.status) };
     }
-    return { ok: true };
+    return applied(response) ? { ok: true } : { ok: false, error: 'profile.error.unknown' };
   } catch (error) {
     return { ok: false, error: error instanceof TypeError ? 'profile.error.network' : 'profile.error.unknown' };
   }
@@ -52,15 +58,21 @@ export async function getProfile(userId: string, client: Client = supabase): Pro
 }
 
 /**
- * Upserts only the columns present in `patch` (PostgREST merges on conflict, so absent columns keep
- * their saved values). Un-completing onboarding is never a client action: a `null`
- * `onboarding_completed_at` is dropped rather than written, so no screen can reset a finished
- * profile back into onboarding (P2 binding item a).
+ * Updates only the columns present in `patch` on the user's existing row (the signup trigger
+ * creates it). Never an upsert: Postgres checks an `INSERT … ON CONFLICT DO UPDATE`'s proposed
+ * insert row against every CHECK constraint, so a partial patch (e.g. only `city_lat`) failed the
+ * lat/lon pair check even though the stored row satisfies it. An update that reaches no row (one
+ * this session can't see) is reported as an error rather than a silent success. Un-completing
+ * onboarding is never a client action: a `null` `onboarding_completed_at` is dropped rather than
+ * written, so no screen can reset a finished profile back into onboarding.
  */
 export async function saveProfile(userId: string, patch: ProfilePatch, client: Client = supabase): Promise<Result> {
   const { onboarding_completed_at: completedAt, ...rest } = patch;
-  const row = completedAt === null || completedAt === undefined ? rest : { ...rest, onboarding_completed_at: completedAt };
-  return run(client.from('profiles').upsert({ user_id: userId, ...row }, { onConflict: 'user_id' }));
+  const columns = completedAt === null || completedAt === undefined ? rest : { ...rest, onboarding_completed_at: completedAt };
+  return run(
+    () => client.from('profiles').update(columns).eq('user_id', userId).select('user_id'),
+    ({ data }) => Array.isArray(data) && data.length > 0,
+  );
 }
 
 /**
@@ -71,7 +83,7 @@ export async function saveProfile(userId: string, patch: ProfilePatch, client: C
  * onboarding shown again after a failed launch-time profile read.
  */
 export async function completeOnboarding(userId: string, client: Client = supabase): Promise<Result> {
-  return run(
+  return run(() =>
     client
       .from('profiles')
       .update({ onboarding_completed_at: 'now' })

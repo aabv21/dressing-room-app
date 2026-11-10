@@ -35,7 +35,7 @@ export type ProfileDraft = {
 
 export type BodyErrors = Partial<Record<BodyField, FieldError>>;
 
-/** Global constraints: the slider defaults to 175 cm for masculine, 165 cm otherwise. */
+/** The slider starts at 175 cm for masculine, 165 cm otherwise. */
 export function defaultHeightFor(clothing: ClothingType | null): number {
   return clothing === 'masculine' ? 175 : 165;
 }
@@ -99,13 +99,20 @@ export function bodyToPatch(draft: ProfileDraft): DraftValidation {
   return { ok: true, patch: { body_type: draft.bodyType, ...body.patch, age_group: draft.ageGroup } };
 }
 
-/** The Style section's columns. The city is trimmed; an empty one clears the name and coordinates. */
+function unique<T>(values: readonly T[]): T[] {
+  return [...new Set(values)];
+}
+
+/**
+ * The Style section's columns. Styles and occasions are sent once each; the city is trimmed, and an
+ * empty one clears the name and coordinates.
+ */
 export function styleToPatch(draft: ProfileDraft): ProfilePatch {
   const cityName = draft.cityName.trim();
   const coords = cityName === '' ? null : draft.cityCoords;
   return {
-    styles: draft.styles,
-    occasions: draft.occasions,
+    styles: unique(draft.styles),
+    occasions: unique(draft.occasions),
     city_name: cityName === '' ? null : cityName,
     city_lat: coords?.lat ?? null,
     city_lon: coords?.lon ?? null,
@@ -128,9 +135,18 @@ function sameValue(a: unknown, b: unknown): boolean {
   return a === b;
 }
 
-/** The subset of `next` whose values differ from `saved` (a column absent from `saved` is null). */
+/**
+ * The subset of `next` whose values differ from `saved` (a column absent from `saved` is null). The
+ * coordinates are one value split over two columns, so a change to either sends both.
+ */
 export function changedFields(saved: ProfilePatch, next: ProfilePatch): ProfilePatch {
   const savedValues = new Map<string, unknown>(Object.entries(saved));
-  const changed = Object.entries(next).filter(([key, value]) => !sameValue(savedValues.get(key) ?? null, value));
-  return Object.fromEntries(changed);
+  const changed: ProfilePatch = Object.fromEntries(
+    Object.entries(next).filter(([key, value]) => !sameValue(savedValues.get(key) ?? null, value)),
+  );
+  if ('city_lat' in changed || 'city_lon' in changed) {
+    changed.city_lat = next.city_lat ?? null;
+    changed.city_lon = next.city_lon ?? null;
+  }
+  return changed;
 }

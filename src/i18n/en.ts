@@ -123,6 +123,8 @@ export const en = {
   'onboarding.body.height': 'Height',
   'onboarding.body.heightValue': '{meters} m',
   'onboarding.body.heightSpoken': '{meters} meters',
+  'onboarding.body.heightUnset': 'Not set',
+  'onboarding.body.heightUnsetHint': 'Move the slider to set your height.',
   'onboarding.body.heightOutOfRange': "Your saved height is outside the slider's range ({min}–{max} m). Moving it replaces the value.",
   'onboarding.body.optional': 'Measurements, sizes and age (optional)',
   'onboarding.body.chest': 'Chest (cm)',

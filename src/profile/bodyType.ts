@@ -12,7 +12,7 @@ export type BodyAnswers = {
 const FEMININE_SILHOUETTES: readonly BodyType[] = ['hourglass', 'pear', 'apple', 'rectangle', 'inverted_triangle'];
 const MASCULINE_SILHOUETTES: readonly BodyType[] = ['trapezoid', 'triangle', 'oval', 'rectangle', 'inverted_triangle'];
 
-/** The silhouettes offered on the Body step; "everything" uses the feminine set (global constraints). */
+/** The silhouettes offered on the Body step; "everything" uses the feminine set. */
 export function silhouettesFor(clothing: ClothingType): readonly BodyType[] {
   return clothing === 'masculine' ? MASCULINE_SILHOUETTES : FEMININE_SILHOUETTES;
 }

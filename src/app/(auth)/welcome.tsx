@@ -55,7 +55,7 @@ export default function WelcomeScreen() {
         showFieldError(t(result.error));
         return;
       }
-      // Ruling P2-R6 / I5: `needsConfirmation` is only true once the integration session turns
+      // `needsConfirmation` is only true once the integration session turns
       // Supabase email confirmations on — locally and in v1 (confirmations off) `signUp` already
       // returns a session, `AuthProvider`'s `onAuthStateChange` picks it up, and the root guard
       // navigates on its own with no message needed here.
@@ -73,7 +73,7 @@ export default function WelcomeScreen() {
     setSocialSubmitting(true);
     try {
       const result = await signInWithApple();
-      // A user cancel is an ordinary dismissal, not an error — show nothing (M4).
+      // A user cancel is an ordinary dismissal, not an error — show nothing.
       if (!result.ok && result.error !== 'auth.error.cancelled') {
         setSocialError(t(result.error));
         announceForAccessibility(t(result.error));
@@ -115,7 +115,7 @@ export default function WelcomeScreen() {
             onPress: () => {
               void handleCreateAccount();
             },
-            // M4: disabled during a social sign-in too, not just its own email/password submit —
+            // Disabled during a social sign-in too, not just its own email/password submit —
             // a tap here while Apple/Google is mid-flow would otherwise fire a second signUp.
             disabled: submitting || socialSubmitting,
           },
@@ -264,7 +264,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   socialError: {
-    color: '#c0392b',
+    color: colors.error,
     fontSize: 12,
     fontWeight: '600',
   },

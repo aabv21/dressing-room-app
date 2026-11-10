@@ -67,10 +67,12 @@
     "perf:generate": "node scripts/perf-fixtures.ts generate",
     "perf:serve": "node scripts/perf-fixtures.ts serve",
     "db:start": "supabase start",
+    "db:start:ci": "supabase start -x studio,realtime,edge-runtime,vector,logflare,imgproxy",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
     "db:types": "supabase gen types typescript --local > src/lib/database.types.ts",
-    "env:local": "node scripts/env-local.ts"
+    "env:local": "node scripts/env-local.ts",
+    "check:supply-chain": "node scripts/check-supply-chain.ts"
   }
 }

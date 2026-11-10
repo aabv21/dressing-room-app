@@ -1,4 +1,4 @@
-// I3 regression: a `Stack`/`Stack.Protected` test double (not `renderRouter`'s real navigator —
+// Uses a `Stack`/`Stack.Protected` test double (not `renderRouter`'s real navigator —
 // see auth-guards.test.tsx for that) because this test needs to re-render the SAME mounted tree
 // across a status transition and assert which screen NAMES stayed mounted versus which were torn
 // down; `renderRouter` manages its own render lifecycle per call and doesn't expose a `rerender`
@@ -47,7 +47,7 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-test('a loading transition after the first settle keeps (auth) mounted instead of unmounting the navigator (I3)', async () => {
+test('a loading transition after the first settle keeps (auth) mounted instead of unmounting the navigator', async () => {
   mockedUseAuth.mockReturnValue({
     status: 'signedOut',
     userId: null,
@@ -60,8 +60,8 @@ test('a loading transition after the first settle keeps (auth) mounted instead o
   expect(screen.getByText('(auth)')).toBeTruthy();
 
   // Simulate AuthProvider moving back to 'loading' for a user change mid-session (e.g. the moment
-  // signInWithEmail succeeds, before loadProfile resolves) — the first version of this guard
-  // returned `null` unconditionally for 'loading', which unmounted '(auth)' entirely here.
+  // signInWithEmail succeeds, before loadProfile resolves). Returning `null` for every 'loading'
+  // would unmount '(auth)' entirely here.
   mockedUseAuth.mockReturnValue({
     status: 'loading',
     userId: 'user-1',

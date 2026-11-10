@@ -10,8 +10,9 @@ integration Jest project.
 ### `public.profiles`
 
 One row per `auth.users` row (`user_id uuid primary key references auth.users on delete cascade`),
-created automatically on signup — see [Signup trigger](#signup-trigger) below. Never insert a
-profile row directly from client code; it already exists by the time a session has a user.
+created automatically on signup — see [Signup trigger](#signup-trigger) below. Clients never insert
+a profile row (there is no insert policy); it already exists by the time a session has a user, so
+every client write is an update — see [Writing a profile](#writing-a-profile-update-never-a-partial-upsert).
 
 | Column                     | Type                  | Notes                                                           |
 | -------------------------- | --------------------- | ---------------------------------------------------------------- |
@@ -24,12 +25,12 @@ profile row directly from client code; it already exists by the time a session h
 | `age_group`                | `age_group`           | nullable                                                         |
 | `styles`                   | `style[]`             | `not null default '{}'`                                         |
 | `occasions`                | `occasion[]`          | `not null default '{}'`                                         |
-| `city_name`                | `text`                | nullable                                                         |
+| `city_name`                | `text`                | nullable; CHECK 1–80 chars after `btrim`                         |
 | `city_lat`                 | `double precision`    | nullable; CHECK -90–90; must be null iff `city_lon` is null      |
 | `city_lon`                 | `double precision`    | nullable; CHECK -180–180; must be null iff `city_lat` is null    |
 | `language`                 | `app_language`        | nullable; null means "follow the device"                        |
 | `onboarding_completed_at`  | `timestamptz`         | nullable; CHECK requires `clothing_type` to be set when non-null |
-| `created_at`, `updated_at` | `timestamptz`         | `not null default now()`; `updated_at` maintained by trigger     |
+| `created_at`, `updated_at` | `timestamptz`         | `not null default now()`; `updated_at` set and `created_at` kept by triggers on update |
 
 ### Enums (exact values)
 
@@ -49,15 +50,19 @@ Weight is never collected — there is no column for it, by design (see the spec
 
 ### `public.profiles`
 
-RLS is enabled with three policies, all comparing `user_id = (select auth.uid())` (wrapped in
-`select` so Postgres evaluates it once per statement, not once per row):
+RLS is enabled with two policies for `authenticated`, both comparing `user_id = (select auth.uid())`
+(wrapped in `select` so Postgres evaluates it once per statement, not once per row):
 
 - `profiles_select_own` — `select`
-- `profiles_insert_own` — `insert`
-- `profiles_update_own` — `update`
+- `profiles_update_own` — `update`, with the check in both `using` and `with check`
 
-**There is no delete policy.** Account deletion is not yet implemented; until then a user's
-profile row can only go away via `on delete cascade` from `auth.users`.
+**There is no insert policy** (the first migration had one; `20261107171540_profiles_value_limits_and_write_rules`
+dropped it): the signup trigger creates every row, so a client insert — including the insert half
+of an upsert — is rejected with `42501`. **There is no delete policy** either: account deletion is
+not yet implemented, so a client delete removes nothing, and a profile row only goes away via
+`on delete cascade` from `auth.users`. The `anon` role has no privileges on the table at all
+(nothing reads profiles while signed out), and neither client role has `truncate`, `trigger` or
+`references`.
 
 ### `storage.buckets` / `storage.objects` (`garments` bucket)
 
@@ -78,6 +83,20 @@ and (storage.foldername(name))[1] = (select auth.uid())::text
 
 A user can never read, write, or delete another user's objects, even with a guessed path — the
 folder-name check runs server-side on every request.
+
+### Writing a profile: update, never a partial upsert
+
+`saveProfile` sends `update … where user_id = <me>` with only the columns that changed, and treats
+an update that reaches no row as an error. Never use an upsert for a partial patch: Postgres checks
+an `INSERT … ON CONFLICT DO UPDATE`'s proposed insert row against every CHECK constraint *before* it
+finds the conflict, and that row has only the patch's columns. Saving just `city_lat`, for example,
+failed `profiles_city_lat_lon_pair_check` even though the stored row had both coordinates. The
+client also sends the coordinates as a pair (both, or both null when the city is cleared) and each
+style or occasion once. (Duplicates aren't blocked in the database: a CHECK can't contain a
+subquery, and the helper function it would need would also be exposed as an RPC.)
+
+`created_at` can't be rewritten either: `public.keep_created_at()` (`before update`) copies the old
+value back over whatever an update sends.
 
 ### Signup trigger
 
@@ -101,6 +120,27 @@ back into onboarding. The app's `completeOnboarding` sends Postgres's `'now'` li
 NOTE: the trigger also blocks the service role, so an admin reset of onboarding (back to null) must
 run with the trigger disabled: `set local session_replication_role = replica;` in the same
 transaction as the `update` (as the table owner).
+
+## New table checklist
+
+Supabase's default privileges (`pg_default_acl`; `\ddp` in psql) grant `anon`, `authenticated` and
+`service_role` every privilege on each new table and sequence in `public`, and `execute` on each new
+function (on top of Postgres's own default `execute` for `public`). So a new table starts wide open
+to the API until RLS and these revokes close it:
+
+- `alter table … enable row level security`.
+- Policies `to authenticated`, comparing against `(select auth.uid())` (not a bare `auth.uid()`).
+  An `update` policy has both `using` and `with check`, so a row can't be moved to another user.
+- No insert, update or delete policy the app doesn't need (a missing policy is a denial).
+- `revoke all on <table> from anon` unless signed-out access is really needed.
+- `revoke truncate, trigger, references on <table> from anon, authenticated`.
+- `revoke execute on function <fn> from public, anon, authenticated` for every new function,
+  including trigger functions (a trigger still fires; only direct calls are blocked).
+- An index on the column per-user queries filter by (`user_id`), unless it's already the primary
+  key.
+- Tests: pgTAP for the policies and constraints, and supabase-js integration tests that user A
+  can't select, update, delete or list user B's rows.
+- `pnpm db:types` and commit the generated types (CI fails on drift).
 
 ## How to add a migration
 
@@ -150,15 +190,18 @@ the test transaction; the insert fires the signup trigger, and the rollback at t
 discards both the user and its profile row — no cleanup step is needed.
 
 - `profiles_rls.test.sql` — cross-user isolation: A sees only A's row, A's update targeting B's row
-  changes nothing, an anonymous session sees zero rows, A cannot insert a row for someone else.
+  changes nothing, A can't insert (for anyone, nor upsert their own row), A's delete of their own
+  row removes nothing, and the anon role can't read the table at all.
 - `storage_rls.test.sql` — bucket configuration (private, 2 MiB, three MIME types) plus the same
   cross-user isolation for `storage.objects`.
 - `profiles_constraints.test.sql` — every CHECK constraint rejects an out-of-range or malformed
-  value (`height_cm = 300`, `waist_cm = 10`, an 11-character `top_size`, `city_lat` without
-  `city_lon`, onboarding completed with a null `clothing_type`) and accepts a fully valid row.
-- `profiles_onboarding_clock.test.sql` — completing onboarding (by update or by insert) stores the
-  server's `now()`, not the client-sent time; a second completion or a null keeps the original
-  time.
+  value (`height_cm = 300`, `waist_cm = 10`, an 11-character `top_size`, an 81-character or blank
+  `city_name`, `city_lat` without `city_lon`, onboarding completed with a null `clothing_type`) and
+  accepts a fully valid row; updating one coordinate of a stored pair passes.
+- `profiles_onboarding_clock.test.sql` — completing onboarding (by update, or by an insert as the
+  table owner) stores the server's `now()`, not the client-sent time; a second completion or a null
+  keeps the original time.
+- `profiles_write_rules.test.sql` — a client update can't change `created_at`.
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.
