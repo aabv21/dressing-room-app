@@ -182,7 +182,8 @@ Outfits, Stats and Diary:
   wears, deleting a wear (today's too), and the empty and Spanish months.
 - `src/stats/__tests__/` — `periods.test.ts` (the period ranges and the Monday-first month grid),
   `statsModel.test.ts` (the KPIs, most worn, color shares and slot balance) and
-  `wearsRepository.test.ts` (the wears query and Diary's delete).
+  `wearsRepository.test.ts` (the wears query, its paging in ranges of 1000 until a short page,
+  at most 20 pages, a failed later page throwing, and Diary's delete).
 
 Shared UI, the app shell and helpers:
 
