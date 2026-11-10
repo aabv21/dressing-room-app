@@ -116,6 +116,14 @@ The local backend is Supabase running in Docker (via OrbStack), driven only thro
 - Two more `EXPO_PUBLIC_*` vars are allowed in the app bundle: `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID` and `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`. OAuth client IDs are not secrets — they identify the app to Google the way a bundle id does — so this doesn't widen the "no secrets in `EXPO_PUBLIC_*`" rule above. `src/auth/socialAuth.ts`'s `signInWithGoogle` reads both (literal `process.env.EXPO_PUBLIC_*` member expressions, same inlining constraint as the Supabase URL/key) and calls `GoogleSignin.configure({ webClientId, iosClientId })` lazily on first use; if either is missing it resolves `{ ok: false, error: 'auth.error.unknown' }` and logs a dev-only `console.warn` rather than attempting to sign in. The integration session fills both into `.env.local`/`.env.example` with the project's real Google OAuth client IDs.
 - `@react-native-google-signin/google-signin` v17's free `signIn()` does not send a custom nonce — see `src/auth/socialAuth.ts`'s module doc (summary: no nonce on Android, a hidden one on iOS that this library doesn't expose; sending one anyway made every sign-in fail against GoTrue's OIDC check). `signInWithIdToken` is therefore called with no `nonce` for Google (Apple's flow is unaffected and still uses one). NOTE: the integration session must set `[auth.external.google].skip_nonce_check = true` in `supabase/config.toml` (and the hosted project's equivalent setting) for Google sign-in to succeed — see the NOTE above that config key. Google sign-in has no nonce replay protection from this client today. Upgrade path: a library version that exposes iOS's nonce, or Universal Sign In (this package's paid tier).
 
+## Branches and pull requests
+
+- `main` holds released code and is the default branch; `develop` is the integration branch. Both take changes only through a pull request with CI green, and repository rulesets block direct pushes, force pushes, and deletion.
+- Work on a short-lived branch from `develop` (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and open the pull request into `develop`, titled in Conventional Commits form. It's squash-merged, so the title becomes the commit.
+- A release is a pull request from `develop` into `main`, merged with a merge commit, then tagged `vX.Y.Z` with a GitHub release.
+- Dependabot opens its pull requests against `develop`.
+- Commits use the GitHub `noreply` address, never a personal email: set `git config user.email` to it in this clone.
+
 ## Definition of done
 
 - `pnpm typecheck && pnpm lint && pnpm test` all pass locally.
