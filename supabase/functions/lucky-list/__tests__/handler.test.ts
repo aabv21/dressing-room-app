@@ -5,6 +5,7 @@ import { isCompleteOutfit, mulberry32, preScore, type RuleGarment } from '../../
 import { RATING_DIMENSIONS, RATING_LEVELS } from '../../_shared/rating.ts';
 import type { FnEnv } from '../../_shared/userContext.ts';
 import { handleLucky, LUCKY_DAILY_LIMIT, type LuckyOutfit } from '../handler.ts';
+import { fakeTime } from '../../_shared/__tests__/fakeTime.ts';
 
 const { jest } = import.meta;
 
@@ -784,23 +785,20 @@ describe('weather', () => {
 });
 
 describe('latency budget (P4-R11)', () => {
+  const { drive, trackDigests, untrackDigests } = fakeTime(jest);
+
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    trackDigests();
   });
   afterEach(() => {
     jest.useRealTimers();
+    untrackDigests();
   });
 
   const hrefOf = (input: string | URL | Request): string =>
     typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 
-  /** Advances fake time in small steps, letting real macrotasks (`crypto.subtle.digest`) run between them. */
-  async function drive(ms: number, step = 50): Promise<void> {
-    for (let elapsed = 0; elapsed < ms; elapsed += step) {
-      for (let turn = 0; turn < 3; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-      await jest.advanceTimersByTimeAsync(Math.min(step, ms - elapsed));
-    }
-  }
 
   test('no Jev ranking call starts after 15 s: the rest keep pre-score order, score null, cached degraded', async () => {
     const w = world();
