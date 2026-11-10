@@ -103,7 +103,7 @@ attributes, so the garment reaches review for manual entry. Nothing is retried.
 | Not `POST`                                                  | unchanged                            | 405                          |
 | Missing or wrong `x-webhook-secret` (constant-time compare) | unchanged                            | 401                          |
 | Body is not `{ garment_id: <uuid> }`                        | unchanged                            | 400                          |
-| Garment missing, no longer `pending`, or already reviewed (when loaded, or at the write-back) | unchanged | 200 `{ outcome: 'skipped' }` |
+| Garment missing, no longer `pending`, or already reviewed (when loaded, or at the write-back), or edited since it was loaded (at the write-back) | unchanged | 200 `{ outcome: 'skipped' }` |
 | Daily quota used up (`consume_quota` returns false)         | `over_quota`; Claude not called      | 200 `{ outcome: 'over_quota' }` |
 | Quota check or profile read errors                          | `failed`                             | 200 `{ outcome: 'failed' }`  |
 | Photo not found (storage answers anything but 200)          | `failed`                             | 200 `{ outcome: 'failed' }`  |
@@ -115,20 +115,22 @@ attributes, so the garment reaches review for manual entry. Nothing is retried.
 | Valid output                                                | `done`, attributes, `uncertain_fields` | 200 `{ outcome: 'done' }`  |
 | Loading the garment or writing back fails                   | may stay `pending`                   | 500                          |
 
-The write-back is `PATCH …/garments?id=eq.<id>&extraction_status=eq.pending&reviewed_at=is.null`,
-so a duplicate webhook delivery can't overwrite a finished garment, and a review the user saved while
-Claude was still answering (the app sends a garment to review 10 minutes after `created_at` by the
-device's clock, so a clock running ahead gets there early) keeps the user's values. The write-back
-asks for the rows it matched (`Prefer: return=representation` with `select=id`), and when the
-filter matched none, the function answers and logs `skipped` instead of the extraction's outcome.
-Such a garment stays `pending`; the app treats it as reviewed. A garment left `pending` by a 500 (or
-by a webhook that never arrived) counts as failed in the app 10 minutes after `created_at`.
-
-NOTE: an edit saved in the garment detail without a review isn't guarded: it leaves `reviewed_at`
-null, so a late extraction can still overwrite it. Ceiling: only while the garment is still
-`pending`, and the detail's editors stay disabled until the app gives up on the extraction 10
-minutes after `created_at`. Upgrade path: add `updated_at=eq.<loaded value>` to the write-back
-filter, so any edit since the function loaded the garment makes the write-back match no row.
+The write-back is `PATCH …/garments?id=eq.<id>&extraction_status=eq.pending&reviewed_at=is.null&updated_at=eq.<loaded value>`,
+where the last value is the garment's `updated_at` as the function read it before calling Claude
+(percent-encoded, since PostgREST writes it with a `+00:00` offset). So a duplicate webhook delivery
+can't overwrite a finished garment; a review the user saved while Claude was still answering (the app
+sends a garment to review 10 minutes after `created_at` by the device's clock, so a clock running
+ahead gets there early) keeps the user's values; and so does an edit saved in the garment detail
+meanwhile (the detail locks the attribute editors and the status chips while a garment is being
+read, so that too needs a device clock running ahead), which leaves `reviewed_at` null but, like
+any write to the row, moves `updated_at` (`garments_set_updated_at`). A photo replaced while
+Claude reads the old one skips the write-back the same way, which is right: Claude read the
+previous photo. The write-back asks for the rows it matched (`Prefer:
+return=representation` with `select=id`), and when the filter matched none, the function answers
+and logs `skipped` instead of the extraction's outcome. Such a garment stays `pending`; the app
+treats a reviewed one as reviewed, and any other one as failed 10 minutes after `created_at`, so it
+reaches review with the user's values. A garment left `pending` by a 500 (or by a webhook that never
+arrived) counts as failed in the app 10 minutes after `created_at` too.
 
 ### Quota
 

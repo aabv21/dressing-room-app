@@ -1,3 +1,4 @@
+import { requestQueuePurge } from '../closet/upload/queuePurge';
 import { kvGet, kvKeys, kvRemove, kvSet } from '../lib/kv';
 import { forgetAccountOnDevice } from './forgetAccount';
 
@@ -69,16 +70,16 @@ export function clearDeletionMarker(userId: string): void {
 /**
  * Drops the device data of every account whose deletion was under way (`deleting`) and that
  * `activeUserId`'s session can't finish: called whenever the signed-in user changes or signs out.
- * NOTE: that account's pending photos stay in the upload queue's SQLite rows and copies (the queue
- * store isn't loaded here); they never upload without that user's session, and run again if the
- * account turns out to exist at its next sign-in. Upgrade path: a `queue.purge.<uid>` sweep when the
- * queue provider mounts.
+ * The queue store isn't loaded here, so that account's pending photos (SQLite rows and copies) are
+ * left to a purge request (`queue.purge.<uid>`), which the next upload queue provider to mount
+ * carries out. Until then they never upload without that user's session.
  */
 export function forgetInterruptedDeletions(activeUserId: string | null): void {
   for (const key of kvKeys()) {
     if (!key.startsWith(PREFIX)) continue;
     const userId = key.slice(PREFIX.length);
     if (userId !== activeUserId && parseMarker(kvGet(key), Date.now())?.state === 'deleting') {
+      requestQueuePurge(userId);
       forgetAccountOnDevice(userId);
     }
   }

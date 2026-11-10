@@ -46,6 +46,9 @@ example
 # generated native folders
 /ios
 /android
+# local native modules' own build output
+modules/*/android/build/
+modules/*/android/.cxx/
 
 # generated performance fixtures (scripts/perf-fixtures.ts)
 .perf-fixtures/

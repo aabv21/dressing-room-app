@@ -85,6 +85,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The mocks' ports (54499 Claude, 54498 Jev/Open-Meteo/Apple) sit inside Linux's ephemeral
+      # range, so an outgoing connection could take one before test:int listens (EADDRINUSE).
+      - name: Reserve the mock ports
+        run: sudo sysctl -w net.ipv4.ip_local_reserved_ports=54498,54499
       # Lean stack: no Studio, Realtime, analytics or image proxy. Mailpit stays, since test:int
       # reads password-reset codes from it, and so does the Edge Runtime, since test:int runs
       # attribute extraction end to end (against integration/mockAnthropic.ts, never the real API).

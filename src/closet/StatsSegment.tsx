@@ -27,9 +27,8 @@ import { updateGarment, type Garment } from './garmentRepository';
 const PERIODS: readonly Period[] = ['week', 'month', 'sixMonths'];
 // NOTE: a year of history feeds the streak, so a longer streak reads as 365 days; an unbounded
 // fetch on every focus isn't worth it. Upgrade path: a server-side streak count.
-// NOTE: PostgREST returns at most 1000 rows (`max_rows`) and the wears come newest first, so only
-// a year with more than 1000 wears loses its oldest ones (a streak or a 6-month count that old).
-// Upgrade path: page through the range.
+// `listWears` pages through the year 1000 wears at a time (PostgREST's `max_rows`), up to 20 pages;
+// see its NOTE for the ceiling.
 const STREAK_HISTORY_DAYS = 365;
 // Room for "100 wears" / "100 usos" at the bars' 12 pt.
 const WEARS_VALUE_WIDTH = 62;

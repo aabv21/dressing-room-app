@@ -39,6 +39,7 @@ import { Alert, AppState, Text, type AppStateStatus } from 'react-native';
 import { confirmPendingDeletion, runDeletion } from '../../account/deletionFlow';
 import { clearDeletionMarker, markDeletion } from '../../account/deletionMarker';
 import { UploadQueueProvider, useUploadQueue } from '../UploadQueueProvider';
+import { dropQueuePurgeRequest, queuePurgeRequests, requestQueuePurge } from '../upload/queuePurge';
 import {
   clearQueue,
   enqueuePhotos,
@@ -116,6 +117,7 @@ beforeEach(() => {
 afterEach(() => {
   jest.useRealTimers();
   clearDeletionMarker('user-1');
+  for (const requested of queuePurgeRequests()) dropQueuePurgeRequest(requested);
 });
 
 test('runs the queue once on mount with the real steps', async () => {
@@ -390,6 +392,42 @@ test('resume with run: false only unpauses (a user who is signing out)', async (
 
   expect(resumeQueue).toHaveBeenCalledWith('user-1');
   expect(mockedRunQueue).not.toHaveBeenCalled();
+});
+
+describe('queue purge requests (queue.purge.<id>)', () => {
+  test("on mount, clears each other account's requested queue and drops its request", async () => {
+    requestQueuePurge('gone-1');
+    requestQueuePurge('gone-2');
+
+    await renderProvider();
+
+    expect(jest.mocked(clearQueue).mock.calls).toEqual([['gone-1'], ['gone-2']]);
+    expect(queuePurgeRequests()).toEqual([]);
+  });
+
+  test("drops a request for this provider's own user without clearing its queue", async () => {
+    requestQueuePurge('user-1');
+    mockedListQueue.mockReturnValue([item()]);
+
+    await renderProvider();
+
+    expect(clearQueue).not.toHaveBeenCalled();
+    expect(queuePurgeRequests()).toEqual([]);
+    expect(mockedRunQueue).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps a request whose clear failed, for the next mount, and still handles the rest', async () => {
+    requestQueuePurge('gone-1');
+    requestQueuePurge('gone-2');
+    jest.mocked(clearQueue).mockImplementationOnce(() => {
+      throw new Error('disk');
+    });
+
+    await renderProvider();
+
+    expect(jest.mocked(clearQueue).mock.calls).toEqual([['gone-1'], ['gone-2']]);
+    expect(queuePurgeRequests()).toEqual(['gone-1']);
+  });
 });
 
 describe('an unconfirmed account deletion (account.deleting.<id>)', () => {

@@ -295,8 +295,9 @@ test('while the AI is still reading the photo, the editors are disabled and it p
   expect(screen.getByRole('radio', { name: 'Striped' })).toBeDisabled();
   expect(screen.getByRole('radio', { name: 'Hoodie' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
-  // The status is the user's, not the AI's: it stays editable.
-  expect(screen.getByRole('radio', { name: 'Lent out' })).toBeEnabled();
+  // A status change mid-read would make the extraction's guarded write-back skip, losing what the
+  // AI read, so the status waits too.
+  expect(screen.getByRole('radio', { name: 'Lent out' })).toBeDisabled();
   expect(usePendingPolling).toHaveBeenLastCalledWith(true);
 });
 
