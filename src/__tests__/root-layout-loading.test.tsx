@@ -1,9 +1,15 @@
-// I3 regression: a `Stack`/`Stack.Protected` test double (not `renderRouter`'s real navigator —
+// Uses a `Stack`/`Stack.Protected` test double (not `renderRouter`'s real navigator —
 // see auth-guards.test.tsx for that) because this test needs to re-render the SAME mounted tree
 // across a status transition and assert which screen NAMES stayed mounted versus which were torn
 // down; `renderRouter` manages its own render lifecycle per call and doesn't expose a `rerender`
 // bound to a live `useAuth()` mock the way `@testing-library/react-native`'s own `render(...).rerender`
 // does.
+// The closet providers wrap the signed-in navigator; this suite doesn't test the closet.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvidersMock'));
+
 jest.mock('../auth/AuthProvider', () => ({
   AuthProvider: ({ children }: { children?: React.ReactNode }) => children,
   useAuth: jest.fn(() => ({
@@ -47,7 +53,7 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
-test('a loading transition after the first settle keeps (auth) mounted instead of unmounting the navigator (I3)', async () => {
+test('a loading transition after the first settle keeps (auth) mounted instead of unmounting the navigator', async () => {
   mockedUseAuth.mockReturnValue({
     status: 'signedOut',
     userId: null,
@@ -60,8 +66,8 @@ test('a loading transition after the first settle keeps (auth) mounted instead o
   expect(screen.getByText('(auth)')).toBeTruthy();
 
   // Simulate AuthProvider moving back to 'loading' for a user change mid-session (e.g. the moment
-  // signInWithEmail succeeds, before loadProfile resolves) — the first version of this guard
-  // returned `null` unconditionally for 'loading', which unmounted '(auth)' entirely here.
+  // signInWithEmail succeeds, before loadProfile resolves). Returning `null` for every 'loading'
+  // would unmount '(auth)' entirely here.
   mockedUseAuth.mockReturnValue({
     status: 'loading',
     userId: 'user-1',

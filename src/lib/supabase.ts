@@ -2,7 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 import 'expo-sqlite/localStorage/install';
 import { AppState } from 'react-native';
 
+import { authStorageKeyFor, clearPersistedAuthIn, parseStoredSession } from './storedSession';
+import type { StoredSession } from './storedSession';
 import type { Database } from './database.types';
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 // `expo-sqlite/localStorage/install` installs a SQLite-backed `localStorage` global (see
 // expo-sqlite's `localStorage/install.js`) before `createClient` reads it below. The `localStorage`
@@ -22,14 +25,34 @@ if (supabaseAnonKey === undefined) {
   throw new Error('Missing EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable.');
 }
 
+// supabase-js's own default key, spelled out so `readStoredSession` and `clearPersistedAuth` use
+// the same entries the client writes.
+const authStorageKey = authStorageKeyFor(supabaseUrl);
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage: localStorage,
+    storageKey: authStorageKey,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
   },
+  global: { fetch: fetchWithTimeout },
 });
+
+/**
+ * The persisted session's user, read straight from storage. supabase-js reports no session at
+ * launch when an expired access token can't be refreshed for lack of network, although the session
+ * is still stored and its refresh keeps being retried; this lets the app stay signed in meanwhile.
+ */
+export function readStoredSession(): StoredSession | null {
+  return parseStoredSession(localStorage.getItem(authStorageKey));
+}
+
+/** Deletes this client's persisted session entries, for a sign-out supabase-js can't complete. */
+export function clearPersistedAuth(): void {
+  clearPersistedAuthIn(localStorage, authStorageKey);
+}
 
 /**
  * Ties Supabase's background token refresh to the app's foreground/background state, per

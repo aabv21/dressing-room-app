@@ -1,0 +1,11 @@
+# Workspace config for `pnpm e2e` (scripts/e2e.ts runs `maestro test --config .maestro/config.yaml
+# .maestro/flows`). The flows share one fresh user per run, so they run in this order and stop at
+# the first failure: the first signs up and fills the closet, the last deletes the account.
+flows:
+  - "*"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - onboarding-closet-lucky
+    - build-rate-swap
+    - delete-account

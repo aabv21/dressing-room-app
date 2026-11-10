@@ -20,7 +20,7 @@ jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), canGoBack: jest.fn(() => true) },
 }));
 
-// P2-R10: SocialButton renders the real `AppleAuthenticationButton` for the Apple provider. Under
+// SocialButton renders the real `AppleAuthenticationButton` for the Apple provider. Under
 // jest-expo there's no native Apple Authentication UI, so this mock stands in for it as a plain
 // pressable exposing the same `onPress` prop and an English accessible name — matching what the
 // real native button renders on a device whose language list includes English (its label is
@@ -74,7 +74,7 @@ describe('WelcomeScreen', () => {
     expect(screen.getByRole('tab', { name: 'English' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeTruthy();
-    // Placeholder-only (I1): the accessible label is still "Email"/"Password", but the visible
+    // Placeholder-only: the accessible label is still "Email"/"Password", but the visible
     // placeholder text is the distinct copy, not a duplicate bold label above the field.
     expect(screen.getByLabelText('Email').props.placeholder).toBe('you@example.com');
     expect(screen.getByLabelText('Password').props.placeholder).toBe('Password');
@@ -83,21 +83,34 @@ describe('WelcomeScreen', () => {
     expect(screen.getByText('I already have an account')).toBeTruthy();
   });
 
-  test('the language-row wrapper stretches full width so the toggle sits top-right, not top-left (I1 regression)', async () => {
+  test('the language-row wrapper stretches full width so the toggle sits top-right, not top-left', async () => {
     Platform.OS = 'ios';
     await render(<WelcomeScreen />);
 
-    // Round 1 set `justifyContent: 'flex-end'` on this row but not `flex: 1`; inside Screen's
-    // headerRow (a plain `flexDirection: 'row'` with no sizing of its own), a child with no
-    // `flex` shrinks to its content width, so `justifyContent: 'flex-end'` had no room to act and
-    // the toggle rendered flush left instead of right. `flex: 1` makes the row claim the full
-    // width so flex-end can push its content to the right edge.
+    // `justifyContent: 'flex-end'` alone isn't enough: inside Screen's headerRow (a plain
+    // `flexDirection: 'row'` with no sizing of its own), a child with no `flex` shrinks to its
+    // content width, so flex-end has no room to act and the toggle renders flush left. `flex: 1`
+    // makes the row claim the full width so flex-end can push its content to the right edge.
     const row = StyleSheet.flatten(screen.getByTestId('welcome-language-row').props.style) as {
       flex?: number;
       justifyContent?: string;
     };
     expect(row.flex).toBe(1);
     expect(row.justifyContent).toBe('flex-end');
+  });
+
+  test('at the largest text size the headline grows to 2x at most and the Google label wraps inside its button', async () => {
+    Platform.OS = 'ios';
+    await render(<WelcomeScreen />);
+
+    // A 900-weight hero at 3x breaks "WITHOUT" mid-word on a phone; 2x is the floor for content text.
+    expect(screen.getByText('DRESS\nWITHOUT DOUBT').props.maxFontSizeMultiplier).toBe(2);
+    const label = StyleSheet.flatten(screen.getByText('Continue with Google').props.style) as {
+      flexShrink?: number;
+      textAlign?: string;
+    };
+    expect(label.flexShrink).toBe(1);
+    expect(label.textAlign).toBe('center');
   });
 
   test('hides Continue with Apple on Android', async () => {
@@ -143,7 +156,7 @@ describe('WelcomeScreen', () => {
     expect(mockedSignUpWithEmail).not.toHaveBeenCalled();
   });
 
-  test('trims the email before calling the service (M8)', async () => {
+  test('trims the email before calling the service', async () => {
     Platform.OS = 'ios';
     mockedSignUpWithEmail.mockResolvedValue({ ok: true, needsConfirmation: false });
     await render(<WelcomeScreen />);
@@ -170,7 +183,7 @@ describe('WelcomeScreen', () => {
     expect(screen.getByLabelText('Email').props.value).toBe('keep-me@example.com');
   });
 
-  test('ok + needsConfirmation true shows the check-your-email message (I5 / P2-R6)', async () => {
+  test('ok + needsConfirmation true shows the check-your-email message', async () => {
     Platform.OS = 'ios';
     mockedSignUpWithEmail.mockResolvedValue({ ok: true, needsConfirmation: true });
     await render(<WelcomeScreen />);
@@ -182,7 +195,7 @@ describe('WelcomeScreen', () => {
     expect(await screen.findByText('Check your email to confirm your account before signing in.')).toBeTruthy();
   });
 
-  test('ok + needsConfirmation false shows no message (confirmations off locally, I5)', async () => {
+  test('ok + needsConfirmation false shows no message (confirmations off locally)', async () => {
     Platform.OS = 'ios';
     mockedSignUpWithEmail.mockResolvedValue({ ok: true, needsConfirmation: false });
     await render(<WelcomeScreen />);
@@ -219,7 +232,7 @@ describe('WelcomeScreen', () => {
     });
   });
 
-  test('a cancelled social sign-in shows no error message (M4)', async () => {
+  test('a cancelled social sign-in shows no error message', async () => {
     Platform.OS = 'ios';
     mockedSignInWithGoogle.mockResolvedValue({ ok: false, error: 'auth.error.cancelled' });
     await render(<WelcomeScreen />);
@@ -231,7 +244,7 @@ describe('WelcomeScreen', () => {
     expect(screen.queryByText('Sign-in was cancelled.')).toBeNull();
   });
 
-  test('a social error renders inside the social section, not under the password field (M4)', async () => {
+  test('a social error renders inside the social section, not under the password field', async () => {
     Platform.OS = 'ios';
     mockedSignInWithGoogle.mockResolvedValue({ ok: false, error: 'auth.error.network' });
     await render(<WelcomeScreen />);
@@ -239,8 +252,8 @@ describe('WelcomeScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Continue with Google' }));
     await screen.findByText("Couldn't connect. Check your internet and try again.");
 
-    // Real placement check (round 1's version only asserted the password field's own `value`,
-    // which says nothing about where the error text actually renders): the message must be a
+    // A real placement check (the password field's own `value` says nothing about where the error
+    // text actually renders): the message must be a
     // descendant of the social section's container, and must not also appear as the password
     // TextField's `error` text (TextField always renders its own error inside its own container,
     // so if it had been passed there it would show up as a second, separate instance).
@@ -251,7 +264,7 @@ describe('WelcomeScreen', () => {
     ).toBe(1);
   });
 
-  test('social buttons are disabled while a social sign-in is in flight (M4)', async () => {
+  test('social buttons are disabled while a social sign-in is in flight', async () => {
     Platform.OS = 'ios';
     let resolveApple: (value: { ok: true }) => void = () => {};
     mockedSignInWithApple.mockReturnValue(
@@ -266,7 +279,7 @@ describe('WelcomeScreen', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeDisabled();
     });
-    // M4: "Create account" must also be disabled during a social sign-in — a tap there mid-flow
+    // "Create account" must also be disabled during a social sign-in — a tap there mid-flow
     // would otherwise fire signUpWithEmail concurrently with the pending Apple sign-in.
     expect(screen.getByRole('button', { name: 'Create account' })).toBeDisabled();
 
@@ -304,11 +317,8 @@ describe('SignInScreen', () => {
   test('has a back control to welcome (a "Create an account" link, plus a labeled back chevron)', async () => {
     await render(<SignInScreen />);
 
-    // Round 2: this test previously queried `getByRole('button', ...)`, which actually matched
-    // the chevron (mislabeled "Create an account" at the time) rather than the real "Create an
-    // account" link below — fixing the chevron's label (now "Back", I7/M8 cheap extra) exposed
-    // that the role query was wrong all along. The chevron is accessibilityRole="button"; the
-    // footer link is accessibilityRole="link".
+    // The chevron is accessibilityRole="button" (labeled "Back"); the footer link is
+    // accessibilityRole="link", so each query can only match its own control.
     expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Create an account' })).toBeTruthy();
   });
@@ -328,7 +338,7 @@ describe('ForgotPasswordScreen', () => {
     expect(await screen.findByLabelText('Code')).toBeTruthy();
   });
 
-  test('step 1 has a back-to-sign-in control (M5)', async () => {
+  test('step 1 has a back-to-sign-in control', async () => {
     await render(<ForgotPasswordScreen />);
 
     expect(screen.getByText('Back to sign in')).toBeTruthy();
@@ -351,7 +361,7 @@ describe('ForgotPasswordScreen', () => {
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeTruthy();
   });
 
-  test('a code that is not 6 digits shows a format error under the Code field without calling confirmPasswordReset (I6)', async () => {
+  test('a code that is not 6 digits shows a format error under the Code field without calling confirmPasswordReset', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);
 
@@ -402,9 +412,8 @@ describe('ForgotPasswordScreen', () => {
 
     expect(await screen.findByText("Passwords don't match.")).toBeTruthy();
     expect(mockedConfirmPasswordReset).not.toHaveBeenCalled();
-    // Round 2 cheap extra: round 1 routed every step-2 error (including password errors) through
-    // `codeError`, rendering under the Code field; a password error belongs under the password
-    // fields instead. `TextField` gives its own outer container a `${testID}-container` testID, so
+    // A password error belongs under the password fields, not under the Code field with the code
+    // errors. `TextField` gives its own outer container a `${testID}-container` testID, so
     // this confirms the message is NOT inside Code's container (it's under Confirm password's).
     const codeContainer = screen.getByTestId('forgot-password-code-container');
     expect(within(codeContainer).queryByText("Passwords don't match.")).toBeNull();
@@ -412,7 +421,7 @@ describe('ForgotPasswordScreen', () => {
     expect(within(confirmPasswordContainer).getByText("Passwords don't match.")).toBeTruthy();
   });
 
-  test('a weak new password shows an error under the password fields, not Code (round 2)', async () => {
+  test('a weak new password shows an error under the password fields, not Code', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);
 
@@ -429,7 +438,7 @@ describe('ForgotPasswordScreen', () => {
     expect(mockedConfirmPasswordReset).not.toHaveBeenCalled();
   });
 
-  test('a successful confirm does not navigate itself (I4: the guard drives navigation)', async () => {
+  test('a successful confirm does not navigate itself (the guard drives navigation)', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     mockedConfirmPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);
@@ -450,7 +459,7 @@ describe('ForgotPasswordScreen', () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
-  test('step 2 offers a way back to step 1 to change the email (M5)', async () => {
+  test('step 2 offers a way back to step 1 to change the email', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);
 
@@ -464,7 +473,7 @@ describe('ForgotPasswordScreen', () => {
     expect(screen.queryByLabelText('Code')).toBeNull();
   });
 
-  test('Send a new code shows a confirmation and is disabled while in flight (M5)', async () => {
+  test('Send a new code shows a confirmation and is disabled while in flight', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);
 
@@ -488,7 +497,7 @@ describe('ForgotPasswordScreen', () => {
     expect(await screen.findByText('A new code is on its way.')).toBeTruthy();
   });
 
-  test('a resend failure shows a message on step 2 (bug fix: round 1 reported it via setEmailError, which step 2 never renders)', async () => {
+  test('a resend failure shows a message on step 2, where the email field (and its error) is not shown', async () => {
     mockedRequestPasswordReset.mockResolvedValueOnce({ ok: true });
     await render(<ForgotPasswordScreen />);
 
@@ -504,7 +513,7 @@ describe('ForgotPasswordScreen', () => {
     expect(screen.queryByLabelText('Email')).toBeNull();
   });
 
-  test('Change email clears the typed code and any "code sent" confirmation (round 2)', async () => {
+  test('Change email clears the typed code and any "code sent" confirmation', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);
 
@@ -524,7 +533,7 @@ describe('ForgotPasswordScreen', () => {
     expect(screen.queryByText('A new code is on its way.')).toBeNull();
   });
 
-  test('the step-2 back chevron is labeled for its actual action (change email), not "back to sign in" (round 2)', async () => {
+  test('the step-2 back chevron is labeled for its actual action (change email), not "back to sign in"', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);
 

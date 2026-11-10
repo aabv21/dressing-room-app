@@ -1,4 +1,4 @@
-// M1: uses expo-router's own testing library against the REAL route tree and navigator (not a
+// Uses expo-router's own testing library against the REAL route tree and navigator (not a
 // Stack/Stack.Protected test double), confirmed to work with this repo's installed expo-router
 // 58.0.29: `renderRouter({ appDir: 'src/app', overrides: {} }, options)` resolves against the real
 // filesystem tree under `src/app` (see node_modules/expo-router/build/testing-library/
@@ -7,6 +7,16 @@
 // the real navigator, `expo-router` itself must NOT be mocked here (unlike auth-screens.test.tsx,
 // which renders screens in isolation and mocks `router`); AuthProvider stays mocked at the
 // `useAuth()` seam so each case can drive an exact status/onboardingComplete combination.
+// The closet providers wrap the signed-in navigator; this suite doesn't test the closet.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvidersMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../outfits/aiClient', () => require('../test/outfitClientsMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../outfits/outfitRepository', () => require('../test/outfitClientsMock'));
+
 jest.mock('../auth/AuthProvider', () => ({
   AuthProvider: ({ children }: { children?: React.ReactNode }) => children,
   useAuth: jest.fn(() => ({
@@ -86,7 +96,7 @@ test('signedOut resolves to /welcome and hides the splash screen once settled', 
   });
 });
 
-test('a deep link to /closet while signed out lands on /welcome instead (M1)', async () => {
+test('a deep link to /closet while signed out lands on /welcome instead', async () => {
   mockedUseAuth.mockReturnValue(authState({ status: 'signedOut' }));
   const result = await renderAt('/closet');
 

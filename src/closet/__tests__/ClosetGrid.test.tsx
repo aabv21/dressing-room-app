@@ -70,3 +70,85 @@ test('a drag released without momentum still reports scrolling as inactive', asy
   await fireEvent(list, 'scrollEndDrag');
   expect(onScrollActiveChange).toHaveBeenLastCalledWith(false);
 });
+
+test('the image source carries the cache key, so a re-signed URL still hits the disk cache', async () => {
+  await render(
+    <ClosetGrid items={[{ id: 'a', thumbUri: 'https://signed/a?token=1', cacheKey: 'a:thumb:2', wearCount: 0, label: 'Blouse' }]} />,
+  );
+
+  // expo-image normalizes a single source into a one-element array on the native view.
+  expect(screen.getByTestId('grid-thumb-a')).toHaveProp('source', [{ uri: 'https://signed/a?token=1', cacheKey: 'a:thumb:2' }]);
+});
+
+test('a cell with no signed URL yet renders no image, only its label', async () => {
+  await render(<ClosetGrid items={[{ id: 'a', thumbUri: '', wearCount: 0, label: 'New garment' }]} />);
+
+  expect(screen.queryByTestId('grid-thumb-a')).not.toBeOnTheScreen();
+  expect(screen.getByLabelText('New garment, never worn')).toBeOnTheScreen();
+});
+
+test('a status badge is shown and read out', async () => {
+  await render(
+    <ClosetGrid items={[{ id: 'a', thumbUri: 'https://x/a', wearCount: 2, label: 'Jeans', badge: 'In the laundry' }]} />,
+  );
+
+  expect(screen.getByText('In the laundry')).toBeOnTheScreen();
+  expect(screen.getByLabelText('Jeans, In the laundry, 2 wears')).toBeOnTheScreen();
+});
+
+test('a leading tile renders before the first cell and is pressable', async () => {
+  const onPress = jest.fn();
+  await render(
+    <ClosetGrid
+      items={[{ id: 'a', thumbUri: 'https://x/a', wearCount: 0, label: 'Blouse' }]}
+      leadingTile={{ label: 'Processing 3 photos…', onPress }}
+    />,
+  );
+
+  const cells = screen.getAllByTestId(/^grid-(leading-tile|cell-)/);
+  expect(cells.map((cell) => cell.props.testID as string)).toEqual(['grid-leading-tile', 'grid-cell-a']);
+  await fireEvent.press(screen.getByRole('button', { name: 'Processing 3 photos…' }));
+  expect(onPress).toHaveBeenCalledTimes(1);
+});
+
+test('a leading tile alone still renders the grid instead of the empty state', async () => {
+  await render(<ClosetGrid items={[]} leadingTile={{ label: 'Processing 1 photo…' }} />);
+
+  expect(screen.getByText('Processing 1 photo…')).toBeOnTheScreen();
+  expect(screen.queryByText('Add your 10 favorites to get started.')).not.toBeOnTheScreen();
+});
+
+test('selectedIds marks the chosen cells with a ring and as selected; without it no cell is', async () => {
+  const items = [
+    { id: 'a', thumbUri: '', wearCount: 6, label: 'Heels' },
+    { id: 'b', thumbUri: '', wearCount: 30, label: 'Sneakers' },
+  ];
+  const view = await render(<ClosetGrid items={items} onPressItem={jest.fn()} selectedIds={new Set(['a'])} />);
+  expect(screen.getByLabelText('Heels, 6 wears')).toBeSelected();
+  expect(screen.getByLabelText('Sneakers, 30 wears')).not.toBeSelected();
+  expect(screen.getByLabelText('Heels, 6 wears')).toHaveStyle({ borderColor: '#7c3aed' });
+
+  await view.rerender(<ClosetGrid items={items} onPressItem={jest.fn()} />);
+  expect(screen.getByLabelText('Heels, 6 wears')).not.toBeSelected();
+  expect(screen.getByLabelText('Heels, 6 wears')).not.toHaveStyle({ borderColor: '#7c3aed' });
+});
+
+test('emptyText replaces the closet empty state', async () => {
+  await render(<ClosetGrid items={[]} emptyText="No shoes available." />);
+  expect(screen.getByText('No shoes available.')).toBeOnTheScreen();
+  expect(screen.queryByText('Add your 10 favorites to get started.')).not.toBeOnTheScreen();
+});
+
+test('the badge and wear count over a thumbnail are capped for large text, and iOS shows the cell enlarged on a long press', async () => {
+  await render(
+    <ClosetGrid
+      items={[{ id: 'a', thumbUri: 'https://x/a', wearCount: 2, label: 'Jeans', badge: 'In the laundry' }]}
+      onPressItem={jest.fn()}
+    />,
+  );
+  expect(screen.getByText('In the laundry', { includeHiddenElements: true })).toHaveProp('maxFontSizeMultiplier', 1.3);
+  expect(screen.getByText('2 wears', { includeHiddenElements: true })).toHaveProp('maxFontSizeMultiplier', 1.3);
+  const cell = screen.getByRole('button', { name: 'Jeans, In the laundry, 2 wears' });
+  expect(cell).toHaveProp('accessibilityShowsLargeContentViewer', true);
+  expect(cell).toHaveProp('accessibilityLargeContentTitle', 'Jeans, In the laundry, 2 wears');
+});

@@ -1,12 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import type { ComponentProps } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnchoredCta } from './AnchoredCta';
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
-import { colors, gradients, spacing } from './theme';
+import { colors, gradients, spacing, textScale } from './theme';
 
 type ScreenProps = {
   cta?: ComponentProps<typeof AnchoredCta>;
@@ -58,7 +58,7 @@ export function ScreenTitle({
 }): React.JSX.Element {
   if (variant === 'hero') {
     return (
-      <Text style={styles.heroTitle} accessibilityRole="header">
+      <Text style={styles.heroTitle} accessibilityRole="header" maxFontSizeMultiplier={textScale.hero}>
         {title}
       </Text>
     );
@@ -79,18 +79,27 @@ export function Screen(props: ScreenProps): React.JSX.Element {
       {props.scroll === false ? (
         <View style={styles.fill}>{props.children}</View>
       ) : (
-        <ScrollView
-          style={styles.fill}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[
-            styles.content,
-            { paddingTop: contentInsets.top, paddingBottom: contentInsets.bottom },
-          ]}
-        >
-          {headerAccessory ? <View style={styles.headerRow}>{headerAccessory}</View> : null}
-          <ScreenTitle title={props.title} variant={titleVariant} />
-          {props.children}
-        </ScrollView>
+        // Android draws edge to edge, so the window no longer resizes for the keyboard: the padding
+        // behavior shrinks the scroll view instead. iOS insets the scroll view itself (below).
+        <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'android' ? 'padding' : undefined}>
+          <ScrollView
+            style={styles.fill}
+            testID="screen-scroll"
+            keyboardShouldPersistTaps="handled"
+            // The fields below the focused one stay reachable above the keyboard, and a drag dismisses
+            // it: a number pad has no return key.
+            automaticallyAdjustKeyboardInsets
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={[
+              styles.content,
+              { paddingTop: contentInsets.top, paddingBottom: contentInsets.bottom },
+            ]}
+          >
+            {headerAccessory ? <View style={styles.headerRow}>{headerAccessory}</View> : null}
+            <ScreenTitle title={props.title} variant={titleVariant} />
+            {props.children}
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
       {cta ? <AnchoredCta {...cta} chrome={chrome} /> : null}
     </LinearGradient>
@@ -111,7 +120,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     letterSpacing: 1,
   },
-  // ~1.26x the default 17pt title (I1: "about 21-22pt"), same 900 weight; no uppercase (a
+  // ~1.26x the default 17pt title (the mockup's hero is about 21–22pt), same 900 weight; no uppercase (a
   // catalog-provided "\n" forces the mockup's two-line break instead of wrapping unpredictably).
   // `letterSpacing: 1.1` matches the mockup's `.ttl { letter-spacing: .05em }` at this 22pt size
   // (CSS `em` is relative to the element's own font-size: 22 * 0.05 = 1.1pt).

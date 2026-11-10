@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -26,9 +26,16 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # --frozen-lockfile doesn't re-check trust or release age, so guard the policy itself.
+      - run: pnpm check:supply-chain
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm test
+      # Every check but the SDK version one, which compares against the newest releases that the
+      # 3-day minimumReleaseAge may not allow yet; `pnpm check:expo` covers it (see AGENTS.md).
+      - run: pnpm exec expo-doctor
+        env:
+          EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK: '1'
 
   security:
     name: Security
@@ -78,8 +85,20 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm db:start
+      # The local stack's ports (54420–54429, see supabase/config.toml) and the mocks' (54498
+      # Jev/Open-Meteo/Apple, 54499 Claude) sit inside Linux's ephemeral range, so an outgoing
+      # connection could take one before the stack or test:int listens (EADDRINUSE).
+      - name: Reserve the stack and mock ports
+        run: sudo sysctl -w net.ipv4.ip_local_reserved_ports=54420-54499
+      # Lean stack: no Studio, Realtime, analytics or image proxy. Mailpit stays, since test:int
+      # reads password-reset codes from it, and so does the Edge Runtime, since test:int runs
+      # attribute extraction end to end (against integration/mockAnthropic.ts, never the real API).
+      - run: pnpm db:start:ci
       - run: pnpm db:test
+      - name: Generated types match the migrations
+        run: |
+          pnpm db:types
+          git diff --exit-code src/lib/database.types.ts
       - run: pnpm env:local
       - run: pnpm test:int
       - run: pnpm db:stop

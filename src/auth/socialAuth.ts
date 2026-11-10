@@ -31,9 +31,47 @@ export async function signInWithApple(client: Client = supabase): Promise<Result
     if (error !== null) {
       return { ok: false, error: toAuthErrorKey(error) };
     }
+    if (credential.authorizationCode !== null) {
+      sendAppleAuthorizationCode(client, credential.authorizationCode);
+    }
     return { ok: true };
   } catch (error) {
     return { ok: false, error: toAuthErrorKey(error) };
+  }
+}
+
+/** The `apple-token` function's outcome words (`supabase/functions/apple-token/handler.ts`). */
+const APPLE_TOKEN_OUTCOME = /^[a-z_]{1,32}$/;
+
+function logAppleTokenOutcome(outcome: string): void {
+  if (__DEV__) {
+    console.info(`apple-token: ${outcome}`);
+  }
+}
+
+/**
+ * Hands the credential's one-time authorization code to the `apple-token` function, which exchanges
+ * it for the Apple refresh token account deletion revokes (`signInWithIdToken` keeps none).
+ * Fire-and-forget: sign-in never waits on it or fails because of it, and only the outcome word is
+ * logged (in dev), never the code.
+ */
+function sendAppleAuthorizationCode(client: Client, code: string): void {
+  try {
+    client.functions
+      .invoke<{ outcome?: unknown }>('apple-token', { body: { code } })
+      .then(
+        ({ data, error }) => {
+          const outcome = error === null && typeof data?.outcome === 'string' ? data.outcome : 'failed';
+          logAppleTokenOutcome(APPLE_TOKEN_OUTCOME.test(outcome) ? outcome : 'failed');
+        },
+        () => {
+          logAppleTokenOutcome('failed');
+        },
+      )
+      // A throw inside the logging itself must not surface as an unhandled rejection.
+      .catch(() => undefined);
+  } catch {
+    logAppleTokenOutcome('failed');
   }
 }
 
@@ -63,7 +101,7 @@ function isConfiguredClientId(value: string | undefined): value is string {
  * integration session fills these in; see AGENTS.md), not a per-attempt user error, so it's logged
  * once via `console.warn` rather than silently retried every tap.
  *
- * Ruling (P2-R4): OAuth client IDs are not secrets — they identify the app to Google, the way a
+ * OAuth client IDs are not secrets — they identify the app to Google, the way a
  * bundle id does, and are meant to ship in the client. `EXPO_PUBLIC_*` inlines these at build time
  * (see Expo's docs and this repo's AGENTS.md); Expo's static analysis requires literal member
  * expressions wherever they're read, which is why they're read directly here rather than through a

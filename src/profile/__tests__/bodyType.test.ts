@@ -1,7 +1,7 @@
 import { silhouettesFor, suggestBodyType } from '../bodyType';
 import type { BodyAnswers } from '../bodyType';
 
-// The brief's 27-case table for feminine (and therefore "everything"), written out row by row so a
+// The full 27-case table for feminine (and therefore "everything"), written out row by row so a
 // regression in the algorithm shows the exact combination that changed.
 const FEMININE_TABLE: readonly (readonly [BodyAnswers['shoulders'], BodyAnswers['hips'], BodyAnswers['waist'], string])[] = [
   ['narrow', 'narrow', 'defined', 'hourglass'],

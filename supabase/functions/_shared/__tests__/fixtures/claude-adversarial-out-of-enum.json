@@ -1,0 +1,18 @@
+{
+  "id": "msg_fixture_adversarial_out_of_enum",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"is_garment\":true,\"category\":\"jeans\",\"colors\":[\"Navy\",\"navy \",\"ultraviolet\",\"black\",\"black\",\"javascript:alert(1)\"],\"pattern\":\"SOLID\",\"material\":\"denim\\u0000\",\"formality\":\"5\",\"warmth\":true,\"fit\":\"regular'; update garments set wear_count = 999; --\",\"seasons\":[\"summer\",\"all_year\",null],\"occasions\":[\"office\",\"wedding\",{\"value\":\"event\"}],\"confidence\":{\"category\":\"high\",\"colors\":\"high\",\"pattern\":\"high\",\"material\":\"high\",\"formality\":\"high\",\"seasons\":\"high\",\"warmth\":\"high\",\"fit\":\"high\",\"occasions\":\"high\"}}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1240,
+    "output_tokens": 180
+  }
+}

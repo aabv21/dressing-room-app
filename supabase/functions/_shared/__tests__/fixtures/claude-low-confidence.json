@@ -1,0 +1,18 @@
+{
+  "id": "msg_fixture_low_confidence",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-haiku-5-5",
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"is_garment\":true,\"category\":\"jeans\",\"colors\":[\"navy\",\"light_blue\"],\"pattern\":\"solid\",\"material\":\"denim\",\"formality\":2,\"seasons\":[\"spring\",\"autumn\",\"winter\"],\"warmth\":2,\"fit\":\"regular\",\"occasions\":[\"university\",\"going_out\",\"home\"],\"confidence\":{\"category\":\"high\",\"colors\":\"high\",\"pattern\":\"high\",\"material\":\"medium\",\"formality\":\"low\",\"seasons\":\"medium\",\"warmth\":\"high\",\"fit\":\"medium\",\"occasions\":\"medium\"}}"
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1240,
+    "output_tokens": 180
+  }
+}

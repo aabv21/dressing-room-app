@@ -45,6 +45,16 @@ const config: Config = {
       transform: {},
     },
     {
+      // Supabase Edge Function logic under `supabase/functions/`. Same setup as `scripts` (plain
+      // Node, native TS stripping): the function code is runtime-neutral TypeScript with explicit
+      // `.ts` imports, and only each function's `index.ts` (never imported by a test) touches Deno.
+      displayName: 'functions',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/supabase/functions/**/*.test.ts'],
+      extensionsToTreatAsEsm: ['.ts'],
+      transform: {},
+    },
+    {
       // Exercises authService and RLS against a running local Supabase stack. Same reasoning as
       // the `scripts` project above (plain Node, native TS stripping, no jest-expo preset); kept
       // out of the default `pnpm test` project selection (see the `test:int` script) since it
@@ -62,6 +72,9 @@ const config: Config = {
         // path is never meant to run here; map it to a stub that throws if it ever is. Matches the
         // relative specifier as written in `src/auth/{emailAuth,socialAuth}.ts` (`../lib/supabase`).
         '^(\\.\\./)+lib/supabase$': '<rootDir>/integration/lib-supabase.stub.ts',
+        // `garmentRepository.ts` imports expo-file-system's `File` (native-only) for its file-reading
+        // upload; integration tests use the bytes variant, so map it to a stub that throws if used.
+        '^expo-file-system$': '<rootDir>/integration/expo-file-system.stub.ts',
       },
     },
   ],
