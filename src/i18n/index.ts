@@ -37,6 +37,11 @@ function numberFormat(locale: Locale): Intl.NumberFormat {
   return format;
 }
 
+/** Whether `key` is a catalog key, e.g. a message key sent by a function (`rating.reason.*`). */
+export function isMessageKey(key: string): key is MessageKey {
+  return Object.hasOwn(en, key);
+}
+
 export function translate(
   locale: Locale,
   key: MessageKey,

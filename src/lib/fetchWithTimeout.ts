@@ -13,8 +13,17 @@ export const REQUEST_TIMEOUT_MS = 12_000;
  */
 export const UPLOAD_TIMEOUT_MS = 60_000;
 
+/**
+ * `rate-outfit` and `lucky-list` (ruling P4-R11b) can take up to ~40 s in the rare all-slow case
+ * (weather 10 s + Jev 10 s + the Claude fallback 20 s; see `supabase/functions/_shared/userContext.ts`
+ * and `rate-outfit/handler.ts`'s `SWAP_BUDGET_MS`), so a `POST` to `/functions/v1/` (supabase-js's
+ * `functions.invoke`) gets longer than the default 12 s.
+ */
+export const FUNCTION_TIMEOUT_MS = 45_000;
+
 const STORAGE_OBJECT_PATH = '/storage/v1/object/';
 const NOT_UPLOADS = ['/storage/v1/object/sign/', '/storage/v1/object/list/'];
+const FUNCTIONS_PATH = '/functions/v1/';
 
 function urlOf(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input;
@@ -25,11 +34,15 @@ function urlOf(input: RequestInfo | URL): string {
 function deadlineFor(input: RequestInfo | URL, init: RequestInit): number {
   const method = (init.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase();
   const url = urlOf(input);
-  const upload =
-    (method === 'POST' || method === 'PUT') &&
-    url.includes(STORAGE_OBJECT_PATH) &&
-    !NOT_UPLOADS.some((path) => url.includes(path));
-  return upload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  if (method === 'POST' || method === 'PUT') {
+    if (url.includes(STORAGE_OBJECT_PATH) && !NOT_UPLOADS.some((path) => url.includes(path))) {
+      return UPLOAD_TIMEOUT_MS;
+    }
+    if (method === 'POST' && url.includes(FUNCTIONS_PATH)) {
+      return FUNCTION_TIMEOUT_MS;
+    }
+  }
+  return REQUEST_TIMEOUT_MS;
 }
 
 /**

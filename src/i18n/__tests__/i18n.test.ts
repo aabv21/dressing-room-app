@@ -1,3 +1,5 @@
+import { RATING_DIMENSIONS, type RatingLabel } from '../../../supabase/functions/_shared/rating.ts';
+
 import { en } from '../en';
 import { es } from '../es';
 import { formatWearCount, pluralKey, resolveLocale, translate } from '../index';
@@ -47,4 +49,17 @@ test.each([
 ] as const)('pluralKey(%s, %i) → %s', (base, count, expected) => {
   expect(pluralKey(base, count)).toBe(expected);
   expect(translate('en', pluralKey(base, count), { count })).not.toContain('{');
+});
+
+test('every rating reason and label the functions send has a message', () => {
+  const keys: ReadonlySet<string> = new Set(Object.keys(en));
+  for (const dimension of RATING_DIMENSIONS) {
+    expect(keys).toContain(`rating.reason.${dimension}.good`);
+    expect(keys).toContain(`rating.reason.${dimension}.warn`);
+  }
+  expect(keys).toContain('rating.reason.color_harmony.good.one');
+  expect(keys).toContain('rating.reason.color_harmony.good.plain');
+  for (const label of ['great', 'good', 'fair', 'poor'] satisfies RatingLabel[]) {
+    expect(keys).toContain(`rating.label.${label}`);
+  }
 });

@@ -1,0 +1,163 @@
+{
+  "model": "jev-1.14.0",
+  "answers": {
+    "color_harmony": {
+      "type": "score",
+      "score": 3,
+      "confidence": 1,
+      "legend": {
+        "0": "At least two colors clash outright, such as competing bright colors or tones that fight each other",
+        "1": "Nothing clashes outright, but the colors look unrelated, as if each piece was picked on its own",
+        "2": "The colors sit together safely, such as all neutrals or one color repeated, without a clear idea behind them",
+        "3": "The colors were clearly chosen together: a tonal palette, complementary colors, or neutrals with one accent that ties the pieces together"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 1
+      }
+    },
+    "pattern_mix": {
+      "type": "score",
+      "score": 2,
+      "confidence": 1,
+      "legend": {
+        "0": "Several busy patterns compete, such as florals with checks and stripes",
+        "1": "Two patterns are combined without a shared color or a difference in scale, so they fight for attention",
+        "2": "All pieces are solid, one patterned piece is balanced by plain pieces, or the patterns share a color and differ in scale"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 1
+      }
+    },
+    "formality_coherence": {
+      "type": "score",
+      "score": 2.7,
+      "confidence": 0.62,
+      "legend": {
+        "0": "Pieces from opposite ends of formality are mixed, such as a tailored blazer with gym shorts or heels with sweatpants",
+        "1": "One piece is clearly more formal or more casual than the rest and looks out of place",
+        "2": "The pieces are close in formality, with a small gap that reads as relaxed rather than wrong",
+        "3": "Every piece sits at the same level of formality"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0.3,
+        "3": 0.7
+      }
+    },
+    "silhouette_balance": {
+      "type": "score",
+      "score": 3,
+      "confidence": 1,
+      "legend": {
+        "0": "The proportions fight each other, such as oversized pieces on top and bottom that swallow the body",
+        "1": "The proportions are off in one place, such as a top whose length or volume overwhelms the bottom",
+        "2": "The proportions are acceptable but nothing gives the outfit a shape",
+        "3": "Volume and fit are balanced, such as a loose piece paired with a fitted one, giving the outfit a clear shape"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 1
+      }
+    },
+    "body_flattery": {
+      "type": "score",
+      "score": 2.7,
+      "confidence": 0.62,
+      "legend": {
+        "0": "The cuts work against the user's body type and height, such as hiding the waist of an hourglass figure or cutting the legs of a short user",
+        "1": "One piece works against the user's body type or height while the rest are neutral",
+        "2": "The cuts neither help nor hurt the user's body type and height, or the body is unknown",
+        "3": "The cuts favor the user's body type and height, such as defining the waist or lengthening the legs where that helps"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0.3,
+        "3": 0.7
+      }
+    },
+    "weather_fit": {
+      "type": "score",
+      "score": 4,
+      "confidence": 1,
+      "legend": {
+        "0": "The outfit is dangerous for the weather, such as sandals and shorts in snow or a heavy coat in a heat wave",
+        "1": "The outfit is uncomfortable for the weather: clearly too warm, too cold, or without protection on a rainy day",
+        "2": "The weather is unknown, or the outfit suits it only in part",
+        "3": "The outfit suits the weather, with a small mismatch such as a layer that is slightly too light",
+        "4": "The outfit is exactly right for the temperature and the rain or sun, with suitable shoes and layers"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 1
+      }
+    },
+    "occasion_fit": {
+      "type": "score",
+      "score": 2.4,
+      "confidence": 0.55,
+      "legend": {
+        "0": "The outfit is wrong for the occasion, such as gym wear at the office or an evening gown at home",
+        "1": "The outfit is out of step with the occasion, too formal or too casual in a way other people would notice",
+        "2": "The outfit is acceptable for the occasion, though one piece is a little off",
+        "3": "The outfit is exactly what the occasion calls for"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0.6,
+        "3": 0.4
+      }
+    },
+    "style_match": {
+      "type": "score",
+      "score": 3,
+      "confidence": 1,
+      "legend": {
+        "0": "The outfit contradicts every style the user likes, such as a tracksuit for someone who only likes elegant looks",
+        "1": "The outfit has little to do with the styles the user likes",
+        "2": "The outfit partly reflects one of the user's styles, or the user listed no styles",
+        "3": "The outfit clearly expresses one or more of the styles the user likes"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 1
+      }
+    },
+    "inappropriate_for_occasion": {
+      "type": "noul",
+      "noul": 0.8
+    },
+    "unsafe_for_weather": {
+      "type": "noul",
+      "noul": 0.1
+    },
+    "weakest_piece": {
+      "type": "choice",
+      "choice": "none",
+      "confidence": 0.7,
+      "probabilities": {
+        "none": 0.85,
+        "one_piece": 0.1,
+        "shoes": 0.05
+      }
+    }
+  },
+  "usage": {
+    "input_tokens": 1580,
+    "output_tokens": 61
+  }
+}

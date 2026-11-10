@@ -1,4 +1,4 @@
-import { REQUEST_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, fetchWithTimeout } from '../fetchWithTimeout';
+import { FUNCTION_TIMEOUT_MS, REQUEST_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, fetchWithTimeout } from '../fetchWithTimeout';
 
 const originalFetch = globalThis.fetch;
 const fetchMock = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit | undefined]>();
@@ -93,6 +93,40 @@ test.each(['sign/garments', 'sign/garments/u/g/thumb.webp', 'list/garments'])(
     expect(await outcome).toBe('AbortError');
   },
 );
+
+test('Edge Function POSTs get 45 seconds', () => {
+  expect(FUNCTION_TIMEOUT_MS).toBe(45_000);
+});
+
+test('a POST to /functions/v1/ survives 30 s and aborts at 45 s', async () => {
+  fetchMock.mockImplementation(hangingRequest);
+
+  const outcome = outcomeOf(
+    fetchWithTimeout('http://127.0.0.1:54421/functions/v1/rate-outfit', { method: 'POST', body: '{}' }),
+  );
+
+  jest.advanceTimersByTime(30_000);
+  await Promise.resolve();
+  expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+
+  jest.advanceTimersByTime(FUNCTION_TIMEOUT_MS - 30_000 - 1);
+  await Promise.resolve();
+  expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+
+  jest.advanceTimersByTime(1);
+  expect(await outcome).toBe('AbortError');
+});
+
+test('a GET to /functions/v1/ keeps the 12 s deadline (only POSTs get the longer budget)', async () => {
+  fetchMock.mockImplementation(hangingRequest);
+
+  const outcome = outcomeOf(
+    fetchWithTimeout('http://127.0.0.1:54421/functions/v1/rate-outfit', { method: 'GET' }),
+  );
+
+  jest.advanceTimersByTime(REQUEST_TIMEOUT_MS);
+  expect(await outcome).toBe('AbortError');
+});
 
 test('a REST GET still aborts at 12 s', async () => {
   fetchMock.mockImplementation(hangingRequest);
