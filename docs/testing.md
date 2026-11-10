@@ -485,6 +485,9 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `garment_extraction_trigger.test.sql` — the garments insert trigger's shape and privileges, the
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
   queueing the request fails.
+- `cache_cleanup.test.sql` — `prune_expired_caches()` deletes cache rows past each lifetime and
+  keeps fresh ones and each user's newest For you row; the daily `pg_cron` job exists once; no
+  client role can call the function.
 - `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
   is executable by a client role, and no index is made redundant by another that starts with the
   same columns.

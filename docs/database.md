@@ -176,14 +176,28 @@ Edge Functions) ever touches them, bypassing RLS entirely as that role.
 `for_you_cache` holds one row per user: each new entry deletes the user's rows under every other key
 once it is written (best effort, so a failed delete can leave an older row until the next write).
 
-NOTE: the other three grow without bound. An expired degraded entry is overwritten only when the
-same key is asked for again, any other entry never expires, and nothing deletes old rows: a new
-day, occasion, closet edit or profile save writes new keys, and `weather_cache` gains a row per
-place and hour. At 4 users that's a few thousand small rows a month, with user deletion cascading
-the user-scoped two away. Upgrade path: a scheduled cleanup with `pg_cron` (for example a daily
-`delete from public.rating_cache where created_at < now() - interval '30 days'`, the same for
-`lucky_cache`, and `delete from public.weather_cache where hour < now() - interval '2 days'`), in
-an append-only migration.
+Nothing in the functions deletes old rows of the other three, and `for_you_cache`'s own delete is
+best effort: a new day, occasion, closet edit or profile save writes new keys, and `weather_cache`
+gains a row per place and hour. So
+`public.prune_expired_caches()` (`20261109200000_prune_expired_caches.sql`) runs daily at 04:00
+UTC as the `pg_cron` job `prune-expired-caches` and deletes the rows past each cache's lifetime
+below. Each limit carries a margin, since the functions write `created_at` with their own clock:
+
+| Table | Served for (code) | Deleted when |
+|---|---|---|
+| `rating_cache`, `lucky_cache` | A `degraded: true` result for 1 hour (`DEGRADED_TTL_MS`); any other result has no age limit | Degraded and over 2 hours old, or any row over 30 days old |
+| `weather_cache` | Only the current UTC hour | `hour` over 2 days old |
+| `for_you_cache` | 7 days (`FOR_YOU_TTL_MS`), degraded for 1 hour; on a spent quota the same key's expired entry, else the user's newest entry under any key | Over 8 days old and not the user's newest row (each user's newest row stays, whatever its age) |
+| `cron.job_run_details` (this job's rows) | pg_cron never deletes run history | `end_time` over 30 days old |
+
+A rating or lucky list older than 30 days is simply recomputed (one quota use) the next time its
+key is asked for. The function is `security definer`, owned by `postgres`, with `search_path = ''`,
+and `execute` is revoked from `public`, `anon` and `authenticated`, so only the job (which runs as
+`postgres`) or the owner calls it. `pg_cron` is created `with schema pg_catalog`, as Supabase's Cron
+docs show; its tables live in the `cron` schema, and its schedule is in GMT (`cron.timezone`).
+`cron.schedule` with an existing job name replaces that job, so applying the migration again keeps
+one job. Check the runs with `select * from cron.job_run_details where jobid = (select jobid from
+cron.job where jobname = 'prune-expired-caches') order by start_time desc limit 10;`.
 
 ### `public.apple_tokens` (Plan 5)
 
@@ -829,6 +843,16 @@ discards both the user and its profile row — no cleanup step is needed.
   user-scoped caches) built for a second user as `postgres` (bypassing RLS), deleting that
   `auth.users` row leaves 0 matching rows in every one of those tables.
 
+- `cache_cleanup.test.sql` — `prune_expired_caches()` with rows on each side of every limit: a
+  rating or lucky row over 30 days old and a degraded one over 2 hours old go, while a 29-day-old
+  row, a degraded one 90 minutes old and a non-object `result` stay; a weather hour 3 days old goes
+  and one a day old stays; a For you row 10 days old goes unless it is the user's newest (a user's
+  only row, 20 days old, stays), and one 5 days old stays; the job's run history over 30 days old
+  goes. The job `prune-expired-caches` exists once, runs `select public.prune_expired_caches()` at
+  `0 4 * * *` and stays single when scheduled again under the same name. The function is `security
+  definer`, owned by `postgres`, with an empty `search_path`; `public` has no execute grant, and
+  `anon` and `authenticated` can't execute it (a call raises `42501`).
+
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.
 
@@ -852,7 +876,9 @@ Each run writes `~/dressing-room-backups/<UTC time>/`, for example `2026-11-09T0
   `auth` (users, identities, sessions) and `storage.objects`. It leaves out `storage.buckets`, since
   the `garments` bucket row comes from a migration and would collide on restore. It also leaves out
   Storage's vector tables, which the `postgres` role can't write and this project doesn't use, and
-  pg_net's transient queue and responses. The dump starts with `SET session_replication_role =
+  pg_net's transient queue and responses. The CLI's data dump leaves out the `cron` schema on its
+  own (checked against the local stack with the job scheduled), so a restore never collides with
+  the `prune-expired-caches` job the migrations create. The dump starts with `SET session_replication_role =
   replica`, so no trigger fires on restore: no signup profile, no extraction request, and no
   second wear count.
 - `garments/<user id>/<garment id>/{full,thumb}.webp`: every object in the `garments` bucket,
@@ -983,7 +1009,9 @@ with the two `read`s replaced by assignments. The restored counts matched the so
 content digests of `garments`, `profiles`, `wears`, `auth.users` and `storage.objects`. Every
 downloaded photo matched its `manifest.json` sha256, and a restored user could sign in with their
 password and read their 3 garments through RLS. A tampered photo made step 1 fail, and an upload to
-a wrong URL stopped step 3 at the first photo.
+a wrong URL stopped step 3 at the first photo. Once the `pg_cron` job existed, a data dump of the
+local stack held no `cron` rows, and step 2 restored it into a freshly reset stack, which kept its
+single `prune-expired-caches` job.
 
 ### Local dump
 
