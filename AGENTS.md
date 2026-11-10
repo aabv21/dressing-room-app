@@ -149,6 +149,14 @@ Checks that need the owner's accounts or hardware, run once at the end (the NOTE
 - **Offline for over an hour.** A closet opened offline more than an hour after its photo URLs were signed still shows the photos from expo-image's disk cache, even though the cached signed URLs have expired.
 - **CI.** The first run of CI's `database` job confirms the Linux runner reaches the mock Claude at `host.docker.internal`.
 
+## Branches and pull requests
+
+- `main` holds released code and is the default branch; `develop` is the integration branch. Both take changes only through a pull request with CI green, and repository rulesets block direct pushes, force pushes, and deletion.
+- Work on a short-lived branch from `develop` (`feat/…`, `fix/…`, `docs/…`, `chore/…`) and open the pull request into `develop`, titled in Conventional Commits form. It's squash-merged, so the title becomes the commit.
+- A release is a pull request from `develop` into `main`, merged with a merge commit, then tagged `vX.Y.Z` with a GitHub release.
+- Dependabot opens its pull requests against `develop`.
+- Commits use the GitHub `noreply` address, never a personal email: set `git config user.email` to it in this clone.
+
 ## Definition of done
 
 - `pnpm typecheck && pnpm lint && pnpm test` all pass locally.
