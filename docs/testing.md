@@ -325,7 +325,9 @@ never called. See `docs/ai.md`. To run only this project:
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
   after 30 s (`failed`), a garment no longer pending, already reviewed or missing, a guarded
-  write-back that matches no row because the user reviewed it meanwhile (`skipped`), adversarial
+  write-back that matches no row because the user reviewed or edited it meanwhile (`skipped`; the
+  `updated_at` filter carries the exact value read before the Claude call), a row without a
+  readable `updated_at` (500, no Claude call), adversarial
   Claude responses (`claude-adversarial-*.json`) writing only the attribute columns, and logs that
   carry only the garment id and an outcome word.
 - `supabase/functions/rate-outfit/__tests__/handler.test.ts` — the Jev score and its cache (keyed by
@@ -387,7 +389,9 @@ Supabase stack:
   `extract-attributes` Edge Function through pg_net, and the function calls the mock Claude below.
   Claude's `ok` fixture gives `done` with its category within 20 s; a 500 or a refusal gives
   `failed`; a Claude that never answers gives `failed` within 40 s (the function's 30 s timeout);
-  inserting the same id again makes no second Claude call; and a user whose daily quota is already
+  inserting the same id again makes no second Claude call; an edit saved through A's client while
+  the mock Claude holds its answer for 4 s keeps the user's category (the garment stays `pending`);
+  and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
@@ -418,8 +422,8 @@ functions; `--runInBand` because the suites share one database and create/delete
 `integration/mockAnthropic.ts` is the mock Claude: `startMockAnthropic(port = 54499)` serves
 `POST /v1/messages` on `0.0.0.0` (the function calls it from inside a container, as
 `http://host.docker.internal:54499`, the local `ANTHROPIC_BASE_URL` in `supabase/config.toml`).
-`respondWith({ status, body })` or `respondWith({ hang: true })` sets the reply for every following
-call; `calls()` counts the calls; `close()` also drops hung connections. Replies reuse the recorded
+`respondWith({ status, body })` (with an optional `delayMs` before the answer) or
+`respondWith({ hang: true })` sets the reply for every following call; `calls()` counts the calls; `close()` also drops hung connections. Replies reuse the recorded
 fixtures in `supabase/functions/_shared/__tests__/fixtures/`, so the real API is never called.
 `integration/mockServices.ts` stands in for TypeSafe's System One API (Jev) and Open-Meteo:
 `startMockServices(port = 54498)` serves `POST /v1/systemone`, `GET /v1/forecast` and

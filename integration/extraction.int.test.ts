@@ -4,7 +4,8 @@
 // `garments_request_extraction` trigger, pg_net calls the `extract-attributes` Edge Function, the
 // function calls Claude (here `mockAnthropic.ts` on the host) and writes the result back. Every
 // failure (a 500, a refusal, no answer at all) ends `failed`, never stuck `pending`; a repeated
-// insert of the same id calls Claude once; and an exhausted daily quota never reaches Claude.
+// insert of the same id calls Claude once; an edit saved while Claude is answering is never
+// overwritten; and an exhausted daily quota never reaches Claude.
 //
 // Needs the Edge Runtime: `pnpm db:start` (or `db:start:ci`, which keeps it) and `pnpm env:local`.
 
@@ -134,6 +135,26 @@ test('a Claude that never answers marks the garment failed within 40 s', async (
 
   expect(await settledGarment(id, 40_000)).toEqual({ extraction_status: 'failed', category: null });
 }, 50_000);
+
+test("an edit saved while Claude is still answering keeps the user's value", async () => {
+  const delayMs = 4_000;
+  mock.respondWith({ status: 200, body: OK, delayMs });
+  const callsBefore = mock.calls();
+
+  const id = await addGarment(userA);
+  // Wait until the function has loaded the garment and asked Claude, then edit it as the garment
+  // detail does (a client update, with `reviewed_at` left null).
+  const deadline = Date.now() + 15_000;
+  while (mock.calls() === callsBefore && Date.now() < deadline) await sleep(POLL_INTERVAL_MS);
+  expect(mock.calls()).toBe(callsBefore + 1);
+  const edit = await userA.client.from('garments').update({ category: 'shirt' }).eq('id', id);
+  expect(edit.error).toBeNull();
+
+  // Long enough for Claude's delayed answer and the write-back after it.
+  await sleep(delayMs + 4_000);
+
+  expect(await readGarment(id)).toEqual({ extraction_status: 'pending', category: 'shirt' });
+}, 40_000);
 
 test('inserting the same id again does not call Claude again', async () => {
   mock.respondWith({ status: 200, body: OK });

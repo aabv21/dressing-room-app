@@ -9,8 +9,11 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
-/** What the next `/v1/messages` calls get: a status and JSON body, or no answer at all. */
-export type MockReply = { status: number; body: unknown } | { hang: true };
+/**
+ * What the next `/v1/messages` calls get: a status and JSON body (sent after `delayMs`, if given),
+ * or no answer at all.
+ */
+export type MockReply = { status: number; body: unknown; delayMs?: number } | { hang: true };
 
 export type MockAnthropic = {
   /** Sets the reply for every following call, until changed again. */
@@ -40,8 +43,15 @@ export function startMockAnthropic(port = 54499): Promise<MockAnthropic> {
         return;
       }
       callCount += 1;
-      if ('hang' in reply) return;
-      sendJson(response, reply.status, reply.body);
+      const current = reply;
+      if ('hang' in current) return;
+      if (current.delayMs === undefined) {
+        sendJson(response, current.status, current.body);
+        return;
+      }
+      setTimeout(() => {
+        sendJson(response, current.status, current.body);
+      }, current.delayMs);
     });
   });
 
