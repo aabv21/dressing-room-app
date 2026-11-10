@@ -73,8 +73,10 @@ export function AnchoredCta(props: {
   primary: CtaAction;
   secondary?: CtaAction;
   chrome?: ScreenChrome;
+  /** Shown just above the buttons, inside the anchored zone, so it's always on screen (e.g. a save error). */
+  notice?: React.ReactNode;
 }): React.JSX.Element {
-  const { primary, secondary, chrome = 'tabs' } = props;
+  const { primary, secondary, chrome = 'tabs', notice } = props;
   const { ctaBottom } = useBottomChrome(chrome);
 
   return (
@@ -89,6 +91,7 @@ export function AnchoredCta(props: {
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
+      {notice === undefined ? null : <View style={styles.notice}>{notice}</View>}
       <View style={styles.row}>
         {secondary ? <ActionButton action={secondary} flexBasisPercent={36} /> : null}
         <ActionButton action={primary} />
@@ -105,6 +108,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 22,
     paddingBottom: layout.ctaZoneBottomPadding,
+  },
+  notice: {
+    marginBottom: 8,
   },
   row: {
     flexDirection: 'row',

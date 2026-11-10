@@ -8,10 +8,26 @@ import { colors, radii, spacing } from '../ui/theme';
 
 export type GridItem = {
   id: string;
+  /** Empty while the photo has no signed URL yet: the cell shows only its label and wear count. */
   thumbUri: string;
+  /** expo-image's cache key; stable across re-signed URLs of the same photo version. */
+  cacheKey?: string;
   wearCount: number;
   label: string;
+  /** A short status shown on the cell (e.g. "In the laundry"). */
+  badge?: string;
 };
+
+/** Mockup 02's `.g.proc` cell, rendered before the garments (e.g. "Processing 3 photos…"). */
+export type LeadingTile = {
+  label: string;
+  tone?: 'progress' | 'error';
+  onPress?: () => void;
+};
+
+const LEADING_KEY = '__leading__';
+const MVCP_DISABLED = { disabled: true } as const;
+type Cell = GridItem | typeof LEADING_KEY;
 
 const NUM_COLUMNS = 3;
 // Half of mockup 02's 6 pt grid gap. Each cell pads itself by this much, so neighbouring cells sit
@@ -31,8 +47,12 @@ const GridCell = memo(function GridCell({
   // Keyed on the URI rather than a plain boolean: FlashList recycles this component instance for
   // other items, and a `failed` flag would otherwise hide every later item's image in this cell.
   const [failedUri, setFailedUri] = useState<string | null>(null);
-  const failed = failedUri === item.thumbUri;
+  const showImage = item.thumbUri !== '' && failedUri !== item.thumbUri;
   const wearCountText = formatWearCount(item.wearCount, locale);
+  const source = useMemo(
+    () => (item.cacheKey === undefined ? { uri: item.thumbUri } : { uri: item.thumbUri, cacheKey: item.cacheKey }),
+    [item.thumbUri, item.cacheKey],
+  );
 
   const onError = useCallback(() => {
     setFailedUri(item.thumbUri);
@@ -42,16 +62,19 @@ const GridCell = memo(function GridCell({
     onPress?.(item.id);
   }, [onPress, item.id]);
 
+  const accessibilityLabel = [item.label, item.badge, wearCountText].filter((part) => part !== undefined).join(', ');
+
   return (
-    <View style={styles.cell}>
+    <View style={styles.cell} testID={`grid-cell-${item.id}`}>
       <Pressable
         style={styles.cellInner}
         onPress={onPress ? onCellPress : undefined}
-        accessibilityLabel={`${item.label}, ${wearCountText}`}
+        accessibilityRole={onPress ? 'button' : undefined}
+        accessibilityLabel={accessibilityLabel}
       >
-        {failed ? null : (
+        {showImage ? (
           <Image
-            source={{ uri: item.thumbUri }}
+            source={source}
             style={styles.image}
             recyclingKey={item.id}
             cachePolicy="disk"
@@ -61,6 +84,11 @@ const GridCell = memo(function GridCell({
             testID={`grid-thumb-${item.id}`}
             accessibilityIgnoresInvertColors
           />
+        ) : null}
+        {item.badge === undefined ? null : (
+          <Text style={styles.badge} numberOfLines={1}>
+            {item.badge}
+          </Text>
         )}
         <Text style={styles.wearCount} numberOfLines={1}>
           {wearCountText}
@@ -70,6 +98,23 @@ const GridCell = memo(function GridCell({
   );
 });
 
+function LeadingCell({ tile }: { tile: LeadingTile }): React.JSX.Element {
+  const error = tile.tone === 'error';
+  return (
+    <View style={styles.cell} testID="grid-leading-tile">
+      <Pressable
+        style={[styles.cellInner, styles.leading, error ? styles.leadingError : null]}
+        onPress={tile.onPress}
+        disabled={tile.onPress === undefined}
+        accessibilityRole={tile.onPress ? 'button' : undefined}
+        accessibilityLabel={tile.label}
+      >
+        <Text style={[styles.leadingText, error ? styles.leadingTextError : null]}>{tile.label}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export function ClosetGrid(props: {
   items: readonly GridItem[];
   /** Rendered above the cells and scrolls with them (FlashList's `ListHeaderComponent`). */
@@ -78,8 +123,10 @@ export function ClosetGrid(props: {
   contentInset?: { top: number; bottom: number };
   onPressItem?: (id: string) => void;
   onScrollActiveChange?: (active: boolean) => void;
+  /** A status cell placed before the garments; with it, an empty closet still renders the grid. */
+  leadingTile?: LeadingTile;
 }): React.JSX.Element {
-  const { items, header, contentInset, onPressItem, onScrollActiveChange } = props;
+  const { items, header, contentInset, onPressItem, onScrollActiveChange, leadingTile } = props;
   const { t, locale } = useI18n();
   const insetTop = contentInset?.top ?? 0;
   const insetBottom = contentInset?.bottom ?? 0;
@@ -93,12 +140,23 @@ export function ClosetGrid(props: {
     [insetTop, insetBottom],
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: GridItem }) => <GridCell item={item} locale={locale} onPress={onPressItem} />,
-    [onPressItem, locale],
+  const data = useMemo<readonly Cell[]>(
+    () => (leadingTile === undefined ? items : [LEADING_KEY, ...items]),
+    [items, leadingTile],
   );
 
-  const keyExtractor = useCallback((item: GridItem) => item.id, []);
+  const renderItem = useCallback(
+    ({ item }: { item: Cell }) =>
+      item === LEADING_KEY ? (
+        leadingTile === undefined ? null : <LeadingCell tile={leadingTile} />
+      ) : (
+        <GridCell item={item} locale={locale} onPress={onPressItem} />
+      ),
+    [onPressItem, locale, leadingTile],
+  );
+
+  const keyExtractor = useCallback((item: Cell) => (item === LEADING_KEY ? LEADING_KEY : item.id), []);
+  const getItemType = useCallback((item: Cell) => (item === LEADING_KEY ? 'leading' : 'garment'), []);
 
   const onScrollBegin = useCallback(() => {
     onScrollActiveChange?.(true);
@@ -116,7 +174,7 @@ export function ClosetGrid(props: {
     onScrollActiveChange?.(false);
   }, [onScrollActiveChange]);
 
-  if (items.length === 0) {
+  if (data.length === 0) {
     return (
       <View style={[styles.emptyScreen, { paddingTop: insetTop }]}>
         {header}
@@ -129,9 +187,14 @@ export function ClosetGrid(props: {
 
   return (
     <FlashList
-      data={items}
+      data={data}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
+      getItemType={getItemType}
+      // New garments and the leading tile arrive at the top. FlashList's default anchoring keeps
+      // the first visible cell in place, which scrolled the title and goal card off-screen on every
+      // upload; the closet reads top-down, so the content stays put instead.
+      maintainVisibleContentPosition={MVCP_DISABLED}
       numColumns={NUM_COLUMNS}
       ListHeaderComponent={header}
       ListHeaderComponentStyle={styles.header}
@@ -165,6 +228,37 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  badge: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    maxWidth: '90%',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    overflow: 'hidden',
+    backgroundColor: colors.tint,
+    color: colors.accentText,
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  leading: {
+    backgroundColor: colors.tint,
+    padding: spacing.sm,
+  },
+  leadingError: {
+    backgroundColor: colors.errorTint,
+  },
+  leadingText: {
+    color: colors.accentText,
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 13,
+    textAlign: 'center',
+  },
+  leadingTextError: {
+    color: colors.error,
   },
   wearCount: {
     position: 'absolute',

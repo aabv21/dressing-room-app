@@ -10,6 +10,10 @@ export const colors = {
   track: '#e6e0f5',
   dashed: '#cfc6e8',
   error: '#c0392b',
+  // Mockup 02's `.g.proc` / mockup 02 review's `.doubt` fill, and its border.
+  tint: '#f3edff',
+  tintBorder: '#d9c9ff',
+  errorTint: '#fdecea',
 } as const;
 
 /** Mockup 03's selected-card halo (`box-shadow: 0 0 0 3px rgba(124,58,237,.12)`). */

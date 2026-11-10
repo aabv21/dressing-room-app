@@ -1,6 +1,6 @@
 import { en } from '../en';
 import { es } from '../es';
-import { formatWearCount, resolveLocale, translate } from '../index';
+import { formatWearCount, pluralKey, resolveLocale, translate } from '../index';
 
 test('es has exactly the en keys', () => {
   expect(Object.keys(es).sort()).toEqual(Object.keys(en).sort());
@@ -37,4 +37,14 @@ test('number params reuse one Intl.NumberFormat per locale', () => {
   } finally {
     spy.mockRestore();
   }
+});
+
+test.each([
+  ['closet.processing', 1, 'closet.processing.one'],
+  ['closet.processing', 3, 'closet.processing.other'],
+  ['closet.failed', 0, 'closet.failed.other'],
+  ['closet.reviewBanner', 1, 'closet.reviewBanner.one'],
+] as const)('pluralKey(%s, %i) → %s', (base, count, expected) => {
+  expect(pluralKey(base, count)).toBe(expected);
+  expect(translate('en', pluralKey(base, count), { count })).not.toContain('{');
 });

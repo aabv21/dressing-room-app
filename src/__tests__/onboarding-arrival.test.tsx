@@ -18,6 +18,12 @@ let mockAuthState: MockAuthState = {
 };
 const mockAuthListeners = new Set<() => void>();
 
+// The closet providers wrap the signed-in navigator; this suite doesn't test the closet.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvidersMock'));
+
 jest.mock('../auth/AuthProvider', () => {
   const { useSyncExternalStore } = jest.requireActual<typeof import('react')>('react');
   return {

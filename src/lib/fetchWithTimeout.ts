@@ -2,12 +2,35 @@
  * How long any Supabase request may take before it is abandoned. Without a limit a captive portal
  * or a dead connection holds a request open for the platform's own timeout (about a minute), with
  * the splash screen or a spinner up the whole time; aborted requests surface as network errors.
- *
- * NOTE: the deadline covers the whole request, including sending its body, so it also caps
- * uploads: a 2 MiB garment photo over a slow link can need more than 12 s. Upgrade path: give
- * storage uploads their own, longer per-request deadline when uploads arrive.
  */
 export const REQUEST_TIMEOUT_MS = 12_000;
+
+/**
+ * The deadline covers the whole request, including sending its body, so storage uploads (a `POST`
+ * or `PUT` to a URL containing `/storage/v1/object/`) get longer: a 2 MiB garment photo over a slow
+ * link can need more than 12 s. Signing URLs (`/object/sign/`) and listing (`/object/list/`) are
+ * also `POST`s there but send no photo, so they keep 12 s.
+ */
+export const UPLOAD_TIMEOUT_MS = 60_000;
+
+const STORAGE_OBJECT_PATH = '/storage/v1/object/';
+const NOT_UPLOADS = ['/storage/v1/object/sign/', '/storage/v1/object/list/'];
+
+function urlOf(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function deadlineFor(input: RequestInfo | URL, init: RequestInit): number {
+  const method = (init.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase();
+  const url = urlOf(input);
+  const upload =
+    (method === 'POST' || method === 'PUT') &&
+    url.includes(STORAGE_OBJECT_PATH) &&
+    !NOT_UPLOADS.some((path) => url.includes(path));
+  return upload ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+}
 
 /**
  * `fetch` with an AbortController deadline, for supabase-js's `global.fetch`. A caller's own signal
@@ -19,7 +42,7 @@ export function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {
   const abort = (): void => {
     controller.abort();
   };
-  const timer = setTimeout(abort, REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(abort, deadlineFor(input, init));
   const callerSignal = init.signal ?? undefined;
   if (callerSignal?.aborted === true) {
     abort();

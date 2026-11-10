@@ -1,4 +1,4 @@
-import { REQUEST_TIMEOUT_MS, fetchWithTimeout } from '../fetchWithTimeout';
+import { REQUEST_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, fetchWithTimeout } from '../fetchWithTimeout';
 
 const originalFetch = globalThis.fetch;
 const fetchMock = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit | undefined]>();
@@ -46,6 +46,71 @@ test('aborts a request that has not answered after the timeout', async () => {
   expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
 
   jest.advanceTimersByTime(1);
+  expect(await outcome).toBe('AbortError');
+});
+
+/** Starts `request` and reports, without throwing, how it settled. */
+function outcomeOf(request: Promise<Response>): Promise<string> {
+  return request.then(
+    () => 'resolved',
+    (error: unknown) => (error instanceof Error ? error.name : 'unknown'),
+  );
+}
+
+test('storage uploads get 60 seconds', () => {
+  expect(UPLOAD_TIMEOUT_MS).toBe(60_000);
+});
+
+test.each(['POST', 'PUT'])('a storage object %s survives 30 s and aborts at 60 s', async (method) => {
+  fetchMock.mockImplementation(hangingRequest);
+
+  const outcome = outcomeOf(
+    fetchWithTimeout('http://127.0.0.1:54421/storage/v1/object/garments/u/g/full.webp', { method, body: 'bytes' }),
+  );
+
+  jest.advanceTimersByTime(30_000);
+  await Promise.resolve();
+  expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+
+  jest.advanceTimersByTime(UPLOAD_TIMEOUT_MS - 30_000 - 1);
+  await Promise.resolve();
+  expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(false);
+
+  jest.advanceTimersByTime(1);
+  expect(await outcome).toBe('AbortError');
+});
+
+test.each(['sign/garments', 'sign/garments/u/g/thumb.webp', 'list/garments'])(
+  'a storage POST to /object/%s (not an upload) keeps the 12 s deadline',
+  async (path) => {
+    fetchMock.mockImplementation(hangingRequest);
+
+    const outcome = outcomeOf(
+      fetchWithTimeout(`http://127.0.0.1:54421/storage/v1/object/${path}`, { method: 'POST', body: '{}' }),
+    );
+
+    jest.advanceTimersByTime(REQUEST_TIMEOUT_MS);
+    expect(await outcome).toBe('AbortError');
+  },
+);
+
+test('a REST GET still aborts at 12 s', async () => {
+  fetchMock.mockImplementation(hangingRequest);
+
+  const outcome = outcomeOf(fetchWithTimeout(new URL('http://127.0.0.1:54421/rest/v1/garments?select=*')));
+
+  jest.advanceTimersByTime(REQUEST_TIMEOUT_MS);
+  expect(await outcome).toBe('AbortError');
+});
+
+test('a storage read (GET) keeps the 12 s deadline', async () => {
+  fetchMock.mockImplementation(hangingRequest);
+
+  const outcome = outcomeOf(
+    fetchWithTimeout('http://127.0.0.1:54421/storage/v1/object/authenticated/garments/u/g/full.webp', { method: 'GET' }),
+  );
+
+  jest.advanceTimersByTime(REQUEST_TIMEOUT_MS);
   expect(await outcome).toBe('AbortError');
 });
 
