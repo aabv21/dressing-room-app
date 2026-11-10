@@ -1,0 +1,7 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Dressing Room uses your camera to photograph your clothes for your closet.",
+    "NSPhotoLibraryUsageDescription": "Dressing Room uses the photos you pick to add your clothes to your closet.",
+    "NSLocationWhenInUseUsageDescription": "Dressing Room uses your location once to find your city, so outfit suggestions can match the weather."
+  }
+}

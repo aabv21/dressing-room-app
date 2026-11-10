@@ -1,6 +1,8 @@
+import { RATING_DIMENSIONS, type RatingLabel } from '../../../supabase/functions/_shared/rating.ts';
+
 import { en } from '../en';
 import { es } from '../es';
-import { formatWearCount, resolveLocale, translate } from '../index';
+import { formatWearCount, pluralKey, resolveLocale, translate } from '../index';
 
 test('es has exactly the en keys', () => {
   expect(Object.keys(es).sort()).toEqual(Object.keys(en).sort());
@@ -37,4 +39,34 @@ test('number params reuse one Intl.NumberFormat per locale', () => {
   } finally {
     spy.mockRestore();
   }
+});
+
+test.each([
+  ['closet.processing', 1, 'closet.processing.one'],
+  ['closet.processing', 3, 'closet.processing.other'],
+  ['closet.failed', 0, 'closet.failed.other'],
+  ['closet.reviewBanner', 1, 'closet.reviewBanner.one'],
+] as const)('pluralKey(%s, %i) → %s', (base, count, expected) => {
+  expect(pluralKey(base, count)).toBe(expected);
+  expect(translate('en', pluralKey(base, count), { count })).not.toContain('{');
+});
+
+test('every rating reason and label the functions send has a message', () => {
+  const keys: ReadonlySet<string> = new Set(Object.keys(en));
+  for (const dimension of RATING_DIMENSIONS) {
+    expect(keys).toContain(`rating.reason.${dimension}.good`);
+    expect(keys).toContain(`rating.reason.${dimension}.warn`);
+  }
+  expect(keys).toContain('rating.reason.color_harmony.good.one');
+  expect(keys).toContain('rating.reason.color_harmony.good.plain');
+  for (const label of ['great', 'good', 'fair', 'poor'] satisfies RatingLabel[]) {
+    expect(keys).toContain(`rating.label.${label}`);
+  }
+});
+
+test('garment statuses read as neutral Spanish, the same for any garment', () => {
+  expect(es['garment.status.available']).toBe('Disponible');
+  expect(es['garment.status.laundry']).toBe('En la lavandería');
+  expect(es['garment.status.lent']).toBe('En préstamo');
+  expect(es['garment.status.donated']).toBe('Donación');
 });

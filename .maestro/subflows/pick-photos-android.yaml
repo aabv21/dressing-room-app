@@ -1,0 +1,24 @@
+# Android's system photo picker: select the four fixtures `pnpm e2e` just added and confirm. Each
+# photo is labeled "Photo taken on <date>"; its text is the first thing to check when an Android
+# update breaks this step.
+appId: com.aabv21.dressingroom
+---
+- extendedWaitUntil:
+    visible: "Photo taken on .*"
+    timeout: 15000
+- tapOn:
+    text: "Photo taken on .*"
+    index: 0
+- tapOn:
+    text: "Photo taken on .*"
+    index: 1
+- tapOn:
+    text: "Photo taken on .*"
+    index: 2
+- tapOn:
+    text: "Photo taken on .*"
+    index: 3
+- extendedWaitUntil:
+    visible: "4 photos or videos selected"
+    timeout: 5000
+- tapOn: "Done"

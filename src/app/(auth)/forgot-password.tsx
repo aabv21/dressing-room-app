@@ -77,9 +77,8 @@ export default function ForgotPasswordScreen() {
   }
 
   /**
-   * Bug fix (round 2): this used to reuse `setEmailError`/the step-1 `handleSendCode`, but step 2
-   * never renders the email field's error — a resend failure (e.g. a network error) was silently
-   * swallowed. Reports to `codeError` instead, which step 2's Code field does render.
+   * Reports to `codeError`, which step 2's Code field renders — not the email field's error, which
+   * step 2 never shows, so a resend failure (e.g. a network error) would be silently swallowed.
    */
   async function handleResend(): Promise<void> {
     setCodeError(undefined);
@@ -127,7 +126,7 @@ export default function ForgotPasswordScreen() {
         // An invalid/expired code (or any other failure) keeps the user on step 2 with a "Send a
         // new code" link rather than bouncing them back to step 1 and losing their email. The
         // guard (not this screen) drives navigation on success — a fresh session is just a normal
-        // sign-in from AuthProvider's point of view (I4).
+        // sign-in from AuthProvider's point of view.
         const message = t(result.error);
         setCodeError(message);
         announce(message);
@@ -142,8 +141,8 @@ export default function ForgotPasswordScreen() {
     setStep('email');
     setCodeError(undefined);
     setPasswordError(undefined);
-    // Round 2: step 1 no longer carries step 2's leftovers if the user comes back through
-    // "Change email" a second time after already having typed a code or seen a confirmation.
+    // Step 1 doesn't carry step 2's leftovers when the user comes back through "Change email" after
+    // already having typed a code or seen a confirmation.
     setCode('');
     setCodeSent(false);
   }

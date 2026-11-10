@@ -2,7 +2,13 @@ import * as Location from 'expo-location';
 import { useCallback } from 'react';
 
 export type CurrentCity = { name: string; lat: number; lon: number };
+
 export type CurrentCityResult = { ok: true; city: CurrentCity } | { ok: false; error: 'denied' | 'unavailable' };
+
+/** Two decimals is about 1 km: enough for a city's weather, without storing where the user is. */
+function toCityPrecision(degrees: number): number {
+  return Math.round(degrees * 100) / 100;
+}
 
 /**
  * Asks for when-in-use location permission, reads the current position once and reverse-geocodes
@@ -23,7 +29,7 @@ export function useCurrentCity(): { request: () => Promise<CurrentCityResult> } 
       if (name === null || name.trim() === '') {
         return { ok: false, error: 'unavailable' };
       }
-      return { ok: true, city: { name, lat: coords.latitude, lon: coords.longitude } };
+      return { ok: true, city: { name, lat: toCityPrecision(coords.latitude), lon: toCityPrecision(coords.longitude) } };
     } catch {
       return { ok: false, error: 'unavailable' };
     }

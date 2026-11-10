@@ -1,0 +1,120 @@
+# Sign up as this run's fresh user, onboard, add four garments from the gallery, review them,
+# wear the "feeling lucky" outfit and find it in Stats. The mock Claude reads every photo as navy
+# jeans, so review renames three of them: a T-shirt, a shirt and sneakers.
+appId: com.aabv21.dressingroom
+---
+# `-e2e 1` hides the dev build's warning toasts, which cover the anchored buttons.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      "-e2e": "1"
+- extendedWaitUntil:
+    visible: "Create account"
+    timeout: 60000
+- tapOn:
+    id: "welcome-email"
+- inputText: ${EMAIL}
+# Shown as plain text: typing into a secure field on iOS can drop characters.
+- tapOn: "Show password"
+- tapOn:
+    id: "welcome-password"
+- inputText: ${PASSWORD}
+- assertVisible: ${PASSWORD}
+- tapOn: "Create account"
+
+# Onboarding: every category, no body data, no style.
+- extendedWaitUntil:
+    visible:
+      id: "clothing-everything"
+    timeout: 30000
+- tapOn:
+    id: "clothing-everything"
+- extendedWaitUntil:
+    visible:
+      id: "clothing-everything"
+      selected: true
+    timeout: 5000
+- tapOn: "Next"
+- extendedWaitUntil:
+    visible: "Your body"
+    timeout: 15000
+- tapOn: "Skip"
+- extendedWaitUntil:
+    visible: "Your style"
+    timeout: 15000
+- tapOn: "Start"
+
+# The closet: pick the four newest photos (the fixtures `pnpm e2e` just added).
+- extendedWaitUntil:
+    visible: "Gallery"
+    timeout: 30000
+- tapOn: "Gallery"
+- runFlow:
+    when:
+      platform: iOS
+    file: ../subflows/pick-photos-ios.yaml
+- runFlow:
+    when:
+      platform: Android
+    file: ../subflows/pick-photos-android.yaml
+
+# Each photo uploads and the mock Claude reads it; then all four wait for review.
+- extendedWaitUntil:
+    visible: "4 garments to review"
+    timeout: 120000
+- tapOn: "4 garments to review"
+
+# Review: keep the first as jeans; the AI was sure of the category, so each of the others is
+# corrected through its Category row (clearing the chip lists every category).
+- extendedWaitUntil:
+    visible: "1 of 4"
+    timeout: 15000
+- tapOn: "Confirm"
+- extendedWaitUntil:
+    visible: "2 of 4"
+    timeout: 15000
+- runFlow:
+    file: ../subflows/recategorize.yaml
+    env:
+      CATEGORY: "T-shirt"
+- tapOn: "Confirm"
+- extendedWaitUntil:
+    visible: "3 of 4"
+    timeout: 15000
+- runFlow:
+    file: ../subflows/recategorize.yaml
+    env:
+      CATEGORY: "Shirt"
+- tapOn: "Confirm"
+- extendedWaitUntil:
+    visible: "4 of 4"
+    timeout: 15000
+- runFlow:
+    file: ../subflows/recategorize.yaml
+    env:
+      CATEGORY: "Sneakers"
+- tapOn: "Confirm"
+- extendedWaitUntil:
+    visible: "You're all caught up"
+    timeout: 15000
+- tapOn: "Back to closet"
+
+# Today: the "feeling lucky" outfit, worn.
+- tapOn: "Today"
+- extendedWaitUntil:
+    visible: "I'll wear it"
+    timeout: 60000
+- assertVisible: "Feeling lucky"
+- tapOn: "I'll wear it"
+- extendedWaitUntil:
+    visible: "Logged ✓"
+    timeout: 30000
+
+# Stats counts the wear.
+- tapOn: "Closet"
+- tapOn: "Stats"
+- extendedWaitUntil:
+    visible: "1 outfit logged"
+    timeout: 30000
+- assertVisible: "What you wear most"

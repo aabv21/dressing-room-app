@@ -180,7 +180,9 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+# NOTE: 8 matches the app's own check (welcome.tsx, forgot-password.tsx); the hosted project's
+# Auth settings must use the same minimum, since this file only configures the local stack.
+minimum_password_length = 8
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -196,6 +198,10 @@ password_requirements = ""
 # rp_origins = ["http://127.0.0.1:3000"]
 
 [auth.rate_limit]
+# NOTE: `requestPasswordReset` reports `over_email_send_rate_limit` as success (a code was already
+# sent), but GoTrue returns that same code when this project-wide hourly email cap is reached, so
+# a user past the cap is told a code is on its way when none is. The integration session must set
+# this (and the hosted SMTP/SES sending limits) generously for the family's real usage.
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
 email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
@@ -407,8 +413,63 @@ inspector_port = 8183
 # The Deno major version to use.
 deno_version = 2
 
-# [edge_runtime.secrets]
-# secret_key = "env(SECRET_VALUE)"
+# Local-only values; the hosted project sets its own with `supabase secrets set`.
+# EXTRACT_WEBHOOK_SECRET must match the `extract_webhook_secret` Vault secret in
+# seed.sql. ANTHROPIC_BASE_URL points at integration/mockAnthropic.ts on the
+# host, so local runs never reach the real Claude API. The TypeSafe (Jev) and
+# Open-Meteo URLs point at integration/mockServices.ts on the host for the same
+# reason: rate-outfit and lucky-list never reach the real services locally.
+[edge_runtime.secrets]
+EXTRACT_WEBHOOK_SECRET = "local-only-not-a-secret"
+ANTHROPIC_API_KEY = "local-only-not-a-key"
+ANTHROPIC_BASE_URL = "http://host.docker.internal:54499"
+TYPESAFE_API_KEY = "local-only-not-a-key"
+TYPESAFE_BASE_URL = "http://host.docker.internal:54498"
+OPEN_METEO_URL = "http://host.docker.internal:54498"
+OPEN_METEO_GEOCODING_URL = "http://host.docker.internal:54498"
+# Apple's /auth/token and /auth/revoke point at integration/mockServices.ts too. The team, key and
+# client ids are made up. APPLE_PRIVATE_KEY comes from the environment: `pnpm db:start` (and
+# db:start:ci) run scripts/db-start.ts, which generates a local-only P-256 key into gitignored
+# supabase/.temp/apple-test-key.pem (kept across restarts, never registered with Apple) and passes it
+# as LOCAL_APPLE_PRIVATE_KEY. No key is ever committed. A bare `supabase start` without it leaves
+# APPLE_PRIVATE_KEY unset or, depending on the CLI, the literal "env(LOCAL_APPLE_PRIVATE_KEY)";
+# appleEnvFrom treats both as missing, so apple-token answers `skipped` and deletion skips the
+# revoke. Hosted projects set their own with `supabase secrets set` (AGENTS.md).
+APPLE_TEAM_ID = "LOCALTEAM0"
+APPLE_KEY_ID = "LOCALKEY00"
+APPLE_CLIENT_ID = "local.dressing-room.test"
+APPLE_BASE_URL = "http://host.docker.internal:54498"
+APPLE_PRIVATE_KEY = "env(LOCAL_APPLE_PRIVATE_KEY)"
+
+# Called by the garments insert webhook (pg_net), which authenticates with the
+# `x-webhook-secret` header checked inside the function, not with a user JWT.
+[functions.extract-attributes]
+verify_jwt = false
+
+# Called by signed-in users; the gateway verifies the JWT before the function
+# runs, and the function reads garments and the profile with that same token.
+[functions.rate-outfit]
+verify_jwt = true
+
+# Called by signed-in users like rate-outfit; reads the closet and the profile with that token.
+[functions.lucky-list]
+verify_jwt = true
+
+# Called by signed-in users like rate-outfit; reads the closet and the profile with that token.
+[functions.for-you]
+verify_jwt = true
+
+# Called by signed-in users right after Sign in with Apple; stores the Apple refresh token (service role).
+[functions.apple-token]
+verify_jwt = true
+
+# Called by signed-in users; removes their photos, revokes Apple, then deletes the auth user (service role).
+[functions.delete-account]
+verify_jwt = true
+
+# Called by signed-in users; reads their rows with that token and signs their own photo URLs (service role).
+[functions.export-data]
+verify_jwt = true
 
 [analytics]
 enabled = true

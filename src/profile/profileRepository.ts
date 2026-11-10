@@ -1,45 +1,23 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Database, Tables } from '../lib/database.types';
+import { runRequest, type RequestError, type RequestOutcome } from '../lib/requestResult';
 import { supabase } from '../lib/supabase';
 
 export type Profile = Tables<'profiles'>;
 export type ProfilePatch = Partial<Omit<Profile, 'user_id' | 'created_at' | 'updated_at'>>;
 
-export type ProfileErrorKey = 'profile.error.network' | 'profile.error.invalid' | 'profile.error.unknown';
+export type ProfileErrorKey = `profile.error.${RequestError}`;
 export type Result = { ok: true } | { ok: false; error: ProfileErrorKey };
 
 type Client = SupabaseClient<Database>;
-type PostgrestLikeError = { code?: string };
 
-/**
- * Postgres error classes that mean "the values were rejected" rather than "the request failed":
- * 23514 check_violation (the CHECK ranges), 23502 not_null_violation, 22P02 invalid enum/number
- * text, 22003 numeric out of range, 22001 string too long.
- */
-const INVALID_VALUE_CODES: ReadonlySet<string> = new Set(['23514', '23502', '22P02', '22003', '22001']);
-
-function toProfileErrorKey(error: PostgrestLikeError, status: number): ProfileErrorKey {
-  // postgrest-js reports a rejected `fetch` (offline, DNS, timeout) as status 0 with an empty code.
-  if (status === 0) {
-    return 'profile.error.network';
-  }
-  if (error.code !== undefined && INVALID_VALUE_CODES.has(error.code)) {
-    return 'profile.error.invalid';
-  }
-  return 'profile.error.unknown';
-}
-
-async function run(request: PromiseLike<{ error: PostgrestLikeError | null; status: number }>): Promise<Result> {
-  try {
-    const { error, status } = await request;
-    if (error !== null) {
-      return { ok: false, error: toProfileErrorKey(error, status) };
-    }
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error: error instanceof TypeError ? 'profile.error.network' : 'profile.error.unknown' };
-  }
+async function run(
+  request: () => PromiseLike<RequestOutcome>,
+  applied?: (response: RequestOutcome) => boolean,
+): Promise<Result> {
+  const result = await runRequest(request, applied);
+  return result.ok ? result : { ok: false, error: `profile.error.${result.error}` };
 }
 
 /** Reads the signed-in user's profile row (RLS limits it to their own); `null` if there is none. */
@@ -52,15 +30,21 @@ export async function getProfile(userId: string, client: Client = supabase): Pro
 }
 
 /**
- * Upserts only the columns present in `patch` (PostgREST merges on conflict, so absent columns keep
- * their saved values). Un-completing onboarding is never a client action: a `null`
- * `onboarding_completed_at` is dropped rather than written, so no screen can reset a finished
- * profile back into onboarding (P2 binding item a).
+ * Updates only the columns present in `patch` on the user's existing row (the signup trigger
+ * creates it). Never an upsert: Postgres checks an `INSERT … ON CONFLICT DO UPDATE`'s proposed
+ * insert row against every CHECK constraint, so a partial patch (e.g. only `city_lat`) failed the
+ * lat/lon pair check even though the stored row satisfies it. An update that reaches no row (one
+ * this session can't see) is reported as an error rather than a silent success. Un-completing
+ * onboarding is never a client action: a `null` `onboarding_completed_at` is dropped rather than
+ * written, so no screen can reset a finished profile back into onboarding.
  */
 export async function saveProfile(userId: string, patch: ProfilePatch, client: Client = supabase): Promise<Result> {
   const { onboarding_completed_at: completedAt, ...rest } = patch;
-  const row = completedAt === null || completedAt === undefined ? rest : { ...rest, onboarding_completed_at: completedAt };
-  return run(client.from('profiles').upsert({ user_id: userId, ...row }, { onConflict: 'user_id' }));
+  const columns = completedAt === null || completedAt === undefined ? rest : { ...rest, onboarding_completed_at: completedAt };
+  return run(
+    () => client.from('profiles').update(columns).eq('user_id', userId).select('user_id'),
+    ({ data }) => Array.isArray(data) && data.length > 0,
+  );
 }
 
 /**
@@ -71,7 +55,7 @@ export async function saveProfile(userId: string, patch: ProfilePatch, client: C
  * onboarding shown again after a failed launch-time profile read.
  */
 export async function completeOnboarding(userId: string, client: Client = supabase): Promise<Result> {
-  return run(
+  return run(() =>
     client
       .from('profiles')
       .update({ onboarding_completed_at: 'now' })

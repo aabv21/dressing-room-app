@@ -6,6 +6,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useI18n } from '../i18n';
 import { TABS, useBottomChrome } from './layout';
+import { textScale } from './theme';
 
 // NOTE: expo-blur only blurs on iOS out of the box; Android needs the blurred content wrapped in a
 // BlurTargetView, which isn't wired yet. Until then Android gets a near-opaque frosted fill.
@@ -56,7 +57,7 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        <View style={styles.row}>
+        <View style={styles.row} accessibilityRole="tablist" testID="tab-list">
           {TABS.map((tab, index) => {
             const route = state.routes[index];
             if (!route) {
@@ -83,14 +84,24 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
                 accessibilityLabel={label}
+                // The label's size is capped to fit the bar; a long press shows it enlarged (iOS).
+                accessibilityShowsLargeContentViewer
+                accessibilityLargeContentTitle={label}
                 onPress={onPress}
                 style={styles.tab}
               >
-                <View style={[styles.tabContent, selected ? styles.tabActive : null]}>
+                {/* The lens is always mounted and only fades in: Android draws a background or
+                    shadow added on selection without the border radius. */}
+                <View
+                  style={[styles.lens, { opacity: selected ? 1 : 0 }]}
+                  pointerEvents="none"
+                  testID={`tab-lens-${tab.route}`}
+                />
+                <View style={styles.tabContent}>
                   <Icon size={18} color={selected ? '#6d28d9' : '#5f5b6b'} />
                   <Text
                     style={[styles.label, { color: selected ? '#6d28d9' : '#5f5b6b' }]}
-                    maxFontSizeMultiplier={1.3}
+                    maxFontSizeMultiplier={textScale.compact}
                     numberOfLines={1}
                   >
                     {label}
@@ -143,13 +154,18 @@ const styles = StyleSheet.create({
   tabContent: {
     width: '100%',
     height: '100%',
-    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
   // The lens doesn't clip, so its outset shadow can sit on the view itself without an opaque fill.
-  tabActive: {
+  lens: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 23,
     backgroundColor: 'rgba(255,255,255,0.9)',
     boxShadow: '0px 2px 8px rgba(80,40,160,0.16), inset 0px 1px 0px #ffffff',
   },

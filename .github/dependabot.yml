@@ -3,6 +3,7 @@ updates:
   # npm ecosystem also reads the pnpm lockfile.
   - package-ecosystem: npm
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     cooldown:
@@ -27,6 +28,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: develop
     schedule:
       interval: weekly
     cooldown:

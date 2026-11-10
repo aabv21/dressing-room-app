@@ -9,19 +9,17 @@ import { colors, layout, radii } from './theme';
  * Google sign-in is offered on iOS; Android has no native Apple button, so it's hidden there
  * entirely rather than rendered disabled.
  *
- * Ruling P2-R10: back to `AppleAuthentication.AppleAuthenticationButton` (ruling P2-R8's own
- * documented fallback). Round 1 tried a custom hand-traced-SVG button to fix the native button's
- * English-only label next to a correctly-localized Google button — but a custom button only
- * satisfies Apple's Human Interface Guidelines if it reproduces their exact logo asset, approved
- * title strings, and proportions, and a hand-traced path risks getting those wrong in ways that
- * are easy to miss in review (round 1's custom glyph also drifted from the Google button's exact
- * proportions). App Review safety wins over exact mockup fidelity here: the native button is
+ * Apple uses `AppleAuthentication.AppleAuthenticationButton`, not a custom button styled like the
+ * Google one. A custom button only satisfies Apple's Human Interface Guidelines if it reproduces
+ * their exact logo asset, approved title strings, and proportions, and a hand-traced path risks
+ * getting those wrong in ways that are easy to miss in review. App Review safety wins over exact
+ * mockup fidelity here: the native button is
  * automatically Apple-approved, accessible, and localizes via the device's own language list —
  * `app.json`'s `expo-localization` `supportedLocales: ["en", "es"]` makes that list (and thus
  * `CFBundleLocalizations`) include Spanish, so the button's text follows the *device* language.
  * Known, accepted deviation from an exact pixel match with the Google button: the native button's
  * label uses Apple's own type size/weight (not this app's 14pt/700), and it reads the device
- * locale rather than this app's in-app `LanguageToggle` preference — see ruling P2-R10.
+ * locale rather than this app's in-app `LanguageToggle` preference.
  */
 export function SocialButton(props: {
   provider: 'apple' | 'google';
@@ -69,7 +67,9 @@ export function SocialButton(props: {
 
 const styles = StyleSheet.create({
   button: {
-    height: layout.ctaHeight,
+    minHeight: layout.ctaHeight,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -97,7 +97,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.ink,
   },
+  // Wraps inside the pill at large text sizes instead of spilling past its edges.
   googleLabel: {
+    flexShrink: 1,
+    textAlign: 'center',
     fontWeight: '700',
     fontSize: 14,
     color: colors.ink,

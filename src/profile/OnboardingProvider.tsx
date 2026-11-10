@@ -26,9 +26,10 @@ const OnboardingContext = createContext<OnboardingContextValue | undefined>(unde
 
 /**
  * Holds the onboarding steps' view of the profile. Steps only render once a fresh `getProfile`
- * succeeded (`status === 'ready'`): that read is what prefills a relaunch mid-onboarding (Review
- * Focus 3), and it is also the guard for P2 binding item (a) — `AuthProvider` reports "onboarding
- * incomplete" when its own launch-time read fails, so a finished user can land here. Without a
+ * succeeded (`status === 'ready'`): that read is what prefills a relaunch mid-onboarding, and it
+ * also keeps a finished profile from being overwritten — `AuthProvider` can report "onboarding
+ * incomplete" when its own launch-time read fails (for an account it has never loaded on this
+ * device), so a finished user can land here. Without a
  * successful re-read the steps would show defaults (height 165, no styles) and saving them would
  * overwrite real data, so a failed read shows a retry instead, and a profile that turns out to be
  * complete hands straight back to `AuthProvider` without rendering any step.

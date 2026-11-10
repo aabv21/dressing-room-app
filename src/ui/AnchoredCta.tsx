@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
-import { colors, gradients, layout, radii } from './theme';
+import { colors, gradients, layout, radii, textScale } from './theme';
 
 export type CtaTone = 'ai' | 'commit' | 'ghost';
 
@@ -24,7 +24,7 @@ function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBas
   const content = (
     <View style={styles.contentRow}>
       {Icon ? <Icon size={16} color={iconColor} style={styles.icon} /> : null}
-      <Text style={textStyle} numberOfLines={2}>
+      <Text style={textStyle} numberOfLines={2} maxFontSizeMultiplier={textScale.cta}>
         {label}
       </Text>
     </View>
@@ -73,8 +73,12 @@ export function AnchoredCta(props: {
   primary: CtaAction;
   secondary?: CtaAction;
   chrome?: ScreenChrome;
+  /** The screen under the zone: `dark` fades to near-black (the camera), as in mockup 02. */
+  surface?: 'light' | 'dark';
+  /** Shown just above the buttons, inside the anchored zone, so it's always on screen (e.g. a save error). */
+  notice?: React.ReactNode;
 }): React.JSX.Element {
-  const { primary, secondary, chrome = 'tabs' } = props;
+  const { primary, secondary, chrome = 'tabs', surface = 'light', notice } = props;
   const { ctaBottom } = useBottomChrome(chrome);
 
   return (
@@ -84,11 +88,14 @@ export function AnchoredCta(props: {
           45% down, as in the mockups' `linear-gradient(to top, #ebe3ff 55%, transparent)`, so
           content scrolling under the buttons doesn't show through them. */}
       <LinearGradient
-        colors={['rgba(235,227,255,0)', '#ebe3ff']}
-        locations={[0, 0.45]}
+        colors={surface === 'dark' ? ['rgba(14,13,18,0)', '#0e0d12'] : ['rgba(235,227,255,0)', '#ebe3ff']}
+        // Mockup 02's dark zone is solid from 60% down, the light one from 55%.
+        locations={surface === 'dark' ? [0, 0.4] : [0, 0.45]}
+        testID="cta-fade"
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
+      {notice === undefined ? null : <View style={styles.notice}>{notice}</View>}
       <View style={styles.row}>
         {secondary ? <ActionButton action={secondary} flexBasisPercent={36} /> : null}
         <ActionButton action={primary} />
@@ -105,6 +112,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 22,
     paddingBottom: layout.ctaZoneBottomPadding,
+  },
+  notice: {
+    marginBottom: 8,
   },
   row: {
     flexDirection: 'row',

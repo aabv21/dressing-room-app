@@ -10,6 +10,16 @@ export const colors = {
   track: '#e6e0f5',
   dashed: '#cfc6e8',
   error: '#c0392b',
+  // Mockup 02's `.g.proc` / mockup 02 review's `.doubt` fill, and its border.
+  tint: '#f3edff',
+  tintBorder: '#d9c9ff',
+  errorTint: '#fdecea',
+  // Mockup 01 screen 3's reason marks: `.ok` (✓) and `.warn` (!).
+  positive: '#16a34a',
+  warning: '#e11d48',
+  // `positive` is for icons (3:1 is enough there); as text it falls short of 4.5:1 on white, so
+  // green text uses this deeper shade.
+  positiveText: '#15803d',
 } as const;
 
 /** Mockup 03's selected-card halo (`box-shadow: 0 0 0 3px rgba(124,58,237,.12)`). */
@@ -37,6 +47,30 @@ export const spacing = {
   xl: 32,
 } as const;
 
+/**
+ * `maxFontSizeMultiplier` caps, only for text in fixed-size chrome, where growing without limit would
+ * clip or push it out of its box. Content text is never capped: above `LARGE_TEXT_FONT_SCALE`
+ * (`layout.ts`) side-by-side layouts stack or take a full row instead.
+ */
+export const textScale = {
+  // Tab bar and segment labels: iOS shows them enlarged on a long press (the large content viewer).
+  compact: 1.3,
+  // Anchored CTA labels: the zone floats over the content, so it can't grow without covering it.
+  cta: 1.5,
+  // The score ring's number and caption; the ring grows with them up to the same factor.
+  ring: 1.2,
+  // Calendar day numbers and weekday letters, inside square day cells (with the worn day's
+  // thumbnail, which shrinks at a large text size).
+  calendar: 1.45,
+  // The status badge and wear count over a closet grid thumbnail; iOS shows the cell enlarged on a
+  // long press, and a screen reader reads both in the cell's label.
+  overlay: 1.3,
+  // Decorative emoji beside text, which would otherwise take the width the text needs.
+  emoji: 1.3,
+  // The Welcome headline: a 900-weight hero breaks its longest word mid-word past this on a phone.
+  hero: 2,
+} as const;
+
 export const layout = {
   tabBarHeight: 56,
   tabBarGap: 12,
@@ -45,8 +79,8 @@ export const layout = {
   // AnchoredCta's `zone` wraps its buttons in `paddingBottom: ctaZoneBottomPadding` (the gradient
   // fade needs room above the button). `useBottomChrome`'s chrome:'none' math (layout.ts)
   // subtracts this so the button's own bottom edge — not the zone's — lands at exactly
-  // `insets.bottom + 22`, per global-constraints.md / M2.
+  // `insets.bottom + 22`.
   ctaZoneBottomPadding: 8,
-  // Global minimum tap target (global-constraints.md: "hit targets of at least 44").
+  // Minimum tap target everywhere in the app (44pt).
   minHitTarget: 44,
 } as const;

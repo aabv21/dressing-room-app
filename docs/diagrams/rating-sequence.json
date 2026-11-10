@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Outfit Rating Sequence",
+    "locale": "en",
+    "output": "docs/diagrams/rating-sequence.html",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1700,
+      972
+    ]
+  },
+  "participants": [
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "Rating screen"
+    },
+    {
+      "id": "fn",
+      "type": "backend",
+      "label": "rate-outfit"
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Postgres",
+      "brand": "postgresql"
+    },
+    {
+      "id": "meteo",
+      "type": "external",
+      "label": "Open-Meteo"
+    },
+    {
+      "id": "jev",
+      "type": "external",
+      "label": "TypeSafe Jev"
+    },
+    {
+      "id": "claude",
+      "type": "external",
+      "label": "Claude Haiku 5.5",
+      "brand": "anthropic"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 225,
+      "label": "1 Request"
+    },
+    {
+      "from": 249,
+      "to": 314,
+      "label": "2 Read with the user's JWT"
+    },
+    {
+      "from": 338,
+      "to": 403,
+      "label": "3 Weather"
+    },
+    {
+      "from": 427,
+      "to": 492,
+      "label": "4 Cache and quota"
+    },
+    {
+      "from": 516,
+      "to": 581,
+      "label": "5 Jev rating"
+    },
+    {
+      "from": 605,
+      "to": 670,
+      "label": "6 Claude fallback"
+    },
+    {
+      "from": 694,
+      "to": 789,
+      "label": "7 Swap search"
+    },
+    {
+      "from": 813,
+      "to": 878,
+      "label": "8 Cache and answer"
+    }
+  ],
+  "messages": [
+    {
+      "from": "app",
+      "to": "fn",
+      "y": 175,
+      "label": "garment_ids, occasion, date + user JWT",
+      "variant": "emphasis"
+    },
+    {
+      "from": "fn",
+      "to": "app",
+      "y": 205,
+      "label": "400 · 401 · 404 · 422",
+      "variant": "return"
+    },
+    {
+      "from": "fn",
+      "to": "db",
+      "y": 264,
+      "label": "garments + profile (RLS)"
+    },
+    {
+      "from": "db",
+      "to": "fn",
+      "y": 294,
+      "label": "rows the caller owns",
+      "variant": "return"
+    },
+    {
+      "from": "fn",
+      "to": "meteo",
+      "y": 353,
+      "label": "coords, or geocode the city",
+      "note": "weather_cache per place and hour"
+    },
+    {
+      "from": "meteo",
+      "to": "fn",
+      "y": 383,
+      "label": "band + rain, or unknown",
+      "variant": "return"
+    },
+    {
+      "from": "fn",
+      "to": "db",
+      "y": 442,
+      "label": "rating_cache, consume_quota"
+    },
+    {
+      "from": "db",
+      "to": "fn",
+      "y": 472,
+      "label": "hit: answer · over 50: 429",
+      "variant": "return"
+    },
+    {
+      "from": "fn",
+      "to": "jev",
+      "y": 531,
+      "label": "buckets: 8 scores, 2 nouls, weakest",
+      "variant": "security",
+      "note": "10 s timeout"
+    },
+    {
+      "from": "jev",
+      "to": "fn",
+      "y": 561,
+      "label": "typed answers",
+      "variant": "return",
+      "note": "code composes 0–100 · hard failure caps at 40"
+    },
+    {
+      "from": "fn",
+      "to": "claude",
+      "y": 620,
+      "label": "same state, fixed rubric",
+      "note": "only when Jev fails"
+    },
+    {
+      "from": "claude",
+      "to": "fn",
+      "y": 650,
+      "label": "level indices, or nothing",
+      "variant": "return"
+    },
+    {
+      "from": "fn",
+      "to": "db",
+      "y": 709,
+      "label": "the closet (RLS), weakest slot only"
+    },
+    {
+      "from": "fn",
+      "to": "jev",
+      "y": 739,
+      "label": "up to 8 candidates, 5 at once",
+      "note": "below 70 · none after 15 s"
+    },
+    {
+      "from": "jev",
+      "to": "fn",
+      "y": 769,
+      "label": "answers per candidate",
+      "variant": "return",
+      "note": "code offers a swap 5+ points better"
+    },
+    {
+      "from": "fn",
+      "to": "db",
+      "y": 828,
+      "label": "cache result (degraded: 1 h)"
+    },
+    {
+      "from": "fn",
+      "to": "app",
+      "y": 858,
+      "label": "score, label, reasons, swap",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Code owns the workflow",
+      "items": [
+        "Jev answers typed questions; templates write the reasons",
+        "Weights and bands live in RATING_CONFIG",
+        "Unknown weather is neutral, never a failure"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Bounded spend",
+      "items": [
+        "50 ratings per user per UTC day, cache misses only",
+        "A cache hit calls no model",
+        "Worst case about 40 s, inside the app's 45 s deadline"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "What the models see",
+      "items": [
+        "Clothing type, body type, height bucket, age group, styles",
+        "Each piece's slot, category, colors, pattern, formality, fit",
+        "Never a photo, a measurement, a size or a name"
+      ]
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+import { useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MessageKey } from '../i18n';
@@ -19,10 +20,9 @@ export const TABS: readonly { route: TabRoute; labelKey: MessageKey; icon: Lucid
 export type ScreenChrome = 'tabs' | 'none';
 
 /**
- * `chrome: 'none'` is for screens with no tab bar (auth, onboarding — mockup 03's "CTAs are
- * anchored at the bottom... those screens have no tab bar, so the CTA sits at `insets.bottom +
- * 22`" per global-constraints.md). `chrome: 'tabs'` (default) keeps the existing tab-bar-aware
- * offsets.
+ * `chrome: 'none'` is for screens with no tab bar (auth, onboarding — mockup 03): their CTA is
+ * anchored at the bottom with its button at `insets.bottom + 22`. `chrome: 'tabs'` (default) keeps
+ * the existing tab-bar-aware offsets.
  */
 export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
   tabBarBottom: number;
@@ -35,8 +35,8 @@ export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
     // so its own bottom edge sits exactly `ctaBottom` above the screen bottom; the zone then adds
     // `paddingBottom: ctaZoneBottomPadding` *inside* that, pushing the button row up by that much
     // further — so the button's own rendered bottom edge ends up at `ctaBottom +
-    // ctaZoneBottomPadding`, not `ctaBottom` itself (round 1 had this backwards, subtracting
-    // instead of adding, landing the button ~2x too high). Solving for the target
+    // ctaZoneBottomPadding`, not `ctaBottom` itself (subtracting instead would land the button
+    // about twice as high as intended). Solving for the target
     // (`insets.bottom + 22`) means `ctaBottom` here must be that much *lower*.
     const ctaBottom = insets.bottom + 22 - layout.ctaZoneBottomPadding;
     const contentPaddingBottom = ctaBottom + layout.ctaHeight + 24;
@@ -46,4 +46,16 @@ export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
   const ctaBottom = tabBarBottom + layout.tabBarHeight + layout.ctaGap;
   const contentPaddingBottom = ctaBottom + layout.ctaHeight + 24;
   return { tabBarBottom, ctaBottom, contentPaddingBottom };
+}
+
+/**
+ * The system text scale (iOS Dynamic Type, Android font scale) above which side-by-side layouts
+ * stack or take a full row, so their content text can keep growing without breaking mid-word. It
+ * sits between iOS's largest standard size (about 1.35x) and its first accessibility size.
+ */
+export const LARGE_TEXT_FONT_SCALE = 1.5;
+
+/** Whether the system text scale is above `LARGE_TEXT_FONT_SCALE`. */
+export function useLargeText(): boolean {
+  return useWindowDimensions().fontScale > LARGE_TEXT_FONT_SCALE;
 }

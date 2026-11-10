@@ -37,6 +37,11 @@ function numberFormat(locale: Locale): Intl.NumberFormat {
   return format;
 }
 
+/** Whether `key` is a catalog key, e.g. a message key sent by a function (`rating.reason.*`). */
+export function isMessageKey(key: string): key is MessageKey {
+  return Object.hasOwn(en, key);
+}
+
 export function translate(
   locale: Locale,
   key: MessageKey,
@@ -68,6 +73,21 @@ export function formatWearCount(count: number, locale: Locale): string {
   // (force-polyfill variant for Hermes) if a locale with a richer plural system is ever added.
   const key = count === 1 ? 'wear.one' : 'wear.other';
   return translate(locale, key, { count });
+}
+
+export type PluralBase =
+  | 'closet.processing'
+  | 'closet.failed'
+  | 'closet.reviewBanner'
+  | 'camera.count'
+  | 'stats.kpi.outfits'
+  | 'stats.kpi.streak'
+  | 'diary.outfits'
+  | 'forYou.outfits';
+
+/** `{base}.one` for exactly 1, otherwise `{base}.other` — the same en/es rule as `formatWearCount`. */
+export function pluralKey(base: PluralBase, count: number): MessageKey {
+  return count === 1 ? `${base}.one` : `${base}.other`;
 }
 
 export function useI18n(): {

@@ -6,7 +6,7 @@ import { useOnboarding } from '../../profile/OnboardingProvider';
 /**
  * The group's root path ("/"), where the root guard lands a signed-in user with onboarding still
  * open. Once the profile is read it resumes at the first unfinished step: Clothing is the only
- * required one, so with a saved clothing type a relaunch continues at Body (Review Focus 3) — with
+ * required one, so with a saved clothing type a relaunch continues at Body (nothing typed is lost) — with
  * Clothing pushed underneath, so going back still reaches the first step and its sign-out link.
  */
 export default function OnboardingIndex() {

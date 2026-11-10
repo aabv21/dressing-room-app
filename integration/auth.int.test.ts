@@ -27,7 +27,7 @@ test('sign up, sign out, then sign in works', async () => {
 
   const signUpResult = await signUpWithEmail(email, 'Password123!', client);
   // Local Supabase runs with confirmations off (see supabase/config.toml), so signUp returns a
-  // session immediately and needsConfirmation is false (I5 / ruling P2-R6).
+  // session immediately and needsConfirmation is false.
   expect(signUpResult).toEqual({ ok: true, needsConfirmation: false });
 
   const { data: signedUpUser } = await client.auth.getUser();
@@ -53,6 +53,12 @@ test('signing up an existing email gives emailInUse', async () => {
   const result = await signUpWithEmail(email, 'AnotherPassword1!', anonClient());
 
   expect(result).toEqual({ ok: false, error: 'auth.error.emailInUse' });
+});
+
+test('the server rejects a password shorter than the app minimum of 8 as weak', async () => {
+  const result = await signUpWithEmail(uniqueEmail('short-password'), 'Pass12!', anonClient());
+
+  expect(result).toEqual({ ok: false, error: 'auth.error.weakPassword' });
 });
 
 test('a wrong password gives invalidCredentials', async () => {

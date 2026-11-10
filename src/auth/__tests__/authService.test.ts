@@ -88,7 +88,7 @@ describe('signUpWithEmail', () => {
     expect(result).toEqual({ ok: true, needsConfirmation: false });
   });
 
-  test('resolves needsConfirmation true when sign-up returns no session (P2-R6, confirmations on)', async () => {
+  test('resolves needsConfirmation true when sign-up returns no session (confirmations on)', async () => {
     const client = fakeClient();
     client.auth.signUp.mockResolvedValue({ data: { session: null }, error: null });
 
@@ -190,6 +190,35 @@ describe('signOut', () => {
     expect(result).toEqual({ ok: false, error: 'auth.error.unknown' });
   });
 
+  test('when the local fallback also fails offline, clears the stored session and signs out locally again', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: null });
+    const clearStoredAuth = jest.fn();
+
+    const result = await signOut(asClient(client), clearStoredAuth);
+
+    expect(result).toEqual({ ok: true });
+    expect(clearStoredAuth).toHaveBeenCalledTimes(1);
+    expect(client.auth.signOut).toHaveBeenCalledTimes(3);
+    expect(client.auth.signOut).toHaveBeenNthCalledWith(3, { scope: 'local' });
+    expect(clearStoredAuth.mock.invocationCallOrder[0]).toBeLessThan(client.auth.signOut.mock.invocationCallOrder[2] ?? 0);
+  });
+
+  test('a non-network local failure does not clear storage', async () => {
+    const client = fakeClient();
+    client.auth.signOut
+      .mockResolvedValueOnce({ error: new AuthRetryableFetchError('fetch failed', 0) })
+      .mockResolvedValueOnce({ error: new AuthError('storage failed', 500, 'unexpected_failure') });
+    const clearStoredAuth = jest.fn();
+
+    await signOut(asClient(client), clearStoredAuth);
+
+    expect(clearStoredAuth).not.toHaveBeenCalled();
+  });
+
   test('surfaces a non-network failure without retrying', async () => {
     const client = fakeClient();
     client.auth.signOut.mockResolvedValueOnce({ error: new AuthError('rate limited', 429, 'over_request_rate_limit') });
@@ -223,7 +252,7 @@ describe('requestPasswordReset', () => {
     expect(result).toEqual({ ok: true });
   });
 
-  test('resolves ok on a rate limit, per P2-R6: a code was already sent', async () => {
+  test('resolves ok on an email rate limit: a code was already sent', async () => {
     const client = fakeClient();
     client.auth.resetPasswordForEmail.mockResolvedValue({
       data: {},
@@ -288,7 +317,7 @@ describe('confirmPasswordReset', () => {
     expect(result).toEqual({ ok: false, error: 'auth.error.weakPassword' });
   });
 
-  test('signs out locally when updateUser fails after a successful verify, per P2-R5', async () => {
+  test('signs out locally when updateUser fails after a successful verify', async () => {
     const client = fakeClient();
     client.auth.updateUser.mockResolvedValue({
       data: {},
@@ -341,6 +370,94 @@ describe('signInWithApple', () => {
       nonce: 'raw-nonce',
     });
     expect(result).toEqual({ ok: true });
+  });
+
+  describe('sending the authorization code to apple-token', () => {
+    function mockAppleCredential(authorizationCode: string | null): void {
+      (AppleAuthentication.signInAsync as jest.Mock).mockResolvedValue({
+        identityToken: 'apple-id-token',
+        user: 'apple-user',
+        email: null,
+        fullName: null,
+        state: null,
+        realUserStatus: 0,
+        authorizationCode,
+      });
+    }
+
+    /** `fakeClient` plus the `functions.invoke` surface, answering with `invoke`. */
+    function clientWithFunctions(invoke: jest.Mock): { auth: FakeAuth; functions: { invoke: jest.Mock } } {
+      return { ...fakeClient(), functions: { invoke } };
+    }
+
+    let infoSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      infoSpy.mockRestore();
+    });
+
+    const flush = () => new Promise((resolve) => setImmediate(resolve));
+    const logged = (): string => infoSpy.mock.calls.map((args: unknown[]) => args.map(String).join(' ')).join('\n');
+
+    test('invokes apple-token with the code after a successful sign-in, logging only the outcome', async () => {
+      mockAppleCredential('apple-auth-code');
+      const invoke = jest.fn(() => Promise.resolve({ data: { outcome: 'stored' }, error: null }));
+      const client = clientWithFunctions(invoke);
+
+      const result = await signInWithApple(client as unknown as Client);
+      await flush();
+
+      expect(result).toEqual({ ok: true });
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledWith('apple-token', { body: { code: 'apple-auth-code' } });
+      expect(logged()).toContain('stored');
+      expect(logged()).not.toContain('apple-auth-code');
+    });
+
+    test('never waits for apple-token: sign-in resolves while the call is still pending', async () => {
+      mockAppleCredential('apple-auth-code');
+      const invoke = jest.fn(() => new Promise(() => undefined));
+      const client = clientWithFunctions(invoke);
+
+      await expect(signInWithApple(client as unknown as Client)).resolves.toEqual({ ok: true });
+      expect(invoke).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([
+      ['rejects', () => Promise.reject(new Error('network down apple-auth-code'))],
+      ['answers an error', () => Promise.resolve({ data: null, error: new Error('FunctionsHttpError apple-auth-code') })],
+      ['throws synchronously', () => {
+        throw new Error('boom apple-auth-code');
+      }],
+    ])('a call that %s leaves the sign-in successful and logs no code', async (_name, impl) => {
+      mockAppleCredential('apple-auth-code');
+      const client = clientWithFunctions(jest.fn(impl));
+
+      await expect(signInWithApple(client as unknown as Client)).resolves.toEqual({ ok: true });
+      await flush();
+
+      expect(logged()).toContain('failed');
+      expect(logged()).not.toContain('apple-auth-code');
+    });
+
+    test('is not invoked without a code, or when the sign-in itself fails', async () => {
+      mockAppleCredential(null);
+      const invoke = jest.fn(() => Promise.resolve({ data: { outcome: 'stored' }, error: null }));
+      const withoutCode = clientWithFunctions(invoke);
+      await signInWithApple(withoutCode as unknown as Client);
+
+      mockAppleCredential('apple-auth-code');
+      const failing = clientWithFunctions(invoke);
+      failing.auth.signInWithIdToken.mockResolvedValue({ data: {}, error: new AuthError('Invalid id token', 400) });
+      const result = await signInWithApple(failing as unknown as Client);
+
+      expect(result.ok).toBe(false);
+      expect(invoke).not.toHaveBeenCalled();
+    });
   });
 
   test('maps the cancel code to cancelled', async () => {

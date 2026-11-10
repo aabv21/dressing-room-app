@@ -1,10 +1,11 @@
--- Row level security on public.profiles: each user sees and can only
--- select/insert/update their own row; no cross-user access; anon sees none.
+-- Row level security on public.profiles: each user sees and can only select
+-- and update their own row (the signup trigger is the only writer of new rows);
+-- no cross-user access; no deletes; anon has no access at all.
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(7);
+select plan(9);
 
 -- Two users, created directly in auth.users so the signup trigger fires and
 -- creates their profile rows.
@@ -55,8 +56,7 @@ select is(
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
 
--- A cannot insert a row for B — B already has a profile from the trigger, so
--- exercise the policy directly against a row that is not A's.
+-- Clients never insert: the row already exists, and there is no insert policy.
 select throws_ok(
   $$ insert into public.profiles (user_id) values ('33333333-3333-3333-3333-333333333333') $$,
   '42501',
@@ -64,16 +64,37 @@ select throws_ok(
   'user A inserting a row for someone else raises a policy error'
 );
 
--- Anonymous role sees zero rows.
+select throws_ok(
+  $$ insert into public.profiles (user_id, city_name) values ('11111111-1111-1111-1111-111111111111', 'Bogotá')
+     on conflict (user_id) do update set city_name = excluded.city_name $$,
+  '42501',
+  null,
+  'user A upserting their own row raises a policy error (clients update, never insert)'
+);
+
+-- No delete policy: the statement succeeds but removes nothing.
+delete from public.profiles where user_id = '11111111-1111-1111-1111-111111111111';
+
 reset role;
+
+select is(
+  (select count(*)::int from public.profiles where user_id = '11111111-1111-1111-1111-111111111111'),
+  1,
+  'user A deleting their own profile row removes nothing'
+);
+
+-- The anon role has no privileges on profiles at all.
 select set_config('request.jwt.claims', '', true);
 set local role anon;
 
-select is(
-  (select count(*)::int from public.profiles),
-  0,
-  'the anon role sees zero profile rows'
+select throws_ok(
+  $$ select count(*) from public.profiles $$,
+  '42501',
+  null,
+  'the anon role cannot read profiles'
 );
+
+reset role;
 
 select * from finish();
 
