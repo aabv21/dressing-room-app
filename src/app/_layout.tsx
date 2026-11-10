@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
@@ -110,6 +111,8 @@ function Guards() {
   return (
     <OnboardingArrivalContext.Provider value={arrival}>
       <View style={styles.fill}>
+        {/* Dark icons on the light screens; Android's edge-to-edge default is light icons. */}
+        <StatusBar style="dark" />
         {active.status === 'signedIn' && active.userId !== null ? (
           // Keyed by user: another account never sees the previous one's closet or upload queue.
           <ClosetProvider key={active.userId}>

@@ -3,8 +3,8 @@ import { LogBox, Platform, Settings } from 'react-native';
 /**
  * True when Maestro launched the app for the end-to-end flows: their `launchApp` passes `-e2e 1`,
  * which iOS puts in the app's user defaults (`Settings`). Only checked in a dev build.
- * NOTE: iOS only, since Android has no launch-argument defaults; Android flows would need another
- * signal (an intent extra read by a native module).
+ * NOTE: iOS only, since Android has no launch-argument defaults; the Android flows rely on the app
+ * logging no warnings instead. Upgrade path: an intent extra read by a native module.
  */
 export function isE2eLaunch(): boolean {
   if (Platform.OS !== 'ios') return false;

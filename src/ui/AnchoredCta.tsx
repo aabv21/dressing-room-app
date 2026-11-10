@@ -73,10 +73,12 @@ export function AnchoredCta(props: {
   primary: CtaAction;
   secondary?: CtaAction;
   chrome?: ScreenChrome;
+  /** The screen under the zone: `dark` fades to near-black (the camera), as in mockup 02. */
+  surface?: 'light' | 'dark';
   /** Shown just above the buttons, inside the anchored zone, so it's always on screen (e.g. a save error). */
   notice?: React.ReactNode;
 }): React.JSX.Element {
-  const { primary, secondary, chrome = 'tabs', notice } = props;
+  const { primary, secondary, chrome = 'tabs', surface = 'light', notice } = props;
   const { ctaBottom } = useBottomChrome(chrome);
 
   return (
@@ -86,8 +88,9 @@ export function AnchoredCta(props: {
           45% down, as in the mockups' `linear-gradient(to top, #ebe3ff 55%, transparent)`, so
           content scrolling under the buttons doesn't show through them. */}
       <LinearGradient
-        colors={['rgba(235,227,255,0)', '#ebe3ff']}
+        colors={surface === 'dark' ? ['rgba(14,13,18,0)', '#0e0d12'] : ['rgba(235,227,255,0)', '#ebe3ff']}
         locations={[0, 0.45]}
+        testID="cta-fade"
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />

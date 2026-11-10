@@ -1,22 +1,26 @@
 // scripts/e2e.ts
 //
-// `pnpm e2e`: runs the Maestro flows in `.maestro/flows` on the booted iOS simulator, against the
-// local Supabase stack and the mocked AI and weather services, as a fresh `@example.com` user.
+// `pnpm e2e`: runs the Maestro flows in `.maestro/flows` on the booted iOS simulator (or, with
+// `E2E_PLATFORM=android`, the connected Android emulator), against the local Supabase stack and the
+// mocked AI and weather services, as a fresh `@example.com` user.
 // `node scripts/e2e.ts fixtures` regenerates the fictional garment photos in `.maestro/fixtures/`.
 //
-// Before the flows it checks Java, Maestro, the simulator (booted, with the dev build installed),
+// Before the flows it checks Java, Maestro, the device (booted, with the dev build installed),
 // Metro and the local stack, so a missing piece fails with a message instead of a flow timeout.
-// Then it starts `integration/mockServices.ts` and `integration/mockAnthropic.ts`, adds the
-// fixtures to the simulator's photo library and runs Maestro. The mocks stop when it ends.
+// On Android it also maps the emulator's Metro and Supabase ports to the Mac's (`adb reverse`),
+// since the app's 127.0.0.1 is the emulator itself. Then it starts `integration/mockServices.ts`
+// and `integration/mockAnthropic.ts`, adds the fixtures to the device's photo library and runs
+// Maestro. The mocks stop when it ends.
 //
 // Usage:
 //   node scripts/e2e.ts
+//   E2E_PLATFORM=android node scripts/e2e.ts
 //   node scripts/e2e.ts fixtures
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -150,20 +154,64 @@ export function bootedSimulators(listJson: string): Simulator[] {
 export function pickSimulator(
   booted: readonly Simulator[],
   requested: string | undefined,
+  platform: E2ePlatform = 'ios',
 ): { ok: true; simulator: Simulator } | { ok: false; message: string } {
-  const list = booted.map((sim) => `${sim.name} (${sim.udid})`).join(', ');
+  const list = booted.map((sim) => (sim.name === sim.udid ? sim.udid : `${sim.name} (${sim.udid})`)).join(', ');
   if (requested !== undefined && requested !== '') {
     const match = booted.find((sim) => sim.udid === requested || sim.name === requested);
     return match === undefined
-      ? { ok: false, message: `E2E_SIMULATOR=${requested} isn't booted. Booted: ${list === '' ? 'none' : list}.` }
+      ? { ok: false, message: `E2E_SIMULATOR=${requested} isn't running. Running: ${list === '' ? 'none' : list}.` }
       : { ok: true, simulator: match };
   }
   const [only, ...others] = booted;
-  if (only === undefined) return { ok: false, message: 'No iOS simulator is booted: boot one, then run `pnpm ios` once.' };
+  if (only === undefined) {
+    return {
+      ok: false,
+      message:
+        platform === 'ios'
+          ? 'No iOS simulator is booted: boot one, then run `pnpm ios` once.'
+          : 'No Android emulator is running: start one, then run `pnpm android` once.',
+    };
+  }
   if (others.length > 0) {
-    return { ok: false, message: `Several simulators are booted (${list}): pick one with E2E_SIMULATOR=<udid or name>.` };
+    return { ok: false, message: `Several devices are running (${list}): pick one with E2E_SIMULATOR=<id or name>.` };
   }
   return { ok: true, simulator: only };
+}
+
+export type E2ePlatform = 'ios' | 'android';
+
+/** `E2E_PLATFORM`: `ios` when unset. */
+export function e2ePlatform(value: string | undefined): { ok: true; platform: E2ePlatform } | { ok: false; message: string } {
+  if (value === undefined || value === '' || value === 'ios') return { ok: true, platform: 'ios' };
+  if (value === 'android') return { ok: true, platform: 'android' };
+  return { ok: false, message: `E2E_PLATFORM=${value}: use ios or android.` };
+}
+
+/** `adb` in the Android SDK: `ANDROID_HOME`, else Android Studio's default `~/Library/Android/sdk`. */
+export function adbPath(env: Env, home: string): string {
+  const sdk = env.ANDROID_HOME !== undefined && env.ANDROID_HOME !== '' ? env.ANDROID_HOME : join(home, 'Library', 'Android', 'sdk');
+  return join(sdk, 'platform-tools', 'adb');
+}
+
+/** The ready devices in `adb devices` output, as `{ udid: serial, name: serial }`. */
+export function connectedEmulators(devicesOutput: string): Simulator[] {
+  return devicesOutput
+    .split('\n')
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/))
+    .flatMap(([serial, state]) => (serial !== undefined && serial !== '' && state === 'device' ? [{ udid: serial, name: serial }] : []));
+}
+
+/** The port of the app's Supabase URL, which `adb reverse` maps into the emulator. */
+export function apiPort(appUrl: string): string {
+  const url = new URL(appUrl);
+  return url.port === '' ? (url.protocol === 'https:' ? '443' : '80') : url.port;
+}
+
+/** Where a fixture goes on the emulator, so its media scan finds it. */
+export function androidPhotoPath(file: string): string {
+  return `/sdcard/Pictures/${file}`;
 }
 
 /** The value of `key` in a dotenv file's text, or undefined. */
@@ -253,7 +301,19 @@ function run(
  * bridge can't open files under a privacy-protected folder such as `~/Documents`, and
  * `simctl addmedia` then waits forever instead of failing.
  */
-async function addFixtures(udid: string, env: Env): Promise<void> {
+async function addFixtures(device: Device, env: Env): Promise<void> {
+  if (device.platform === 'android') {
+    for (const { file } of FIXTURES) {
+      const target = androidPhotoPath(file);
+      if (!run(device.adb, ['-s', device.udid, 'push', join(fixturesDir(), file), target], env).ok) {
+        throw new CheckFailed(`adb couldn't copy ${file} to ${device.name}.`);
+      }
+      // The media scan makes the photo show up in the system photo picker.
+      run(device.adb, ['-s', device.udid, 'shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', `file://${target}`], env);
+    }
+    return;
+  }
+  const udid = device.udid;
   const staging = await mkdtemp(join(tmpdir(), 'dressing-room-e2e-'));
   try {
     const files = await Promise.all(
@@ -279,16 +339,31 @@ async function metroRunning(): Promise<boolean> {
   }
 }
 
-async function checkPrerequisites(env: Env): Promise<Simulator> {
+type Device = Simulator & ({ platform: 'ios' } | { platform: 'android'; adb: string });
+
+async function checkPrerequisites(env: Env, platform: E2ePlatform): Promise<Device> {
   if (!run('maestro', ['--version'], env).ok) {
     throw new CheckFailed('Maestro is not on PATH: install it with `brew install maestro`.');
   }
-  const booted = bootedSimulators(run('xcrun', ['simctl', 'list', 'devices', 'booted', '-j'], env).stdout);
-  const picked = pickSimulator(booted, env.E2E_SIMULATOR);
-  if (!picked.ok) throw new CheckFailed(picked.message);
-  const { simulator } = picked;
-  if (!run('xcrun', ['simctl', 'get_app_container', simulator.udid, APP_ID], env).ok) {
-    throw new CheckFailed(`The dev build (${APP_ID}) isn't installed on ${simulator.name}: run \`pnpm ios\`.`);
+  let device: Device;
+  if (platform === 'android') {
+    const adb = adbPath(env, homedir());
+    const listed = run(adb, ['devices'], env);
+    if (!listed.ok) throw new CheckFailed(`adb didn't run (${adb}): install the Android SDK or set ANDROID_HOME.`);
+    const picked = pickSimulator(connectedEmulators(listed.stdout), env.E2E_SIMULATOR, 'android');
+    if (!picked.ok) throw new CheckFailed(picked.message);
+    device = { ...picked.simulator, platform, adb };
+    if (!run(adb, ['-s', device.udid, 'shell', 'pm', 'path', APP_ID], env).stdout.includes('package:')) {
+      throw new CheckFailed(`The dev build (${APP_ID}) isn't installed on ${device.name}: run \`pnpm android\`.`);
+    }
+  } else {
+    const booted = bootedSimulators(run('xcrun', ['simctl', 'list', 'devices', 'booted', '-j'], env).stdout);
+    const picked = pickSimulator(booted, env.E2E_SIMULATOR);
+    if (!picked.ok) throw new CheckFailed(picked.message);
+    device = { ...picked.simulator, platform };
+    if (!run('xcrun', ['simctl', 'get_app_container', device.udid, APP_ID], env).ok) {
+      throw new CheckFailed(`The dev build (${APP_ID}) isn't installed on ${device.name}: run \`pnpm ios\`.`);
+    }
   }
   if (!(await metroRunning())) throw new CheckFailed('Metro is not running on :8081: start it with `pnpm start`.');
   const status = run('pnpm', ['exec', 'supabase', 'status', '-o', 'json'], env);
@@ -299,7 +374,14 @@ async function checkPrerequisites(env: Env): Promise<Simulator> {
   const appUrl = envText === undefined ? undefined : envValue(envText, 'EXPO_PUBLIC_SUPABASE_URL');
   const problem = stackProblem(status.ok ? status.stdout : undefined, appUrl);
   if (problem !== null) throw new CheckFailed(problem);
-  return simulator;
+  if (device.platform === 'android' && appUrl !== undefined) {
+    for (const port of ['8081', apiPort(appUrl)]) {
+      if (!run(device.adb, ['-s', device.udid, 'reverse', `tcp:${port}`, `tcp:${port}`], env).ok) {
+        throw new CheckFailed(`adb couldn't map port ${port} into ${device.name}.`);
+      }
+    }
+  }
+  return device;
 }
 
 /** Starts a mock and resolves once it prints its "on :<port>" line; rejects if it exits first. */
@@ -343,18 +425,20 @@ function stopMock(child: ChildProcess): Promise<void> {
 async function runFlows(): Promise<number> {
   const java = javaEnvironment(process.env, existsSync);
   if (!java.ok) throw new CheckFailed(java.message);
-  const simulator = await checkPrerequisites(java.env);
+  const platform = e2ePlatform(process.env.E2E_PLATFORM);
+  if (!platform.ok) throw new CheckFailed(platform.message);
+  const device = await checkPrerequisites(java.env, platform.platform);
 
   const mocks: ChildProcess[] = [];
   try {
     mocks.push(await startMock(['integration/mockServices.ts', '--serve', '--weak', WEAK_CATEGORY]));
     mocks.push(await startMock(['integration/mockAnthropic.ts', '--serve', 'ok']));
 
-    await addFixtures(simulator.udid, java.env);
+    await addFixtures(device, java.env);
 
     const email = e2eEmail(Date.now());
-    console.log(`Running the flows on ${simulator.name} as ${email}`);
-    const maestro = spawn('maestro', maestroArgs(simulator.udid, email, E2E_PASSWORD), {
+    console.log(`Running the flows on ${device.name} as ${email}`);
+    const maestro = spawn('maestro', maestroArgs(device.udid, email, E2E_PASSWORD), {
       cwd: repoRoot(),
       env: { ...process.env, ...java.env },
       stdio: 'inherit',
