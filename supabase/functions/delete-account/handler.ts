@@ -4,7 +4,8 @@
 //      An unknown user means a previous attempt already finished: the `{uid}/` folder is swept
 //      once more (a photo the app uploaded while that attempt's answer was lost), then `deleted`.
 //   1. Every object under `garments/{uid}/` is listed (1000 entries per page, the garment folders
-//      `LIST_CONCURRENCY` at a time), and only then removed, 1000 paths per call.
+//      `LIST_CONCURRENCY` at a time), and only then removed, 1000 paths per call; both go through
+//      `_shared/photoStore.ts`.
 //   2. The stored Apple refresh token, if there is one, is revoked with Apple. A failed revoke (or a
 //      failed read of the token row) never blocks the deletion.
 //   3. The auth user is deleted (`DELETE /auth/v1/admin/users/{id}`); every public table cascades
@@ -22,9 +23,8 @@
 
 import { type AppleEnv, revokeToken } from '../_shared/apple.ts';
 import { isRecord } from '../_shared/extraction.ts';
+import { listUserObjects, removeObjects } from '../_shared/photoStore.ts';
 import {
-  mapLimit,
-  restJson,
   restRows,
   serviceHeaders,
   type SupabaseEnv,
@@ -35,12 +35,8 @@ import {
 
 export type DeleteAccountDeps = { env: SupabaseEnv; apple: AppleEnv | null; fetch: typeof fetch; now?: () => number };
 
-const BUCKET = 'garments';
-/** Storage's list page size and the most paths one remove call takes. */
-export const LIST_PAGE = 1000;
-export const REMOVE_CHUNK = 1000;
-/** At most this many folder listings in flight at once. */
-export const LIST_CONCURRENCY = 5;
+// This function's storage limits are the photo store's.
+export { LIST_CONCURRENCY, LIST_PAGE, REMOVE_CHUNK } from '../_shared/photoStore.ts';
 
 type Revoke = 'revoked' | 'revoke_failed' | 'no_token' | 'skipped';
 
@@ -51,43 +47,6 @@ function json(status: number, body: unknown): Response {
 function reply(outcome: string, status: number, body: unknown, revoke?: Revoke): Response {
   console.info(JSON.stringify(revoke === undefined ? { outcome } : { outcome, revoke }));
   return json(status, body);
-}
-
-/** The entries one level under `prefix` (which ends in `/`): files by path, folders by their own prefix. */
-async function listLevel(
-  env: SupabaseEnv,
-  fetchFn: typeof fetch,
-  prefix: string,
-): Promise<{ files: string[]; folders: string[] }> {
-  const files: string[] = [];
-  const folders: string[] = [];
-  for (let offset = 0; ; offset += LIST_PAGE) {
-    const page = await restJson(fetchFn, `${env.supabaseUrl}/storage/v1/object/list/${BUCKET}`, {
-      method: 'POST',
-      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-      body: JSON.stringify({ prefix, limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } }),
-    });
-    if (!Array.isArray(page)) throw new UpstreamError('storage list: not an array');
-    for (const entry of page as unknown[]) {
-      if (!isRecord(entry) || typeof entry.name !== 'string' || entry.name === '' || entry.name.includes('/')) {
-        throw new UpstreamError('storage list: unexpected entry');
-      }
-      if (entry.id === null) folders.push(`${prefix}${entry.name}/`);
-      else files.push(`${prefix}${entry.name}`);
-    }
-    if (page.length < LIST_PAGE) return { files, folders };
-  }
-}
-
-/**
- * Every object path under `prefix`. Storage's list answers one level at a time, a folder with a
- * null `id`, so each level is paged until a short page and its folders are listed
- * `LIST_CONCURRENCY` at a time.
- */
-async function listObjects(env: SupabaseEnv, fetchFn: typeof fetch, prefix: string): Promise<string[]> {
-  const { files, folders } = await listLevel(env, fetchFn, prefix);
-  const nested = await mapLimit(folders, LIST_CONCURRENCY, (folder) => listObjects(env, fetchFn, folder));
-  return [...files, ...nested.flat()];
 }
 
 /**
@@ -110,17 +69,6 @@ async function callerExists(env: SupabaseEnv, fetchFn: typeof fetch, auth: strin
     throw new UpstreamError('auth user: not the caller');
   }
   return true;
-}
-
-async function removeObjects(env: SupabaseEnv, fetchFn: typeof fetch, paths: readonly string[]): Promise<void> {
-  for (let start = 0; start < paths.length; start += REMOVE_CHUNK) {
-    const response = await fetchFn(`${env.supabaseUrl}/storage/v1/object/${BUCKET}`, {
-      method: 'DELETE',
-      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-      body: JSON.stringify({ prefixes: paths.slice(start, start + REMOVE_CHUNK) }),
-    });
-    if (!response.ok) throw new UpstreamError(`storage remove: HTTP ${String(response.status)}`);
-  }
 }
 
 /** Revokes the caller's stored Apple token; never throws, so the deletion always goes on. */
@@ -154,7 +102,7 @@ async function deleteUser(env: SupabaseEnv, fetchFn: typeof fetch, userId: strin
 
 /** Lists and removes every object under `{uid}/`. */
 async function sweepStorage(env: SupabaseEnv, fetchFn: typeof fetch, userId: string): Promise<void> {
-  await removeObjects(env, fetchFn, await listObjects(env, fetchFn, `${userId}/`));
+  await removeObjects(env, fetchFn, await listUserObjects(env, fetchFn, userId));
 }
 
 export async function handleDeleteAccount(request: Request, deps: DeleteAccountDeps): Promise<Response> {

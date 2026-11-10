@@ -1,0 +1,674 @@
+{
+  "example-01": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 3,
+        "confidence": 0.57
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 1.7,
+        "confidence": 0.49
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 2.04,
+        "confidence": 0.81
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 2.58,
+        "confidence": 0.77
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 2.22,
+        "confidence": 0.57
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 3.39,
+        "confidence": 0.49
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 2.62,
+        "confidence": 0.53
+      },
+      "style_match": {
+        "type": "score",
+        "score": 2.85,
+        "confidence": 0.49
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "none"
+      }
+    }
+  },
+  "example-02": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 1.74,
+        "confidence": 0.45
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 1.74,
+        "confidence": 0.77
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 2.67,
+        "confidence": 0.69
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 2.04,
+        "confidence": 0.65
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 2.49,
+        "confidence": 0.45
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 3.49,
+        "confidence": 0.77
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 2.22,
+        "confidence": 0.81
+      },
+      "style_match": {
+        "type": "score",
+        "score": 2.85,
+        "confidence": 0.77
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "none"
+      }
+    }
+  },
+  "example-03": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 1.98,
+        "confidence": 0.73
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 0.98,
+        "confidence": 0.65
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.57
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 1.92,
+        "confidence": 0.53
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 1.38,
+        "confidence": 0.73
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 1.96,
+        "confidence": 0.65
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 1.74,
+        "confidence": 0.69
+      },
+      "style_match": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.65
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  },
+  "example-04": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 0.66,
+        "confidence": 0.61
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 1.16,
+        "confidence": 0.53
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 1.43,
+        "confidence": 0.45
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.81
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 2.01,
+        "confidence": 0.61
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 2.32,
+        "confidence": 0.53
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 1.38,
+        "confidence": 0.57
+      },
+      "style_match": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.53
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  },
+  "example-05": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 2.22,
+        "confidence": 0.49
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 0.42,
+        "confidence": 0.81
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 1.04,
+        "confidence": 0.73
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 0.68,
+        "confidence": 0.69
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 0.81,
+        "confidence": 0.49
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 0.84,
+        "confidence": 0.81
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 1.26,
+        "confidence": 0.45
+      },
+      "style_match": {
+        "type": "score",
+        "score": 0.45,
+        "confidence": 0.81
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.82
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  },
+  "example-06": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 0.57,
+        "confidence": 0.77
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 0.84,
+        "confidence": 0.69
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 1.12,
+        "confidence": 0.61
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 1.04,
+        "confidence": 0.57
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 1.08,
+        "confidence": 0.77
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 1.68,
+        "confidence": 0.69
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 0.81,
+        "confidence": 0.73
+      },
+      "style_match": {
+        "type": "score",
+        "score": 0.45,
+        "confidence": 0.69
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  },
+  "example-07": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 3,
+        "confidence": 0.65
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 1.54,
+        "confidence": 0.57
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 2.22,
+        "confidence": 0.49
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 2.62,
+        "confidence": 0.45
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 2.04,
+        "confidence": 0.65
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 3.08,
+        "confidence": 0.57
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 2.58,
+        "confidence": 0.61
+      },
+      "style_match": {
+        "type": "score",
+        "score": 2.85,
+        "confidence": 0.57
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "none"
+      }
+    }
+  },
+  "example-08": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 1.08,
+        "confidence": 0.53
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 1.72,
+        "confidence": 0.45
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 2.49,
+        "confidence": 0.77
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 2.22,
+        "confidence": 0.73
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 2.67,
+        "confidence": 0.53
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 3.44,
+        "confidence": 0.45
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 2.04,
+        "confidence": 0.49
+      },
+      "style_match": {
+        "type": "score",
+        "score": 2.85,
+        "confidence": 0.45
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "none"
+      }
+    }
+  },
+  "example-09": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 2.64,
+        "confidence": 0.81
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 0.86,
+        "confidence": 0.73
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 1.38,
+        "confidence": 0.65
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 1.74,
+        "confidence": 0.61
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.81
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 1.72,
+        "confidence": 0.73
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 1.92,
+        "confidence": 0.77
+      },
+      "style_match": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.73
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  },
+  "example-10": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.69
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 1.28,
+        "confidence": 0.61
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 2.01,
+        "confidence": 0.53
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 1.38,
+        "confidence": 0.49
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 1.43,
+        "confidence": 0.69
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 2.56,
+        "confidence": 0.61
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.65
+      },
+      "style_match": {
+        "type": "score",
+        "score": 1.65,
+        "confidence": 0.61
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  },
+  "example-11": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 0.11,
+        "confidence": 0.57
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 0.6,
+        "confidence": 0.49
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 0.81,
+        "confidence": 0.81
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 1.26,
+        "confidence": 0.77
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 1.04,
+        "confidence": 0.57
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 1.2,
+        "confidence": 0.49
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 0.68,
+        "confidence": 0.53
+      },
+      "style_match": {
+        "type": "score",
+        "score": 0.45,
+        "confidence": 0.49
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  },
+  "example-12": {
+    "answers": {
+      "color_harmony": {
+        "type": "score",
+        "score": 1.43,
+        "confidence": 0.45
+      },
+      "pattern_mix": {
+        "type": "score",
+        "score": 0.46,
+        "confidence": 0.77
+      },
+      "formality_coherence": {
+        "type": "score",
+        "score": 1.08,
+        "confidence": 0.69
+      },
+      "silhouette_balance": {
+        "type": "score",
+        "score": 0.81,
+        "confidence": 0.65
+      },
+      "body_flattery": {
+        "type": "score",
+        "score": 1.12,
+        "confidence": 0.45
+      },
+      "weather_fit": {
+        "type": "score",
+        "score": 0.91,
+        "confidence": 0.77
+      },
+      "occasion_fit": {
+        "type": "score",
+        "score": 1.04,
+        "confidence": 0.81
+      },
+      "style_match": {
+        "type": "score",
+        "score": 0.45,
+        "confidence": 0.77
+      },
+      "inappropriate_for_occasion": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "unsafe_for_weather": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "weakest_piece": {
+        "type": "choice",
+        "choice": "shoes"
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 // The Build tab (mockup 01 screen 2): slot rows, category chips for the active slot, the grid of
 // available garments, and "How does it look?" once the outfit is complete. Rendered directly with
 // the closet mocked.
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
 
 import BuildScreen from '../app/(tabs)/build';
@@ -34,6 +34,13 @@ jest.mock('../closet/ClosetProvider', () => ({
   }),
 }));
 
+// The device's text size (iOS Dynamic Type, Android font scale).
+const mockWindow = { width: 390, height: 844, scale: 3, fontScale: 1 };
+jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({
+  __esModule: true,
+  default: () => mockWindow,
+}));
+
 const mockedPush = jest.mocked(router.push);
 
 const done = { extraction_status: 'done', reviewed_at: '2026-11-08T12:00:00.000Z' } as const;
@@ -51,6 +58,7 @@ const CLOSET: Garment[] = [
 beforeEach(() => {
   mockCloset.garments = CLOSET;
   mockedPush.mockClear();
+  mockWindow.fontScale = 1;
 });
 
 const row = (name: string | RegExp) => screen.getByRole('button', { name });
@@ -205,4 +213,15 @@ test('a slot with nothing available says so', async () => {
   await render(<BuildScreen />);
 
   expect(screen.getByText('Nothing available for this slot. Add pieces in your closet.')).toBeOnTheScreen();
+});
+
+test('a slot row keeps its value on one line at the default text size, and stacks it whole under the label at the largest', async () => {
+  await render(<BuildScreen />);
+  expect(row('Top, Pick one')).toHaveStyle({ flexDirection: 'row' });
+  expect(within(row('Top, Pick one')).getByText('Pick one').props.numberOfLines).toBe(1);
+
+  mockWindow.fontScale = 3.1;
+  await screen.rerender(<BuildScreen />);
+  expect(row('Top, Pick one')).toHaveStyle({ flexDirection: 'column' });
+  expect(within(row('Top, Pick one')).getByText('Pick one').props.numberOfLines).toBeUndefined();
 });

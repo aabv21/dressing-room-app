@@ -30,9 +30,12 @@ export function isStalePending(g: Garment, now: number): boolean {
   return g.extraction_status === 'pending' && now - Date.parse(g.created_at) > STALE_PENDING_MS;
 }
 
-/** Whether polling should keep waiting on this garment's extraction. */
+/**
+ * Whether polling should keep waiting on this garment's extraction. A reviewed garment never is:
+ * the server skips the write-back once the user has saved a review.
+ */
 export function isLivePending(g: Garment, now: number): boolean {
-  return g.extraction_status === 'pending' && !isStalePending(g, now);
+  return g.extraction_status === 'pending' && g.reviewed_at === null && !isStalePending(g, now);
 }
 
 /** Unreviewed garments whose extraction has finished (or given up), oldest first. */

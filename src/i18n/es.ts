@@ -67,7 +67,8 @@ export const es: Record<MessageKey, string> = {
   'stats.kpi.worn.week': 'del clóset usado esta semana',
   'stats.kpi.worn.month': 'del clóset usado este mes',
   'stats.kpi.worn.sixMonths': 'del clóset usado estos 6 meses',
-  'stats.kpi.outfits': 'outfits registrados',
+  'stats.kpi.outfits.one': 'outfit registrado',
+  'stats.kpi.outfits.other': 'outfits registrados',
   'stats.kpi.score': 'puntaje medio de tus outfits',
   'stats.kpi.streak.one': '{count} día',
   'stats.kpi.streak.other': '{count} días',
@@ -438,8 +439,8 @@ export const es: Record<MessageKey, string> = {
 
   'garment.status.available': 'Disponible',
   'garment.status.laundry': 'En la lavandería',
-  'garment.status.lent': 'Prestada',
-  'garment.status.donated': 'Donada',
+  'garment.status.lent': 'En préstamo',
+  'garment.status.donated': 'Donación',
 
   'garment.status': 'Estado',
   'garment.reading': 'Leyendo la foto…',
@@ -491,6 +492,7 @@ export const es: Record<MessageKey, string> = {
   'rate.back': 'Volver',
   'rate.loading': 'Mirando tu outfit…',
   'rate.confidence': 'Confianza de la IA: {value} %',
+  'rate.score': 'Puntaje',
   'rate.confidence.estimated': 'Confianza de la IA: estimada',
   'rate.reason.good': 'Funciona',
   'rate.reason.warn': 'Ojo',

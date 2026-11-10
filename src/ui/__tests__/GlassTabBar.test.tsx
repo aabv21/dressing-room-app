@@ -51,3 +51,24 @@ test('pressing the focused tab does not navigate', async () => {
   await fireEvent.press(screen.getByRole('tab', { name: 'Today' }));
   expect(navigateToTab).not.toHaveBeenCalled();
 });
+
+test('the tabs sit in a tablist, and each one opens the large content viewer with its label', async () => {
+  await render(
+    <GlassTabBar
+      {...({
+        state: { index: 0, routes },
+        emitter: { emit: () => ({ defaultPrevented: false }) },
+        navigateToTab: jest.fn(),
+        descriptors: {},
+        insets: { top: 0, bottom: 0, left: 0, right: 0 },
+      } as unknown as BottomTabBarProps)}
+    />,
+  );
+  // A container role: RNTL's role queries only match accessibility elements, so it's found by testID.
+  expect(screen.getByTestId('tab-list')).toHaveProp('accessibilityRole', 'tablist');
+  for (const tab of screen.getAllByRole('tab')) {
+    // The label is capped for large text, so iOS shows it enlarged on a long press instead.
+    expect(tab).toHaveProp('accessibilityShowsLargeContentViewer', true);
+    expect(tab).toHaveProp('accessibilityLargeContentTitle', tab.props.accessibilityLabel);
+  }
+});

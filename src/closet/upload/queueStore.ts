@@ -180,11 +180,15 @@ export function enqueueReplacement(userId: string, garmentId: string, sourceUri:
   };
   upsert(item);
   // The old row's files are only ours to delete here if no worker is (or will be) mid-run on them:
-  // a 'captured' item has nothing running yet, and a failed item's run already gave up. Anything
+  // a 'captured' item has nothing prepared yet, and a failed item's run already gave up. Anything
   // else (prepared/uploaded, not failed) may have a worker about to call `saveItem`/`removeItem`
   // with its own stale snapshot — those calls are keyed on `source_uri`, so once this replacement
-  // has overwritten the row, the worker's write will no-op and its `removeItem` will delete only
-  // the files named in its own (old) snapshot, cleaning them up safely once it finishes.
+  // has overwritten the row, the worker's write no-ops and its `removeItem` deletes the files
+  // named in its own (old) snapshot, never the replacement's.
+  // NOTE: a prepared/uploaded row with no worker running (waiting out a backoff) keeps its files
+  // in uploads/ once replaced, since nothing will finish it. Ceiling: one photo's three files per
+  // such replacement; upgrade path: a sweep of uploads/ for files no row names, when the queue
+  // provider mounts.
   if (previous !== null && (previous.stage === 'captured' || previous.failed === 1)) {
     deleteIfExists(previous.source_uri);
     deleteIfExists(previous.full_uri);
@@ -206,7 +210,7 @@ export function listQueue(userId: string): QueueItem[] {
 // (new `source_uri`) while the worker is mid-run, the worker's write must not clobber the
 // replacement or delete its files: both statements below are conditioned on `source_uri` still
 // matching the snapshot the caller holds, so a stale write affects zero rows instead of the
-// replacement's row (Review Focus 1: no photo lost, no garment duplicated).
+// replacement's row, so no photo is lost and no garment duplicated.
 
 export function saveItem(item: QueueItem): void {
   db.runSync(
@@ -238,11 +242,10 @@ export function saveItem(item: QueueItem): void {
 }
 
 export function removeItem(item: QueueItem): void {
-  const result = db.runSync('DELETE FROM upload_queue WHERE garment_id = ? AND source_uri = ?;', [
-    item.garmentId,
-    item.sourceUri,
-  ]);
-  if (result.changes === 0) return;
+  db.runSync('DELETE FROM upload_queue WHERE garment_id = ? AND source_uri = ?;', [item.garmentId, item.sourceUri]);
+  // Even when no row matched (a replacement took the row over), the snapshot's files are still
+  // this caller's to delete: every copy and prepared file has a unique name, so they are never the
+  // replacement's.
   deleteIfExists(item.sourceUri);
   deleteIfExists(item.fullUri);
   deleteIfExists(item.thumbUri);

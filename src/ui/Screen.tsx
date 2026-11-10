@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AnchoredCta } from './AnchoredCta';
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
-import { colors, gradients, spacing } from './theme';
+import { colors, gradients, spacing, textScale } from './theme';
 
 type ScreenProps = {
   cta?: ComponentProps<typeof AnchoredCta>;
@@ -58,7 +58,7 @@ export function ScreenTitle({
 }): React.JSX.Element {
   if (variant === 'hero') {
     return (
-      <Text style={styles.heroTitle} accessibilityRole="header">
+      <Text style={styles.heroTitle} accessibilityRole="header" maxFontSizeMultiplier={textScale.hero}>
         {title}
       </Text>
     );

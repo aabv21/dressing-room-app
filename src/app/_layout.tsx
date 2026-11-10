@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from '../auth/AuthProvider';
 import { ClosetProvider } from '../closet/ClosetProvider';
 import { UploadQueueProvider } from '../closet/UploadQueueProvider';
 import { I18nProvider } from '../i18n/I18nProvider';
+import { quietDevToastsForE2e } from '../lib/e2eLaunch';
 import { OnboardingArrivalContext } from '../ui/onboardingArrival';
 import { colors } from '../ui/theme';
 
@@ -14,6 +15,7 @@ import { colors } from '../ui/theme';
 // for a signed-in user, its profile load) is still pending, so the app never flashes an
 // intermediate route before the guards below know which group to show.
 void SplashScreen.preventAutoHideAsync();
+quietDevToastsForE2e();
 
 type Settled = { status: 'signedOut' | 'signedIn'; onboardingComplete: boolean; userId: string | null };
 

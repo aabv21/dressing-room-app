@@ -49,3 +49,6 @@ example
 
 # generated performance fixtures (scripts/perf-fixtures.ts)
 .perf-fixtures/
+
+# Jev calibration labels and answers from real outfits (personal data; scripts/calibrate.ts)
+calibration/*.local.json

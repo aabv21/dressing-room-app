@@ -1,7 +1,7 @@
 // The `extract-attributes` Edge Function's request handler: called by a database webhook after a
 // garment row is inserted, it sends the garment's photo to Claude and writes the enum-only
-// attributes back. Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives
-// it under Node and `index.ts` serves it under Deno.
+// attributes back. The photo is read through `_shared/photoStore.ts`. Runtime-neutral: every effect
+// goes through the injected `fetch`, so Jest drives it under Node and `index.ts` serves it under Deno.
 //
 // Every failure after the garment is loaded (quota check, photo, Claude, parsing) still ends the
 // garment's `pending` state, so it always reaches review. Logs carry only the garment id and an
@@ -9,6 +9,7 @@
 
 import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
 import { buildExtractionRequest, isRecord, parseExtraction } from '../_shared/extraction.ts';
+import { downloadObject, photoPath } from '../_shared/photoStore.ts';
 
 export type ExtractEnv = {
   supabaseUrl: string;
@@ -28,7 +29,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Garment = { id: string; userId: string; extractionStatus: string };
+type Garment = { id: string; userId: string; extractionStatus: string; reviewed: boolean };
 type WriteBack = { outcome: Exclude<ExtractOutcome, 'skipped'>; patch: Record<string, unknown> };
 
 const FAILED: WriteBack = { outcome: 'failed', patch: { extraction_status: 'failed' } };
@@ -87,7 +88,7 @@ function serviceRequest(deps: ExtractDeps, path: string, init: RequestInit = {})
       apikey: serviceRoleKey,
       authorization: `Bearer ${serviceRoleKey}`,
       ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
-      ...(init.method === 'PATCH' ? { prefer: 'return=minimal' } : {}),
+      ...Object.fromEntries(new Headers(init.headers)),
     },
   });
 }
@@ -99,7 +100,8 @@ async function serviceJson(deps: ExtractDeps, path: string, init?: RequestInit):
 }
 
 async function loadGarment(deps: ExtractDeps, garmentId: string): Promise<Garment | null> {
-  const rows = await serviceJson(deps, `/rest/v1/garments?id=eq.${garmentId}&select=id,user_id,extraction_status`);
+  const select = 'id,user_id,extraction_status,reviewed_at';
+  const rows = await serviceJson(deps, `/rest/v1/garments?id=eq.${garmentId}&select=${select}`);
   if (!Array.isArray(rows)) throw new UpstreamError('garments: not an array');
   const [row] = rows as unknown[];
   if (row === undefined) return null;
@@ -107,11 +109,17 @@ async function loadGarment(deps: ExtractDeps, garmentId: string): Promise<Garmen
     !isRecord(row) ||
     typeof row.user_id !== 'string' ||
     !UUID.test(row.user_id) ||
-    typeof row.extraction_status !== 'string'
+    typeof row.extraction_status !== 'string' ||
+    (row.reviewed_at !== null && typeof row.reviewed_at !== 'string')
   ) {
     throw new UpstreamError('garments: unexpected row');
   }
-  return { id: garmentId, userId: row.user_id, extractionStatus: row.extraction_status };
+  return {
+    id: garmentId,
+    userId: row.user_id,
+    extractionStatus: row.extraction_status,
+    reviewed: row.reviewed_at !== null,
+  };
 }
 
 async function consumeQuota(deps: ExtractDeps, userId: string): Promise<boolean> {
@@ -130,9 +138,8 @@ async function loadClothingType(deps: ExtractDeps, userId: string): Promise<Clot
 }
 
 async function loadPhotoBase64(deps: ExtractDeps, garment: Garment): Promise<string | null> {
-  const response = await serviceRequest(deps, `/storage/v1/object/garments/${garment.userId}/${garment.id}/full.webp`);
-  if (response.status !== 200) return null;
-  return toBase64(new Uint8Array(await response.arrayBuffer()));
+  const bytes = await downloadObject(deps.env, deps.fetch, photoPath(garment.userId, garment.id, 'full'));
+  return bytes === null ? null : toBase64(bytes);
 }
 
 /** The Messages API response body, or null on a non-2xx answer, a network error or the timeout. */
@@ -182,13 +189,19 @@ async function extract(deps: ExtractDeps, garment: Garment): Promise<WriteBack> 
   }
 }
 
-async function writeBack(deps: ExtractDeps, garmentId: string, patch: Record<string, unknown>): Promise<void> {
-  // The `pending` filter makes a duplicate webhook delivery a no-op instead of a second write.
-  const response = await serviceRequest(deps, `/rest/v1/garments?id=eq.${garmentId}&extraction_status=eq.pending`, {
+/** Returns whether the guarded write matched the garment. */
+async function writeBack(deps: ExtractDeps, garmentId: string, patch: Record<string, unknown>): Promise<boolean> {
+  // The `pending` filter makes a duplicate webhook delivery a no-op instead of a second write, and
+  // the `reviewed_at` one keeps a review saved while Claude was answering (the app sends a garment
+  // to review after 10 minutes by the device's clock) from being overwritten by the model's guesses.
+  const filter = `id=eq.${garmentId}&extraction_status=eq.pending&reviewed_at=is.null&select=id`;
+  const rows = await serviceJson(deps, `/rest/v1/garments?${filter}`, {
     method: 'PATCH',
+    headers: { prefer: 'return=representation' },
     body: JSON.stringify(patch),
   });
-  if (!response.ok) throw new UpstreamError(`PATCH HTTP ${String(response.status)}`);
+  if (!Array.isArray(rows)) throw new UpstreamError('PATCH: not an array');
+  return rows.length > 0;
 }
 
 export async function handleExtract(request: Request, deps: ExtractDeps): Promise<Response> {
@@ -202,12 +215,11 @@ export async function handleExtract(request: Request, deps: ExtractDeps): Promis
   let outcome: ExtractOutcome;
   try {
     const garment = await loadGarment(deps, garmentId);
-    if (garment?.extractionStatus !== 'pending') {
+    if (garment?.extractionStatus !== 'pending' || garment.reviewed) {
       outcome = 'skipped';
     } else {
       const result = await extract(deps, garment);
-      await writeBack(deps, garmentId, result.patch);
-      outcome = result.outcome;
+      outcome = (await writeBack(deps, garmentId, result.patch)) ? result.outcome : 'skipped';
     }
   } catch {
     // The database itself failed (loading or writing back). The garment may stay `pending`; the app

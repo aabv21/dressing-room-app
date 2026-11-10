@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Garment Upload Pipeline",
+    "locale": "en",
+    "output": "docs/diagrams/upload-pipeline.html",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1068,
+      600
+    ],
+    "legend": {
+      "entries": {
+        "security": {
+          "label": "secret webhook"
+        },
+        "dashed": {
+          "label": "app polling"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Capture"
+    },
+    {
+      "label": "On the phone"
+    },
+    {
+      "label": "Supabase"
+    },
+    {
+      "label": "Extraction"
+    },
+    {
+      "label": "Model and app"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "capture",
+      "type": "frontend",
+      "label": "Camera · gallery",
+      "sublabel": "burst or multi-select",
+      "stage": 0,
+      "row": 1,
+      "width": 152
+    },
+    {
+      "id": "queue",
+      "type": "frontend",
+      "label": "Upload queue",
+      "sublabel": "cut-out · WebP · SQLite",
+      "stage": 1,
+      "row": 1,
+      "width": 136
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "garments bucket",
+      "sublabel": "full + thumb WebP",
+      "stage": 2,
+      "row": 0,
+      "width": 136
+    },
+    {
+      "id": "rows",
+      "type": "database",
+      "label": "garments table",
+      "sublabel": "pending → done or failed",
+      "stage": 2,
+      "row": 2,
+      "width": 136
+    },
+    {
+      "id": "extract",
+      "type": "backend",
+      "label": "extract-attributes",
+      "sublabel": "100 a day per user",
+      "stage": 3,
+      "row": 1,
+      "width": 160
+    },
+    {
+      "id": "claude",
+      "type": "external",
+      "label": "Claude",
+      "sublabel": "Haiku 5.5 · enums",
+      "brand": "anthropic",
+      "stage": 4,
+      "row": 0,
+      "width": 136
+    },
+    {
+      "id": "review",
+      "type": "frontend",
+      "label": "Review queue",
+      "sublabel": "asks only doubts",
+      "stage": 4,
+      "row": 2,
+      "width": 136
+    }
+  ],
+  "flows": [
+    {
+      "id": "enqueue",
+      "from": "capture",
+      "to": "queue",
+      "label": "photo copy",
+      "variant": "emphasis"
+    },
+    {
+      "id": "upload",
+      "from": "queue",
+      "to": "storage",
+      "label": "upsert both",
+      "variant": "emphasis"
+    },
+    {
+      "id": "commit",
+      "from": "queue",
+      "to": "rows",
+      "label": "insert id",
+      "variant": "emphasis"
+    },
+    {
+      "id": "trigger",
+      "from": "rows",
+      "to": "extract",
+      "label": "pg_net webhook",
+      "variant": "security",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          530,
+          271
+        ]
+      ]
+    },
+    {
+      "id": "download",
+      "from": "storage",
+      "to": "extract",
+      "label": "full.webp",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          745,
+          157
+        ]
+      ]
+    },
+    {
+      "id": "label",
+      "from": "extract",
+      "to": "claude",
+      "label": "image + type"
+    },
+    {
+      "id": "poll",
+      "from": "rows",
+      "to": "review",
+      "label": "5 s poll",
+      "variant": "dashed",
+      "route": "bottom-channel"
+    },
+    {
+      "id": "write-back",
+      "from": "extract",
+      "to": "rows",
+      "label": "if pending",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "via": [
+        [
+          745,
+          385
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Resumable on the phone",
+      "items": [
+        "Each stage is saved before the next starts",
+        "Backoff from 5 s to 10 min, two items at a time",
+        "Upserts and the client id make retries idempotent"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Untrusted model output",
+      "items": [
+        "Structured output limited to catalog enums",
+        "The parser drops anything else and marks it doubtful",
+        "Write-back only while pending and not reviewed"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Every failure reaches review",
+      "items": [
+        "Over quota, a refusal or a timeout: fill it in by hand",
+        "A row still pending after 10 min goes to review",
+        "Text in the photo is never an instruction"
+      ]
+    }
+  ]
+}

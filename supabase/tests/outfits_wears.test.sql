@@ -16,7 +16,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(48);
+select plan(51);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -270,6 +270,40 @@ select is(
   (select count(*)::int from public.wears where id = 'dddddddd-0000-0000-0000-000000000001'::uuid),
   1,
   'A''s wear still exists after B''s rejected delete attempt'
+);
+
+-- B reusing A's wear id (a uuid B could only have guessed or seen elsewhere): log_wear's
+-- idempotency select can't see A's row under RLS, so it falls through to the insert, whose
+-- primary key conflict raises. It never returns A's id as if B's wear existed.
+insert into public.garments (id, user_id)
+values ('bbbbbbbb-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222222');
+
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-2222-2222-222222222222', 'role', 'authenticated')::text, true);
+
+select throws_ok(
+  $$ select public.log_wear(
+       'dddddddd-0000-0000-0000-000000000001'::uuid,
+       array['bbbbbbbb-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000003']::uuid[],
+       '2026-11-05'::date
+     ) $$,
+  '23505',
+  null,
+  'log_wear by B reusing A''s wear id raises a unique violation'
+);
+
+reset role;
+
+select is(
+  (select user_id from public.wears where id = 'dddddddd-0000-0000-0000-000000000001'::uuid),
+  '11111111-1111-1111-1111-111111111111'::uuid,
+  'A''s wear still belongs to A after B reused its id'
+);
+
+select is(
+  (select wear_count from public.garments where id = 'bbbbbbbb-0000-0000-0000-000000000003'),
+  0,
+  'B''s rejected log_wear left no wear on B''s garment'
 );
 
 select is(

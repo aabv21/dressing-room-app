@@ -26,3 +26,14 @@ test('a disabled action exposes disabled state and ignores presses', async () =>
   await fireEvent.press(button);
   expect(onPress).not.toHaveBeenCalled();
 });
+
+test('button labels grow with the text size up to a cap, so the anchored zone never covers the content', async () => {
+  await render(
+    <AnchoredCta
+      primary={{ label: 'Me lo pongo', tone: 'commit', onPress: jest.fn() }}
+      secondary={{ label: 'Otro', tone: 'ghost', onPress: jest.fn() }}
+    />,
+  );
+  expect(screen.getByText('Me lo pongo')).toHaveProp('maxFontSizeMultiplier', 1.5);
+  expect(screen.getByText('Otro')).toHaveProp('maxFontSizeMultiplier', 1.5);
+});

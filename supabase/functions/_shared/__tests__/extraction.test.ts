@@ -167,6 +167,100 @@ describe('parseExtraction', () => {
   });
 });
 
+// Responses a manipulated or misbehaving model could send. The structured-output schema should
+// already prevent each of them; the sanitizer must hold even if it doesn't.
+describe('parseExtraction against adversarial responses', () => {
+  const SANITIZED_KEYS = ['category', 'colors', 'fit', 'formality', 'material', 'occasions', 'pattern', 'seasons', 'warmth'];
+
+  test('out-of-enum values in every field are dropped and reported as uncertain', () => {
+    expect(parseExtraction(fixture('claude-adversarial-out-of-enum'), 'everything')).toEqual({
+      kind: 'done',
+      attributes: {
+        category: 'jeans',
+        colors: ['black'],
+        pattern: null,
+        material: null,
+        formality: null,
+        seasons: ['summer'],
+        warmth: null,
+        fit: null,
+        occasions: ['office'],
+      },
+      uncertainFields: ['colors', 'pattern', 'material', 'formality', 'seasons', 'warmth', 'fit', 'occasions'],
+    });
+  });
+
+  test('extra fields aimed at server-only columns or prototype keys never reach the attributes', () => {
+    const outcome = parseExtraction(fixture('claude-adversarial-extra-fields'), 'everything');
+    expect(outcome).toEqual({
+      kind: 'done',
+      attributes: {
+        category: 'jeans',
+        colors: ['navy'],
+        pattern: 'solid',
+        material: 'denim',
+        formality: 2,
+        seasons: ['autumn'],
+        warmth: 2,
+        fit: 'regular',
+        occasions: ['university'],
+      },
+      uncertainFields: [],
+    });
+    expect(outcome.kind === 'done' && Object.keys(outcome.attributes).sort()).toEqual(SANITIZED_KEYS);
+    expect(Object.getPrototypeOf(outcome)).toBe(Object.prototype);
+    expect(({} as Record<string, unknown>).isAdmin).toBeUndefined();
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test('an instruction-like string in a free field, or as a confidence, changes nothing', () => {
+    expect(parseExtraction(fixture('claude-adversarial-instruction'), 'everything')).toEqual({
+      kind: 'done',
+      attributes: {
+        category: 'jeans',
+        colors: ['navy'],
+        pattern: 'solid',
+        material: 'denim',
+        formality: 2,
+        seasons: ['autumn'],
+        warmth: 2,
+        fit: 'regular',
+        occasions: ['university'],
+      },
+      uncertainFields: [],
+    });
+  });
+
+  test('an instruction-like string as the category fails the extraction', () => {
+    expect(parseExtraction(fixture('claude-adversarial-instruction-category'), 'everything')).toEqual({
+      kind: 'failed',
+      reason: 'invalid',
+    });
+  });
+
+  test('JSON wrapped in prose, or cut off at max_tokens, fails the extraction', () => {
+    expect(parseExtraction(fixture('claude-adversarial-prose-wrapped'), 'everything')).toEqual({
+      kind: 'failed',
+      reason: 'invalid',
+    });
+    expect(parseExtraction(fixture('claude-adversarial-truncated'), 'everything')).toEqual({
+      kind: 'failed',
+      reason: 'invalid',
+    });
+  });
+
+  test('is_garment or category with the wrong JSON type fails the extraction', () => {
+    expect(parseExtraction(messageWith({ ...VALID_OUTPUT, is_garment: 'true' }), 'everything')).toEqual({
+      kind: 'failed',
+      reason: 'invalid',
+    });
+    expect(parseExtraction(messageWith({ ...VALID_OUTPUT, category: ['t_shirt'] }), 'everything')).toEqual({
+      kind: 'failed',
+      reason: 'invalid',
+    });
+  });
+});
+
 describe('buildExtractionRequest', () => {
   type Schema = { properties: Record<string, { enum?: unknown[]; required?: unknown[] }> };
   type Body = {

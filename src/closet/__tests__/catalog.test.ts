@@ -1,3 +1,4 @@
+import { AGE_GROUPS, BODY_TYPES, STYLES } from '../../../supabase/functions/_shared/rating.ts';
 import { Constants } from '../../lib/database.types';
 import { en } from '../../i18n/en';
 import { es } from '../../i18n/es';
@@ -35,6 +36,9 @@ describe('catalog tuples match the generated database enums', () => {
     ['SEASONS', SEASONS, Constants.public.Enums.season],
     ['GARMENT_FIELDS', GARMENT_FIELDS, Constants.public.Enums.garment_field],
     ['OCCASIONS', OCCASIONS, Constants.public.Enums.occasion],
+    ['BODY_TYPES', BODY_TYPES, Constants.public.Enums.body_type],
+    ['AGE_GROUPS', AGE_GROUPS, Constants.public.Enums.age_group],
+    ['STYLES', STYLES, Constants.public.Enums.style],
   ] as const)('%s has the same members as the generated enum', (_name, tuple, generated) => {
     expect(sameMembers(tuple, generated)).toBe(true);
   });

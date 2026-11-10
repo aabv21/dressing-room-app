@@ -31,6 +31,11 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm test
+      # Every check but the SDK version one, which compares against the newest releases that the
+      # 3-day minimumReleaseAge may not allow yet; `pnpm check:expo` covers it (see AGENTS.md).
+      - run: pnpm exec expo-doctor
+        env:
+          EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK: '1'
 
   security:
     name: Security

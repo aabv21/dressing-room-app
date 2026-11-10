@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   search: {
-    height: SEARCH_HEIGHT,
+    minHeight: SEARCH_HEIGHT,
     marginTop: 2,
     flexDirection: 'row',
     alignItems: 'center',

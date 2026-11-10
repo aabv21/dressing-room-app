@@ -134,7 +134,7 @@ function OfflineNote(): React.JSX.Element {
   return (
     <View style={styles.offline} accessible accessibilityLiveRegion="polite">
       <WifiOff size={13} color={colors.muted} />
-      <Text style={styles.muted}>{t('today.offline')}</Text>
+      <Text style={[styles.muted, styles.offlineText]}>{t('today.offline')}</Text>
     </View>
   );
 }
@@ -379,13 +379,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
+  // Wraps the chip under the label when a large text size leaves no room for both on one line.
   cardHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.xs,
     minHeight: CHIP_AI_HEIGHT,
   },
   cardLabel: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
@@ -395,7 +399,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   chipAi: {
-    height: CHIP_AI_HEIGHT,
+    minHeight: CHIP_AI_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -415,6 +419,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 2,
+  },
+  // Wraps beside the icon at a large text size instead of running off the screen.
+  offlineText: {
+    flexShrink: 1,
   },
   fresh: {
     marginTop: 2,

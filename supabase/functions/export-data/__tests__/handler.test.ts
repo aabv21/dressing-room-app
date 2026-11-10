@@ -55,6 +55,8 @@ type World = {
   objects: Set<string>;
   failTable?: keyof Tables;
   failSign?: boolean;
+  /** A server `max_rows` below the function's page size. */
+  maxRows?: number;
 };
 
 type Call = { url: URL; method: string; headers: Headers; body: string };
@@ -93,7 +95,7 @@ function fakeFetch(state: World): { fetch: typeof fetch; calls: Call[] } {
       if (state.failTable === table) return json(500, { message: 'boom' });
       // eslint-disable-next-line security/detect-object-injection -- `table` is one of TABLES.
       const rows = state.tables[table];
-      const limit = Number(url.searchParams.get('limit') ?? rows.length);
+      const limit = Math.min(Number(url.searchParams.get('limit') ?? rows.length), state.maxRows ?? Infinity);
       const offset = Number(url.searchParams.get('offset') ?? 0);
       return json(200, rows.slice(offset, offset + limit));
     }
@@ -169,7 +171,8 @@ describe('export-data', () => {
     await handleExportData(request(), { env: ENV, fetch: fetchFn, now: () => NOW });
 
     const reads = calls.filter(({ url }) => url.pathname.startsWith('/rest/v1/'));
-    expect(reads.map(({ url }) => url.pathname).sort()).toEqual(TABLES.map((name) => `/rest/v1/${name}`).sort());
+    // Each table: one page of rows, then the empty page that ends the read.
+    expect(reads.map(({ url }) => url.pathname).sort()).toEqual(TABLES.flatMap((name) => [`/rest/v1/${name}`, `/rest/v1/${name}`]).sort());
     for (const read of reads) {
       expect(read.headers.get('authorization')).toBe(AUTH);
       expect(read.headers.get('apikey')).toBe('anon-key-test');
@@ -225,7 +228,22 @@ describe('export-data', () => {
     const body = (await response.json()) as Export;
     expect(body.wears).toHaveLength(1001);
     const pages = calls.filter(({ url }) => url.pathname === '/rest/v1/wears').map(({ url }) => url.searchParams.get('offset'));
-    expect(pages).toEqual(['0', '1000']);
+    // Reads until a page comes back empty, so a short page never ends the export early.
+    expect(pages).toEqual(['0', '1000', '1001']);
+  });
+
+  test('reads every row when the server caps a page below 1000 rows', async () => {
+    const wears = Array.from({ length: 1001 }, (_, n) => ({ ...WEARS[0], id: idOf(1000 + n) }));
+    const { fetch: fetchFn, calls } = fakeFetch(
+      world({ tables: { profiles: [PROFILE], garments: GARMENTS, outfits: OUTFITS, wears }, maxRows: 400 }),
+    );
+
+    const response = await handleExportData(request(), { env: ENV, fetch: fetchFn, now: () => NOW });
+
+    const body = (await response.json()) as Export;
+    expect(body.wears.map((wear) => wear.id)).toEqual(wears.map((wear) => wear.id));
+    const pages = calls.filter(({ url }) => url.pathname === '/rest/v1/wears').map(({ url }) => url.searchParams.get('offset'));
+    expect(pages).toEqual(['0', '400', '800', '1001']);
   });
 
   test('answers a null profile and empty sections for a brand-new account, signing nothing', async () => {

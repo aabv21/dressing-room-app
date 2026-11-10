@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Dressing Room Data Model",
+    "locale": "en",
+    "output": "docs/diagrams/data-model.html",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "cols": 4,
+    "cellW": 160,
+    "cellH": 64,
+    "gapX": 110,
+    "gapY": 90,
+    "origin": [
+      40,
+      70
+    ]
+  },
+  "components": [
+    {
+      "id": "users",
+      "type": "security",
+      "label": "auth.users",
+      "sublabel": "every user_id cascades",
+      "row": 1,
+      "col": 2,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "profiles",
+      "type": "database",
+      "label": "profiles",
+      "sublabel": "1 per user · body · city",
+      "row": 0,
+      "col": 1,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "garments",
+      "type": "database",
+      "label": "garments",
+      "sublabel": "column grants · counts by trigger",
+      "row": 1,
+      "col": 1,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "objects",
+      "type": "database",
+      "label": "storage.objects",
+      "sublabel": "garments bucket",
+      "row": 0,
+      "col": 0,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "outfits",
+      "type": "database",
+      "label": "outfits",
+      "sublabel": "log_wear · save_outfit",
+      "row": 2,
+      "col": 1,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "items",
+      "type": "database",
+      "label": "outfit_items",
+      "sublabel": "outfit × garment",
+      "row": 2,
+      "col": 0,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "wears",
+      "type": "database",
+      "label": "wears",
+      "sublabel": "RLS: own insert, delete",
+      "row": 3,
+      "col": 1,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "usage",
+      "type": "database",
+      "label": "usage_counters",
+      "sublabel": "per user · day · kind",
+      "row": 0,
+      "col": 3,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "caches",
+      "type": "database",
+      "label": "result caches",
+      "sublabel": "rating · lucky · for_you",
+      "row": 1,
+      "col": 3,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "apple",
+      "type": "database",
+      "label": "apple_tokens",
+      "sublabel": "refresh token to revoke",
+      "row": 2,
+      "col": 3,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
+      "id": "weather",
+      "type": "database",
+      "label": "weather_cache",
+      "sublabel": "place · hour · no user_id",
+      "row": 3,
+      "col": 3,
+      "size": [
+        160,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Client access · RLS own rows",
+      "wraps": [
+        "profiles",
+        "garments",
+        "objects",
+        "outfits",
+        "items",
+        "wears"
+      ],
+      "pad": 20
+    },
+    {
+      "kind": "region",
+      "label": "Service role only · no policies",
+      "wraps": [
+        "usage",
+        "caches",
+        "apple",
+        "weather"
+      ],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {
+      "id": "own-profile",
+      "from": "users",
+      "to": "profiles",
+      "label": "cascade",
+      "fromSide": "top",
+      "toSide": "right"
+    },
+    {
+      "id": "own-garments",
+      "from": "users",
+      "to": "garments",
+      "label": "user_id cascade",
+      "variant": "emphasis"
+    },
+    {
+      "id": "own-outfits",
+      "from": "users",
+      "to": "outfits",
+      "label": "cascade"
+    },
+    {
+      "id": "own-wears",
+      "from": "users",
+      "to": "wears",
+      "label": "cascade",
+      "fromSide": "bottom",
+      "toSide": "right"
+    },
+    {
+      "id": "own-usage",
+      "from": "users",
+      "to": "usage",
+      "label": "cascade"
+    },
+    {
+      "id": "own-caches",
+      "from": "users",
+      "to": "caches",
+      "label": "cascade",
+      "labelAt": [
+        824,
+        256
+      ]
+    },
+    {
+      "id": "own-apple",
+      "from": "users",
+      "to": "apple",
+      "label": "cascade"
+    },
+    {
+      "id": "photo-path",
+      "from": "garments",
+      "to": "objects",
+      "label": "{uid}/{id}/",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "right"
+    },
+    {
+      "id": "garment-items",
+      "from": "garments",
+      "to": "items",
+      "label": "garment_id cascade",
+      "fromSide": "left",
+      "toSide": "top"
+    },
+    {
+      "id": "outfit-items",
+      "from": "outfits",
+      "to": "items",
+      "label": "outfit_id cascade"
+    },
+    {
+      "id": "outfit-wears",
+      "from": "outfits",
+      "to": "wears",
+      "label": "outfit_id cascade",
+      "labelAt": [
+        390,
+        487
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ownership",
+      "items": [
+        "Every user_id references auth.users on delete cascade",
+        "Policies compare user_id with (select auth.uid())"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Client writes",
+      "items": [
+        "Outfits and wears through log_wear and save_outfit",
+        "RLS limits a direct insert, or a wear's delete, to own rows"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Server-only tables",
+      "items": [
+        "No policies, every client grant revoked",
+        "consume_quota is the only way into usage_counters"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { translate, type MessageKey } from '../../i18n';
 import type { Garment } from '../garmentRepository';
-import { fieldsToAsk, isStalePending, reviewQueue, slotCounts, toGridItems } from '../closetSelectors';
+import { fieldsToAsk, isLivePending, isStalePending, reviewQueue, slotCounts, toGridItems } from '../closetSelectors';
 import { garment } from '../../test/garmentFixture';
 
 const NOW = Date.parse('2026-11-08T12:00:00.000Z');
@@ -26,6 +26,22 @@ describe('isStalePending', () => {
     const old = createdAgo(60 * MINUTE);
     expect(isStalePending(garment({ created_at: old, extraction_status: 'done' }), NOW)).toBe(false);
     expect(isStalePending(garment({ created_at: old, extraction_status: 'failed' }), NOW)).toBe(false);
+  });
+});
+
+describe('isLivePending', () => {
+  test('a fresh pending garment is live', () => {
+    expect(isLivePending(garment({ created_at: createdAgo(2 * MINUTE) }), NOW)).toBe(true);
+  });
+
+  test('a stale or finished extraction is not live', () => {
+    expect(isLivePending(garment({ created_at: createdAgo(15 * MINUTE) }), NOW)).toBe(false);
+    expect(isLivePending(garment({ created_at: createdAgo(2 * MINUTE), extraction_status: 'done' }), NOW)).toBe(false);
+  });
+
+  test('a fresh pending garment the user already reviewed is not live: the server never writes over a review', () => {
+    const reviewed = garment({ created_at: createdAgo(2 * MINUTE), reviewed_at: createdAgo(1 * MINUTE) });
+    expect(isLivePending(reviewed, NOW)).toBe(false);
   });
 });
 

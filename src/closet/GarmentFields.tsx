@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   check: {
-    color: '#16a34a',
+    color: colors.positiveText,
     fontSize: 14,
     fontWeight: '800',
   },

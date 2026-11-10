@@ -80,6 +80,7 @@ export type PluralBase =
   | 'closet.failed'
   | 'closet.reviewBanner'
   | 'camera.count'
+  | 'stats.kpi.outfits'
   | 'stats.kpi.streak'
   | 'diary.outfits'
   | 'forYou.outfits';

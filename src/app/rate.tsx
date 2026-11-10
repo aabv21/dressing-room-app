@@ -548,12 +548,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   swapButton: {
-    height: 36,
+    minHeight: 36,
     borderRadius: radii.pill,
     overflow: 'hidden',
   },
   swapButtonFill: {
     flex: 1,
+    paddingVertical: spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

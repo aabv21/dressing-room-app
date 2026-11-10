@@ -118,6 +118,29 @@ export function jevAnswers(request: unknown, level = 1): { model: string; answer
   return { model: 'jev-mock', answers };
 }
 
+/**
+ * `jevAnswers` for the end-to-end flows' swap: an outfit holding a piece of category `weak` scores
+ * at `low` (a composite of `round(100 · low)`) and names that piece's slot as the weakest, so
+ * `rate-outfit` looks for a swap; any other outfit scores at the best level with no weak piece.
+ */
+export function jevAnswersWithWeakPiece(
+  request: unknown,
+  weak: string,
+  low = 0.4,
+): { model: string; answers: Record<string, unknown> } {
+  const state = isRecord(request) && isRecord(request.state) ? request.state : {};
+  const outfit: unknown[] = Array.isArray(state.outfit) ? state.outfit : [];
+  const piece = outfit.find((entry) => isRecord(entry) && entry.category === weak);
+  if (!isRecord(piece) || typeof piece.slot !== 'string') return jevAnswers(request);
+  const slot = piece.slot;
+  const reply = jevAnswers(request, low);
+  const questions: Record<string, unknown> = isRecord(request) && isRecord(request.questions) ? request.questions : {};
+  const weakest = Object.entries(questions)
+    .filter(([, question]) => isRecord(question) && question.type === 'choice' && isRecord(question.criteria) && slot in question.criteria)
+    .map(([id]): [string, unknown] => [id, { type: 'choice', choice: slot, confidence: 0.6 }]);
+  return { ...reply, answers: { ...reply.answers, ...Object.fromEntries(weakest) } };
+}
+
 const DEFAULT_JEV: JevReply = (body) => ({ status: 200, body: jevAnswers(body) });
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -224,18 +247,38 @@ function flagValue(argv: readonly string[], flag: string): number | undefined {
   return value;
 }
 
+export type ServeOptions = { level: number; temp?: number; weak?: string };
+
+/** The `--serve` CLI's options from `argv`; throws on a bad or conflicting flag. */
+export function serveOptionsFrom(argv: readonly string[]): ServeOptions {
+  const levelFlag = flagValue(argv, '--level');
+  const temp = flagValue(argv, '--temp');
+  const weakIndex = argv.indexOf('--weak');
+  const weak = weakIndex === -1 ? undefined : argv[weakIndex + 1];
+  if (weakIndex !== -1 && (weak === undefined || !/^[a-z_]+$/.test(weak))) throw new Error('--weak needs a category');
+  if (levelFlag !== undefined && weak !== undefined) {
+    throw new Error('--level and --weak are exclusive: --weak sets its own answers');
+  }
+  const level = levelFlag ?? 1;
+  if (level < 0 || level > 1) throw new Error('--level must be between 0 and 1');
+  return { level, ...(temp === undefined ? {} : { temp }), ...(weak === undefined ? {} : { weak }) };
+}
+
 /**
- * `node integration/mockServices.ts --serve [--level <0..1>] [--temp <°C>]`: keeps the mock running
- * for a manual simulator check. Jev answers every question at `level` (default 1, so a composite
- * of `round(100 · level)`); the forecast is `MILD_FORECAST`, or a clear, dry day around `temp`;
- * geocoding finds Madrid. Stop it with Ctrl-C.
+ * `node integration/mockServices.ts --serve [--level <0..1> | --weak <category>] [--temp <°C>]`:
+ * keeps the mock running for a manual simulator check or the Maestro flows. Jev answers every
+ * question at `level` (default 1, so a composite of `round(100 · level)`), or, with `--weak`, scores
+ * outfits holding that category low and names it the weakest piece (`jevAnswersWithWeakPiece`);
+ * the forecast is `MILD_FORECAST`, or a clear, dry day around `temp`; geocoding finds Madrid. Stop
+ * it with Ctrl-C.
  */
 async function serveFromCli(argv: readonly string[]): Promise<void> {
-  const level = flagValue(argv, '--level') ?? 1;
-  const temp = flagValue(argv, '--temp');
-  if (level < 0 || level > 1) throw new Error('--level must be between 0 and 1');
+  const { level, temp, weak } = serveOptionsFrom(argv);
   const mock = await startMockServices();
-  mock.jev((body) => ({ status: 200, body: jevAnswers(body, level) }));
+  mock.jev((body) => ({
+    status: 200,
+    body: weak === undefined ? jevAnswers(body, level) : jevAnswersWithWeakPiece(body, weak),
+  }));
   if (temp !== undefined) {
     mock.forecast({
       status: 200,
@@ -245,7 +288,8 @@ async function serveFromCli(argv: readonly string[]): Promise<void> {
       },
     });
   }
-  console.log(`mock Jev and Open-Meteo on :54498 (level ${String(level)}${temp === undefined ? '' : `, ${String(temp)} °C`})`);
+  const details = [weak === undefined ? `level ${String(level)}` : `weak ${weak}`, ...(temp === undefined ? [] : [`${String(temp)} °C`])];
+  console.log(`mock Jev and Open-Meteo on :54498 (${details.join(', ')})`);
   process.once('SIGINT', () => {
     void mock.close().then(() => {
       console.log(`served ${String(mock.calls(JEV_PATH))} Jev call(s)`);
