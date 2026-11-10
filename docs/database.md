@@ -187,16 +187,17 @@ below. Each limit carries a margin, since the functions write `created_at` with 
 |---|---|---|
 | `rating_cache`, `lucky_cache` | A `degraded: true` result for 1 hour (`DEGRADED_TTL_MS`); any other result has no age limit | Degraded and over 2 hours old, or any row over 30 days old |
 | `weather_cache` | Only the current UTC hour | `hour` over 2 days old |
-| `for_you_cache` | 7 days (`FOR_YOU_TTL_MS`), degraded for 1 hour; on a spent quota the same key's expired entry, else the user's newest entry under any key | Over 8 days old and not the user's newest row (each user's newest row stays, whatever its age) |
+| `for_you_cache` | 7 days (`FOR_YOU_TTL_MS`), degraded for 1 hour; on a spent quota the same key's expired entry, else the user's newest entry under any key | Over 8 days old and not the user's newest row (each user's newest row stays, whatever its age; an older row for a key that comes back after 8 days is gone, so a spent quota then gets the newest row instead, as `cachePrune` already does) |
 | `cron.job_run_details` (this job's rows) | pg_cron never deletes run history | `end_time` over 30 days old |
 
 A rating or lucky list older than 30 days is simply recomputed (one quota use) the next time its
 key is asked for. The function is `security definer`, owned by `postgres`, with `search_path = ''`,
-and `execute` is revoked from `public`, `anon` and `authenticated`, so only the job (which runs as
-`postgres`) or the owner calls it. `pg_cron` is created `with schema pg_catalog`, as Supabase's Cron
+and `execute` is revoked from `public`, `anon` and `authenticated`, so only `postgres` (the owner
+and the job's role) and `service_role` (which Supabase's default privileges grant) can call it.
+It deletes only rows past their retention, so a `service_role` caller gains nothing. `pg_cron` is created `with schema pg_catalog`, as Supabase's Cron
 docs show; its tables live in the `cron` schema, and its schedule is in GMT (`cron.timezone`).
-`cron.schedule` with an existing job name replaces that job, so applying the migration again keeps
-one job. Check the runs with `select * from cron.job_run_details where jobid = (select jobid from
+`cron.schedule` with an existing job name replaces that job, so scheduling it again under the same
+name keeps one job (the migration itself runs once, like every migration). Check the runs with `select * from cron.job_run_details where jobid = (select jobid from
 cron.job where jobname = 'prune-expired-caches') order by start_time desc limit 10;`.
 
 ### `public.apple_tokens` (Plan 5)
@@ -678,8 +679,8 @@ inside them, never in `src/`.
   The next upload queue provider to mount, for whichever user signs in next, clears that account's
   queued rows and photo copies and then drops the request; a failed clear keeps it for the next
   mount. Until then the photos never upload without that user's session. If that same account signs
-  in again, its session shows the account still exists, so the request is only dropped and its
-  queue runs as before. The request survives the account's kv cleanup until it has been carried out.
+  in again before another account does, its session shows the account still exists, so the
+  request is only dropped and its queue runs as before. The request survives the account's kv cleanup until it has been carried out.
 - **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
   and `wears` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the

@@ -171,6 +171,22 @@ describe('listWears paging', () => {
     expect(result).toHaveLength(WEARS_MAX_PAGES * WEARS_PAGE_SIZE);
   });
 
+  test('a wear repeated across pages (a write between two pages) is kept once', async () => {
+    const row = (id: string) => ({ id, worn_on: '2026-11-09', occasion: null, score: null, outfit_id: 'o', outfits: null });
+    const pages = [Array.from({ length: 1000 }, (_, i) => row(`w-${String(i)}`)), [row('w-999'), row('w-1000')]];
+    const builder: Record<string, unknown> = {};
+    const chain = jest.fn(() => builder);
+    Object.assign(builder, { select: chain, gte: chain, lte: chain, order: chain, range: chain });
+    builder.then = (resolve: (value: unknown) => unknown) =>
+      Promise.resolve({ data: pages.shift() ?? [], error: null, status: 200 }).then(resolve);
+    const client = { from: jest.fn(() => builder) } as unknown as Client;
+
+    const result = await listWears('2025-11-09', '2026-11-09', client);
+
+    expect(result).toHaveLength(1001);
+    expect(result.filter((wear) => wear.id === 'w-999')).toHaveLength(1);
+  });
+
   test('a failed later page throws, returning nothing partial', async () => {
     const { client } = pagedClient(2500, 1);
 

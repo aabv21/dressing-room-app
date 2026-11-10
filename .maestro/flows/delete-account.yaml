@@ -10,9 +10,11 @@ appId: com.aabv21.dressingroom
     visible: "Profile"
     timeout: 60000
 - tapOn: "Profile"
+# Centered, since the last rows can stop just under the floating tab bar, where a tap lands on a tab.
 - scrollUntilVisible:
     element: "Delete account"
     direction: DOWN
+    centerElement: true
     timeout: 20000
 - tapOn: "Delete account"
 - extendedWaitUntil:

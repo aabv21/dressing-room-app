@@ -192,7 +192,13 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
   // dropped: their session shows the account still exists, so their queue runs as before. A
   // request whose clear failed stays for the next mount.
   useEffect(() => {
-    for (const requested of queuePurgeRequests()) {
+    let requests: string[];
+    try {
+      requests = queuePurgeRequests();
+    } catch {
+      return; // The kv store couldn't be read: retried at the next mount.
+    }
+    for (const requested of requests) {
       try {
         if (requested !== userId) {
           clearQueue(requested);

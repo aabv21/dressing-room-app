@@ -42,7 +42,9 @@ export const WEARS_MAX_PAGES = 20;
  * one comes back short. Throws if any page fails.
  */
 export async function listWears(from: string, to: string, client: Client = supabase): Promise<WearWithItems[]> {
-  const rows: WearRow[] = [];
+  // By id: a wear logged or deleted between two page reads shifts the pages, and a row can come back
+  // twice; a repeat is kept once (a row skipped that way is the offset paging's known limit).
+  const rows = new Map<string, WearRow>();
   for (let page = 0; page < WEARS_MAX_PAGES; page += 1) {
     const start = page * WEARS_PAGE_SIZE;
     const { data, error } = await client
@@ -60,12 +62,12 @@ export async function listWears(from: string, to: string, client: Client = supab
       throw error;
     }
     const pageRows = data as WearRow[];
-    rows.push(...pageRows);
+    for (const row of pageRows) rows.set(row.id, row);
     if (pageRows.length < WEARS_PAGE_SIZE) {
       break;
     }
   }
-  return rows.map((row) => ({
+  return [...rows.values()].map((row) => ({
     id: row.id,
     wornOn: row.worn_on,
     occasion: row.occasion,

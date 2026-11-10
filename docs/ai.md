@@ -121,8 +121,11 @@ where the last value is the garment's `updated_at` as the function read it befor
 can't overwrite a finished garment; a review the user saved while Claude was still answering (the app
 sends a garment to review 10 minutes after `created_at` by the device's clock, so a clock running
 ahead gets there early) keeps the user's values; and so does an edit saved in the garment detail
-meanwhile, which leaves `reviewed_at` null but, like any write to the row, moves `updated_at`
-(`garments_set_updated_at`). The write-back asks for the rows it matched (`Prefer:
+meanwhile (the detail locks the attribute editors and the status chips while a garment is being
+read, so that too needs a device clock running ahead), which leaves `reviewed_at` null but, like
+any write to the row, moves `updated_at` (`garments_set_updated_at`). A photo replaced while
+Claude reads the old one skips the write-back the same way, which is right: Claude read the
+previous photo. The write-back asks for the rows it matched (`Prefer:
 return=representation` with `select=id`), and when the filter matched none, the function answers
 and logs `skipped` instead of the extraction's outcome. Such a garment stays `pending`; the app
 treats a reviewed one as reviewed, and any other one as failed 10 minutes after `created_at`, so it
