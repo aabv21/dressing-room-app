@@ -148,6 +148,8 @@ async function runQueuePass(
         committed += 1;
       } else if (outcome === 'failed') {
         failed += 1;
+      } else if (outcome === 'retry') {
+        waiting += 1;
       }
     }
   }
@@ -159,8 +161,8 @@ async function runQueuePass(
 }
 
 /**
- * Advances one item through every remaining stage. Returns whether it committed, failed, or was
- * stopped by `pauseQueue` between two stages (its row keeps the last stage reached and its
+ * Advances one item through every remaining stage. Returns whether it committed, failed for good,
+ * failed but will retry after its backoff, or was stopped by `pauseQueue` between two stages (its row keeps the last stage reached and its
  * attempts, due at once).
  *
  * Each call is one attempt, and it is claimed (persisted as `attempts + 1` with its backoff)
@@ -176,7 +178,7 @@ async function advanceToCommit(
   store: QueueStoreApi,
   now: () => number,
   stopped: () => boolean,
-): Promise<'committed' | 'failed' | 'stopped'> {
+): Promise<'committed' | 'failed' | 'retry' | 'stopped'> {
   // Only a crashed run can leave an item at the limit without `failed` set: give up instead of
   // running it a ninth time.
   if (item.attempts >= MAX_ATTEMPTS) {
@@ -213,6 +215,7 @@ async function advanceToCommit(
     store.removeItem(current);
     return 'committed';
   } catch (error) {
+    if (__DEV__) console.warn('upload queue: attempt failed', error);
     const permanent = error instanceof PermanentUploadError;
     const failedItem: QueueItem = {
       ...current,
@@ -220,6 +223,7 @@ async function advanceToCommit(
       failed: permanent || attempts >= MAX_ATTEMPTS,
     };
     store.saveItem(failedItem);
-    return 'failed';
+    // A retryable failure waits out its backoff; only a given-up item counts as failed.
+    return failedItem.failed ? 'failed' : 'retry';
   }
 }

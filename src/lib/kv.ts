@@ -15,12 +15,23 @@ export function kvGet(key: string): string | null {
 // a dot-separated segment is refused, so a request that resolves after the cleanup (a closet
 // re-sign, For you, the lucky list, a logged wear) can't bring that data back.
 const refusedUsers = new Set<string>();
+// Single keys refused after an explicit sign-out (an account's display caches), so a request that
+// resolves after the sign-out can't write them back for the next person on the phone.
+const refusedKeys = new Set<string>();
 
 export function kvSet(key: string, value: string): void {
+  if (refusedKeys.has(key)) {
+    return;
+  }
   if (refusedUsers.size > 0 && key.split('.').some((segment) => refusedUsers.has(segment))) {
     return;
   }
   Storage.setItemSync(key, value);
+}
+
+/** Refuses later writes to exactly these keys until `allowUserKeys` lifts the account they name. */
+export function refuseKeys(keys: readonly string[]): void {
+  for (const key of keys) refusedKeys.add(key);
 }
 
 /**
@@ -32,9 +43,12 @@ export function refuseUserKeys(userId: string): void {
   refusedUsers.add(userId);
 }
 
-/** Lifts `refuseUserKeys`: that account signed in again, so it still exists. */
+/** Lifts `refuseUserKeys` and `refuseKeys` for `userId`: that account signed in again, so it still exists. */
 export function allowUserKeys(userId: string): void {
   refusedUsers.delete(userId);
+  for (const key of refusedKeys) {
+    if (key.split('.').includes(userId)) refusedKeys.delete(key);
+  }
 }
 
 export function kvUserRefused(userId: string): boolean {

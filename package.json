@@ -35,7 +35,7 @@
     "expo-sqlite": "~58.0.15",
     "expo-status-bar": "~58.0.4",
     "expo-system-ui": "~58.0.7",
-    "lucide-react-native": "^1.66.0",
+    "lucide-react-native": "^1.67.0",
     "react": "19.3.0",
     "react-native": "0.88.1",
     "react-native-gesture-handler": "~3.3.0",

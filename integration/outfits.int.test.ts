@@ -15,6 +15,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { signInWithEmail } from '../src/auth/emailAuth';
 import type { Database } from '../src/lib/database.types';
+import { logWear } from '../src/outfits/outfitRepository';
 import { ARCHETYPES } from '../supabase/functions/_shared/archetypes.ts';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, serviceClient, uniqueEmail } from './helpers';
 import { type MockAnthropic, startMockAnthropic } from './mockAnthropic';
@@ -164,10 +165,16 @@ beforeAll(async () => {
 }, FUNCTION_TIMEOUT_MS);
 
 afterAll(async () => {
-  await mock.close();
-  await anthropic.close();
-  await serviceClient().from('weather_cache').delete().eq('location_key', LOCATION_KEY);
-  await Promise.all(createdUserIds.map((id) => deleteUser(id)));
+  try {
+    await mock.close();
+  } finally {
+    try {
+      await anthropic.close();
+      await serviceClient().from('weather_cache').delete().eq('location_key', LOCATION_KEY);
+    } finally {
+      await Promise.all(createdUserIds.map((id) => deleteUser(id)));
+    }
+  }
 });
 
 describe('lucky-list', () => {
@@ -317,6 +324,15 @@ describe('for-you', () => {
     expect(spent).toEqual(first);
     expect(mock.calls('/v1/systemone')).toBe(jevBefore + jevCalls);
   }, FUNCTION_TIMEOUT_MS);
+});
+
+test("logWear answers invalid for a garment that isn't there any more, so a queued wear is dropped", async () => {
+  const result = await logWear(
+    { wearId: randomUUID(), garmentIds: [closet.whiteTee, randomUUID()], wornOn: today(), occasion: null, score: null },
+    userA.client,
+  );
+
+  expect(result).toEqual({ ok: false, error: 'invalid' });
 });
 
 test('log_wear from supabase-js bumps wear_count, and the garments select shows it', async () => {

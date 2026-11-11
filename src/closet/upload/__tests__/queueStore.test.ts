@@ -104,6 +104,9 @@ function createFakeDatabase(): {
   });
 
   const getFirstSync = jest.fn((source: string, params: readonly (string | number | null)[]) => {
+    if (source.startsWith('SELECT name FROM sqlite_master')) {
+      return mockTableExisted ? { name: 'upload_queue' } : null;
+    }
     if (source.startsWith('SELECT * FROM upload_queue WHERE garment_id')) {
       const [garmentId] = params;
       return rows.get(garmentId as string) ?? null;
@@ -210,6 +213,9 @@ jest.mock('expo-sqlite', () => ({
   openDatabaseSync: jest.fn(() => mockDb),
 }));
 
+// Whether `upload_queue` already exists when the module opens the database (an older install).
+let mockTableExisted = false;
+
 async function loadQueueStore(): Promise<typeof import('../queueStore')> {
   jest.resetModules();
   mockDb = createFakeDatabase();
@@ -221,6 +227,7 @@ async function loadQueueStore(): Promise<typeof import('../queueStore')> {
 
 beforeEach(() => {
   jest.useFakeTimers().setSystemTime(1_700_000_000_000);
+  mockTableExisted = false;
 });
 
 afterEach(() => {
@@ -232,8 +239,9 @@ test('enqueuePhotos returns items in order, captured, copied under uploads/', as
   registerSourceFile('file:///cache/a.jpg');
   registerSourceFile('file:///cache/b.heic');
 
-  const enqueued = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/b.heic']);
+  const { items: enqueued, failed } = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/b.heic']);
 
+  expect(failed).toBe(0);
   expect(enqueued).toHaveLength(2);
   const listed = listQueue('user-1');
   expect(listed).toHaveLength(2);
@@ -245,6 +253,47 @@ test('enqueuePhotos returns items in order, captured, copied under uploads/', as
     expect(item.sourceUri).toContain('/uploads/');
     expect(item.sourceUri).toContain(item.garmentId);
   }
+});
+
+test('a burst keeps its order: each photo is created one millisecond after the previous one', async () => {
+  const { enqueuePhotos } = await loadQueueStore();
+  jest.spyOn(Date, 'now').mockReturnValue(1_000);
+  for (const uri of ['file:///cache/a.jpg', 'file:///cache/b.jpg', 'file:///cache/c.jpg']) registerSourceFile(uri);
+
+  const { items } = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/b.jpg', 'file:///cache/c.jpg']);
+
+  expect(items.map((item) => item.createdAt)).toEqual([1_000, 1_001, 1_002]);
+  jest.mocked(Date.now).mockRestore();
+});
+
+test('a copy failure mid-batch enqueues the other photos and reports the one', async () => {
+  const { enqueuePhotos, listQueue } = await loadQueueStore();
+  registerSourceFile('file:///cache/a.jpg');
+  registerSourceFile('file:///cache/c.jpg');
+
+  const { items, failed } = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/gone.jpg', 'file:///cache/c.jpg']);
+
+  expect(failed).toBe(1);
+  expect(items).toHaveLength(2);
+  expect(listQueue('user-1')).toHaveLength(2);
+});
+
+test('the queue DB is versioned and checks its stage and flags', async () => {
+  await loadQueueStore();
+  const sql = mockDb.execSync.mock.calls.map(([source]) => String(source)).join('\n');
+
+  expect(sql).toContain("CHECK (stage IN ('captured', 'prepared', 'uploaded'))");
+  expect(sql).toContain('CHECK ("replace" IN (0, 1))');
+  expect(sql).toContain('CHECK (failed IN (0, 1))');
+  expect(sql).toContain('PRAGMA user_version = 1');
+});
+
+test('a table from before version 1 is left unstamped, so a later migration sees its real version', async () => {
+  mockTableExisted = true;
+  await loadQueueStore();
+  const sql = mockDb.execSync.mock.calls.map(([source]) => String(source)).join('\n');
+
+  expect(sql).not.toContain('PRAGMA user_version');
 });
 
 test('enqueuing a second batch does not fail on the already-created uploads/ directory', async () => {
@@ -278,7 +327,7 @@ test('enqueueReplacement sets replace to true', async () => {
 test('enqueueReplacement deletes the old row files when nothing was running (captured)', async () => {
   const { enqueuePhotos, enqueueReplacement } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
-  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
 
   registerSourceFile('file:///cache/a2.jpg');
   enqueueReplacement('user-1', first.garmentId, 'file:///cache/a2.jpg');
@@ -289,7 +338,7 @@ test('enqueueReplacement deletes the old row files when nothing was running (cap
 test('enqueueReplacement deletes the old row files when it had already failed', async () => {
   const { enqueuePhotos, enqueueReplacement, saveItem } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
-  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
   saveItem({ ...first, stage: 'uploaded', failed: true, attempts: 8 });
 
   registerSourceFile('file:///cache/a2.jpg');
@@ -303,7 +352,7 @@ test('enqueueReplacement leaves the old row files for a run that is still in pro
   // the worker's own saveItem/removeItem (keyed by source_uri) clean them up once it finishes.
   const { enqueuePhotos, enqueueReplacement, saveItem } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
-  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
   const uploaded: QueueItem = {
     ...first,
     stage: 'uploaded',
@@ -326,7 +375,7 @@ test('saveItem no-ops when the row has moved on to a different source_uri', asyn
   // A worker holding a stale snapshot (pre-replacement) must not clobber the replacement row.
   const { enqueuePhotos, enqueueReplacement, saveItem, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
-  const [stale] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [stale] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
 
   registerSourceFile('file:///cache/a2.jpg');
   const replacement = enqueueReplacement('user-1', stale.garmentId, 'file:///cache/a2.jpg');
@@ -343,7 +392,7 @@ test('removeItem leaves the replacement row and its files alone when the row has
   // replacement's row or files — only its own (already-renamed-away) source_uri still matches.
   const { enqueuePhotos, enqueueReplacement, removeItem, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
-  const [stale] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [stale] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
 
   registerSourceFile('file:///cache/a2.jpg');
   const replacement = enqueueReplacement('user-1', stale.garmentId, 'file:///cache/a2.jpg');
@@ -361,7 +410,7 @@ test('a stale worker finishing after a replacement removes its own snapshot file
   // removeItem then matches no row, and must still delete the files named in its own snapshot.
   const { enqueuePhotos, enqueueReplacement, listQueue, removeItem, saveItem } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
-  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [first] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
   const uploaded: QueueItem = {
     ...first,
     stage: 'uploaded',
@@ -388,7 +437,7 @@ test('removeItem deletes the row and its files', async () => {
   const { enqueuePhotos, listQueue, removeItem, saveItem } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
 
-  const [queued] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [queued] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
   const withFiles: QueueItem = {
     ...queued,
     fullUri: 'file:///document/uploads/full.webp',
@@ -410,7 +459,7 @@ test('removeItem ignores files that are already gone', async () => {
   const { enqueuePhotos, removeItem, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
 
-  const [queued] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [queued] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
   mockFiles.delete(queued.sourceUri);
 
   expect(() => {
@@ -425,8 +474,8 @@ test('clearQueue removes every row and copied file of one user, and only that us
   registerSourceFile('file:///cache/b.jpg');
   registerSourceFile('file:///cache/c.jpg');
 
-  const mine = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/b.jpg']);
-  const [theirs] = enqueuePhotos('user-2', ['file:///cache/c.jpg']) as [QueueItem];
+  const mine = enqueuePhotos('user-1', ['file:///cache/a.jpg', 'file:///cache/b.jpg']).items;
+  const [theirs] = enqueuePhotos('user-2', ['file:///cache/c.jpg']).items as [QueueItem];
 
   clearQueue('user-1');
 
@@ -442,7 +491,7 @@ test('resetFailed clears failure, attempts and backoff', async () => {
   const { enqueuePhotos, saveItem, resetFailed, listQueue } = await loadQueueStore();
   registerSourceFile('file:///cache/a.jpg');
 
-  const [queued] = enqueuePhotos('user-1', ['file:///cache/a.jpg']) as [QueueItem];
+  const [queued] = enqueuePhotos('user-1', ['file:///cache/a.jpg']).items as [QueueItem];
   saveItem({ ...queued, failed: true, attempts: 5, nextAttemptAt: 123456 });
 
   resetFailed('user-1');
@@ -463,7 +512,7 @@ test('a replacement enqueued mid-run does not interrupt the running upload or lo
   const { runQueue } = await import('../runQueue');
   registerSourceFile('file:///cache/g.jpg');
 
-  const [original] = queueStore.enqueuePhotos('user-1', ['file:///cache/g.jpg']) as [QueueItem];
+  const [original] = queueStore.enqueuePhotos('user-1', ['file:///cache/g.jpg']).items as [QueueItem];
 
   let releasePrepare!: () => void;
   const gate = new Promise<void>((resolve) => {

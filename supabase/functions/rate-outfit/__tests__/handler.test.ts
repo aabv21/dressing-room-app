@@ -3,7 +3,14 @@
 import { readFileSync } from 'node:fs';
 
 import { mulberry32 } from '../../_shared/outfitRules.ts';
-import { composeRating, parseJevAnswers, pickReasons, RATING_DIMENSIONS, RATING_LEVELS } from '../../_shared/rating.ts';
+import {
+  composeRating,
+  parseJevAnswers,
+  pickReasons,
+  RATING_CONFIG,
+  RATING_DIMENSIONS,
+  RATING_LEVELS,
+} from '../../_shared/rating.ts';
 import type { FnEnv } from '../../_shared/userContext.ts';
 import { handleRate, type RatingResult } from '../handler.ts';
 import { fakeTime } from '../../_shared/__tests__/fakeTime.ts';
@@ -527,6 +534,14 @@ describe('rating', () => {
     expect(outcomes()).toEqual([{ outcome: 'rated' }, { outcome: 'cached' }]);
   });
 
+  test('a language-only profile change keeps the cached rating', async () => {
+    const w = world();
+    await rate(w);
+    // A language toggle saves the profile, which only moves updated_at among the columns read here.
+    w.profile = { ...PROFILE, updated_at: '2026-11-08T09:00:00Z' };
+    expect(count((await rate(w)).calls, 'jev')).toBe(0);
+  });
+
   test('a profile edit changes the cache key', async () => {
     const w = world();
     await rate(w);
@@ -934,7 +949,8 @@ describe('latency budget', () => {
           return after(9_000, init, () => json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes'))));
         }
         swapCalls += 1;
-        return after(7_000, init, () => json(200, jevAt(0.5)));
+        // Below the outfit's score plus swapMinGain: nothing rated qualifies, so the cut-short search is unknown.
+        return after(7_000, init, () => json(200, jevAt(0.3)));
       },
       rand: mulberry32(7),
     });
@@ -943,6 +959,34 @@ describe('latency budget', () => {
     // 8 candidates: the first wave of 5 starts at ~9 s; at ~16 s the budget is spent, so the other 3 never start.
     expect(swapCalls).toBe(5);
     expect(await response.json()).toMatchObject({ swap: null, noBetterSwap: false });
+    expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
+  });
+
+  test('a qualifying swap found before the time budget ran out is returned', async () => {
+    const w = world();
+    for (let index = 0; index < 10; index += 1) {
+      const id = `20000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+      w.garments.set(id, garment(id, 'flats'));
+    }
+    const fake = fakeFetch(w);
+    const pending = handleRate(rateRequest(), {
+      env: ENV,
+      fetch: async (input, init = {}) => {
+        if (!hrefOf(input).startsWith(ENV.typesafeBaseUrl)) return fake.fetch(input, init);
+        const state = (JSON.parse(bodyOf(init)) as { state: JevState }).state;
+        if (shoesOf(state) === 'sneakers') {
+          return after(9_000, init, () => json(200, jevFixture('jev-low', (a) => ((a.weakest_piece as Row).choice = 'shoes'))));
+        }
+        return after(7_000, init, () => json(200, jevAt(0.9)));
+      },
+      rand: mulberry32(7),
+    });
+    await drive(30_000);
+    const body = (await (await pending).json()) as { score: number; swap: { score: number } | null; noBetterSwap: boolean };
+    // The other 3 candidates never started, but the first wave already beat the outfit by 5 or more.
+    expect(body.swap).not.toBeNull();
+    expect((body.swap?.score ?? 0) - body.score).toBeGreaterThanOrEqual(RATING_CONFIG.swapMinGain);
+    expect(body.noBetterSwap).toBe(false);
     expect(cachedResults(w)).toEqual([expect.objectContaining({ degraded: true })]);
   });
 

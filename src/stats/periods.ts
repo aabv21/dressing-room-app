@@ -61,3 +61,10 @@ export function monthGrid(year: number, month: number): { day: string; inMonth: 
   }
   return cells;
 }
+
+// NOTE: a year of history feeds the streak, so a longer streak reads as 365 days; an unbounded
+// fetch on every focus isn't worth it. Upgrade path: a server-side streak count.
+// `listWears` pages through the year 1000 wears at a time (PostgREST's `max_rows`), up to 20 pages;
+// see its NOTE for the ceiling.
+/** How far back Stats reads (and stores) the wear history: the streak's reach. */
+export const STREAK_HISTORY_DAYS = 365;

@@ -357,14 +357,43 @@ describe('pickReasons', () => {
     ]);
   });
 
-  it('gives no good reason below 0.6 and warns on the first weakest dimension', () => {
+  it('a low outfit still gets two reasons: the first weakest as warn and the strongest at 0.5 as good', () => {
     const parsed = parseJevAnswers(fixture('jev-low'), RATING_LEVELS);
     if (parsed === null) throw new Error('fixture did not parse');
-    expect(pickReasons(parsed.dims, colors)).toEqual([{ key: 'rating.reason.color_harmony.warn', tone: 'warn' }]);
+    expect(pickReasons(parsed.dims, colors)).toEqual([
+      { key: 'rating.reason.pattern_mix.good', tone: 'good' },
+      { key: 'rating.reason.color_harmony.warn', tone: 'warn' },
+    ]);
   });
 
-  it('gives no warn reason when nothing is below 0.5', () => {
-    expect(pickReasons(uniform(0.5), colors)).toEqual([]);
+  it('a middling outfit still gets two reasons', () => {
+    expect(pickReasons(uniform(0.55), colors)).toEqual([
+      { key: 'rating.reason.pattern_mix.good', tone: 'good' },
+      { key: 'rating.reason.color_harmony.warn', tone: 'warn' },
+    ]);
+  });
+
+  it('all dimensions below 0.5 give two warns', () => {
+    expect(pickReasons(uniform(0.3), colors)).toEqual([
+      { key: 'rating.reason.color_harmony.warn', tone: 'warn' },
+      { key: 'rating.reason.pattern_mix.warn', tone: 'warn' },
+    ]);
+  });
+
+  it('all dimensions at 0.6 or above give two goods and no warn', () => {
+    expect(pickReasons(uniform(0.9), colors)).toEqual([
+      { key: 'rating.reason.color_harmony.good', tone: 'good', params: { colors: 'cream,navy,white' } },
+      { key: 'rating.reason.pattern_mix.good', tone: 'good' },
+    ]);
+  });
+
+  it("a 1e-9 difference doesn't reorder reasons", () => {
+    const dims = uniform(0.7);
+    dims.color_harmony = { normalized: 0.7 - 1e-9, confidence: 1 };
+    expect(pickReasons(dims, colors).map((reason) => reason.key)).toEqual([
+      'rating.reason.color_harmony.good',
+      'rating.reason.pattern_mix.good',
+    ]);
   });
 });
 

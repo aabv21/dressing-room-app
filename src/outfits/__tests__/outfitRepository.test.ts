@@ -56,6 +56,35 @@ describe('logWear', () => {
 
     expect(result).toEqual({ ok: false, error: 'network' });
   });
+
+  test.each([
+    ['42501', "log_wear: one or more garments are not the caller's own"],
+    ['22023', 'log_wear requires at least 2 distinct garment ids'],
+  ])("log_wear's own refusal (%s) is invalid: retrying the same wear can never succeed", async (code, message) => {
+    const { client } = fakeClient({ data: null, error: { code, message }, status: 403 });
+
+    const result = await logWear(
+      { wearId: WEAR_ID, garmentIds: ['g-1', 'g-2'], wornOn: '2026-11-08', occasion: null, score: null },
+      client,
+    );
+
+    expect(result).toEqual({ ok: false, error: 'invalid' });
+  });
+
+  test("a permission error that isn't log_wear's own refusal stays unknown", async () => {
+    const { client } = fakeClient({
+      data: null,
+      error: { code: '42501', message: 'permission denied for function log_wear' },
+      status: 401,
+    });
+
+    const result = await logWear(
+      { wearId: WEAR_ID, garmentIds: ['g-1', 'g-2'], wornOn: '2026-11-08', occasion: null, score: null },
+      client,
+    );
+
+    expect(result).toEqual({ ok: false, error: 'unknown' });
+  });
 });
 
 describe('saveOutfit', () => {

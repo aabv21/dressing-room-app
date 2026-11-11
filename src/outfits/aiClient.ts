@@ -17,17 +17,17 @@ export type AiError = 'network' | 'over_quota' | 'unavailable' | 'incomplete' | 
 
 export type AiOutcome<T> = { ok: true; result: T } | { ok: false; error: AiError };
 
-const STATUS_TO_ERROR: Readonly<Record<number, AiError>> = {
-  404: 'not_found',
-  422: 'incomplete',
-  429: 'over_quota',
-  503: 'unavailable',
-};
+const STATUS_TO_ERROR: ReadonlyMap<number, AiError> = new Map([
+  [404, 'not_found'],
+  [422, 'incomplete'],
+  [429, 'over_quota'],
+  [503, 'unavailable'],
+]);
 
 function errorFrom(error: unknown): AiError {
   if (error instanceof FunctionsHttpError) {
     const status = error.context instanceof Response ? error.context.status : undefined;
-    return (status !== undefined ? STATUS_TO_ERROR[status] : undefined) ?? 'unknown';
+    return (status !== undefined ? STATUS_TO_ERROR.get(status) : undefined) ?? 'unknown';
   }
   if (error instanceof FunctionsFetchError || error instanceof TypeError) {
     return 'network';

@@ -114,7 +114,7 @@ function roundSharesTo100(counts: readonly number[], total: number): number[] {
   const result = [...floors];
   for (const { index } of order) {
     if (remainder <= 0) break;
-    result[index] = (result[index] ?? 0) + 1;
+    result.splice(index, 1, (result.at(index) ?? 0) + 1);
     remainder -= 1;
   }
   return result;
@@ -145,7 +145,8 @@ export function colorShares(garments: readonly Garment[]): ColorShare[] {
 
   return total.map(([color], index) => ({
     color,
-    pct: pcts[index] ?? 0,
+    pct: pcts.at(index) ?? 0,
+    // eslint-disable-next-line security/detect-object-injection -- `color` is the closed GarmentColor union here
     hex: color === 'other' ? OTHER_HEX : PALETTE_HEX[color],
   }));
 }

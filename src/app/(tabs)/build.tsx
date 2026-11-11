@@ -100,6 +100,13 @@ export default function BuildScreen(): React.JSX.Element {
   const usable = useMemo(() => new Set(byId.keys()), [byId]);
   // A piece deleted or sent to the laundry elsewhere leaves the outfit.
   const selection = useMemo(() => retainSelection(picked, usable), [picked, usable]);
+  // A piece that left (the laundry, lent, deleted) leaves the picks too, so it isn't picked again
+  // behind the user's back when it comes back. Adjusted while rendering, when the closet changes.
+  const [prunedFor, setPrunedFor] = useState(usable);
+  if (prunedFor !== usable) {
+    setPrunedFor(usable);
+    setPicked(retainSelection(picked, usable));
+  }
   // The chosen garments, in slot order.
   const chosen = useMemo(() => selectionIds(selection).flatMap((id) => byId.get(id) ?? []), [selection, byId]);
   const selectedIds = useMemo(() => new Set(chosen.map((item) => item.id)), [chosen]);

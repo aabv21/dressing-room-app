@@ -7,6 +7,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { AuthProvider, useAuth } from '../auth/AuthProvider';
 import { ClosetProvider } from '../closet/ClosetProvider';
 import { UploadQueueProvider } from '../closet/UploadQueueProvider';
+import { WearQueueFlusher } from '../outfits/WearQueueFlusher';
 import { I18nProvider } from '../i18n/I18nProvider';
 import { quietDevToastsForE2e } from '../lib/e2eLaunch';
 import { OnboardingArrivalContext } from '../ui/onboardingArrival';
@@ -117,6 +118,7 @@ function Guards() {
           // Keyed by user: another account never sees the previous one's closet or upload queue.
           <ClosetProvider key={active.userId}>
             <UploadQueueProvider>{stack}</UploadQueueProvider>
+            <WearQueueFlusher />
           </ClosetProvider>
         ) : (
           stack

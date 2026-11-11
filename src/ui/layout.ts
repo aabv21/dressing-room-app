@@ -39,13 +39,19 @@ export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
     // about twice as high as intended). Solving for the target
     // (`insets.bottom + 22`) means `ctaBottom` here must be that much *lower*.
     const ctaBottom = insets.bottom + 22 - layout.ctaZoneBottomPadding;
-    const contentPaddingBottom = ctaBottom + layout.ctaHeight + 24;
-    return { tabBarBottom: ctaBottom, ctaBottom, contentPaddingBottom };
+    return { tabBarBottom: ctaBottom, ctaBottom, contentPaddingBottom: ctaZoneTop(ctaBottom) };
   }
   const tabBarBottom = insets.bottom + layout.tabBarGap;
   const ctaBottom = tabBarBottom + layout.tabBarHeight + layout.ctaGap;
-  const contentPaddingBottom = ctaBottom + layout.ctaHeight + 24;
-  return { tabBarBottom, ctaBottom, contentPaddingBottom };
+  return { tabBarBottom, ctaBottom, contentPaddingBottom: ctaZoneTop(ctaBottom) };
+}
+
+/**
+ * The top of AnchoredCta's zone, where its fade starts: content padded down to it ends above the
+ * fade, so the last row (Build's grid, a long form) is never left under the buttons' backdrop.
+ */
+function ctaZoneTop(ctaBottom: number): number {
+  return ctaBottom + layout.ctaZoneBottomPadding + layout.ctaHeight + layout.ctaZoneTopPadding;
 }
 
 /**

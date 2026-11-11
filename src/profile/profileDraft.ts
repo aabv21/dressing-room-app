@@ -17,6 +17,11 @@ export type Occasion = Database['public']['Enums']['occasion'];
 export type ProfileDraft = {
   clothingType: ClothingType | null;
   bodyType: BodyType | null;
+  /**
+   * The body type the last clothing-type switch cleared, so switching back restores it; form state
+   * only, never saved.
+   */
+  clearedBodyType?: BodyType | null;
   /** `null` until a height is saved or the slider moves; the slider shows `defaultHeightFor`. */
   heightCm: number | null;
   chestCm: string;
@@ -71,11 +76,17 @@ export function draftFromProfile(profile: ProfilePatch): ProfileDraft {
 
 /**
  * The change a new clothing type makes: a selected silhouette the new type doesn't offer is
- * cleared, so it is saved as null instead of lingering as a hidden, mismatched value.
+ * cleared, so it is saved as null instead of lingering as a hidden, mismatched value, and
+ * remembered, so switching back (a mis-tap) restores it unless another one was picked meanwhile.
  */
 export function withClothingType(draft: ProfileDraft, clothingType: ClothingType): Partial<ProfileDraft> {
-  if (draft.bodyType !== null && !silhouettesFor(clothingType).includes(draft.bodyType)) {
-    return { clothingType, bodyType: null };
+  const offered = silhouettesFor(clothingType);
+  if (draft.bodyType !== null && !offered.includes(draft.bodyType)) {
+    return { clothingType, bodyType: null, clearedBodyType: draft.bodyType };
+  }
+  const cleared = draft.clearedBodyType ?? null;
+  if (draft.bodyType === null && cleared !== null && offered.includes(cleared)) {
+    return { clothingType, bodyType: cleared, clearedBodyType: null };
   }
   return { clothingType };
 }

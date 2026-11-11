@@ -112,6 +112,7 @@ export function seasonOf(date: string, lat: number | null): Season {
   if (north) return northernSeason;
 
   const opposite: Record<Season, Season> = { winter: 'summer', summer: 'winter', spring: 'autumn', autumn: 'spring' };
+  // eslint-disable-next-line security/detect-object-injection -- `northernSeason` is the closed Season union
   return opposite[northernSeason];
 }
 
@@ -143,6 +144,7 @@ export function missingSlots(garments: readonly RuleGarment[]): Slot[] {
 }
 
 function formalityRangeFor(occasion: Occasion | null): readonly [number, number] {
+  // eslint-disable-next-line security/detect-object-injection -- `occasion` is the closed Occasion union
   return occasion === null ? FORMALITY_RANGE.any : FORMALITY_RANGE[occasion];
 }
 

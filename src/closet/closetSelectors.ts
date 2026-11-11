@@ -1,5 +1,5 @@
 import type { MessageKey } from '../i18n';
-import { GARMENT_FIELDS, slotOf, type GarmentColor, type GarmentField, type Slot } from './catalog';
+import { GARMENT_FIELDS, slotOf, type GarmentCategory, type GarmentColor, type GarmentField, type Slot } from './catalog';
 import type { GridItem } from './ClosetGrid';
 import type { Garment } from './garmentRepository';
 
@@ -87,9 +87,21 @@ export function slotCounts(garments: readonly Garment[]): Partial<Record<Slot, n
   return Object.fromEntries(counts);
 }
 
+/** Active garments per category within `slot` (every slot for `'all'`), for Items' category chips. */
+export function categoryCounts(garments: readonly Garment[], slot: Slot | 'all'): Map<GarmentCategory, number> {
+  const counts = new Map<GarmentCategory, number>();
+  for (const g of garments) {
+    if (g.category !== null && isActive(g) && (slot === 'all' || slotOf(g.category) === slot)) {
+      counts.set(g.category, (counts.get(g.category) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 /**
- * Grid cells for the active garments in `filter` (`'all'` keeps uncategorized ones too) and, when
- * `colors` is given, with one of those colors (Stats' "Your colors" tap). `thumbUrls` is
+ * Grid cells for the active garments in `filter` (`'all'` keeps uncategorized ones too), of
+ * `category` when given, and, when `colors` is given, with one of those colors (Stats' "Your
+ * colors" tap). `thumbUrls` is
  * keyed by garment id. The cache key changes only with `photo_version`, so a re-signed URL for the
  * same photo still hits expo-image's disk cache, and a replaced photo never shows the old one.
  */
@@ -99,10 +111,11 @@ export function toGridItems(
   filter: Slot | 'all',
   t: Translate,
   colors?: ReadonlySet<GarmentColor>,
+  category?: GarmentCategory,
 ): GridItem[] {
   const items: GridItem[] = [];
   for (const g of garments) {
-    if (!isActive(g)) {
+    if (!isActive(g) || (category !== undefined && g.category !== category)) {
       continue;
     }
     if (filter !== 'all' && (g.category === null || slotOf(g.category) !== filter)) {

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { ChipGroup } from '../ChipGroup';
 
@@ -30,4 +31,9 @@ test('multiple select chips are checkboxes that toggle', async () => {
   expect(screen.getByRole('checkbox', { name: 'Month' })).not.toBeChecked();
   await fireEvent.press(screen.getByRole('checkbox', { name: 'Month' }));
   expect(onChange).toHaveBeenCalledWith(['week', 'month']);
+});
+
+test("the selected chip's label uses weight 700, as in the mockups", async () => {
+  await render(<ChipGroup options={options} selected={['month']} onChange={jest.fn()} multiple={false} />);
+  expect(StyleSheet.flatten(screen.getByText('Month').props.style)).toMatchObject({ fontWeight: '700' });
 });

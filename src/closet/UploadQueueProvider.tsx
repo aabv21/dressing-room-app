@@ -246,11 +246,9 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
       if (userId === null || uris.length === 0) {
         return;
       }
-      try {
-        enqueuePhotos(userId, uris);
-      } catch {
-        // Copying a picked photo into the app's storage failed (e.g. the disk is full). The
-        // photos copied before it are queued and still run below.
+      // A photo that couldn't be copied into the app's storage (e.g. the disk is full) is reported;
+      // the others are queued and run below.
+      if (enqueuePhotos(userId, uris).failed > 0) {
         Alert.alert(t('closet.addFailed'));
       }
       syncCounts();

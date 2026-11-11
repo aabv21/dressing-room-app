@@ -81,6 +81,8 @@ export const layout = {
   // subtracts this so the button's own bottom edge — not the zone's — lands at exactly
   // `insets.bottom + 22`.
   ctaZoneBottomPadding: 8,
+  // AnchoredCta's `zone` padding above its buttons, where the fade starts.
+  ctaZoneTopPadding: 22,
   // Minimum tap target everywhere in the app (44pt).
   minHitTarget: 44,
 } as const;

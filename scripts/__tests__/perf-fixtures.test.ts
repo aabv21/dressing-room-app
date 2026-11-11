@@ -8,7 +8,7 @@ import {
   fixtureSvg,
   isEntryPoint,
   lanAddresses,
-  resolveInside,
+  fixtureFileFor,
 } from '../perf-fixtures.ts';
 
 test('specs are deterministic and visually varied across 500 items', () => {
@@ -28,10 +28,21 @@ test('svg has a transparent background and the requested size', () => {
   expect(svg).not.toMatch(/<rect[^>]*width="256"[^>]*height="256"[^>]*fill=/);
 });
 
-test('serve rejects paths that escape the fixtures root', () => {
-  expect(resolveInside('/root/.perf-fixtures', '/perf/0001.webp')).toBe('/root/.perf-fixtures/perf/0001.webp');
-  expect(resolveInside('/root/.perf-fixtures', '/../package.json')).toBeNull();
-  expect(resolveInside('/root/.perf-fixtures', '/perf/%2e%2e/%2e%2e/x')).toBeNull();
+test('serve maps only /perf/NNNN.webp to a fixture file, built from the number', () => {
+  expect(fixtureFileFor('/root/.perf-fixtures', '/perf/0001.webp')).toBe('/root/.perf-fixtures/perf/0001.webp');
+  expect(fixtureFileFor('/root/.perf-fixtures', '/perf/0500.webp')).toBe('/root/.perf-fixtures/perf/0500.webp');
+  for (const escape of [
+    '/../package.json',
+    '/perf/%2e%2e/%2e%2e/x',
+    '/perf/../0001.webp',
+    '/perf/0001.webp/x',
+    '/perf/1.webp',
+    '/perf/0000.webp',
+    '/perf/link.webp',
+    '/other/0001.webp',
+  ]) {
+    expect(fixtureFileFor('/root/.perf-fixtures', escape)).toBeNull();
+  }
 });
 
 test('every non-internal IPv4 address is listed with its interface name', () => {

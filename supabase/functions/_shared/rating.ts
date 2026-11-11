@@ -436,35 +436,63 @@ export function composeRating(
 const GOOD_AT_LEAST = 0.6;
 const WARN_BELOW = 0.5;
 const MAX_GOOD_REASONS = 2;
+const MIN_REASONS = 2;
+const MAX_REASONS = 3;
 const MAX_REASON_COLORS = 3;
 
 /**
- * The template reasons: the two strongest dimensions at or above 0.6 (`good`) and the weakest below
- * 0.5 (`warn`). Ties keep `RATING_DIMENSIONS` order. color_harmony's good reason gets
- * `params.colors`: the outfit's first 3 distinct color enum values, comma-separated, in outfit
- * order; the app localizes each through `garment.color.*` before interpolating.
+ * The template reasons, 2–3 of them (spec §3.5). First the two strongest dimensions at or above 0.6
+ * (`good`) and the weakest below 0.5 (`warn`); then, while there are fewer than 2: the weakest as
+ * `warn` if none is picked yet and it is below 0.6, the strongest unused one at 0.5 or above as
+ * `good`, the next weakest as `warn`. Scores are compared at 3 decimals, so float noise can't flip a
+ * tie, and ties keep `RATING_DIMENSIONS` order. color_harmony's good reason gets `params.colors`: the
+ * outfit's first 3 distinct color enum values, comma-separated, in outfit order; the app localizes
+ * each through `garment.color.*` before interpolating.
  */
 export function pickReasons(dims: DimensionScores, outfitColors: readonly GarmentColor[]): RatingReason[] {
   const order = (dimension: RatingDimension): number => RATING_DIMENSIONS.indexOf(dimension);
-  const byStrength = (Object.entries(dims) as [RatingDimension, { normalized: number }][]).sort(
-    ([a, x], [b, y]) => y.normalized - x.normalized || order(a) - order(b),
+  const scored = (Object.entries(dims) as [RatingDimension, { normalized: number }][]).map(
+    ([dimension, { normalized }]) => [dimension, Math.round(normalized * 1000) / 1000] as const,
   );
-  const reasons: RatingReason[] = byStrength
-    .filter(([, { normalized }]) => normalized >= GOOD_AT_LEAST)
-    .slice(0, MAX_GOOD_REASONS)
-    .map(([dimension]) => {
-      const reason: RatingReason = { key: `rating.reason.${dimension}.good`, tone: 'good' };
-      if (dimension === 'color_harmony') {
-        reason.params = { colors: [...new Set(outfitColors)].slice(0, MAX_REASON_COLORS).join(',') };
-      }
-      return reason;
-    });
+  const byStrength = [...scored].sort(([a, x], [b, y]) => y - x || order(a) - order(b));
+  const byWeakness = [...scored].sort(([a, x], [b, y]) => x - y || order(a) - order(b));
 
-  // The weakest is the last after the stable sort; among equal minimums, take the first dimension.
-  const minimum = byStrength.at(-1)?.[1].normalized;
-  const weakest = byStrength.find(([, { normalized }]) => normalized === minimum);
-  if (weakest !== undefined && weakest[1].normalized < WARN_BELOW) {
-    reasons.push({ key: `rating.reason.${weakest[0]}.warn`, tone: 'warn' });
+  const goods = byStrength
+    .filter(([, score]) => score >= GOOD_AT_LEAST)
+    .slice(0, MAX_GOOD_REASONS)
+    .map(([dimension]) => dimension);
+  const warns: RatingDimension[] = [];
+  const weakest = byWeakness[0];
+  if (weakest !== undefined && weakest[1] < WARN_BELOW) warns.push(weakest[0]);
+
+  const used = new Set<RatingDimension>([...goods, ...warns]);
+  const count = (): number => goods.length + warns.length;
+  if (count() < MIN_REASONS && warns.length === 0 && weakest !== undefined && weakest[1] < GOOD_AT_LEAST && !used.has(weakest[0])) {
+    warns.push(weakest[0]);
+    used.add(weakest[0]);
   }
-  return reasons;
+  for (const [dimension, score] of byStrength) {
+    if (count() >= MIN_REASONS) break;
+    if (!used.has(dimension) && score >= WARN_BELOW) {
+      goods.push(dimension);
+      used.add(dimension);
+    }
+  }
+  for (const [dimension] of byWeakness) {
+    if (count() >= MIN_REASONS) break;
+    if (!used.has(dimension)) {
+      warns.push(dimension);
+      used.add(dimension);
+    }
+  }
+
+  const reasons: RatingReason[] = goods.map((dimension) => {
+    const reason: RatingReason = { key: `rating.reason.${dimension}.good`, tone: 'good' };
+    if (dimension === 'color_harmony') {
+      reason.params = { colors: [...new Set(outfitColors)].slice(0, MAX_REASON_COLORS).join(',') };
+    }
+    return reason;
+  });
+  for (const dimension of warns) reasons.push({ key: `rating.reason.${dimension}.warn`, tone: 'warn' });
+  return reasons.slice(0, MAX_REASONS);
 }

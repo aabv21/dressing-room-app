@@ -69,6 +69,8 @@ type FetchFn = typeof fetch;
 export const JEV_TIMEOUT_MS = 10_000;
 export const CLAUDE_TIMEOUT_MS = 20_000;
 export const WEATHER_TIMEOUT_MS = 5_000;
+/** Every PostgREST call; the database answers in milliseconds, so this only bounds a hung connection. */
+export const POSTGREST_TIMEOUT_MS = 8_000;
 /** At most this many Jev requests at once per function invocation. */
 export const MAX_CONCURRENT_JEV = 5;
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -123,10 +125,28 @@ export function serviceHeaders(env: Pick<SupabaseEnv, 'serviceRoleKey'>): Record
   return { apikey: env.serviceRoleKey, authorization: `Bearer ${env.serviceRoleKey}` };
 }
 
-export async function restJson(fetchFn: FetchFn, url: string, init: RequestInit): Promise<unknown> {
-  const response = await fetchFn(url, init);
-  if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
-  return (await response.json()) as unknown;
+/**
+ * Runs one PostgREST call (the request and reading its body) under `POSTGREST_TIMEOUT_MS`, so a hung
+ * database connection can't hold a function to its wall clock; the abort rejects the call.
+ */
+async function withDeadline<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, POSTGREST_TIMEOUT_MS);
+  try {
+    return await run(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function restJson(fetchFn: FetchFn, url: string, init: RequestInit): Promise<unknown> {
+  return withDeadline(async (signal) => {
+    const response = await fetchFn(url, { ...init, signal });
+    if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
+    return (await response.json()) as unknown;
+  });
 }
 
 export async function restRows(fetchFn: FetchFn, url: string, headers: Record<string, string>): Promise<unknown[]> {
@@ -143,15 +163,18 @@ export async function upsert(
   row: Record<string, unknown>,
 ): Promise<boolean> {
   try {
-    const response = await fetchFn(`${env.supabaseUrl}/rest/v1/${table}`, {
-      method: 'POST',
-      headers: {
-        ...serviceHeaders(env),
-        'content-type': 'application/json',
-        prefer: 'resolution=merge-duplicates,return=minimal',
-      },
-      body: JSON.stringify(row),
-    });
+    const response = await withDeadline((signal) =>
+      fetchFn(`${env.supabaseUrl}/rest/v1/${table}`, {
+        method: 'POST',
+        headers: {
+          ...serviceHeaders(env),
+          'content-type': 'application/json',
+          prefer: 'resolution=merge-duplicates,return=minimal',
+        },
+        body: JSON.stringify(row),
+        signal,
+      }),
+    );
     return response.ok;
   } catch {
     return false;
@@ -183,6 +206,24 @@ export type ProfileRow = {
 };
 
 export const PROFILE_COLUMNS = 'clothing_type,body_type,height_cm,age_group,styles,city_name,city_lat,city_lon,updated_at';
+
+/**
+ * The profile fields an outfit result depends on, for the cache keys. `updated_at` would move with
+ * any profile save (a language toggle included) and throw away cached results that still hold,
+ * whose recompute spends quota; the city's name only labels the weather, so it's left out too.
+ */
+export function profileIdentity(profile: ProfileRow | null): string {
+  if (profile === null) return 'null';
+  return JSON.stringify([
+    profile.clothing_type,
+    profile.body_type,
+    profile.height_cm,
+    profile.age_group,
+    [...profile.styles].sort(),
+    profile.city_lat,
+    profile.city_lon,
+  ]);
+}
 
 // Postgres already checks these enums; re-checking them here means only enum members, never free
 // text, can reach the Jev and Claude requests built from the profile.
@@ -399,7 +440,12 @@ export async function getWeather(
 
 // --- Quota and result caches -------------------------------------------------------------------
 
-/** `public.consume_quota` for the caller; throws when the RPC itself fails. */
+/**
+ * `public.consume_quota` for the caller; throws when the RPC itself fails.
+ * NOTE: two identical requests that both miss the cache at once both spend quota and both call the
+ * model (a double tap the app's busy locks already prevent). Upgrade path: an advisory lock on the
+ * cache key around the miss.
+ */
 export async function consumeQuota(
   env: FnEnv,
   fetchFn: FetchFn,
@@ -528,10 +574,13 @@ export async function cachePrune(
 ): Promise<void> {
   try {
     const filter = `user_id=eq.${userId}&cache_key=neq.${encodeURIComponent(keep)}`;
-    await fetchFn(`${env.supabaseUrl}/rest/v1/${table}?${filter}`, {
-      method: 'DELETE',
-      headers: { ...serviceHeaders(env), prefer: 'return=minimal' },
-    });
+    await withDeadline((signal) =>
+      fetchFn(`${env.supabaseUrl}/rest/v1/${table}?${filter}`, {
+        method: 'DELETE',
+        headers: { ...serviceHeaders(env), prefer: 'return=minimal' },
+        signal,
+      }),
+    );
   } catch {
     // A row left behind is only an older entry; the next write prunes it again.
   }

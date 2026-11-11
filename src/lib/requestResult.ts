@@ -5,7 +5,7 @@
 export type RequestError = 'network' | 'invalid' | 'unknown';
 export type RequestResult = { ok: true } | { ok: false; error: RequestError };
 
-type ErrorWithCode = { code?: string };
+type ErrorWithCode = { code?: string; message?: string };
 
 /** The `{ error, status, data }` shape a PostgREST builder resolves to. */
 export type RequestOutcome = { error: ErrorWithCode | null; status: number; data?: unknown };
@@ -32,10 +32,13 @@ export async function runRequest(
   request: () => PromiseLike<RequestOutcome>,
   /** Whether a successful response actually did the work (e.g. an update reached a row). */
   applied: (response: RequestOutcome) => boolean = () => true,
+  /** A function's own refusals (its raised messages) that mean the values were rejected. */
+  refused: (error: ErrorWithCode) => boolean = () => false,
 ): Promise<RequestResult> {
   try {
     const response = await request();
     if (response.error !== null) {
+      if (response.status !== 0 && refused(response.error)) return { ok: false, error: 'invalid' };
       return { ok: false, error: toRequestError(response.error, response.status) };
     }
     return applied(response) ? { ok: true } : { ok: false, error: 'unknown' };

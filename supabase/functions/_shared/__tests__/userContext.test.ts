@@ -11,6 +11,7 @@ import {
   loadGarments,
   loadProfile,
   mapLimit,
+  POSTGREST_TIMEOUT_MS,
   type ProfileRow,
   runClaude,
   runJev,
@@ -550,6 +551,23 @@ describe('runJev and runClaude', () => {
         reject(new DOMException('The operation was aborted.', 'AbortError'));
       });
     });
+
+  test('a PostgREST call that never answers rejects after POSTGREST_TIMEOUT_MS', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    const { fetch } = fakeFetch(hanging);
+    let settled = false;
+    const pending = loadProfile(ENV, fetch, AUTH).then(
+      () => 'resolved',
+      () => 'rejected',
+    );
+    void pending.then(() => {
+      settled = true;
+    });
+    await jest.advanceTimersByTimeAsync(POSTGREST_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await pending).toBe('rejected');
+  });
 
   test('runJev is aborted after 10 s', async () => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });

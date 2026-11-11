@@ -9,7 +9,10 @@ import { Alert } from 'react-native';
 import BuildScreen from '../app/(tabs)/build';
 import ClosetScreen from '../app/(tabs)/closet';
 import { updateGarment, type Garment } from '../closet/garmentRepository';
+import { kvRemove } from '../lib/kv';
+import { enqueueWear, wearQueueKey } from '../outfits/wearQueue';
 import { localDate } from '../outfits/aiClient';
+import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
 import { listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
 
@@ -141,6 +144,8 @@ beforeEach(() => {
   mockedListWears.mockResolvedValue(history());
   mockedUpdate.mockResolvedValue({ ok: true });
   mockedLocalDate.mockReturnValue('2026-11-08');
+  kvRemove(storedWearsKey('user-1'));
+  kvRemove(wearQueueKey('user-1'));
 });
 
 const tab = (name: string) => screen.getByRole('tab', { name });
@@ -233,6 +238,28 @@ describe('stats', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Clear the White filter' }));
     expect(screen.getAllByTestId(/^grid-cell-/)).toHaveLength(5);
     expect(screen.queryByRole('button', { name: 'Clear the White filter' })).not.toBeOnTheScreen();
+  });
+
+  test('"Other" filters Items to the colors not shown', async () => {
+    const PINK = '00000000-0000-4000-8000-0000000000a1';
+    const RED = '00000000-0000-4000-8000-0000000000a2';
+    const BLACK = '00000000-0000-4000-8000-0000000000a3';
+    // Seven colors: white leads, the rest tie and sort by name, so pink and red fall into "Other".
+    mockSetGarments([
+      ...CLOSET,
+      garment({ ...done, id: PINK, category: 't_shirt', colors: ['pink'] }),
+      garment({ ...done, id: RED, category: 'sweater', colors: ['red'] }),
+      garment({ ...done, id: BLACK, category: 'heels', colors: ['black'] }),
+    ]);
+    await openStatsLoaded();
+
+    await fireEvent.press(screen.getByTestId('proportion-legend-other'));
+
+    expect(tab('Items')).toBeSelected();
+    expect(screen.getAllByTestId(/^grid-cell-/).map((cell) => cell.props.testID as string).sort()).toEqual(
+      [`grid-cell-${PINK}`, `grid-cell-${RED}`].sort(),
+    );
+    expect(screen.getByRole('button', { name: 'Clear the Other filter' })).toBeOnTheScreen();
   });
 
   test("a card's title and its aside wrap onto two lines at a large text size, never squeezing the title out", async () => {
@@ -368,6 +395,23 @@ describe('stats', () => {
     expect(screen.queryByText('Unused for 6 months')).not.toBeOnTheScreen();
   });
 
+  test('a failed Donate shows the error and keeps the row', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockedUpdate.mockResolvedValue({ ok: false, error: 'network' });
+    await openStats();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Donate, Coat · Green' }));
+    const buttons = alert.mock.calls[0]?.[2] ?? [];
+    await act(async () => {
+      buttons.find((button) => button.text === 'Donate')?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("Couldn't save. Check your internet and try again.")).toBeOnTheScreen();
+    expect(screen.getByText('Coat · Green')).toBeOnTheScreen();
+    alert.mockRestore();
+  });
+
   test('a failed pin shows the error and keeps the buttons', async () => {
     mockedUpdate.mockResolvedValue({ ok: false, error: 'network' });
     await openStats();
@@ -407,6 +451,32 @@ describe('stats', () => {
     expect(await screen.findByText('outfit logged')).toBeOnTheScreen();
     expect(screen.getByLabelText('1 outfit logged')).toBeOnTheScreen();
     expect(screen.queryByText('outfits logged')).not.toBeOnTheScreen();
+  });
+
+  test('offline stats show the stored history with its date', async () => {
+    storeWears('user-1', '2025-11-07', '2026-11-07', history());
+    mockedListWears.mockRejectedValue(new Error('offline'));
+    await render(<ClosetScreen />);
+    await fireEvent.press(tab('Stats'));
+
+    expect(await screen.findByText('Offline — your history as of November 7.')).toBeOnTheScreen();
+    expect(screen.getByText('60%')).toBeOnTheScreen();
+    expect(screen.queryByText("Couldn't load your outfit history. Check your internet and try again.")).toBeNull();
+  });
+
+  test('a wear queued offline counts in the KPIs before it is sent', async () => {
+    enqueueWear('user-1', { wearId: 'queued-1', garmentIds: [JEANS], wornOn: '2026-11-08', occasion: null, score: null });
+    await render(<ClosetScreen />);
+    await fireEvent.press(tab('Stats'));
+
+    expect(await screen.findByText('22')).toBeOnTheScreen();
+  });
+
+  test('a successful fetch stores the year for later', async () => {
+    await openStats();
+
+    expect(mockedListWears).toHaveBeenCalledWith('2025-11-08', '2026-11-08');
+    expect(readStoredWears('user-1')).toEqual({ from: '2025-11-08', to: '2026-11-08', wears: history() });
   });
 
   test('a failed history fetch shows an error line', async () => {

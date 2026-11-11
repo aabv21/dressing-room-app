@@ -228,6 +228,7 @@ const FEMININE_ONLY = new Set<GarmentCategory>(['blouse', 'skirt', 'dress', 'jum
 const MASCULINE_ONLY = new Set<GarmentCategory>(['tie']);
 
 export function slotOf(category: GarmentCategory): Slot {
+  // eslint-disable-next-line security/detect-object-injection -- `category` is the closed GarmentCategory union
   return CATEGORY_SLOT[category];
 }
 

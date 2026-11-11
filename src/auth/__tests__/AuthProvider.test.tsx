@@ -115,6 +115,25 @@ describe('offline launch', () => {
     });
   });
 
+  test("TOKEN_REFRESHED for the same user doesn't reload a profile that already loaded", async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: '2026-01-01T00:00:00Z' });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-1' } });
+    });
+    await waitFor(() => {
+      expect(result.current.onboardingComplete).toBe(true);
+    });
+    const reads = mockGetProfile.mock.calls.length;
+
+    await act(() => {
+      authStateCallback?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+      authStateCallback?.('TOKEN_REFRESHED', { user: { id: 'user-1' } });
+    });
+
+    expect(mockGetProfile.mock.calls.length).toBe(reads);
+  });
+
   test('a finished user who launches offline lands on the tabs: the last known onboarding flag is kept on the device', async () => {
     mockGetProfile.mockResolvedValue({ onboarding_completed_at: '2026-01-01T00:00:00Z' });
     const first = await renderHook(() => useAuth(), { wrapper });

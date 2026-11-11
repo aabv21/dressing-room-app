@@ -10,7 +10,7 @@
 import { createServer } from 'node:http';
 import { mkdir, readFile } from 'node:fs/promises';
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export type FixtureSpec = {
@@ -94,22 +94,14 @@ export function fixtureSvg(spec: FixtureSpec, size = 256): string {
 }
 
 /**
- * Resolves `urlPath` against `root` and returns the absolute path, or `null` if the decoded,
- * resolved path would leave `root`. This is the server's path-traversal guard.
+ * The fixture file a request asks for: only `/perf/NNNN.webp` (1–9999) matches, and the path is built
+ * from that number, never from the request's text, so no request can name another file (a `..`, an
+ * encoded escape or a link) under or outside `root`. Null for anything else.
  */
-export function resolveInside(root: string, urlPath: string): string | null {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(urlPath);
-  } catch {
-    return null;
-  }
-  const resolvedRoot = resolve(root);
-  const target = resolve(resolvedRoot, `.${decoded}`);
-  if (target !== resolvedRoot && !target.startsWith(resolvedRoot + sep)) {
-    return null;
-  }
-  return target;
+export function fixtureFileFor(root: string, urlPath: string): string | null {
+  const match = /^\/perf\/(\d{4})\.webp$/.exec(urlPath);
+  const index = match === null ? 0 : Number(match[1]);
+  return index >= 1 ? join(root, FIXTURES_SUBDIR, fixtureFileName(index)) : null;
 }
 
 const FIXTURES_DIR = '.perf-fixtures';
@@ -128,6 +120,7 @@ async function generate(count: number): Promise<void> {
   // binding.
   const sharp = (await import('sharp')).default;
   const outDir = join(repoRoot(), FIXTURES_DIR, FIXTURES_SUBDIR);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- the repo's own `.perf-fixtures` folder, built from the repo root
   await mkdir(outDir, { recursive: true });
   for (let i = 1; i <= count; i += 1) {
     const svg = fixtureSvg(fixtureSpec(i), DEFAULT_SIZE);
@@ -154,32 +147,23 @@ export function lanAddresses(
   );
 }
 
-const CONTENT_TYPES: Record<string, string> = {
-  '.webp': 'image/webp',
-};
 
 function serve(port: number): void {
   const root = join(repoRoot(), FIXTURES_DIR);
   const server = createServer((req, res) => {
     const urlPath = req.url ?? '/';
     const withoutQuery = urlPath.split('?')[0] ?? '/';
-    const target = resolveInside(root, withoutQuery);
-    if (!target) {
+    const file = fixtureFileFor(root, withoutQuery);
+    if (file === null) {
       res.writeHead(404);
       res.end();
       return;
     }
-    const ext = target.slice(target.lastIndexOf('.'));
-    const contentType = CONTENT_TYPES[ext];
-    if (!contentType) {
-      res.writeHead(404);
-      res.end();
-      return;
-    }
-    readFile(target)
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- built by fixtureFileFor from a number, never from the request's text
+    readFile(file)
       .then((data) => {
         res.writeHead(200, {
-          'Content-Type': contentType,
+          'Content-Type': 'image/webp',
           'Cache-Control': 'public, max-age=31536000',
         });
         res.end(data);

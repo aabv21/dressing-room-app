@@ -44,8 +44,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await serviceClient().storage.from('garments').remove(uploadedPaths);
-  await Promise.all([deleteUser(userAId), deleteUser(userBId)]);
+  try {
+    await serviceClient().storage.from('garments').remove(uploadedPaths);
+  } finally {
+    await Promise.all([deleteUser(userAId), deleteUser(userBId)]);
+  }
 });
 
 test("B can't select, update or delete A's garment", async () => {
@@ -71,9 +74,10 @@ test("B can't download A's photo or upload into A's folder", async () => {
   expect(download.error).not.toBeNull();
 
   const intruderPath = `${userAId}/${randomUUID()}/full.webp`;
+  // Registered before the assertion: if the upload wrongly succeeds, the cleanup still removes it.
+  uploadedPaths.push(intruderPath);
   const upload = await clientB.storage.from('garments').upload(intruderPath, PHOTO, { contentType: 'image/webp' });
   expect(upload.error).not.toBeNull();
-  uploadedPaths.push(intruderPath);
 });
 
 test('inserting the same id twice with ignoreDuplicates leaves one row', async () => {
