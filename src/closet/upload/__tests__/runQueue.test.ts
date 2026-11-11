@@ -10,6 +10,7 @@ jest.mock('expo-sqlite', () => ({
     execSync: jest.fn(),
     runSync: jest.fn(),
     getAllSync: jest.fn(() => []),
+    getFirstSync: jest.fn(() => null),
   })),
 }));
 jest.mock('expo-file-system', () => ({

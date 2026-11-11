@@ -266,6 +266,28 @@ describe('month view', () => {
     expect(screen.queryByText('19 outfits')).toBeNull();
   });
 
+  test('offline, a queued wear can still be deleted while the sent ones wait for the connection', async () => {
+    storeWears('user-1', '2026-10-01', '2026-10-28', october());
+    enqueueWear('user-1', { wearId: 'queued-1', garmentIds: [JEANS], wornOn: '2026-10-28', occasion: null, score: null });
+    mockedListWears.mockRejectedValue(new Error('offline'));
+    const alert = jest.spyOn(Alert, 'alert');
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+    expect(await screen.findByText('20 outfits')).toBeOnTheScreen();
+
+    expect(within(wearCard('w-28')).getByRole('button', { name: 'Delete' })).toBeDisabled();
+    const queued = within(wearCard('queued-1')).getByRole('button', { name: 'Delete' });
+    expect(queued).toBeEnabled();
+    await fireEvent.press(queued);
+    await act(() => {
+      lastAlertButtons(alert).find((button) => button.style === 'destructive')?.onPress?.();
+    });
+
+    expect(queuedWears('user-1')).toEqual([]);
+    expect(mockedDeleteWear).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
   test('a load failure shows the error instead of the count', async () => {
     mockedListWears.mockRejectedValue(new Error('offline'));
     await render(<ClosetScreen />);

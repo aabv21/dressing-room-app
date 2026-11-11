@@ -46,6 +46,10 @@ const db = openDatabaseSync('upload-queue.db');
 /** The schema version in `PRAGMA user_version`: a later change migrates from it. */
 const SCHEMA_VERSION = 1;
 
+const tableExisted =
+  db.getFirstSync<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'upload_queue'") !==
+  null;
+
 db.execSync(`
   CREATE TABLE IF NOT EXISTS upload_queue (
     garment_id TEXT PRIMARY KEY NOT NULL,
@@ -62,8 +66,9 @@ db.execSync(`
   );
 `);
 // NOTE: a table created before version 1 keeps its columns without the CHECKs (SQLite can't add one
-// in place); no released install has one. A future schema change reads this version and migrates.
-db.execSync(`PRAGMA user_version = ${String(SCHEMA_VERSION)}`);
+// in place) and stays at version 0, so a future migration sees what it really has; no released
+// install has one. Only a table created here is stamped with this version.
+if (!tableExisted) db.execSync(`PRAGMA user_version = ${String(SCHEMA_VERSION)}`);
 
 function rowToItem(row: QueueRow): QueueItem {
   return {

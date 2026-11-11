@@ -151,3 +151,20 @@ test('withQueuedWears adds the queued wears in the range, newest first, without 
     'w-b',
   ]);
 });
+
+test("a wear being sent can't be dequeued: Diary then deletes it on the server instead", async () => {
+  enqueueWear(USER, input('w1'));
+  let finish: (result: RequestResult) => void = () => undefined;
+  const send = jest.fn(
+    () =>
+      new Promise<RequestResult>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const flush = flushWearQueue(USER, { send, sessionUserId: session });
+
+  expect(dequeueWear(USER, 'w1')).toBe(false);
+  finish(ok);
+  await flush;
+  expect(queuedWears(USER)).toEqual([]);
+});

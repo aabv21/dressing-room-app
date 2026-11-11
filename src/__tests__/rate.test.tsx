@@ -10,7 +10,7 @@ import { I18nProvider } from '../i18n/I18nProvider';
 import { kvRemove, kvSet } from '../lib/kv';
 import { storedForYouKey, storeForYou } from '../outfits/storedForYou';
 import type { ForYouCard } from '../outfits/types';
-import { queuedWears, wearQueueKey } from '../outfits/wearQueue';
+import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import type { Garment } from '../closet/garmentRepository';
 import { rateOutfit, type AiOutcome } from '../outfits/aiClient';
 import { logWear, saveOutfit } from '../outfits/outfitRepository';
@@ -480,6 +480,11 @@ test('offline, I\'ll wear it is queued and shows Logged with the note', async ()
   expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
   expect(screen.getByText("Logged — it syncs when you're back online.")).toBeOnTheScreen();
   expect(queuedWears('user-1').map((w) => w.wearId)).toEqual(['wear-1']);
+
+  // Sent by the flusher: the note goes on the next render.
+  dequeueWear('user-1', 'wear-1');
+  await screen.rerender(<RateScreen />);
+  expect(screen.queryByText("Logged — it syncs when you're back online.")).toBeNull();
 });
 
 test('a 429 shows the quota message', async () => {

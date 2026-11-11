@@ -20,7 +20,7 @@ import { logWear, saveOutfit } from '../outfits/outfitRepository';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { missingPieceIdea, pieceLabel } from '../outfits/outfitDisplay';
 import { readStoredForYou } from '../outfits/storedForYou';
-import { logWearOrQueue } from '../outfits/wearQueue';
+import { logWearOrQueue, queuedWears } from '../outfits/wearQueue';
 import { useWornToday } from '../outfits/wornToday';
 import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
 import type { RatingReason, RatingResult } from '../outfits/types';
@@ -315,7 +315,8 @@ function RateOutfit({
   const { isWorn, markWorn } = useWornToday(day);
   const logged = isWorn(ids);
   const [actionError, setActionError] = useState<RequestError | null>(null);
-  const [queuedNote, setQueuedNote] = useState(false);
+  // The wear sent to the offline queue: the note shows while it's still there.
+  const [queuedWearId, setQueuedWearId] = useState<string | null>(null);
   const { userId } = useAuth();
   // One id per wear attempt, kept across a retry so a lost response can't log it twice.
   const wearId = useRef<string | null>(null);
@@ -357,7 +358,7 @@ function RateOutfit({
       });
       if (done) {
         markWorn(ids);
-        setQueuedNote(result.queued);
+        setQueuedWearId(result.queued ? id : null);
         if (result.queued) {
           AccessibilityInfo.announceForAccessibility(t('outfit.queued'));
         } else {
@@ -372,7 +373,7 @@ function RateOutfit({
     if (busy.current) return;
     // A different outfit: its own save, wear and rating.
     wearId.current = null;
-    setQueuedNote(false);
+    setQueuedWearId(null);
     setSaved(false);
     setActionError(null);
     setRating({ kind: 'loading' });
@@ -391,7 +392,12 @@ function RateOutfit({
         {t(`outfit.error.${actionError}`)}
       </Text>
     );
-  } else if (queuedNote && logged) {
+  } else if (
+    logged &&
+    queuedWearId !== null &&
+    userId !== null &&
+    queuedWears(userId).some((wear) => wear.wearId === queuedWearId)
+  ) {
     notice = <Text style={styles.queued}>{t('outfit.queued')}</Text>;
   }
 

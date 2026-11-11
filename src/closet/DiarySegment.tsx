@@ -17,7 +17,7 @@ import { OutfitStack } from '../outfits/OutfitStack';
 import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
-import { dequeueWear, withQueuedWears } from '../outfits/wearQueue';
+import { dequeueWear, queuedWears, withQueuedWears } from '../outfits/wearQueue';
 import { mergeStoredWears, readStoredWears, wearsInRange } from '../stats/storedWears';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
 import { useLargeText } from '../ui/layout';
@@ -307,6 +307,12 @@ export function DiarySegment(): React.JSX.Element {
   const wears = loaded?.key === key ? loaded.wears : null;
   const failed = failedKey === key;
   const offlineSince = loaded?.key === key ? loaded.offlineSince : null;
+  // Read with the month's wears: a queued wear (sent or deleted since) moves both.
+  const queuedIds = useMemo(
+    () => new Set(userId === null ? [] : queuedWears(userId).map((queued) => queued.wearId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `loaded` changes whenever the queue's rows can have
+    [userId, loaded],
+  );
   const byDay = useMemo(() => diaryByDay(wears ?? []), [wears]);
   const byId = useMemo(() => new Map(garments.map((g) => [g.id, g])), [garments]);
   // Newest first, so the first wear's day is the latest worn one.
@@ -469,7 +475,8 @@ export function DiarySegment(): React.JSX.Element {
               title={formatDayTitle(locale, selectedDay)}
               byId={byId}
               thumbUrls={thumbUrls}
-              busy={deletingId !== null || offlineSince !== null}
+              // Offline, only a wear still in the queue can go: it never reached the server.
+              busy={deletingId !== null || (offlineSince !== null && !queuedIds.has(wear.id))}
               error={deleteError?.id === wear.id ? deleteError.error : null}
               onDelete={confirmDelete}
             />

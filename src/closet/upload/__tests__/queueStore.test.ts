@@ -104,6 +104,9 @@ function createFakeDatabase(): {
   });
 
   const getFirstSync = jest.fn((source: string, params: readonly (string | number | null)[]) => {
+    if (source.startsWith('SELECT name FROM sqlite_master')) {
+      return mockTableExisted ? { name: 'upload_queue' } : null;
+    }
     if (source.startsWith('SELECT * FROM upload_queue WHERE garment_id')) {
       const [garmentId] = params;
       return rows.get(garmentId as string) ?? null;
@@ -210,6 +213,9 @@ jest.mock('expo-sqlite', () => ({
   openDatabaseSync: jest.fn(() => mockDb),
 }));
 
+// Whether `upload_queue` already exists when the module opens the database (an older install).
+let mockTableExisted = false;
+
 async function loadQueueStore(): Promise<typeof import('../queueStore')> {
   jest.resetModules();
   mockDb = createFakeDatabase();
@@ -221,6 +227,7 @@ async function loadQueueStore(): Promise<typeof import('../queueStore')> {
 
 beforeEach(() => {
   jest.useFakeTimers().setSystemTime(1_700_000_000_000);
+  mockTableExisted = false;
 });
 
 afterEach(() => {
@@ -279,6 +286,14 @@ test('the queue DB is versioned and checks its stage and flags', async () => {
   expect(sql).toContain('CHECK ("replace" IN (0, 1))');
   expect(sql).toContain('CHECK (failed IN (0, 1))');
   expect(sql).toContain('PRAGMA user_version = 1');
+});
+
+test('a table from before version 1 is left unstamped, so a later migration sees its real version', async () => {
+  mockTableExisted = true;
+  await loadQueueStore();
+  const sql = mockDb.execSync.mock.calls.map(([source]) => String(source)).join('\n');
+
+  expect(sql).not.toContain('PRAGMA user_version');
 });
 
 test('enqueuing a second batch does not fail on the already-created uploads/ directory', async () => {

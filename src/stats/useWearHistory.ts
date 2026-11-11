@@ -9,7 +9,7 @@ import { readStoredWears, storeWears } from './storedWears';
 import { listWears, type WearWithItems } from './wearsRepository';
 
 export type WearHistory = {
-  /** The day the shown history runs up to: today when fetched, the stored day when offline. */
+  /** Today, the day the periods count from, also when the shown history is the stored one. */
   today: string;
   wears: WearWithItems[] | null;
   /** The stored history's last day when it's shown because the fetch failed; null when fresh. */

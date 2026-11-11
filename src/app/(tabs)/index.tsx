@@ -17,7 +17,7 @@ import { OutfitStack } from '../../outfits/OutfitStack';
 import type { LuckyOutfit } from '../../outfits/types';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
 import { logWear } from '../../outfits/outfitRepository';
-import { logWearOrQueue } from '../../outfits/wearQueue';
+import { logWearOrQueue, queuedWears } from '../../outfits/wearQueue';
 import { useWornToday } from '../../outfits/wornToday';
 import { getProfile } from '../../profile/profileRepository';
 import type { CtaAction } from '../../ui/AnchoredCta';
@@ -181,7 +181,8 @@ function useWearLog(
   const { t } = useI18n();
   const { userId } = useAuth();
   const { refresh } = useCloset();
-  const [queuedKey, setQueuedKey] = useState<string | null>(null);
+  // The outfit whose wear went to the offline queue, and that wear's id: the note shows while it's queued.
+  const [queued, setQueued] = useState<{ key: string; wearId: string } | null>(null);
   // False once the screen is gone: a late wear result is dropped.
   const mounted = useRef(true);
   useEffect(() => {
@@ -224,7 +225,7 @@ function useWearLog(
       wearIds.current.delete(key);
       markWorn(worn.garmentIds);
       if (outcome.status === 'queued') {
-        setQueuedKey(key);
+        setQueued({ key, wearId: id });
         AccessibilityInfo.announceForAccessibility(t('outfit.queued'));
       } else {
         void refresh();
@@ -233,7 +234,10 @@ function useWearLog(
     [day, occasion, markWorn, refresh, t, userId],
   );
 
-  return { pending, isLogged: isWorn, wearError, setWearError, queuedKey, wear };
+  // Read on every render: the flusher's closet refresh re-renders Today once the wear is sent.
+  const stillQueued =
+    queued !== null && userId !== null && queuedWears(userId).some((wear) => wear.wearId === queued.wearId);
+  return { pending, isLogged: isWorn, wearError, setWearError, queuedKey: stillQueued ? queued.key : null, wear };
 }
 
 export default function TodayScreen(): React.JSX.Element {

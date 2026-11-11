@@ -12,7 +12,7 @@ import { kvGet, kvRemove } from '../lib/kv';
 import { storeLucky } from '../outfits/storedLucky';
 import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
-import { queuedWears, wearQueueKey } from '../outfits/wearQueue';
+import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
 import { getProfile, type Profile } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
@@ -458,6 +458,21 @@ describe("I'll wear it", () => {
     expect(screen.getByText("Logged — it syncs when you're back online.")).toBeOnTheScreen();
     expect(queuedWears('user-1').map((w) => [w.wearId, w.score])).toEqual([['wear-1', 88]]);
     expect(mockedLogWear).toHaveBeenCalledTimes(1);
+  });
+
+  test('the queued note goes once the wear has been sent', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' });
+    const view = await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+    expect(await screen.findByText("Logged — it syncs when you're back online.")).toBeOnTheScreen();
+
+    // The flusher sent it and refreshed the closet, which re-renders Today.
+    dequeueWear('user-1', 'wear-1');
+    await view.rerender(<TodayScreen />);
+
+    expect(screen.queryByText("Logged — it syncs when you're back online.")).toBeNull();
+    expect(screen.getByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
   });
 
   test('another error shows the message and the button works again with the same wear id', async () => {

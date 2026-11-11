@@ -77,7 +77,13 @@ class GarmentCutoutModule : Module() {
       val foreground = result.foregroundBitmap ?: return null
       val subject = cropToSubject(foreground)
       if (subject !== foreground) foreground.recycle()
-      return subject?.let { writePng(it) }
+      return subject?.let {
+        try {
+          writePng(it)
+        } finally {
+          it.recycle()
+        }
+      }
     } catch (e: CodedException) {
       throw e
     } catch (e: Exception) {

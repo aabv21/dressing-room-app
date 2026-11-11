@@ -52,8 +52,15 @@ export function enqueueWear(userId: string, input: LogWearInput): void {
   writeQueue(userId, [...queue, input]);
 }
 
-/** Removes a queued wear (Diary's Delete before it was sent); true when it was queued. */
+// `<userId>:<wearId>` of the wear a flush is sending right now.
+const sending = new Set<string>();
+
+/**
+ * Removes a queued wear (Diary's Delete before it was sent); true when it was queued. False for a
+ * wear a flush is sending right now: it may already be on the server, so it's deleted there instead.
+ */
 export function dequeueWear(userId: string, wearId: string): boolean {
+  if (sending.has(`${userId}:${wearId}`)) return false;
   const queue = queuedWears(userId);
   const rest = queue.filter((queued) => queued.wearId !== wearId);
   if (rest.length === queue.length) return false;
@@ -130,7 +137,11 @@ async function runFlush(
   for (;;) {
     const next = queuedWears(userId)[0];
     if (next === undefined || sessionUserId() !== userId) break;
-    const outcome = await send(next);
+    const inFlight = `${userId}:${next.wearId}`;
+    sending.add(inFlight);
+    const outcome = await send(next).finally(() => {
+      sending.delete(inFlight);
+    });
     if (outcome.ok) {
       sent += 1;
     } else if (outcome.error === 'invalid') {
