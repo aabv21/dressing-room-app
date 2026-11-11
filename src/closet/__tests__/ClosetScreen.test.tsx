@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { Alert } from 'react-native';
@@ -188,6 +188,57 @@ describe('real mode', () => {
     expect(screen.getAllByTestId(/^grid-cell-/)).toHaveLength(7);
   });
 
+  test('a category chip row appears under the slot chips and filters the grid', async () => {
+    setCloset(closetOf(SEVEN));
+    await render(<ClosetScreen />);
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Tops 3' }));
+    const categories = screen.getByLabelText('Filter by category');
+    expect(within(categories).getAllByRole('radio').map((chip) => chip.props.accessibilityLabel as string)).toEqual([
+      'All',
+      'T-shirt',
+      'Blouse',
+      'Sweater',
+    ]);
+
+    await fireEvent.press(within(categories).getByRole('radio', { name: 'Blouse' }));
+    expect(screen.getAllByTestId(/^grid-cell-/)).toHaveLength(1);
+    expect(screen.getByTestId('grid-cell-g-1')).toBeOnTheScreen();
+  });
+
+  test('changing the slot resets the category', async () => {
+    setCloset(closetOf(SEVEN));
+    await render(<ClosetScreen />);
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'Tops 3' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Blouse' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Bottoms 2' }));
+
+    expect(screen.getAllByTestId(/^grid-cell-/)).toHaveLength(2);
+    expect(screen.getByRole('radio', { name: 'All' })).toBeChecked();
+  });
+
+  test('a category that empties falls back to all', async () => {
+    setCloset(closetOf(SEVEN));
+    const view = await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Tops 3' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Blouse' }));
+
+    setCloset(closetOf(SEVEN).filter((g) => g.category !== 'blouse'));
+    await view.rerender(<ClosetScreen />);
+
+    expect(screen.getAllByTestId(/^grid-cell-/)).toHaveLength(2);
+    expect(screen.getByRole('radio', { name: 'All' })).toBeChecked();
+  });
+
+  test('while the closet loads, a labeled spinner shows instead of the empty state', async () => {
+    setCloset([], 'loading');
+    await render(<ClosetScreen />);
+
+    expect(screen.getByLabelText('Loading your closet')).toBeOnTheScreen();
+    expect(screen.queryByText('0/10')).toBeNull();
+  });
+
   test('with 10 garments the goal card is gone', async () => {
     setCloset(closetOf([...SEVEN, 'coat', 'dress', 'hat']));
     await render(<ClosetScreen />);
@@ -281,6 +332,20 @@ describe('real mode', () => {
       expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledTimes(1);
     });
     expect(mockQueueActions.enqueue).not.toHaveBeenCalled();
+  });
+
+  test('a gallery picker failure shows the picker error', async () => {
+    const alert = jest.spyOn(Alert, 'alert');
+    jest.mocked(ImagePicker.launchImageLibraryAsync).mockRejectedValue(new Error('no photo access'));
+    await render(<ClosetScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Gallery' }));
+
+    await waitFor(() => {
+      expect(alert).toHaveBeenCalledWith("Couldn't open your photos. Try again.");
+    });
+    expect(mockQueueActions.enqueue).not.toHaveBeenCalled();
+    alert.mockRestore();
   });
 
   test('Burst mode opens the camera', async () => {

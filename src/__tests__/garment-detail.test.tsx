@@ -285,6 +285,20 @@ test('a cancelled picker queues nothing', async () => {
   expect(mockEnqueueReplacement).not.toHaveBeenCalled();
 });
 
+test('a picker failure shows the picker error', async () => {
+  const alert = jest.spyOn(Alert, 'alert');
+  jest.mocked(ImagePicker.launchImageLibraryAsync).mockRejectedValue(new Error('no photo access'));
+  await renderDetail();
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Replace photo' }));
+
+  await waitFor(() => {
+    expect(alert).toHaveBeenCalledWith("Couldn't open your photos. Try again.");
+  });
+  expect(mockEnqueueReplacement).not.toHaveBeenCalled();
+  alert.mockRestore();
+});
+
 test('while the AI is still reading the photo, the editors are disabled and it polls', async () => {
   mockCloset.garments = [
     garment({ id: 'g-1', extraction_status: 'pending', created_at: new Date().toISOString() }),

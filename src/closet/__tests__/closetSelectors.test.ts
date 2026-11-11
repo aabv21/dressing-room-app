@@ -1,6 +1,14 @@
 import { translate, type MessageKey } from '../../i18n';
 import type { Garment } from '../garmentRepository';
-import { fieldsToAsk, isLivePending, isStalePending, reviewQueue, slotCounts, toGridItems } from '../closetSelectors';
+import {
+  categoryCounts,
+  fieldsToAsk,
+  isLivePending,
+  isStalePending,
+  reviewQueue,
+  slotCounts,
+  toGridItems,
+} from '../closetSelectors';
 import { garment } from '../../test/garmentFixture';
 
 const NOW = Date.parse('2026-11-08T12:00:00.000Z');
@@ -134,6 +142,11 @@ describe('toGridItems', () => {
     expect(toGridItems(garments, thumbUrls, 'bottom', t).map((item) => item.id)).toEqual(['jeans', 'skirt']);
   });
 
+  test('toGridItems keeps only the chosen category', () => {
+    expect(toGridItems(garments, thumbUrls, 'bottom', t, undefined, 'skirt').map((item) => item.id)).toEqual(['skirt']);
+    expect(toGridItems(garments, thumbUrls, 'all', t, undefined, 't_shirt').map((item) => item.id)).toEqual(['top']);
+  });
+
   test('filter "all" keeps every garment, including uncategorized ones', () => {
     expect(toGridItems(garments, thumbUrls, 'all', t).map((item) => item.id)).toEqual(['top', 'jeans', 'skirt', 'new']);
   });
@@ -191,4 +204,18 @@ describe('toGridItems color filter', () => {
     const items = toGridItems([navyBlack, white, fourth], new Map(), 'bottom', t, new Set(['white', 'black']));
     expect(items.map((item) => item.id)).toEqual(['b']);
   });
+});
+
+test('categoryCounts counts active garments in the slot', () => {
+  const garments = [
+    garment({ id: 'a', category: 'jeans' }),
+    garment({ id: 'b', category: 'jeans' }),
+    garment({ id: 'c', category: 'skirt' }),
+    garment({ id: 'd', category: 't_shirt' }),
+    garment({ id: 'e', category: 'skirt', status: 'donated' }),
+    garment({ id: 'f', category: null }),
+  ];
+
+  expect(categoryCounts(garments, 'bottom')).toEqual(new Map([['jeans', 2], ['skirt', 1]]));
+  expect(categoryCounts(garments, 'all')).toEqual(new Map([['jeans', 2], ['skirt', 1], ['t_shirt', 1]]));
 });

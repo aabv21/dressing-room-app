@@ -182,18 +182,25 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   const [replacedVersion, setReplacedVersion] = useState<number | null>(null);
   const replacing = replacedVersion === garment.photo_version && uploading > 0;
   const replacePhoto = useCallback(async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsMultipleSelection: false,
-      quality: 1,
-    });
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: false,
+        quality: 1,
+      });
+    } catch {
+      // The system picker failed to open (no photo access, a broken picker): say so.
+      Alert.alert(t('closet.error.picker'));
+      return;
+    }
     const asset = result.canceled ? undefined : result.assets[0];
     if (asset === undefined) {
       return;
     }
     enqueueReplacement(garment.id, asset.uri);
     setReplacedVersion(garment.photo_version);
-  }, [enqueueReplacement, garment.id, garment.photo_version]);
+  }, [enqueueReplacement, garment.id, garment.photo_version, t]);
 
   const title = garment.category === null ? t('garment.unnamed') : t(`garment.category.${garment.category}`);
   // A reviewed garment must keep a category: without one it drops out of the slots and suggestions.

@@ -2,11 +2,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useIsFocused } from 'expo-router';
 import { Camera, ChevronRight, ImageIcon, X } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ClosetGrid, type LeadingTile } from '../../closet/ClosetGrid';
 import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
 import {
+  categoryCounts,
   hasAnyColor,
   isActive,
   reviewQueue,
@@ -14,7 +15,7 @@ import {
   toGridItems,
   type ColorFilter,
 } from '../../closet/closetSelectors';
-import { PALETTE_HEX, SLOTS, type Slot } from '../../closet/catalog';
+import { GARMENT_CATEGORIES, PALETTE_HEX, SLOTS, type GarmentCategory, type Slot } from '../../closet/catalog';
 import { DiarySegment } from '../../closet/DiarySegment';
 import { SegmentTabs } from '../../closet/SegmentTabs';
 import { StatsSegment } from '../../closet/StatsSegment';
@@ -151,6 +152,7 @@ function ItemsSegment({
   const { garments, thumbUrls, status } = useCloset();
   const queue = useUploadQueue();
   const [filter, setFilter] = useState<Slot | 'all'>('all');
+  const [category, setCategory] = useState<GarmentCategory | 'all'>('all');
 
   // A pending garment joins the review queue once it turns stale (10 minutes), so the clock
   // ticks the banner forward even when the list itself doesn't change.
@@ -168,10 +170,27 @@ function ItemsSegment({
   const counts = useMemo(() => new Map(Object.entries(slotCounts(visible))), [visible]);
   // A filter whose slot just emptied (e.g. its last garment was deleted) falls back to everything.
   const activeFilter = filter !== 'all' && !counts.has(filter) ? 'all' : filter;
+  // The categories in the chosen slot, in catalog order; a chosen one that just emptied falls back to all.
+  const categories = useMemo(() => {
+    const present = categoryCounts(visible, activeFilter);
+    return GARMENT_CATEGORIES.filter((value) => present.has(value));
+  }, [visible, activeFilter]);
+  const activeCategory = category !== 'all' && !categories.includes(category) ? 'all' : category;
   const items = useMemo(
-    () => toGridItems(garments, thumbUrls, activeFilter, t, colorSet),
-    [garments, thumbUrls, activeFilter, t, colorSet],
+    () =>
+      toGridItems(garments, thumbUrls, activeFilter, t, colorSet, activeCategory === 'all' ? undefined : activeCategory),
+    [garments, thumbUrls, activeFilter, t, colorSet, activeCategory],
   );
+  const categoryOptions = useMemo(
+    () => [
+      { value: 'all' as const, label: t('build.chip.all') },
+      ...categories.map((value) => ({ value, label: t(`garment.category.${value}`) })),
+    ],
+    [categories, t],
+  );
+  const onCategoryChange = useCallback((next: (GarmentCategory | 'all')[]) => {
+    setCategory(next[0] ?? 'all');
+  }, []);
 
   const chipOptions = useMemo(() => {
     const options: { value: Slot | 'all'; label: string }[] = [
@@ -189,6 +208,8 @@ function ItemsSegment({
   const onChipChange = useCallback((next: (Slot | 'all')[]) => {
     // Tapping the selected chip clears a single-select ChipGroup; that means "All" here.
     setFilter(next[0] ?? 'all');
+    // Another slot has other categories: the category filter starts over.
+    setCategory('all');
   }, []);
 
   const { retryFailed, discardFailed, enqueue } = queue;
@@ -216,7 +237,12 @@ function ItemsSegment({
       <ScreenTitle title={t('screen.closet')} />
       {tabs}
       {status === 'offline' ? <Text style={styles.offline}>{t('closet.offline')}</Text> : null}
-      {activeCount < CLOSET_GOAL ? <GoalCard count={activeCount} /> : null}
+      {status === 'loading' && garments.length === 0 ? (
+        // The first read on a fresh launch: a spinner, not the empty closet's goal card.
+        <ActivityIndicator accessibilityLabel={t('closet.loading')} color={colors.accent} style={styles.loading} />
+      ) : activeCount < CLOSET_GOAL ? (
+        <GoalCard count={activeCount} />
+      ) : null}
       {reviewCount > 0 ? <ReviewBanner count={reviewCount} /> : null}
       {colorFilter === null ? null : <ColorFilterChip filter={colorFilter} onClear={onClearColor} />}
       {activeCount > 0 ? (
@@ -236,6 +262,22 @@ function ItemsSegment({
           />
         </ScrollView>
       ) : null}
+      {categories.length > 1 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.chipRow}
+          contentContainerStyle={styles.chipRowContent}
+        >
+          <ChipGroup
+            options={categoryOptions}
+            selected={[activeCategory]}
+            onChange={onCategoryChange}
+            multiple={false}
+            accessibilityLabel={t('closet.filterCategory')}
+          />
+        </ScrollView>
+      ) : null}
     </View>
   );
 
@@ -244,17 +286,24 @@ function ItemsSegment({
   }, []);
 
   const pickFromGallery = useCallback(async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsMultipleSelection: true,
-      selectionLimit: GALLERY_SELECTION_LIMIT,
-      quality: 1,
-    });
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsMultipleSelection: true,
+        selectionLimit: GALLERY_SELECTION_LIMIT,
+        quality: 1,
+      });
+    } catch {
+      // The system picker failed to open (no photo access, a broken picker): say so.
+      Alert.alert(t('closet.error.picker'));
+      return;
+    }
     if (result.canceled) {
       return;
     }
     enqueue(result.assets.map((asset) => asset.uri));
-  }, [enqueue]);
+  }, [enqueue, t]);
 
   const cta = useMemo<React.ComponentProps<typeof AnchoredCta>>(
     () => ({
@@ -363,6 +412,10 @@ const styles = StyleSheet.create({
   // Bleeds to the screen edges so chips scroll out under them, while the first chip still lines up
   // with the title. The vertical padding keeps the chips' 44 pt hitSlop inside the scroll view,
   // which would otherwise clip touches to the 36 pt chip.
+  loading: {
+    alignSelf: 'center',
+    marginVertical: spacing.lg,
+  },
   chipRow: {
     marginHorizontal: -spacing.md,
     marginVertical: -CHIP_SLOP,
