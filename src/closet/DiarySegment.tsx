@@ -233,7 +233,7 @@ function WearCard({
           accessibilityLabel={deleteLabel}
           accessibilityState={{ disabled: busy }}
           disabled={busy}
-          hitSlop={{ top: MINI_SLOP, bottom: MINI_SLOP, left: 4, right: 4 }}
+          hitSlop={MINI_SLOP}
           onPress={() => {
             onDelete(wear);
           }}

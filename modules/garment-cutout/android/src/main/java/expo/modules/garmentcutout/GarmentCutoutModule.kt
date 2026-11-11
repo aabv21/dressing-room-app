@@ -1,6 +1,3 @@
-// NOTE: not compiled or run yet — this Mac has no JDK or Android SDK; ceiling: Android cut-out is
-// unverified, upgrade path: compile and test garment-cutout on Android in the owner session
-// (listed in AGENTS.md).
 package expo.modules.garmentcutout
 
 import android.graphics.Bitmap
@@ -19,13 +16,20 @@ import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // A 48 MP photo would need ~192 MB per ARGB bitmap; the upload pipeline resizes to 784 px anyway.
 private const val MAX_SOURCE_SIDE = 2048
+
+// The crop box ignores nearly transparent pixels (the mask's soft edge), so a faint halo doesn't
+// widen it; the pixels themselves keep their alpha. iOS crops with Vision's instance extent instead.
+private const val ALPHA_CROP_THRESHOLD = 16
 
 class GarmentCutoutModule : Module() {
   private val context
@@ -42,34 +46,44 @@ class GarmentCutoutModule : Module() {
         ConnectionResult.SUCCESS
     }
 
-    // Runs on the module's background queue, so blocking on the Play services tasks is fine here.
-    AsyncFunction("cutOut") { uri: String ->
-      val segmenter = SubjectSegmentation.getClient(segmenterOptions)
-      try {
-        val moduleInstall = ModuleInstall.getClient(context)
-        if (!Tasks.await(moduleInstall.areModulesAvailable(segmenter)).areModulesAvailable()) {
-          // The manifest's install-time download hasn't finished (or was skipped): ask for it again
-          // without waiting, on a client of its own that outlives this call, and keep the original
-          // photo this time.
-          moduleInstall.installModules(
-            ModuleInstallRequest.newBuilder()
-              .addApi(SubjectSegmentation.getClient(segmenterOptions))
-              .build()
-          )
-          return@AsyncFunction null
-        }
-        val source = decodeCapped(Uri.parse(uri))
-        val result = Tasks.await(segmenter.process(InputImage.fromBitmap(source, 0)))
-        val foreground = result.foregroundBitmap ?: return@AsyncFunction null
-        val subject = cropToSubject(foreground) ?: return@AsyncFunction null
-        writePng(subject)
-      } catch (e: CodedException) {
-        throw e
-      } catch (e: Exception) {
-        throw CutOutFailedException(e)
-      } finally {
-        segmenter.close()
+    // A cut-out takes a second or more and blocks on Play services tasks: it runs on the IO
+    // dispatcher, not the module queue other async native calls share.
+    AsyncFunction("cutOut") Coroutine { uri: String ->
+      withContext(Dispatchers.IO) { cutOut(uri) }
+    }
+  }
+
+  private fun cutOut(uri: String): String? {
+    val segmenter = SubjectSegmentation.getClient(segmenterOptions)
+    try {
+      val moduleInstall = ModuleInstall.getClient(context)
+      if (!Tasks.await(moduleInstall.areModulesAvailable(segmenter)).areModulesAvailable()) {
+        // The manifest's install-time download hasn't finished (or was skipped): ask for it again
+        // without waiting, on a client of its own that outlives this call, and keep the original
+        // photo this time.
+        moduleInstall.installModules(
+          ModuleInstallRequest.newBuilder()
+            .addApi(SubjectSegmentation.getClient(segmenterOptions))
+            .build()
+        )
+        return null
       }
+      val source = decodeCapped(Uri.parse(uri))
+      val result = try {
+        Tasks.await(segmenter.process(InputImage.fromBitmap(source, 0)))
+      } finally {
+        source.recycle()
+      }
+      val foreground = result.foregroundBitmap ?: return null
+      val subject = cropToSubject(foreground)
+      if (subject !== foreground) foreground.recycle()
+      return subject?.let { writePng(it) }
+    } catch (e: CodedException) {
+      throw e
+    } catch (e: Exception) {
+      throw CutOutFailedException(e)
+    } finally {
+      segmenter.close()
     }
   }
 
@@ -114,7 +128,7 @@ class GarmentCutoutModule : Module() {
   }
 
   // foregroundBitmap keeps the source size with a transparent background; crop to the opaque
-  // pixels so the PNG matches iOS's croppedToInstancesExtent output. Scans one row at a time to
+  // (alpha at least ALPHA_CROP_THRESHOLD) pixels so the PNG matches iOS's croppedToInstancesExtent output. Scans one row at a time to
   // keep memory flat. Null when nothing is opaque.
   private fun cropToSubject(bitmap: Bitmap): Bitmap? {
     val width = bitmap.width
@@ -127,7 +141,7 @@ class GarmentCutoutModule : Module() {
     for (y in 0 until height) {
       bitmap.getPixels(row, 0, width, 0, y, width, 1)
       for (x in 0 until width) {
-        if (row[x] ushr 24 != 0) {
+        if (row[x] ushr 24 >= ALPHA_CROP_THRESHOLD) {
           if (x < left) left = x
           if (x > right) right = x
           if (y < top) top = y
