@@ -1,8 +1,5 @@
 /** @jest-environment node */
 // scripts/__tests__/perf-fixtures.test.ts
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -11,8 +8,7 @@ import {
   fixtureSvg,
   isEntryPoint,
   lanAddresses,
-  realInside,
-  resolveInside,
+  fixtureFileFor,
 } from '../perf-fixtures.ts';
 
 test('specs are deterministic and visually varied across 500 items', () => {
@@ -32,27 +28,22 @@ test('svg has a transparent background and the requested size', () => {
   expect(svg).not.toMatch(/<rect[^>]*width="256"[^>]*height="256"[^>]*fill=/);
 });
 
-test('serve rejects paths that escape the fixtures root', () => {
-  expect(resolveInside('/root/.perf-fixtures', '/perf/0001.webp')).toBe('/root/.perf-fixtures/perf/0001.webp');
-  expect(resolveInside('/root/.perf-fixtures', '/../package.json')).toBeNull();
-  expect(resolveInside('/root/.perf-fixtures', '/perf/%2e%2e/%2e%2e/x')).toBeNull();
+test('serve maps only /perf/NNNN.webp to a fixture file, built from the number', () => {
+  expect(fixtureFileFor('/root/.perf-fixtures', '/perf/0001.webp')).toBe('/root/.perf-fixtures/perf/0001.webp');
+  expect(fixtureFileFor('/root/.perf-fixtures', '/perf/0500.webp')).toBe('/root/.perf-fixtures/perf/0500.webp');
+  for (const escape of [
+    '/../package.json',
+    '/perf/%2e%2e/%2e%2e/x',
+    '/perf/../0001.webp',
+    '/perf/0001.webp/x',
+    '/perf/1.webp',
+    '/perf/0000.webp',
+    '/perf/link.webp',
+    '/other/0001.webp',
+  ]) {
+    expect(fixtureFileFor('/root/.perf-fixtures', escape)).toBeNull();
+  }
 });
-
-/* eslint-disable security/detect-non-literal-fs-filename -- every path below is under a fresh mkdtemp folder */
-test("serve refuses a symlink inside the fixtures that points outside them", async () => {
-  const base = await mkdtemp(join(tmpdir(), 'perf-fixtures-'));
-  const root = join(base, '.perf-fixtures');
-  await mkdir(join(root, 'perf'), { recursive: true });
-  await writeFile(join(root, 'perf', '0001.webp'), 'ok');
-  await writeFile(join(base, 'secret.txt'), 'nope');
-  await symlink(join(base, 'secret.txt'), join(root, 'perf', 'link.webp'));
-
-  await expect(realInside(root, join(root, 'perf', '0001.webp'))).resolves.toBe(await realpath(join(root, 'perf', '0001.webp')));
-  await expect(realInside(root, join(root, 'perf', 'link.webp'))).resolves.toBeNull();
-  await expect(realInside(root, join(root, 'perf', 'missing.webp'))).resolves.toBeNull();
-  await rm(base, { recursive: true, force: true });
-});
-/* eslint-enable security/detect-non-literal-fs-filename */
 
 test('every non-internal IPv4 address is listed with its interface name', () => {
   const ipv4 = (address: string, internal: boolean) => ({
