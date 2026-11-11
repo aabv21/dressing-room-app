@@ -286,6 +286,19 @@ target, so the owner session sets spend caps or alerts with Anthropic and TypeSa
   the rating to Claude, the lucky list to the pre-score, and For you's lines to templates.
 - **A nightly backup on the owner's Mac, over a cloud copy.** The free tier has no downloadable
   backups, and the data is family data, so it stays local, encrypted at rest when FileVault is on.
+- **For you refreshes on demand, not on a schedule.** The spec's §5.2 lists a weekly pg_cron
+  refresh, but §3.7 only asks that the ideas change at most weekly. The function recomputes on the
+  tab's focus once its 7-day entry has expired (or the closet changed), so nothing runs, and costs,
+  for an account that never opens the tab.
+- **Only "I'll wear it" queues offline.** It is the morning's one write, and `log_wear` is already
+  idempotent by its client wear id, so a resend can't double-log. Garment edits, statuses, Donate,
+  pins, saved outfits and a Diary delete need the connection and show their error: queuing them
+  would mean ordering and merging edits that can conflict, for a case the owner accepted on
+  2026-11-11.
+- **"Missing something?" names a piece from the stored For you answer.** Mockup 01 screen 3 names
+  the piece that would lift the outfit. The rating screen takes it from the last For you ideas on the
+  device for the outfit's weakest slot, which costs no Jev call; computing it per rating would add
+  up to 10 Jev calls to every low score.
 
 ## Regenerating the diagrams
 

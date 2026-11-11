@@ -228,6 +228,8 @@ Checks that need the owner's accounts or hardware, run once at the end, in this 
 
 ### 5. Live checks
 
+- **The on-device performance gate** (`docs/performance-gate.md`, spec §5.1), on an iPhone first and then a family Android phone: the 500-thumbnail fixture grid, one cold and three warm passes, and the go/no-go verdict for Expo. Include the drag-without-momentum check (the HUD's scroll flag clears on a plain drag). Then fill in the doc's results table and the README's status line.
+- **The Spanish category and color names.** Read `src/i18n/es.ts`'s `garment.category.*` and `garment.color.*` in the app (Closet chips, review, garment detail) and fix any wording that reads oddly (e.g. "Camel").
 - **The cache cleanup job.** The day after `db push`, `select status, return_message from cron.job_run_details where jobid = (select jobid from cron.job where jobname = 'prune-expired-caches') order by start_time desc limit 1;` in the SQL editor shows `succeeded`.
 - **Live Open-Meteo.** With a real city in the profile, check that Today shows the day's weather and that `weather_cache` gets a row for the hour; also a city typed without coordinates (geocoding).
 - **Live Claude.** With the real key, upload a few garments and check the attributes and doubted fields that come back. Also check that a slow extraction (over 5 s) still lands, since pg_net stops waiting after 5 s while the function carries on.
@@ -261,16 +263,12 @@ Checks that need the owner's accounts or hardware, run once at the end, in this 
 
 ### 9. End-to-end flows
 
-- **`pnpm e2e`** on the iOS simulator against the local stack (`docs/testing.md`'s "End-to-end flows"), before the release build. All three flows pass.
+- **`pnpm e2e`** on the iOS simulator, and `E2E_PLATFORM=android pnpm e2e` on the Android emulator, against the local stack (`docs/testing.md`'s "End-to-end flows"), before the release build. All three flows pass on both.
 
 ### 10. Release builds and submission
 
 - **Build, submit and add testers** (see "Release" above for `eas.json`'s profiles). `eas build --profile production --platform ios|android` → `eas submit --profile production --platform ios|android` (fill in the real `ascAppId` in `eas.json`, or pass it as a flag) → add testers to the TestFlight internal group (App Store Connect) and confirm testers are added on the Play internal track (Play Console) before sharing either build.
 - **Google Play's service account.** Create the app in Play Console first. Then create a Google service account key (a JSON file; Expo's guide is `https://expo.fyi/creating-google-service-account`) and upload it to EAS (the project's credentials on expo.dev, or `eas credentials`). With it, the first `eas submit` creates the first internal-testing release; Expo's docs also allow uploading that first AAB by hand in Play Console instead. The key never goes in the repo.
-
-### 11. CI
-
-- **CI.** The first run of CI's `database` job confirms the Linux runner reaches the mock Claude (54499) and the mock Jev, Open-Meteo and Apple (54498) at `host.docker.internal`.
 
 ## Branches and pull requests
 
