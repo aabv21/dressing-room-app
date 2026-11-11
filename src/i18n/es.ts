@@ -544,6 +544,7 @@ export const es: Record<MessageKey, string> = {
   'outfit.error.network': 'No pudimos conectarnos. Revisa tu conexión e inténtalo de nuevo.',
   'outfit.error.invalid': 'Algunas de estas prendas no se pudieron usar. Revisa tu clóset e inténtalo de nuevo.',
   'outfit.error.unknown': 'Algo salió mal. Inténtalo de nuevo.',
+  'outfit.queued': 'Registrado: se sincroniza cuando vuelvas a tener conexión.',
 
   'today.weather.add': 'Agrega tu ciudad para el clima',
   'today.weather.unavailable': 'Clima no disponible para {city}',

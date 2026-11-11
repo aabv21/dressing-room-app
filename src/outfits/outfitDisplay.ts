@@ -50,10 +50,15 @@ function capitalize(word: string): string {
   return first === undefined ? word : first.toLocaleUpperCase() + rest.join('');
 }
 
+/** The capitalized weekday, e.g. "Martes": Today's header always names the day. */
+export function formatWeekday(locale: Locale, now: Date = new Date()): string {
+  return capitalize(new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(now));
+}
+
 /** "{Weekday} · {temp} °C, {condition}", e.g. "Martes · 24 °C, soleado"; null when there's no weather. */
 export function formatWeather(weather: WeatherSummary | null, locale: Locale, now: Date = new Date()): string | null {
   if (weather === null) return null;
-  const weekday = capitalize(new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(now));
+  const weekday = formatWeekday(locale, now);
   const key: MessageKey = `weather.condition.${weather.condition}`;
   const condition = translate(locale, key);
   return `${weekday} · ${String(Math.round(weather.tempC))} °C, ${condition}`;

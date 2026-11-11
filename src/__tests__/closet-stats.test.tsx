@@ -10,6 +10,7 @@ import BuildScreen from '../app/(tabs)/build';
 import ClosetScreen from '../app/(tabs)/closet';
 import { updateGarment, type Garment } from '../closet/garmentRepository';
 import { kvRemove } from '../lib/kv';
+import { enqueueWear, wearQueueKey } from '../outfits/wearQueue';
 import { localDate } from '../outfits/aiClient';
 import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
 import { listWears, type WearWithItems } from '../stats/wearsRepository';
@@ -144,6 +145,7 @@ beforeEach(() => {
   mockedUpdate.mockResolvedValue({ ok: true });
   mockedLocalDate.mockReturnValue('2026-11-08');
   kvRemove(storedWearsKey('user-1'));
+  kvRemove(wearQueueKey('user-1'));
 });
 
 const tab = (name: string) => screen.getByRole('tab', { name });
@@ -421,6 +423,14 @@ describe('stats', () => {
     expect(await screen.findByText('Offline — your history as of November 7.')).toBeOnTheScreen();
     expect(screen.getByText('60%')).toBeOnTheScreen();
     expect(screen.queryByText("Couldn't load your outfit history. Check your internet and try again.")).toBeNull();
+  });
+
+  test('a wear queued offline counts in the KPIs before it is sent', async () => {
+    enqueueWear('user-1', { wearId: 'queued-1', garmentIds: [JEANS], wornOn: '2026-11-08', occasion: null, score: null });
+    await render(<ClosetScreen />);
+    await fireEvent.press(tab('Stats'));
+
+    expect(await screen.findByText('22')).toBeOnTheScreen();
   });
 
   test('a successful fetch stores the year for later', async () => {

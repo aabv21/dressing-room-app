@@ -12,11 +12,12 @@ import { OCCASIONS, type Occasion } from '../../closet/catalog';
 import { useCloset } from '../../closet/ClosetProvider';
 import { useI18n } from '../../i18n';
 import type { RequestError } from '../../lib/requestResult';
-import { logWear } from '../../outfits/outfitRepository';
-import { formatWeather } from '../../outfits/outfitDisplay';
+import { formatWeather, formatWeekday } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import type { LuckyOutfit } from '../../outfits/types';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
+import { logWear } from '../../outfits/outfitRepository';
+import { logWearOrQueue } from '../../outfits/wearQueue';
 import { useWornToday } from '../../outfits/wornToday';
 import { getProfile } from '../../profile/profileRepository';
 import type { CtaAction } from '../../ui/AnchoredCta';
@@ -37,11 +38,23 @@ const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
  * The weather line under the title, which opens the city modal: the day's weather; with none, why
  * (a city that gave no weather) or a prompt to add one; nothing while it's unknown.
  */
-function WeatherLine({ text, action }: { text: string | null; action: boolean }): React.JSX.Element {
+function WeatherLine({
+  weekday,
+  text,
+  action,
+}: {
+  weekday: string;
+  text: string | null;
+  action: boolean;
+}): React.JSX.Element {
   const { t } = useI18n();
   if (text === null) {
-    // Keeps the line's height while the weather is unknown, so the card doesn't jump.
-    return <View style={styles.weatherLine} />;
+    // The day alone while the weather is unknown (mockup 01 screen 1 always names it).
+    return (
+      <View style={styles.weatherLine}>
+        <Text style={styles.weatherText}>{weekday}</Text>
+      </View>
+    );
   }
   return (
     <Pressable
@@ -161,10 +174,14 @@ function useWearLog(
   isLogged: (garmentIds: readonly string[]) => boolean;
   wearError: { key: string; error: RequestError } | null;
   setWearError: (next: null) => void;
+  /** The outfit whose wear waits in the offline queue, to show its note. */
+  queuedKey: string | null;
   wear: (worn: LuckyOutfit, key: string) => Promise<void>;
 } {
   const { t } = useI18n();
+  const { userId } = useAuth();
   const { refresh } = useCloset();
+  const [queuedKey, setQueuedKey] = useState<string | null>(null);
   // False once the screen is gone: a late wear result is dropped.
   const mounted = useRef(true);
   useEffect(() => {
@@ -193,23 +210,30 @@ function useWearLog(
         id = randomUUID();
         wearIds.current.set(key, id);
       }
-      const outcome = await logWear({ wearId: id, garmentIds: worn.garmentIds, wornOn: day, occasion, score: null });
+      const input = { wearId: id, garmentIds: worn.garmentIds, wornOn: day, occasion, score: worn.score };
+      // Offline the wear waits in the queue (WearQueueFlusher sends it), and shows as logged now.
+      const outcome = userId === null ? { status: 'failed' as const, error: 'unknown' as const } : await logWearOrQueue(userId, input, logWear);
       busy.current = false;
       if (!mounted.current) return;
       setPending(false);
-      if (outcome.ok) {
-        wearIds.current.delete(key);
-        markWorn(worn.garmentIds);
-        void refresh();
-      } else {
+      if (outcome.status === 'failed') {
         setWearError({ key, error: outcome.error });
         AccessibilityInfo.announceForAccessibility(t(`outfit.error.${outcome.error}`));
+        return;
+      }
+      wearIds.current.delete(key);
+      markWorn(worn.garmentIds);
+      if (outcome.status === 'queued') {
+        setQueuedKey(key);
+        AccessibilityInfo.announceForAccessibility(t('outfit.queued'));
+      } else {
+        void refresh();
       }
     },
-    [day, occasion, markWorn, refresh, t],
+    [day, occasion, markWorn, refresh, t, userId],
   );
 
-  return { pending, isLogged: isWorn, wearError, setWearError, wear };
+  return { pending, isLogged: isWorn, wearError, setWearError, queuedKey, wear };
 }
 
 export default function TodayScreen(): React.JSX.Element {
@@ -223,24 +247,32 @@ export default function TodayScreen(): React.JSX.Element {
   const pieces = useMemo(() => outfit?.garmentIds.flatMap((id) => byId.get(id) ?? []) ?? [], [outfit, byId]);
   const shownKey = outfit === undefined ? null : `${lucky.day}|${outfitKey(outfit)}`;
 
-  const { pending, isLogged, wearError, setWearError, wear } = useWearLog(lucky.day, occasion);
+  const { pending, isLogged, wearError, setWearError, queuedKey, wear } = useWearLog(lucky.day, occasion);
 
   const weatherResolved = lucky.state === 'ready' || lucky.state === 'too_small';
   const cityWithoutWeather = useProfileCity(weatherResolved && lucky.weather === null);
-  let weatherText = formatWeather(lucky.weather, locale);
+  // Noon of the list's day, so the weekday is the day's whatever the time zone.
+  const dayDate = new Date(`${lucky.day}T12:00:00`);
+  const weekday = formatWeekday(locale, dayDate);
+  let weatherText = formatWeather(lucky.weather, locale, dayDate);
   if (weatherText === null && weatherResolved && cityWithoutWeather !== undefined) {
-    weatherText =
+    weatherText = `${weekday} · ${
       cityWithoutWeather === null
         ? t('today.weather.add')
-        : t('today.weather.unavailable', { city: cityWithoutWeather });
+        : t('today.weather.unavailable', { city: cityWithoutWeather })
+    }`;
   }
 
-  const notice =
-    wearError === null || wearError.key !== shownKey ? undefined : (
+  let notice: React.ReactNode = undefined;
+  if (wearError !== null && wearError.key === shownKey) {
+    notice = (
       <Text style={styles.actionError} accessibilityRole="alert">
         {t(`outfit.error.${wearError.error}`)}
       </Text>
     );
+  } else if (queuedKey !== null && queuedKey === shownKey) {
+    notice = <Text style={styles.queued}>{t('outfit.queued')}</Text>;
+  }
 
   let body: React.ReactNode;
   let primary: CtaAction | undefined;
@@ -317,7 +349,7 @@ export default function TodayScreen(): React.JSX.Element {
             },
           })}
     >
-      <WeatherLine text={weatherText} action={lucky.weather === null} />
+      <WeatherLine weekday={weekday} text={weatherText} action={lucky.weather === null} />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -474,6 +506,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.errorTint,
     textAlign: 'center',
     color: colors.error,
+    fontSize: 14,
+  },
+  queued: {
+    alignSelf: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radii.cell,
+    backgroundColor: colors.tint,
+    textAlign: 'center',
+    color: colors.ink,
     fontSize: 14,
   },
   noticeRoom: {

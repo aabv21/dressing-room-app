@@ -1,5 +1,5 @@
 import { translate } from '../../i18n';
-import { formatWeather, orderPieces, pieceLabel, SLOT_ORDER } from '../outfitDisplay';
+import { formatWeather, formatWeekday, orderPieces, pieceLabel, SLOT_ORDER } from '../outfitDisplay';
 import type { WeatherSummary } from '../types';
 
 describe('SLOT_ORDER', () => {
@@ -86,4 +86,9 @@ describe('formatWeather', () => {
   test('null weather gives null', () => {
     expect(formatWeather(null, 'en', TUESDAY)).toBeNull();
   });
+});
+
+test('formatWeekday names the day, capitalized, in each language', () => {
+  expect(formatWeekday('es', new Date('2026-11-10T12:00:00'))).toBe('Martes');
+  expect(formatWeekday('en', new Date('2026-11-10T12:00:00'))).toBe('Tuesday');
 });

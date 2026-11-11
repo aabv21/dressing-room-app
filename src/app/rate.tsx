@@ -9,6 +9,7 @@ import { Check, ChevronLeft, CircleAlert, RotateCw, Sparkles } from 'lucide-reac
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAuth } from '../auth/AuthProvider';
 import { GARMENT_COLORS, OCCASIONS, type GarmentColor, type Occasion } from '../closet/catalog';
 import { useCloset } from '../closet/ClosetProvider';
 import type { Garment } from '../closet/garmentRepository';
@@ -18,6 +19,7 @@ import { localDate, rateOutfit, type AiError } from '../outfits/aiClient';
 import { logWear, saveOutfit } from '../outfits/outfitRepository';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { pieceLabel } from '../outfits/outfitDisplay';
+import { logWearOrQueue } from '../outfits/wearQueue';
 import { useWornToday } from '../outfits/wornToday';
 import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
 import type { RatingReason, RatingResult } from '../outfits/types';
@@ -296,6 +298,8 @@ function RateOutfit({
   const { isWorn, markWorn } = useWornToday(day);
   const logged = isWorn(ids);
   const [actionError, setActionError] = useState<RequestError | null>(null);
+  const [queuedNote, setQueuedNote] = useState(false);
+  const { userId } = useAuth();
   // One id per wear attempt, kept across a retry so a lost response can't log it twice.
   const wearId = useRef<string | null>(null);
 
@@ -325,21 +329,33 @@ function RateOutfit({
   const wear = useCallback(
     async (score: number) => {
       const id = (wearId.current ??= randomUUID());
-      const done = await run('wear', () =>
-        logWear({ wearId: id, garmentIds: ids, wornOn: day, occasion, score }),
-      );
+      // Set inside the request, read after it: an object, so the flag isn't narrowed to its initial value.
+      const result = { queued: false };
+      const done = await run('wear', async () => {
+        if (userId === null) return { ok: false, error: 'unknown' };
+        // Offline the wear waits in the queue (WearQueueFlusher sends it) and shows as logged now.
+        const outcome = await logWearOrQueue(userId, { wearId: id, garmentIds: ids, wornOn: day, occasion, score }, logWear);
+        result.queued = outcome.status === 'queued';
+        return outcome.status === 'failed' ? { ok: false, error: outcome.error } : { ok: true };
+      });
       if (done) {
         markWorn(ids);
-        void refresh();
+        setQueuedNote(result.queued);
+        if (result.queued) {
+          AccessibilityInfo.announceForAccessibility(t('outfit.queued'));
+        } else {
+          void refresh();
+        }
       }
     },
-    [run, ids, day, occasion, markWorn, refresh],
+    [run, ids, day, occasion, markWorn, refresh, t, userId],
   );
 
   const trySwap = useCallback((fromId: string, toId: string) => {
     if (busy.current) return;
     // A different outfit: its own save, wear and rating.
     wearId.current = null;
+    setQueuedNote(false);
     setSaved(false);
     setActionError(null);
     setRating({ kind: 'loading' });
@@ -351,12 +367,16 @@ function RateOutfit({
     setAttempt((value) => value + 1);
   }, []);
 
-  const notice =
-    actionError === null ? undefined : (
+  let notice: React.ReactNode = undefined;
+  if (actionError !== null) {
+    notice = (
       <Text style={styles.actionError} accessibilityRole="alert">
         {t(`outfit.error.${actionError}`)}
       </Text>
     );
+  } else if (queuedNote && logged) {
+    notice = <Text style={styles.queued}>{t('outfit.queued')}</Text>;
+  }
 
   let body: React.ReactNode;
   let cta: React.ReactNode = null;
@@ -619,6 +639,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.errorTint,
     textAlign: 'center',
     color: colors.error,
+    fontSize: 14,
+  },
+  queued: {
+    alignSelf: 'center',
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radii.cell,
+    backgroundColor: colors.tint,
+    textAlign: 'center',
+    color: colors.ink,
     fontSize: 14,
   },
 });

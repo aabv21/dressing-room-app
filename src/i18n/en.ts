@@ -541,6 +541,7 @@ export const en = {
   'outfit.error.network': "Couldn't connect. Check your internet and try again.",
   'outfit.error.invalid': "Some of these pieces couldn't be used. Check your closet and try again.",
   'outfit.error.unknown': 'Something went wrong. Try again.',
+  'outfit.queued': "Logged — it syncs when you're back online.",
 
   'today.weather.add': 'Add your city for the weather',
   'today.weather.unavailable': 'Weather unavailable for {city}',

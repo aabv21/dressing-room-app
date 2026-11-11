@@ -9,6 +9,7 @@ import type { Garment } from '../closet/garmentRepository';
 import { formatDayTitle, formatMonthTitle } from '../closet/DiarySegment';
 import { translate } from '../i18n';
 import { kvRemove } from '../lib/kv';
+import { enqueueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { isWornToday, markWornToday } from '../outfits/wornToday';
 import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
@@ -123,6 +124,7 @@ beforeEach(() => {
   mockedDeleteWear.mockResolvedValue({ ok: true });
   kvRemove('outfit.worn.user-1');
   kvRemove(storedWearsKey('user-1'));
+  kvRemove(wearQueueKey('user-1'));
 });
 
 /** The buttons of the last `Alert.alert` call. */
@@ -324,6 +326,27 @@ describe('deleting a wear', () => {
     expect(mockRefresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('diary-thumb-2026-10-28')).toBeNull();
     expect(screen.queryByTestId('diary-wear-w-28')).toBeNull();
+    alert.mockRestore();
+  });
+
+  test('a wear queued offline shows on its day, and Delete removes it from the queue without a request', async () => {
+    enqueueWear('user-1', { wearId: 'queued-1', garmentIds: [JEANS], wornOn: '2026-10-28', occasion: null, score: null });
+    markWornToday('user-1', '2026-10-28', [JEANS]);
+    const alert = jest.spyOn(Alert, 'alert');
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+    expect(await screen.findByText('20 outfits')).toBeOnTheScreen();
+
+    await fireEvent.press(within(wearCard('queued-1')).getByRole('button', { name: 'Delete' }));
+    const confirm = lastAlertButtons(alert).find((button) => button.style === 'destructive');
+    await act(() => {
+      confirm?.onPress?.();
+    });
+
+    expect(mockedDeleteWear).not.toHaveBeenCalled();
+    expect(queuedWears('user-1')).toEqual([]);
+    expect(isWornToday('user-1', '2026-10-28', [JEANS])).toBe(false);
+    expect(await screen.findByText('19 outfits')).toBeOnTheScreen();
     alert.mockRestore();
   });
 

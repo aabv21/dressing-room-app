@@ -12,6 +12,7 @@ import { kvGet, kvRemove } from '../lib/kv';
 import { storeLucky } from '../outfits/storedLucky';
 import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
+import { queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
 import { getProfile, type Profile } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
@@ -98,6 +99,7 @@ beforeEach(() => {
   mockCloset.status = 'ready';
   mockedFetch.mockReset();
   mockedLogWear.mockReset();
+  kvRemove(wearQueueKey('user-1'));
   mockedUuid.mockReset();
   mockedUuid.mockReturnValueOnce('wear-1').mockReturnValueOnce('wear-2');
   mockedPush.mockClear();
@@ -360,7 +362,8 @@ describe("I'll wear it", () => {
       garmentIds: FIRST.garmentIds,
       wornOn: '2026-11-08',
       occasion: null,
-      score: null,
+      // The outfit's Jev score, so Stats' average and the diary show it.
+      score: 88,
     });
     expect(screen.getByRole('button', { name: "I'll wear it" })).toBeDisabled();
 
@@ -376,34 +379,46 @@ describe("I'll wear it", () => {
     expect(screen.getByRole('button', { name: "I'll wear it" })).toBeEnabled();
   });
 
-  test('a network error shows the message in the notice and the button works again with the same wear id', async () => {
+  test('offline, I\'ll wear it shows Logged and the queued note', async () => {
     mockedFetch.mockReturnValue(ok(list()));
-    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' }).mockResolvedValueOnce({ ok: true });
+    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' });
     await render(<TodayScreen />);
 
     await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
-    expect(await screen.findByText("Couldn't connect. Check your internet and try again.")).toBeOnTheScreen();
+    expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeDisabled();
+    expect(screen.getByText("Logged — it syncs when you're back online.")).toBeOnTheScreen();
+    expect(queuedWears('user-1').map((w) => [w.wearId, w.score])).toEqual([['wear-1', 88]]);
+    expect(mockedLogWear).toHaveBeenCalledTimes(1);
+  });
+
+  test('another error shows the message and the button works again with the same wear id', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'unknown' }).mockResolvedValueOnce({ ok: true });
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+    expect(await screen.findByText('Something went wrong. Try again.')).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: "I'll wear it" })).toBeEnabled();
 
     await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
     expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
     expect(mockedLogWear.mock.calls.map(([input]) => input.wearId)).toEqual(['wear-1', 'wear-1']);
-    expect(screen.queryByText("Couldn't connect. Check your internet and try again.")).toBeNull();
+    expect(queuedWears('user-1')).toEqual([]);
   });
 
   test("a lost wear for one outfit keeps its id after trying another one", async () => {
     mockedFetch.mockReturnValue(ok(list()));
     mockedLogWear
-      .mockResolvedValueOnce({ ok: false, error: 'network' })
-      .mockResolvedValueOnce({ ok: false, error: 'network' })
+      .mockResolvedValueOnce({ ok: false, error: 'unknown' })
+      .mockResolvedValueOnce({ ok: false, error: 'unknown' })
       .mockResolvedValueOnce({ ok: true });
     await render(<TodayScreen />);
 
     await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
-    await screen.findByText("Couldn't connect. Check your internet and try again.");
+    await screen.findByText('Something went wrong. Try again.');
     await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
     await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
-    await screen.findByText("Couldn't connect. Check your internet and try again.");
+    await screen.findByText('Something went wrong. Try again.');
     await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
     await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
 
@@ -442,7 +457,7 @@ describe('other states', () => {
     mockedFetch.mockReturnValue(ok(list(undefined, null)));
     await render(<TodayScreen />);
 
-    await fireEvent.press(await screen.findByRole('button', { name: 'Add your city for the weather' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Sunday · Add your city for the weather' }));
     expect(mockedPush).toHaveBeenCalledWith('/city');
   });
 
@@ -451,9 +466,16 @@ describe('other states', () => {
     mockedGetProfile.mockResolvedValue({ city_name: 'Atlantis' } as Profile);
     await render(<TodayScreen />);
 
-    await fireEvent.press(await screen.findByRole('button', { name: 'Weather unavailable for Atlantis' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Sunday · Weather unavailable for Atlantis' }));
     expect(mockedPush).toHaveBeenCalledWith('/city');
     expect(screen.queryByText('Add your city for the weather')).toBeNull();
+  });
+
+  test('the header shows the weekday while the weather is still unknown', async () => {
+    mockedFetch.mockReturnValue(new Promise(() => undefined));
+    await render(<TodayScreen />);
+
+    expect(await screen.findByText('Sunday')).toBeOnTheScreen();
   });
 
   test('with weather the profile is not read', async () => {

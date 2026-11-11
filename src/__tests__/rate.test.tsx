@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import RateScreen from '../app/rate';
 import { I18nProvider } from '../i18n/I18nProvider';
 import { kvRemove, kvSet } from '../lib/kv';
+import { queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import type { Garment } from '../closet/garmentRepository';
 import { rateOutfit, type AiOutcome } from '../outfits/aiClient';
 import { logWear, saveOutfit } from '../outfits/outfitRepository';
@@ -101,6 +102,7 @@ beforeEach(() => {
   jest.mocked(router.push).mockClear();
   mockRefresh.mockClear();
   kvRemove('outfit.worn.user-1');
+  kvRemove(wearQueueKey('user-1'));
 });
 
 test('rates the outfit on mount and shows the score, label and AI confidence', async () => {
@@ -383,15 +385,27 @@ test('rating the same outfit again (Build: rate, wear, back, rate) opens as Logg
 
 test('retrying a failed wear reuses the same wear id', async () => {
   mockedRate.mockReturnValue(ok(result()));
-  mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' }).mockResolvedValueOnce({ ok: true });
+  mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'unknown' }).mockResolvedValueOnce({ ok: true });
   await render(<RateScreen />);
 
   await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
-  expect(await screen.findByText("Couldn't connect. Check your internet and try again.")).toBeOnTheScreen();
+  expect(await screen.findByText('Something went wrong. Try again.')).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
 
   expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
   expect(mockedLogWear.mock.calls.map(([input]) => input.wearId)).toEqual(['wear-1', 'wear-1']);
+});
+
+test('offline, I\'ll wear it is queued and shows Logged with the note', async () => {
+  mockedRate.mockReturnValue(ok(result()));
+  mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' });
+  await render(<RateScreen />);
+
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+
+  expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
+  expect(screen.getByText("Logged — it syncs when you're back online.")).toBeOnTheScreen();
+  expect(queuedWears('user-1').map((w) => w.wearId)).toEqual(['wear-1']);
 });
 
 test('a 429 shows the quota message', async () => {
@@ -537,12 +551,12 @@ test('after a swap, Save sends the swapped ids', async () => {
 
 test('after a swap, "I\'ll wear it" sends the swapped ids, the new score and a new wear id', async () => {
   mockedRate.mockReturnValueOnce(ok(LOW_WITH_SWAP)).mockReturnValueOnce(ok(result({ score: 81, label: 'good' })));
-  mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' }).mockResolvedValueOnce({ ok: true });
+  mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'unknown' }).mockResolvedValueOnce({ ok: true });
   await render(<RateScreen />);
 
   // A failed attempt on the original outfit takes the first wear id.
   await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
-  await screen.findByText("Couldn't connect. Check your internet and try again.");
+  await screen.findByText('Something went wrong. Try again.');
 
   await fireEvent.press(screen.getByRole('button', { name: 'Try the swap' }));
   await screen.findByText('81%');

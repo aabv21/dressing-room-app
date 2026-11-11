@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 
 import { localDate } from '../outfits/aiClient';
+import { withQueuedWears } from '../outfits/wearQueue';
 import { addDays, STREAK_HISTORY_DAYS } from './periods';
 import { readStoredWears, storeWears } from './storedWears';
 import { listWears, type WearWithItems } from './wearsRepository';
@@ -35,16 +36,23 @@ export function useWearHistory(userId: string | null, focused: boolean): WearHis
     listWears(from, day).then(
       (wears) => {
         if (userId !== null) storeWears(userId, from, day, wears);
-        if (current) setHistory({ today: day, wears, offlineSince: null, failed: false });
+        // Wears queued offline count too, until they're sent (stored without them).
+        const shown = userId === null ? wears : withQueuedWears(userId, wears, from, day);
+        if (current) setHistory({ today: day, wears: shown, offlineSince: null, failed: false });
       },
       () => {
         if (!current) return;
         const stored = userId === null ? null : readStoredWears(userId);
-        setHistory(
-          stored === null
-            ? (previous) => ({ ...previous, failed: true })
-            : { today: day, wears: stored.wears, offlineSince: stored.to, failed: false },
-        );
+        if (userId === null || stored === null) {
+          setHistory((previous) => ({ ...previous, failed: true }));
+          return;
+        }
+        setHistory({
+          today: day,
+          wears: withQueuedWears(userId, stored.wears, from, day),
+          offlineSince: stored.to,
+          failed: false,
+        });
       },
     );
     return () => {

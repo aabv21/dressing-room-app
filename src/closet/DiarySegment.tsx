@@ -17,6 +17,7 @@ import { OutfitStack } from '../outfits/OutfitStack';
 import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
+import { dequeueWear, withQueuedWears } from '../outfits/wearQueue';
 import { mergeStoredWears, readStoredWears, wearsInRange } from '../stats/storedWears';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
 import { useLargeText } from '../ui/layout';
@@ -282,7 +283,7 @@ export function DiarySegment(): React.JSX.Element {
         if (userId !== null) mergeStoredWears(userId, from, lastDay < day ? lastDay : day, wears);
         if (current) {
           setToday(day);
-          setLoaded({ key, wears, offlineSince: null });
+          setLoaded({ key, wears: userId === null ? wears : withQueuedWears(userId, wears, from, lastDay), offlineSince: null });
           setFailedKey(null);
         }
       },
@@ -290,8 +291,8 @@ export function DiarySegment(): React.JSX.Element {
         if (!current) return;
         const stored = userId === null ? null : readStoredWears(userId);
         const wears = stored === null ? null : wearsInRange(stored, from, lastDay);
-        if (stored !== null && wears !== null) {
-          setLoaded({ key, wears, offlineSince: stored.to });
+        if (userId !== null && stored !== null && wears !== null) {
+          setLoaded({ key, wears: withQueuedWears(userId, wears, from, lastDay), offlineSince: stored.to });
           setFailedKey(null);
         } else {
           setFailedKey(key);
@@ -324,7 +325,9 @@ export function DiarySegment(): React.JSX.Element {
     async (wear: WearWithItems) => {
       setDeletingId(wear.id);
       setDeleteError(null);
-      const result = await deleteWear(wear.id);
+      // A wear still waiting in the offline queue never reached the server: it just leaves the queue.
+      const queued = userId !== null && dequeueWear(userId, wear.id);
+      const result = queued ? { ok: true as const } : await deleteWear(wear.id);
       setDeletingId(null);
       if (!result.ok) {
         setDeleteError({ id: wear.id, error: result.error });

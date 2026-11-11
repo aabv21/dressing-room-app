@@ -17,6 +17,9 @@ test("removes every kv entry kept under the user's id, the day's occasions inclu
     `outfit.worn.${USER}`,
     `today.lucky.${USER}`,
     `forYou.ideas.${USER}`,
+    // The offline wear history and the queued "I'll wear it"s (Plan 6d).
+    `wears.v1.${USER}`,
+    `wear.queue.${USER}`,
     `today.occasion.${USER}.2026-11-08`,
     `today.occasion.${USER}.2026-11-09`,
   ]) {
