@@ -208,6 +208,20 @@ test('a chosen piece sent to the laundry while the tab stays mounted leaves the 
   expect(screen.queryByLabelText(/^Sneakers, /)).not.toBeOnTheScreen();
 });
 
+test("a garment that leaves and returns to Build isn't selected again", async () => {
+  const view = await render(<BuildScreen />);
+  await fireEvent.press(row('Shoes, Pick one'));
+  await fireEvent.press(cell('Sneakers, 30 wears'));
+
+  mockCloset.garments = CLOSET.map((item) => (item.id === SNEAKERS ? { ...item, status: 'laundry' } : item));
+  await view.rerender(<BuildScreen />);
+  mockCloset.garments = CLOSET;
+  await view.rerender(<BuildScreen />);
+
+  // Back from the wash it's on offer again, but not picked behind the user's back.
+  expect(row('Shoes, Pick one')).toBeOnTheScreen();
+});
+
 test('a slot with nothing available says so', async () => {
   mockCloset.garments = CLOSET.filter((item) => item.id !== BLOUSE);
   await render(<BuildScreen />);

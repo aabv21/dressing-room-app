@@ -152,6 +152,6 @@ const styles = StyleSheet.create({
   },
   labelOn: {
     color: '#ffffff',
-    fontWeight: '600',
+    fontWeight: '700',
   },
 });

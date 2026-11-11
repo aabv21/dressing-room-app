@@ -295,6 +295,75 @@ describe('the lucky list', () => {
     expect(mockedFetch).toHaveBeenLastCalledWith({ occasion: 'office', date: '2026-11-08' });
   });
 
+  test('when every outfit is filtered out and a refetch fails, Today shows the error, not the empty message', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(ok(list([FIRST])));
+    const view = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    mockedFetch.mockResolvedValue({ ok: false, error: 'network' });
+    mockCloset.garments = CLOSET.map((g) => (g.id === JEANS ? { ...g, status: 'laundry' } : g));
+    await view.rerender(<TodayScreen />);
+    await advance(CLOSET_REFETCH_DELAY_MS);
+
+    expect(await screen.findByText("Couldn't reach the AI. Check your internet and try again.")).toBeOnTheScreen();
+    expect(screen.queryByText('No outfit came up today. Add a few more pieces to your closet.')).toBeNull();
+  });
+
+  test("a late result for an older occasion never replaces the current occasion's settled list", async () => {
+    mockedFetch.mockReturnValueOnce(ok(list([FIRST])));
+    await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    // Office, then straight back: the Office request is in flight when "no occasion" settles again.
+    const office = deferred(list([SECOND]));
+    const again = deferred(list([FIRST]));
+    mockedFetch.mockReturnValueOnce(office.promise).mockReturnValueOnce(again.promise);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+    await act(async () => {
+      office.resolve();
+      await Promise.resolve();
+    });
+
+    // The no-occasion list stays on screen while its own refetch is still on the way.
+    expect(screen.getByText('Jeans · Blue')).toBeOnTheScreen();
+    expect(screen.queryByText('Skirt · Camel')).toBeNull();
+  });
+
+  test('a pending debounce timer is cancelled when another trigger fetches the same fingerprint', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+
+    mockCloset.garments = CLOSET.map((g) => (g.id === SKIRT ? { ...g, colors: ['black'] } : g));
+    await view.rerender(<TodayScreen />);
+    // The occasion change fetches at once, with the new closet.
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+
+    await advance(CLOSET_REFETCH_DELAY_MS);
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a queued follow-up fetch doesn't run after blur", async () => {
+    const first = deferred(list());
+    mockedFetch.mockReturnValueOnce(first.promise).mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+
+    mockFocus.focused = false;
+    await view.rerender(<TodayScreen />);
+    await act(async () => {
+      first.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+  });
+
   test('a new wear count alone does not refetch', async () => {
     mockedFetch.mockReturnValue(ok(list()));
     const view = await render(<TodayScreen />);

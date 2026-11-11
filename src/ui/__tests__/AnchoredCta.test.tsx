@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Check, Shuffle } from 'lucide-react-native';
-import { processColor } from 'react-native';
+import { processColor, StyleSheet, Text } from 'react-native';
 
 import { AnchoredCta } from '../AnchoredCta';
 
@@ -46,4 +46,23 @@ test('the fade behind the buttons is lavender by default and near-black over a d
 
   await render(<AnchoredCta primary={{ label: 'Done', tone: 'ai', onPress }} surface="dark" />);
   expect(screen.getByTestId('cta-fade').props.colors).toEqual(['rgba(14,13,18,0)', '#0e0d12'].map((c) => processColor(c)));
+});
+
+test('the opaque CTA zone absorbs taps: a touch guard covers the solid part of the fade', async () => {
+  const onPress = jest.fn();
+  await render(<AnchoredCta primary={{ label: 'Done', tone: 'ai', onPress }} />);
+  const guard = screen.getByTestId('cta-touch-guard');
+  expect(guard.props.pointerEvents).toBeUndefined();
+  expect(StyleSheet.flatten(guard.props.style)).toMatchObject({ position: 'absolute', top: '45%', bottom: 0 });
+
+  await render(<AnchoredCta primary={{ label: 'Done', tone: 'ai', onPress }} surface="dark" />);
+  expect(StyleSheet.flatten(screen.getByTestId('cta-touch-guard').props.style)).toMatchObject({ top: '40%' });
+});
+
+test('the notice slot shows its content above the buttons', async () => {
+  await render(
+    <AnchoredCta primary={{ label: 'Save', tone: 'commit', onPress: jest.fn() }} notice={<Text>Couldn't save.</Text>} />,
+  );
+  expect(screen.getByText("Couldn't save.")).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
 });

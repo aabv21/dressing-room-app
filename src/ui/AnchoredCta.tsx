@@ -95,6 +95,12 @@ export function AnchoredCta(props: {
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
+      {/* The solid part of the fade takes the touches that land between or beside the buttons, so
+          a tap there never reaches the hidden content scrolled underneath. */}
+      <View
+        testID="cta-touch-guard"
+        style={[styles.touchGuard, { top: surface === 'dark' ? '40%' : '45%' }]}
+      />
       {notice === undefined ? null : <View style={styles.notice}>{notice}</View>}
       <View style={styles.row}>
         {secondary ? <ActionButton action={secondary} flexBasisPercent={36} /> : null}
@@ -110,8 +116,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 14,
-    paddingTop: 22,
+    paddingTop: layout.ctaZoneTopPadding,
     paddingBottom: layout.ctaZoneBottomPadding,
+  },
+  touchGuard: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   notice: {
     marginBottom: 8,

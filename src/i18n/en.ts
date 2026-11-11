@@ -450,6 +450,7 @@ export const en = {
   'garment.categoryRequired': 'Pick a category to save.',
   'garment.replacePhoto': 'Replace photo',
   'garment.replacing': 'Uploading the new photo…',
+  'garment.replaceFailed': "The new photo couldn't upload. Retry it from the closet.",
   'garment.delete': 'Delete garment',
   'garment.delete.title': 'Delete this garment?',
   'garment.delete.message': "Its photo is deleted too. This can't be undone.",

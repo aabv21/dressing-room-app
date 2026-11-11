@@ -297,6 +297,14 @@ export default function TodayScreen(): React.JSX.Element {
         router.push('/closet');
       },
     };
+  } else if ((outfit === undefined || shownKey === null) && lucky.refetchError !== null) {
+    // Every listed outfit was hidden (a piece went to the laundry) and the refetch failed: the list
+    // isn't really empty, so say why and offer to try again.
+    const error = lucky.refetchError;
+    body = <Message>{t(`today.error.${error}`)}</Message>;
+    if (error !== 'over_quota') {
+      primary = { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: lucky.reload };
+    }
   } else if (outfit === undefined || shownKey === null) {
     body = <Message>{occasion === null ? t('today.empty') : t('today.empty.occasion')}</Message>;
   } else {

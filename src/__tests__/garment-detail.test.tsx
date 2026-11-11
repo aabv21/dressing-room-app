@@ -32,12 +32,12 @@ jest.mock('../closet/ClosetProvider', () => ({
   usePendingPolling: jest.fn(),
 }));
 
-const mockQueue = { pending: 0 };
+const mockQueue = { pending: 0, failed: 0 };
 const mockEnqueueReplacement = jest.fn();
 jest.mock('../closet/UploadQueueProvider', () => ({
   useUploadQueue: () => ({
     pending: mockQueue.pending,
-    failed: 0,
+    failed: mockQueue.failed,
     enqueue: jest.fn(),
     enqueueReplacement: mockEnqueueReplacement,
     retryFailed: jest.fn(),
@@ -96,6 +96,7 @@ beforeEach(() => {
   mockCloset.garments = [jeans()];
   mockCloset.status = 'ready';
   mockQueue.pending = 0;
+  mockQueue.failed = 0;
   mockedCanGoBack.mockReturnValue(true);
 });
 
@@ -285,6 +286,25 @@ test('a cancelled picker queues nothing', async () => {
   expect(mockEnqueueReplacement).not.toHaveBeenCalled();
 });
 
+test("a failed photo replacement shows the failure, not 'replacing'", async () => {
+  jest.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: 'file:///new.jpg' }] as ImagePicker.ImagePickerAsset[],
+  });
+  mockQueue.pending = 1;
+  await renderDetail();
+  await fireEvent.press(screen.getByRole('button', { name: 'Replace photo' }));
+  expect(await screen.findByText('Uploading the new photo…')).toBeOnTheScreen();
+
+  // The upload gave up: it left the pending count for the failed one.
+  mockQueue.pending = 0;
+  mockQueue.failed = 1;
+  await screen.rerender(<GarmentDetailScreen />);
+
+  expect(screen.queryByText('Uploading the new photo…')).toBeNull();
+  expect(screen.getByText("The new photo couldn't upload. Retry it from the closet.")).toBeOnTheScreen();
+});
+
 test('a picker failure shows the picker error', async () => {
   const alert = jest.spyOn(Alert, 'alert');
   jest.mocked(ImagePicker.launchImageLibraryAsync).mockRejectedValue(new Error('no photo access'));
@@ -328,7 +348,7 @@ test('an unknown id shows the not-found state, whose button goes back', async ()
   mockParams.id = 'missing';
   await render(<GarmentDetailScreen />);
 
-  expect(screen.getByText('This garment is no longer in your closet')).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'This garment is no longer in your closet' })).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole('button', { name: 'Back to closet' }));
   expect(router.back).toHaveBeenCalled();
 });
@@ -339,6 +359,7 @@ test('an unknown id while the closet is still loading waits instead of saying no
   await render(<GarmentDetailScreen />);
 
   expect(screen.queryByText('This garment is no longer in your closet')).not.toBeOnTheScreen();
+  expect(screen.getByLabelText('Loading your closet')).toBeOnTheScreen();
 });
 
 type RequestResult = Awaited<ReturnType<typeof updateGarment>>;

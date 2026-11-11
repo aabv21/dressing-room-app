@@ -46,7 +46,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   const insets = useScreenContentInsets('none');
   const clothingType = useClothingType();
   const { replaceLocal } = useCloset();
-  const { enqueueReplacement, pending: uploading } = useUploadQueue();
+  const { enqueueReplacement, pending: uploading, failed: uploadsFailed } = useUploadQueue();
 
   // A pending garment counts as failed after 10 minutes; until then the AI may still overwrite
   // the attributes, so they aren't editable yet and the closet keeps polling for the result.
@@ -180,7 +180,10 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
 
   // The new photo uploads through the queue; this says so until the garment's photo version moves.
   const [replacedVersion, setReplacedVersion] = useState<number | null>(null);
+  // NOTE: the queue reports counts, not items, so any upload pending or given up stands in for this
+  // garment's replacement. Upgrade path: expose each garment's queue state from UploadQueueProvider.
   const replacing = replacedVersion === garment.photo_version && uploading > 0;
+  const replaceFailed = replacedVersion === garment.photo_version && uploading === 0 && uploadsFailed > 0;
   const replacePhoto = useCallback(async () => {
     let result: ImagePicker.ImagePickerResult;
     try {
@@ -252,6 +255,11 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
           </Pressable>
         </View>
         {replacing ? <Text style={styles.notice}>{t('garment.replacing')}</Text> : null}
+        {replaceFailed ? (
+          <Text style={styles.notice} accessibilityRole="alert">
+            {t('garment.replaceFailed')}
+          </Text>
+        ) : null}
         <GarmentPhoto garment={garment} />
         <Text style={styles.wears}>{formatWearCount(garment.wear_count, locale)}</Text>
         <View style={styles.section}>
@@ -324,7 +332,9 @@ function NotFound(): React.JSX.Element {
   return (
     <LinearGradient colors={gradients.background} style={styles.fill}>
       <View style={[styles.content, styles.notFound, { paddingTop: insets.top }]}>
-        <Text style={styles.notFoundTitle}>{t('garment.notFound.title')}</Text>
+        <Text style={styles.notFoundTitle} accessibilityRole="header">
+          {t('garment.notFound.title')}
+        </Text>
         <Text style={styles.notFoundBody}>{t('garment.notFound.body')}</Text>
       </View>
       <AnchoredCta chrome="none" primary={{ label: t('garment.notFound.back'), tone: 'commit', onPress: leaveToCloset }} />
@@ -333,6 +343,7 @@ function NotFound(): React.JSX.Element {
 }
 
 export default function GarmentDetailScreen(): React.JSX.Element {
+  const { t } = useI18n();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { garments, status, removeLocal } = useCloset();
   const [leaving, setLeaving] = useState(false);
@@ -352,7 +363,7 @@ export default function GarmentDetailScreen(): React.JSX.Element {
     // On a cold deep link the closet may still be loading: wait for it before saying "not found".
     return status === 'loading' ? (
       <LinearGradient colors={gradients.background} style={[styles.fill, styles.loading]}>
-        <ActivityIndicator color={colors.accent} />
+        <ActivityIndicator color={colors.accent} accessibilityLabel={t('closet.loading')} />
       </LinearGradient>
     ) : (
       <NotFound />

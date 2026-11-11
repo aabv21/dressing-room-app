@@ -17,7 +17,14 @@ export function ShotStrip({ uris }: { uris: readonly string[] }): React.JSX.Elem
   const firstVisibleIndex = Math.max(0, uris.length - VISIBLE_SHOTS);
   const visible = uris.slice(firstVisibleIndex);
   return (
-    <View style={styles.row} testID="shot-strip">
+    // Decorative: the camera's shot counter already says how many photos there are, and the tiles
+    // have nothing to name, so screen readers skip them.
+    <View
+      style={styles.row}
+      testID="shot-strip"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
       {visible.map((uri, offset) => {
         // Keyed by the shot's position in the full list (not the URI, which the same photo could
         // repeat, and not the on-screen offset, which shifts every shot left as new ones arrive).

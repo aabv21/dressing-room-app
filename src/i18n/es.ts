@@ -453,6 +453,7 @@ export const es: Record<MessageKey, string> = {
   'garment.categoryRequired': 'Elige una categoría para guardar.',
   'garment.replacePhoto': 'Cambiar foto',
   'garment.replacing': 'Subiendo la foto nueva…',
+  'garment.replaceFailed': 'La foto nueva no se pudo subir. Reinténtalo desde el clóset.',
   'garment.delete': 'Eliminar prenda',
   'garment.delete.title': '¿Eliminar esta prenda?',
   'garment.delete.message': 'También se borra su foto. No se puede deshacer.',
