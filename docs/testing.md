@@ -280,7 +280,9 @@ and records every call, and Jest fake timers drive the 30 s Claude timeout. Clau
 from recorded-shape fixtures in `supabase/functions/_shared/__tests__/fixtures/`; the real API is
 never called. See `docs/ai.md`. To run only this project:
 `NODE_OPTIONS=--experimental-vm-modules pnpm exec jest --selectProjects functions` (a path argument to
-`pnpm test` doesn't narrow it).
+`pnpm test` doesn't narrow it). Every run with that flag, `pnpm test` included, prints Node's
+"ExperimentalWarning: VM Modules is an experimental feature" once per worker: expected, and not a
+failure. Jest needs the flag for the ES modules and dynamic `import()` these projects use.
 
 - `supabase/functions/_shared/__tests__/extraction.test.ts` — the Claude request (the model, 600
   `max_tokens`, the category enum limited to the clothing type, the image block, a system prompt

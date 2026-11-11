@@ -5,7 +5,7 @@
 import { Image } from 'expo-image';
 import { useIsFocused } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
@@ -321,13 +321,19 @@ export function DiarySegment(): React.JSX.Element {
     setDeleteError(null);
   }, []);
 
+  // One delete at a time: a second tap on the confirm (Android lets one through) is ignored before
+  // the busy state renders.
+  const deleting = useRef(false);
   const remove = useCallback(
     async (wear: WearWithItems) => {
+      if (deleting.current) return;
+      deleting.current = true;
       setDeletingId(wear.id);
       setDeleteError(null);
       // A wear still waiting in the offline queue never reached the server: it just leaves the queue.
       const queued = userId !== null && dequeueWear(userId, wear.id);
       const result = queued ? { ok: true as const } : await deleteWear(wear.id);
+      deleting.current = false;
       setDeletingId(null);
       if (!result.ok) {
         setDeleteError({ id: wear.id, error: result.error });

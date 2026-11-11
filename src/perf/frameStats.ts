@@ -31,11 +31,11 @@ export function summarizeFrameDeltas(deltasMs: readonly number[]): FrameStats {
 
   const sorted = [...deltasMs].sort((a, b) => a - b);
   const medianIndex = Math.floor(frames / 2);
-  const medianMs = sorted[medianIndex] ?? 0;
+  const medianMs = sorted.at(medianIndex) ?? 0;
   const dropThreshold = medianMs * 1.5;
   const dropped = sorted.reduce((count, delta) => (delta > dropThreshold ? count + 1 : count), 0);
   const p95Index = Math.ceil(0.95 * frames) - 1;
-  const p95Ms = sorted[p95Index] ?? 0;
+  const p95Ms = sorted.at(p95Index) ?? 0;
 
   return {
     frames,

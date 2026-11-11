@@ -595,6 +595,7 @@ export const en = {
   'forYou.error.network': "Couldn't reach the AI. Check your internet and try again.",
   'forYou.error.unavailable': "The AI can't suggest ideas right now. Try again in a moment.",
   'forYou.error.unknown': 'Something went wrong while finding ideas. Try again.',
+  'forYou.openFailed': "Couldn't open the browser. Try again.",
   'forYou.line.top': 'Gives your bottoms and shoes fresh combinations.',
   'forYou.line.bottom': 'Works with the tops and shoes you already own.',
   'forYou.line.onePiece': 'One piece, a full look with the shoes you already have.',

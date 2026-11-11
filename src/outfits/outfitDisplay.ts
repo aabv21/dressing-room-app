@@ -22,6 +22,7 @@ const SLOT_RANK = new Map<Slot, number>(SLOT_ORDER.map((slot, index) => [slot, i
 /** `SLOT_ORDER`'s rank, or after every known slot for a piece with no category. */
 function rankOf(category: GarmentCategory | null): number {
   if (category === null) return SLOT_ORDER.length;
+  // eslint-disable-next-line security/detect-object-injection -- `category` is the closed GarmentCategory union
   return SLOT_RANK.get(CATEGORY_SLOT[category]) ?? SLOT_ORDER.length;
 }
 

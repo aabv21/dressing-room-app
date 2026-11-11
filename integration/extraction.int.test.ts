@@ -99,9 +99,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await mock.close();
-  await serviceClient().storage.from('garments').remove(uploadedPaths);
-  await Promise.all(createdUserIds.map((id) => deleteUser(id)));
+  try {
+    await mock.close();
+    await serviceClient().storage.from('garments').remove(uploadedPaths);
+  } finally {
+    await Promise.all(createdUserIds.map((id) => deleteUser(id)));
+  }
 });
 
 test("Claude's answer lands on the garment within 20 s", async () => {
@@ -164,10 +167,12 @@ test('inserting the same id again does not call Claude again', async () => {
 
   const again = await userA.client.from('garments').upsert({ id }, { onConflict: 'id', ignoreDuplicates: true });
   expect(again.error).toBeNull();
-  // Long enough for a queued pg_net request to reach the function and Claude, had one been queued.
-  await sleep(5_000);
-
-  expect(mock.calls()).toBe(callsAfterFirst);
+  // Long enough for a queued pg_net request to reach the function and Claude, had one been queued;
+  // checked every half second, so a stray call fails at once instead of after the whole wait.
+  for (let waited = 0; waited < 5_000; waited += 500) {
+    await sleep(500);
+    expect(mock.calls()).toBe(callsAfterFirst);
+  }
 }, 40_000);
 
 test('an exhausted daily quota marks the garment over_quota without calling Claude', async () => {

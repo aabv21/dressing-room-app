@@ -164,10 +164,16 @@ beforeAll(async () => {
 }, FUNCTION_TIMEOUT_MS);
 
 afterAll(async () => {
-  await mock.close();
-  await anthropic.close();
-  await serviceClient().from('weather_cache').delete().eq('location_key', LOCATION_KEY);
-  await Promise.all(createdUserIds.map((id) => deleteUser(id)));
+  try {
+    await mock.close();
+  } finally {
+    try {
+      await anthropic.close();
+      await serviceClient().from('weather_cache').delete().eq('location_key', LOCATION_KEY);
+    } finally {
+      await Promise.all(createdUserIds.map((id) => deleteUser(id)));
+    }
+  }
 });
 
 describe('lucky-list', () => {

@@ -598,6 +598,7 @@ export const es: Record<MessageKey, string> = {
   'forYou.error.network': 'No pudimos llegar a la IA. Revisa tu conexión e inténtalo de nuevo.',
   'forYou.error.unavailable': 'La IA no puede sugerir ideas ahora. Inténtalo en un momento.',
   'forYou.error.unknown': 'Algo salió mal al buscar ideas. Inténtalo de nuevo.',
+  'forYou.openFailed': 'No se pudo abrir el navegador. Inténtalo de nuevo.',
   'forYou.line.top': 'Da combinaciones nuevas a tus pantalones y zapatos.',
   'forYou.line.bottom': 'Funciona con las prendas de arriba y los zapatos que ya tienes.',
   'forYou.line.onePiece': 'Una sola prenda: un look completo con tus zapatos.',

@@ -190,11 +190,14 @@ beforeAll(async () => {
 }, FUNCTION_TIMEOUT_MS);
 
 afterAll(async () => {
-  await mock.close();
-  const leftover = await objectsOf(userB.id);
-  if (leftover.length > 0) await serviceClient().storage.from('garments').remove(leftover);
-  // A is normally gone already; `deleteUser` ignores a 404.
-  await Promise.all([deleteUser(userA.id), deleteUser(userB.id)]);
+  try {
+    await mock.close();
+    const leftover = await objectsOf(userB.id);
+    if (leftover.length > 0) await serviceClient().storage.from('garments').remove(leftover);
+  } finally {
+    // A is normally gone already; `deleteUser` ignores a 404.
+    await Promise.all([deleteUser(userA.id), deleteUser(userB.id)]);
+  }
 });
 
 test('apple-token exchanges the code with Apple and stores the refresh token server-side only', async () => {

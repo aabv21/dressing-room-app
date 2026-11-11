@@ -4,7 +4,7 @@
 // 01 and 04 (white rounded cards, accent pills).
 import { router } from 'expo-router';
 import { RotateCw, Search, Shirt, Sparkles, TriangleAlert, WifiOff } from 'lucide-react-native';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { PALETTE_HEX } from '../../closet/catalog';
 import { isMessageKey, pluralKey, useI18n, type Locale } from '../../i18n';
@@ -64,8 +64,10 @@ function IdeaCard({ idea }: { idea: ForYouCard }): React.JSX.Element {
         accessibilityLabel={`${search}, ${name}`}
         hitSlop={{ top: (layout.minHitTarget - SEARCH_HEIGHT) / 2, bottom: (layout.minHitTarget - SEARCH_HEIGHT) / 2 }}
         onPress={() => {
-          // NOTE: a device with no browser rejects; nothing else can open the search, so it's dropped.
-          Linking.openURL(storeSearchUrl(idea.searchQuery, locale)).catch(() => undefined);
+          // A device with no browser (or one that refuses) rejects: say so rather than doing nothing.
+          Linking.openURL(storeSearchUrl(idea.searchQuery, locale)).catch(() => {
+            Alert.alert(t('forYou.openFailed'));
+          });
         }}
         style={({ pressed }) => [styles.search, pressed ? styles.pressed : null]}
       >

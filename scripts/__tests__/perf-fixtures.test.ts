@@ -1,5 +1,8 @@
 /** @jest-environment node */
 // scripts/__tests__/perf-fixtures.test.ts
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -8,6 +11,7 @@ import {
   fixtureSvg,
   isEntryPoint,
   lanAddresses,
+  realInside,
   resolveInside,
 } from '../perf-fixtures.ts';
 
@@ -33,6 +37,22 @@ test('serve rejects paths that escape the fixtures root', () => {
   expect(resolveInside('/root/.perf-fixtures', '/../package.json')).toBeNull();
   expect(resolveInside('/root/.perf-fixtures', '/perf/%2e%2e/%2e%2e/x')).toBeNull();
 });
+
+/* eslint-disable security/detect-non-literal-fs-filename -- every path below is under a fresh mkdtemp folder */
+test("serve refuses a symlink inside the fixtures that points outside them", async () => {
+  const base = await mkdtemp(join(tmpdir(), 'perf-fixtures-'));
+  const root = join(base, '.perf-fixtures');
+  await mkdir(join(root, 'perf'), { recursive: true });
+  await writeFile(join(root, 'perf', '0001.webp'), 'ok');
+  await writeFile(join(base, 'secret.txt'), 'nope');
+  await symlink(join(base, 'secret.txt'), join(root, 'perf', 'link.webp'));
+
+  await expect(realInside(root, join(root, 'perf', '0001.webp'))).resolves.toBe(await realpath(join(root, 'perf', '0001.webp')));
+  await expect(realInside(root, join(root, 'perf', 'link.webp'))).resolves.toBeNull();
+  await expect(realInside(root, join(root, 'perf', 'missing.webp'))).resolves.toBeNull();
+  await rm(base, { recursive: true, force: true });
+});
+/* eslint-enable security/detect-non-literal-fs-filename */
 
 test('every non-internal IPv4 address is listed with its interface name', () => {
   const ipv4 = (address: string, internal: boolean) => ({

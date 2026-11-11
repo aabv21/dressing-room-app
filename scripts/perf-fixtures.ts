@@ -8,7 +8,7 @@
 //   node scripts/perf-fixtures.ts serve [port=8787]
 
 import { createServer } from 'node:http';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath } from 'node:fs/promises';
 import { networkInterfaces, type NetworkInterfaceInfo } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -128,6 +128,7 @@ async function generate(count: number): Promise<void> {
   // binding.
   const sharp = (await import('sharp')).default;
   const outDir = join(repoRoot(), FIXTURES_DIR, FIXTURES_SUBDIR);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- the repo's own `.perf-fixtures` folder, built from the repo root
   await mkdir(outDir, { recursive: true });
   for (let i = 1; i <= count; i += 1) {
     const svg = fixtureSvg(fixtureSpec(i), DEFAULT_SIZE);
@@ -154,9 +155,22 @@ export function lanAddresses(
   );
 }
 
-const CONTENT_TYPES: Record<string, string> = {
-  '.webp': 'image/webp',
-};
+const CONTENT_TYPES: ReadonlyMap<string, string> = new Map([['.webp', 'image/webp']]);
+
+/**
+ * `target` (already inside `root` by `resolveInside`) with every symlink resolved, or null when that
+ * real path leaves `root`'s real path or doesn't exist: a link in the fixtures can't serve a file
+ * from elsewhere.
+ */
+export async function realInside(root: string, target: string): Promise<string | null> {
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- resolving, not reading: the result is checked below
+    const [realRoot, realTarget] = await Promise.all([realpath(root), realpath(target)]);
+    return realTarget.startsWith(realRoot + sep) ? realTarget : null;
+  } catch {
+    return null;
+  }
+}
 
 function serve(port: number): void {
   const root = join(repoRoot(), FIXTURES_DIR);
@@ -170,13 +184,18 @@ function serve(port: number): void {
       return;
     }
     const ext = target.slice(target.lastIndexOf('.'));
-    const contentType = CONTENT_TYPES[ext];
+    const contentType = CONTENT_TYPES.get(ext);
     if (!contentType) {
       res.writeHead(404);
       res.end();
       return;
     }
-    readFile(target)
+    realInside(root, target)
+      .then((real) => {
+        if (real === null) throw new Error('outside the fixtures');
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- `real` is checked to be inside `.perf-fixtures` with every symlink resolved
+        return readFile(real);
+      })
       .then((data) => {
         res.writeHead(200, {
           'Content-Type': contentType,

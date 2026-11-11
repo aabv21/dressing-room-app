@@ -240,6 +240,28 @@ describe('stats', () => {
     expect(screen.queryByRole('button', { name: 'Clear the White filter' })).not.toBeOnTheScreen();
   });
 
+  test('"Other" filters Items to the colors not shown', async () => {
+    const PINK = '00000000-0000-4000-8000-0000000000a1';
+    const RED = '00000000-0000-4000-8000-0000000000a2';
+    const BLACK = '00000000-0000-4000-8000-0000000000a3';
+    // Seven colors: white leads, the rest tie and sort by name, so pink and red fall into "Other".
+    mockSetGarments([
+      ...CLOSET,
+      garment({ ...done, id: PINK, category: 't_shirt', colors: ['pink'] }),
+      garment({ ...done, id: RED, category: 'sweater', colors: ['red'] }),
+      garment({ ...done, id: BLACK, category: 'heels', colors: ['black'] }),
+    ]);
+    await openStatsLoaded();
+
+    await fireEvent.press(screen.getByTestId('proportion-legend-other'));
+
+    expect(tab('Items')).toBeSelected();
+    expect(screen.getAllByTestId(/^grid-cell-/).map((cell) => cell.props.testID as string).sort()).toEqual(
+      [`grid-cell-${PINK}`, `grid-cell-${RED}`].sort(),
+    );
+    expect(screen.getByRole('button', { name: 'Clear the Other filter' })).toBeOnTheScreen();
+  });
+
   test("a card's title and its aside wrap onto two lines at a large text size, never squeezing the title out", async () => {
     await openStats();
     const header = screen.getByRole('header', { name: 'Your colors' }).parent;
@@ -371,6 +393,23 @@ describe('stats', () => {
       expect(screen.queryByText('Coat · Green')).not.toBeOnTheScreen();
     });
     expect(screen.queryByText('Unused for 6 months')).not.toBeOnTheScreen();
+  });
+
+  test('a failed Donate shows the error and keeps the row', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockedUpdate.mockResolvedValue({ ok: false, error: 'network' });
+    await openStats();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Donate, Coat · Green' }));
+    const buttons = alert.mock.calls[0]?.[2] ?? [];
+    await act(async () => {
+      buttons.find((button) => button.text === 'Donate')?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("Couldn't save. Check your internet and try again.")).toBeOnTheScreen();
+    expect(screen.getByText('Coat · Green')).toBeOnTheScreen();
+    alert.mockRestore();
   });
 
   test('a failed pin shows the error and keeps the buttons', async () => {

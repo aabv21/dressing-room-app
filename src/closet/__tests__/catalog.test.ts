@@ -93,6 +93,7 @@ describe('slotOf', () => {
 
   test('CATEGORY_SLOT agrees with slotOf for every category', () => {
     for (const category of GARMENT_CATEGORIES) {
+      // eslint-disable-next-line security/detect-object-injection -- `category` iterates the closed GARMENT_CATEGORIES union
       expect(CATEGORY_SLOT[category]).toBe(slotOf(category));
     }
   });
@@ -174,6 +175,7 @@ describe('i18n labels', () => {
 describe('PALETTE_HEX', () => {
   test('has a 6-digit lowercase hex value for every color', () => {
     for (const color of GARMENT_COLORS) {
+      // eslint-disable-next-line security/detect-object-injection -- `color` iterates the closed GARMENT_COLORS union
       expect(PALETTE_HEX[color]).toMatch(/^#[0-9a-f]{6}$/);
     }
   });

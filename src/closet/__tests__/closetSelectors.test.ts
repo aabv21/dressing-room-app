@@ -105,6 +105,11 @@ describe('fieldsToAsk', () => {
     expect(fieldsToAsk(g, NOW)).toEqual(['category', 'colors', 'formality', 'seasons']);
   });
 
+  test('an over-quota garment (the AI never read it) asks the same four, plus its uncertain ones', () => {
+    const g = garment({ ...filled, colors: [...filled.colors], seasons: [...filled.seasons], occasions: [...filled.occasions], extraction_status: 'over_quota', uncertain_fields: ['fit'] });
+    expect(fieldsToAsk(g, NOW)).toEqual(['category', 'colors', 'formality', 'seasons', 'fit']);
+  });
+
   test('a stale pending garment asks the same four', () => {
     const g = garment({ extraction_status: 'pending', created_at: createdAgo(11 * MINUTE) });
     expect(fieldsToAsk(g, NOW)).toEqual(['category', 'colors', 'formality', 'seasons']);

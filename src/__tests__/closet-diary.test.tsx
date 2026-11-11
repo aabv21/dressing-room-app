@@ -242,6 +242,30 @@ describe('month view', () => {
     expect(await screen.findByText("Couldn't load your outfit history. Check your internet and try again.")).toBeOnTheScreen();
   });
 
+  test("a month's late answer never replaces the month switched to", async () => {
+    let finishOctober: (wears: WearWithItems[]) => void = () => undefined;
+    mockedListWears.mockImplementation((from) =>
+      from === '2026-10-01'
+        ? new Promise((resolve) => {
+            finishOctober = resolve;
+          })
+        : Promise.resolve([]),
+    );
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Previous month' }));
+    expect(await screen.findByText('No outfits logged this month')).toBeOnTheScreen();
+    await act(async () => {
+      finishOctober(october());
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('header', { name: 'September 2026' })).toBeOnTheScreen();
+    expect(screen.getByText('No outfits logged this month')).toBeOnTheScreen();
+    expect(screen.queryByText('19 outfits')).toBeNull();
+  });
+
   test('a load failure shows the error instead of the count', async () => {
     mockedListWears.mockRejectedValue(new Error('offline'));
     await render(<ClosetScreen />);
@@ -347,6 +371,34 @@ describe('deleting a wear', () => {
     expect(queuedWears('user-1')).toEqual([]);
     expect(isWornToday('user-1', '2026-10-28', [JEANS])).toBe(false);
     expect(await screen.findByText('19 outfits')).toBeOnTheScreen();
+    alert.mockRestore();
+  });
+
+  test('a double tap on Delete asks once and deletes once', async () => {
+    const alert = jest.spyOn(Alert, 'alert');
+    let finish: (value: { ok: true }) => void = () => undefined;
+    mockedDeleteWear.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await openDiary();
+
+    const remove = within(wearCard('w-28')).getByRole('button', { name: 'Delete' });
+    await fireEvent.press(remove);
+    const confirm = lastAlertButtons(alert).find((button) => button.style === 'destructive');
+    await act(() => {
+      confirm?.onPress?.();
+      confirm?.onPress?.();
+    });
+    await fireEvent.press(remove);
+
+    expect(mockedDeleteWear).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({ ok: true });
+      await Promise.resolve();
+    });
     alert.mockRestore();
   });
 

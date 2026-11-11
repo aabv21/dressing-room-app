@@ -59,7 +59,7 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
         />
         <View style={styles.row} accessibilityRole="tablist" testID="tab-list">
           {TABS.map((tab, index) => {
-            const route = state.routes[index];
+            const route = state.routes.at(index);
             if (!route) {
               return null;
             }
