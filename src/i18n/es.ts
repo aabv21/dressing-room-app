@@ -506,6 +506,7 @@ export const es: Record<MessageKey, string> = {
   'rate.swap.cta': 'Probar el cambio',
   'rate.noBetterSwap': 'Ya funciona, no hay un cambio mejor',
   'rate.forYou': '¿Te falta algo?',
+  'rate.forYou.named': '¿Te falta algo? Prueba con: {piece}',
   'rate.forYou.link': '→ Para ti',
   'rate.retry': 'Reintentar',
   'rate.goBack': 'Volver',

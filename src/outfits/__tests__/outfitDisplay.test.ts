@@ -1,5 +1,5 @@
 import { translate } from '../../i18n';
-import { formatWeather, formatWeekday, orderPieces, pieceLabel, SLOT_ORDER } from '../outfitDisplay';
+import { formatWeather, formatWeekday, missingPieceIdea, orderPieces, pieceLabel, SLOT_ORDER } from '../outfitDisplay';
 import type { WeatherSummary } from '../types';
 
 describe('SLOT_ORDER', () => {
@@ -91,4 +91,23 @@ describe('formatWeather', () => {
 test('formatWeekday names the day, capitalized, in each language', () => {
   expect(formatWeekday('es', new Date('2026-11-10T12:00:00'))).toBe('Martes');
   expect(formatWeekday('en', new Date('2026-11-10T12:00:00'))).toBe('Tuesday');
+});
+
+test("missingPieceIdea picks the first idea in the weakest slot, or none", () => {
+  const idea = (id: string, category: 'boots' | 'bag' | 'sneakers') => ({
+    id,
+    category,
+    colors: [],
+    newOutfits: 1,
+    combinesWith: 1,
+    line: null,
+    lineKey: null,
+    lineParams: {},
+    searchQuery: id,
+  });
+  const ideas = [idea('bag', 'bag'), idea('boots', 'boots'), idea('sneakers', 'sneakers')];
+
+  expect(missingPieceIdea(ideas, 'shoes')?.id).toBe('boots');
+  expect(missingPieceIdea(ideas, 'top')).toBeNull();
+  expect(missingPieceIdea(ideas, null)).toBeNull();
 });

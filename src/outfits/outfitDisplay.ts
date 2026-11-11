@@ -3,7 +3,7 @@
 
 import { CATEGORY_SLOT, type GarmentCategory, type GarmentColor, type Slot } from '../closet/catalog';
 import { translate, type Locale, type MessageKey } from '../i18n';
-import type { WeatherSummary } from './types';
+import type { ForYouCard, WeatherSummary } from './types';
 
 /** Display order for an outfit's pieces: outerwear on top, shoes at the bottom. */
 export const SLOT_ORDER: readonly Slot[] = [
@@ -62,4 +62,14 @@ export function formatWeather(weather: WeatherSummary | null, locale: Locale, no
   const key: MessageKey = `weather.condition.${weather.condition}`;
   const condition = translate(locale, key);
   return `${weekday} · ${String(Math.round(weather.tempC))} °C, ${condition}`;
+}
+
+/**
+ * The first For you idea for the outfit's weakest slot (mockup 01 screen 3's "Un cinturón camel lo
+ * mejoraría"): the rating screen names it after "Missing something?". Taken from the stored For you
+ * answer, so it costs no model call; null when there's none for that slot.
+ */
+export function missingPieceIdea(ideas: readonly ForYouCard[], weakestSlot: Slot | null): ForYouCard | null {
+  if (weakestSlot === null) return null;
+  return ideas.find((idea) => CATEGORY_SLOT[idea.category] === weakestSlot) ?? null;
 }

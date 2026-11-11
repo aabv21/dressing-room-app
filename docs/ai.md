@@ -849,7 +849,9 @@ cold start, offline (with a note) and over the quota (with the quota note). A ca
 Claude's, or its template key (`forYou.line.*`) rendered through i18n; "Search in stores" opens
 `https://www.google.com/search?q=<encoded searchQuery>&hl=<language>` in the system browser. The
 rating screen links to For you ("Missing something?") when the score is under 70 and no swap is
-shown.
+shown. When the last For you answer stored on the device in the app's language has an idea for the
+rating's `weakestSlot`, the line names it ("Missing something? Try: Boots · Camel"), as mockup 01
+screen 3 does; it costs no model call, and without such an idea the line stays generic.
 
 ### Cost
 

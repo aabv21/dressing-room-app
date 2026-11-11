@@ -503,6 +503,7 @@ export const en = {
   'rate.swap.cta': 'Try the swap',
   'rate.noBetterSwap': 'It already works, no better swap',
   'rate.forYou': 'Missing something?',
+  'rate.forYou.named': 'Missing something? Try: {piece}',
   'rate.forYou.link': '→ For you',
   'rate.retry': 'Try again',
   'rate.goBack': 'Go back',

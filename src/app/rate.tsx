@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
-import { GARMENT_COLORS, OCCASIONS, type GarmentColor, type Occasion } from '../closet/catalog';
+import { GARMENT_COLORS, OCCASIONS, type GarmentColor, type Occasion, type Slot } from '../closet/catalog';
 import { useCloset } from '../closet/ClosetProvider';
 import type { Garment } from '../closet/garmentRepository';
 import { isMessageKey, useI18n, type Locale } from '../i18n';
@@ -18,7 +18,8 @@ import type { RequestError } from '../lib/requestResult';
 import { localDate, rateOutfit, type AiError } from '../outfits/aiClient';
 import { logWear, saveOutfit } from '../outfits/outfitRepository';
 import { OutfitStack } from '../outfits/OutfitStack';
-import { pieceLabel } from '../outfits/outfitDisplay';
+import { missingPieceIdea, pieceLabel } from '../outfits/outfitDisplay';
+import { readStoredForYou } from '../outfits/storedForYou';
 import { logWearOrQueue } from '../outfits/wearQueue';
 import { useWornToday } from '../outfits/wornToday';
 import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
@@ -164,9 +165,15 @@ function SwapCard({
  * Mockup 01 screen 3's "Missing something? → For you": a low score with no swap to offer (none
  * beat it, or the fallback rater searched none) points to the pieces the closet lacks.
  */
-function ForYouLink(): React.JSX.Element {
-  const { t } = useI18n();
-  const label = `${t('rate.forYou')} ${t('rate.forYou.link')}`;
+function ForYouLink({ weakestSlot }: { weakestSlot: Slot | null }): React.JSX.Element {
+  const { t, locale } = useI18n();
+  const { userId } = useAuth();
+  // The piece comes from the last For you answer in this language (no model call); without one for
+  // the weakest slot, the line stays generic.
+  const stored = userId === null ? null : readStoredForYou(userId, locale);
+  const idea = stored?.kind === 'ok' ? missingPieceIdea(stored.ideas, weakestSlot) : null;
+  const question = idea === null ? t('rate.forYou') : t('rate.forYou.named', { piece: pieceLabel(idea, t) });
+  const label = `${question} ${t('rate.forYou.link')}`;
   return (
     <Pressable
       accessibilityRole="link"
@@ -177,7 +184,7 @@ function ForYouLink(): React.JSX.Element {
       style={styles.forYouLink}
     >
       <Text style={styles.forYouText}>
-        {t('rate.forYou')} <Text style={styles.forYouAccent}>{t('rate.forYou.link')}</Text>
+        {question} <Text style={styles.forYouAccent}>{t('rate.forYou.link')}</Text>
       </Text>
     </Pressable>
   );
@@ -207,6 +214,16 @@ function ResultBody({
   const from = swap === null ? undefined : byId.get(swap.fromId);
   const to = swap === null ? undefined : byId.get(swap.toId);
   const swapShown = swap !== null && from !== undefined && to !== undefined;
+  // A swap to a garment the local closet doesn't have yet (added on another device, or since the
+  // last refresh) would stay hidden: refresh the closet once per swap target, and the card appears.
+  const { refresh } = useCloset();
+  const refreshedFor = useRef<string | null>(null);
+  const missingTarget = swap !== null && (from === undefined || to === undefined) ? swap.toId : null;
+  useEffect(() => {
+    if (missingTarget === null || refreshedFor.current === missingTarget) return;
+    refreshedFor.current = missingTarget;
+    void refresh();
+  }, [missingTarget, refresh]);
   return (
     <>
       <ScoreRing score={result.score} caption={t(`rating.label.${result.label}`)} />
@@ -233,7 +250,7 @@ function ResultBody({
         />
       ) : null}
       {result.noBetterSwap ? <Text style={styles.noBetterSwap}>{t('rate.noBetterSwap')}</Text> : null}
-      {result.score < FOR_YOU_BELOW && !swapShown ? <ForYouLink /> : null}
+      {result.score < FOR_YOU_BELOW && !swapShown ? <ForYouLink weakestSlot={result.weakestSlot} /> : null}
       {pieces.length === 0 ? null : (
         <View style={styles.card}>
           <OutfitStack garments={pieces} thumbUrls={thumbUrls} compact />
