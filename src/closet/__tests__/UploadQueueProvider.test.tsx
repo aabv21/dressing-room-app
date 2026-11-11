@@ -7,7 +7,7 @@ jest.mock('../ClosetProvider', () => ({
   useCloset: () => ({ refresh: mockRefresh }),
 }));
 jest.mock('../upload/queueStore', () => ({
-  enqueuePhotos: jest.fn(() => []),
+  enqueuePhotos: jest.fn(() => ({ items: [], failed: 0 })),
   enqueueReplacement: jest.fn(),
   listQueue: jest.fn(() => []),
   resetFailed: jest.fn(),

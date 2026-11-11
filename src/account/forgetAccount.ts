@@ -21,3 +21,16 @@ export function forgetAccountOnDevice(userId: string): void {
   }
   forgetAccount(userId);
 }
+
+/** The per-user kv caches that only speed up or fill screens; the server is their source of truth. */
+const DISPLAY_CACHE_PREFIXES = ['closet.v1.', 'today.lucky.', 'forYou.ideas.', 'wears.v1.'] as const;
+
+/**
+ * Drops `userId`'s display caches (the closet with its signed URLs, Today's lists, the For you ideas,
+ * the wear history) after an explicit sign-out, so the next person on a shared phone can't read
+ * them. The upload and wear queues, Logged ✓ and the purge requests stay: they hold work not yet on
+ * the server. Writes stay allowed, since the account may sign in again at once.
+ */
+export function forgetDisplayCaches(userId: string): void {
+  for (const prefix of DISPLAY_CACHE_PREFIXES) kvRemove(`${prefix}${userId}`);
+}

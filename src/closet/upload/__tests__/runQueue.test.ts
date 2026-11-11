@@ -117,7 +117,8 @@ test('an interrupted commit resumes from uploaded without repeating prepare or u
 
   const first = await runQueue('user-1', steps, store, () => 0);
 
-  expect(first).toEqual({ committed: 0, failed: 1, waiting: 0 });
+  // A retryable failure waits out its backoff: it isn't counted as failed.
+  expect(first).toEqual({ committed: 0, failed: 0, waiting: 1 });
   const [afterFirst] = store.all();
   expect(afterFirst?.stage).toBe('uploaded');
   expect(afterFirst?.attempts).toBe(1);
@@ -171,14 +172,17 @@ test('the 8th failure marks the item failed', async () => {
   expect(item?.failed).toBe(true);
 });
 
-test('a non-8th failure keeps the item retryable', async () => {
+test("a non-8th failure keeps the item retryable, counts it as waiting, and logs the reason in dev", async () => {
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
   const store = createFakeStore([makeItem({ attempts: 2 })]);
   const steps = createSteps();
   steps.commit.mockRejectedValueOnce(new TypeError('Network request failed'));
 
   const result = await runQueue('user-1', steps, store, () => 0);
 
-  expect(result).toEqual({ committed: 0, failed: 1, waiting: 0 });
+  expect(result).toEqual({ committed: 0, failed: 0, waiting: 1 });
+  expect(warn).toHaveBeenCalledWith('upload queue: attempt failed', expect.objectContaining({ message: 'Network request failed' }));
+  warn.mockRestore();
   const [item] = store.all();
   expect(item?.attempts).toBe(3);
   expect(item?.failed).toBe(false);
