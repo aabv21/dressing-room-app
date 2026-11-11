@@ -72,6 +72,7 @@ export const en = {
   'stats.kpi.streak.other': '{count} days',
   'stats.kpi.streakLabel': 'in a row',
   'stats.error': "Couldn't load your outfit history. Check your internet and try again.",
+  'stats.offline': 'Offline — your history as of {date}.',
   'stats.mostWorn.title': 'What you wear most',
   'stats.mostWorn.caption.week': 'Wears this week',
   'stats.mostWorn.caption.month': 'Wears this month',

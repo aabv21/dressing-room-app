@@ -17,6 +17,7 @@ import { OutfitStack } from '../outfits/OutfitStack';
 import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
+import { mergeStoredWears, readStoredWears, wearsInRange } from '../stats/storedWears';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
 import { useLargeText } from '../ui/layout';
 import { colors, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
@@ -71,6 +72,11 @@ export function formatMonthTitle(locale: Locale, year: number, month: number): s
 export function formatDayTitle(locale: Locale, day: string): string {
   const weekday = dateFormat(locale, { weekday: 'long' }).format(utcDate(day));
   return `${capitalize(weekday)} ${String(Number(day.slice(8, 10)))}`;
+}
+
+/** "November 7" / "7 de noviembre": the day the stored history runs up to, in the offline note. */
+export function formatMonthDay(locale: Locale, day: string): string {
+  return dateFormat(locale, { month: 'long', day: 'numeric' }).format(utcDate(day));
 }
 
 function monthOf(day: string): Month {
@@ -248,7 +254,10 @@ export function DiarySegment(): React.JSX.Element {
   const [today, setToday] = useState(() => localDate());
   const [month, setMonth] = useState<Month>(() => monthOf(today));
   // Keyed by month, so a month switch never shows the previous month's wears in the new grid.
-  const [loaded, setLoaded] = useState<{ key: string; wears: WearWithItems[] } | null>(null);
+  // `offlineSince` is set when the month comes from the stored history because the fetch failed.
+  const [loaded, setLoaded] = useState<{ key: string; wears: WearWithItems[]; offlineSince: string | null } | null>(
+    null,
+  );
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
@@ -265,16 +274,26 @@ export function DiarySegment(): React.JSX.Element {
       return undefined;
     }
     let current = true;
-    listWears(`${key}-01`, lastDay).then(
+    const from = `${key}-01`;
+    listWears(from, lastDay).then(
       (wears) => {
+        const day = localDate();
+        // Stored only up to today: the rest of the month hasn't happened yet.
+        if (userId !== null) mergeStoredWears(userId, from, lastDay < day ? lastDay : day, wears);
         if (current) {
-          setToday(localDate());
-          setLoaded({ key, wears });
+          setToday(day);
+          setLoaded({ key, wears, offlineSince: null });
           setFailedKey(null);
         }
       },
       () => {
-        if (current) {
+        if (!current) return;
+        const stored = userId === null ? null : readStoredWears(userId);
+        const wears = stored === null ? null : wearsInRange(stored, from, lastDay);
+        if (stored !== null && wears !== null) {
+          setLoaded({ key, wears, offlineSince: stored.to });
+          setFailedKey(null);
+        } else {
           setFailedKey(key);
         }
       },
@@ -282,10 +301,11 @@ export function DiarySegment(): React.JSX.Element {
     return () => {
       current = false;
     };
-  }, [focused, key, lastDay, reload]);
+  }, [focused, key, lastDay, reload, userId]);
 
   const wears = loaded?.key === key ? loaded.wears : null;
   const failed = failedKey === key;
+  const offlineSince = loaded?.key === key ? loaded.offlineSince : null;
   const byDay = useMemo(() => diaryByDay(wears ?? []), [wears]);
   const byId = useMemo(() => new Map(garments.map((g) => [g.id, g])), [garments]);
   // Newest first, so the first wear's day is the latest worn one.
@@ -319,7 +339,7 @@ export function DiarySegment(): React.JSX.Element {
         );
         if (!stillWorn) unmarkWornToday(userId, wear.garmentIds);
       }
-      setLoaded((prev) => (prev === null ? prev : { key: prev.key, wears: prev.wears.filter((w) => w.id !== wear.id) }));
+      setLoaded((prev) => (prev === null ? prev : { ...prev, wears: prev.wears.filter((w) => w.id !== wear.id) }));
       setReload((n) => n + 1);
       void refresh();
     },
@@ -425,6 +445,9 @@ export function DiarySegment(): React.JSX.Element {
       </View>
 
       {failed ? <Text style={styles.error}>{t('stats.error')}</Text> : null}
+      {offlineSince === null ? null : (
+        <Text style={styles.offline}>{t('stats.offline', { date: formatMonthDay(locale, offlineSince) })}</Text>
+      )}
       {wears === null && !failed ? <ActivityIndicator color={colors.accent} style={styles.loading} /> : null}
       {wears !== null && wears.length === 0 ? <Text style={styles.empty}>{t('diary.empty')}</Text> : null}
 
@@ -437,7 +460,7 @@ export function DiarySegment(): React.JSX.Element {
               title={formatDayTitle(locale, selectedDay)}
               byId={byId}
               thumbUrls={thumbUrls}
-              busy={deletingId !== null}
+              busy={deletingId !== null || offlineSince !== null}
               error={deleteError?.id === wear.id ? deleteError.error : null}
               onDelete={confirmDelete}
             />
@@ -586,6 +609,10 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 13,
     color: colors.error,
+  },
+  offline: {
+    fontSize: 13,
+    color: colors.muted,
   },
   mini: {
     minHeight: MINI_HEIGHT,

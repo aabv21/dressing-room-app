@@ -6,13 +6,15 @@ import { router, useIsFocused } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAuth } from '../auth/AuthProvider';
 import { formatWearCount, pluralKey, useI18n } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
 import { localDate } from '../outfits/aiClient';
 import { pieceLabel } from '../outfits/outfitDisplay';
 import { addDays, daysBetween, periodRange, type Period } from '../stats/periods';
 import { colorShares, kpis, mostWorn, slotBalance, unusedSixMonths } from '../stats/statsModel';
-import { listWears, type WearWithItems } from '../stats/wearsRepository';
+import { useWearHistory } from '../stats/useWearHistory';
+import type { WearWithItems } from '../stats/wearsRepository';
 import { HorizontalBars } from '../ui/charts/HorizontalBars';
 import { KpiTile } from '../ui/charts/KpiTile';
 import { ProportionBar } from '../ui/charts/ProportionBar';
@@ -21,15 +23,11 @@ import { useLargeText } from '../ui/layout';
 import { colors, layout, radii, spacing } from '../ui/theme';
 import type { GarmentColor } from './catalog';
 import { useCloset } from './ClosetProvider';
+import { formatMonthDay } from './DiarySegment';
 import { COUNTED_COLORS, isActive, type ColorFilter } from './closetSelectors';
 import { updateGarment, type Garment } from './garmentRepository';
 
 const PERIODS: readonly Period[] = ['week', 'month', 'sixMonths'];
-// NOTE: a year of history feeds the streak, so a longer streak reads as 365 days; an unbounded
-// fetch on every focus isn't worth it. Upgrade path: a server-side streak count.
-// `listWears` pages through the year 1000 wears at a time (PostgREST's `max_rows`), up to 20 pages;
-// see its NOTE for the ceiling.
-const STREAK_HISTORY_DAYS = 365;
 // Room for "100 wears" / "100 usos" at the bars' 12 pt.
 const WEARS_VALUE_WIDTH = 62;
 const BALANCE_VALUE_WIDTH = 28;
@@ -186,39 +184,16 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
   const { garments, thumbUrls, replaceLocal } = useCloset();
   const focused = useIsFocused();
   const [period, setPeriod] = useState<Period>('month');
-  const [today, setToday] = useState(() => localDate());
-  const [history, setHistory] = useState<WearWithItems[] | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
+  const { userId } = useAuth();
+  // Fetched once per focus: the streak needs a year back, which covers every period's range too,
+  // so a period switch only re-derives from the same history. Offline, the stored year shows.
+  const { today: historyDay, wears: history, offlineSince, failed: loadFailed } = useWearHistory(userId, focused);
+  // A pin tapped past midnight moves "today" forward before the next focus refetches.
+  const [tapDay, setToday] = useState<string | null>(null);
+  const today = tapDay !== null && tapDay > historyDay ? tapDay : historyDay;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<RequestError | null>(null);
-
-  // Fetched once per focus: the streak needs a year back, which covers every period's range too,
-  // so a period switch only re-derives from the same history.
-  useEffect(() => {
-    if (!focused) {
-      return undefined;
-    }
-    let current = true;
-    const day = localDate();
-    listWears(addDays(day, -STREAK_HISTORY_DAYS), day).then(
-      (wears) => {
-        if (current) {
-          setToday(day);
-          setHistory(wears);
-          setLoadFailed(false);
-        }
-      },
-      () => {
-        if (current) {
-          setLoadFailed(true);
-        }
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [focused]);
 
   const periodOptions = useMemo(
     () => PERIODS.map((value) => ({ value, label: t(`stats.period.${value}`) })),
@@ -415,6 +390,9 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
       </ScrollView>
 
       {loadFailed ? <Text style={styles.error}>{t('stats.error')}</Text> : null}
+      {offlineSince === null ? null : (
+        <Text style={styles.offline}>{t('stats.offline', { date: formatMonthDay(locale, offlineSince) })}</Text>
+      )}
 
       {kpi === null ? (
         loadFailed ? null : (
@@ -551,6 +529,10 @@ const styles = StyleSheet.create({
   error: {
     fontSize: 13,
     color: colors.error,
+  },
+  offline: {
+    fontSize: 13,
+    color: colors.muted,
   },
   insight: {
     minHeight: layout.minHitTarget,

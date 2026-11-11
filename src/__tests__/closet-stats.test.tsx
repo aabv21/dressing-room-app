@@ -9,7 +9,9 @@ import { Alert } from 'react-native';
 import BuildScreen from '../app/(tabs)/build';
 import ClosetScreen from '../app/(tabs)/closet';
 import { updateGarment, type Garment } from '../closet/garmentRepository';
+import { kvRemove } from '../lib/kv';
 import { localDate } from '../outfits/aiClient';
+import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
 import { listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
 
@@ -141,6 +143,7 @@ beforeEach(() => {
   mockedListWears.mockResolvedValue(history());
   mockedUpdate.mockResolvedValue({ ok: true });
   mockedLocalDate.mockReturnValue('2026-11-08');
+  kvRemove(storedWearsKey('user-1'));
 });
 
 const tab = (name: string) => screen.getByRole('tab', { name });
@@ -407,6 +410,24 @@ describe('stats', () => {
     expect(await screen.findByText('outfit logged')).toBeOnTheScreen();
     expect(screen.getByLabelText('1 outfit logged')).toBeOnTheScreen();
     expect(screen.queryByText('outfits logged')).not.toBeOnTheScreen();
+  });
+
+  test('offline stats show the stored history with its date', async () => {
+    storeWears('user-1', '2025-11-07', '2026-11-07', history());
+    mockedListWears.mockRejectedValue(new Error('offline'));
+    await render(<ClosetScreen />);
+    await fireEvent.press(tab('Stats'));
+
+    expect(await screen.findByText('Offline — your history as of November 7.')).toBeOnTheScreen();
+    expect(screen.getByText('60%')).toBeOnTheScreen();
+    expect(screen.queryByText("Couldn't load your outfit history. Check your internet and try again.")).toBeNull();
+  });
+
+  test('a successful fetch stores the year for later', async () => {
+    await openStats();
+
+    expect(mockedListWears).toHaveBeenCalledWith('2025-11-08', '2026-11-08');
+    expect(readStoredWears('user-1')).toEqual({ from: '2025-11-08', to: '2026-11-08', wears: history() });
   });
 
   test('a failed history fetch shows an error line', async () => {

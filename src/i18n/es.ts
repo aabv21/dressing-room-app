@@ -74,6 +74,7 @@ export const es: Record<MessageKey, string> = {
   'stats.kpi.streak.other': '{count} días',
   'stats.kpi.streakLabel': 'seguidos usando la app',
   'stats.error': 'No pudimos cargar tu historial de outfits. Revisa tu internet e inténtalo de nuevo.',
+  'stats.offline': 'Sin conexión: tu historial hasta el {date}.',
   'stats.mostWorn.title': 'Lo que más usas',
   'stats.mostWorn.caption.week': 'Usos en la semana',
   'stats.mostWorn.caption.month': 'Usos en el mes',

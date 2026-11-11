@@ -10,6 +10,7 @@ import { formatDayTitle, formatMonthTitle } from '../closet/DiarySegment';
 import { translate } from '../i18n';
 import { kvRemove } from '../lib/kv';
 import { isWornToday, markWornToday } from '../outfits/wornToday';
+import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
 import { colors } from '../ui/theme';
@@ -121,6 +122,7 @@ beforeEach(() => {
   mockedListWears.mockImplementation((from) => Promise.resolve(from === '2026-10-01' ? october() : []));
   mockedDeleteWear.mockResolvedValue({ ok: true });
   kvRemove('outfit.worn.user-1');
+  kvRemove(storedWearsKey('user-1'));
 });
 
 /** The buttons of the last `Alert.alert` call. */
@@ -216,6 +218,26 @@ describe('month view', () => {
     // October, September, August, September, October.
     expect(mockedListWears).toHaveBeenCalledTimes(5);
     expect(mockedListWears).toHaveBeenLastCalledWith('2026-10-01', '2026-10-31');
+  });
+
+  test('a fetched month is stored up to today', async () => {
+    await openDiary();
+
+    expect(readStoredWears('user-1')).toEqual({ from: '2026-10-01', to: '2026-10-28', wears: october() });
+  });
+
+  test('offline diary shows a stored month, and a month before the stored range shows the error', async () => {
+    storeWears('user-1', '2026-10-01', '2026-10-28', october());
+    mockedListWears.mockRejectedValue(new Error('offline'));
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+
+    expect(await screen.findByText('19 outfits')).toBeOnTheScreen();
+    expect(screen.getByText('Offline — your history as of October 28.')).toBeOnTheScreen();
+    for (const button of screen.getAllByRole('button', { name: 'Delete' })) expect(button).toBeDisabled();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Previous month' }));
+    expect(await screen.findByText("Couldn't load your outfit history. Check your internet and try again.")).toBeOnTheScreen();
   });
 
   test('a load failure shows the error instead of the count', async () => {
