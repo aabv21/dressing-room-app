@@ -1,6 +1,6 @@
 import { forgetAccount } from '../auth/deviceState';
 import { QUEUE_PURGE_PREFIX } from '../closet/upload/queuePurge';
-import { kvKeys, kvRemove, refuseUserKeys } from '../lib/kv';
+import { kvKeys, kvRemove, refuseKeys, refuseUserKeys } from '../lib/kv';
 
 /**
  * Removes what this device keeps for a deleted account: every kv entry keyed by the user's id
@@ -28,9 +28,12 @@ const DISPLAY_CACHE_PREFIXES = ['closet.v1.', 'today.lucky.', 'forYou.ideas.', '
 /**
  * Drops `userId`'s display caches (the closet with its signed URLs, Today's lists, the For you ideas,
  * the wear history) after an explicit sign-out, so the next person on a shared phone can't read
- * them. The upload and wear queues, Logged ✓ and the purge requests stay: they hold work not yet on
- * the server. Writes stay allowed, since the account may sign in again at once.
+ * them, and refuses those keys until the account signs in again (`allowUserKeys`), so a request
+ * still in flight can't write one back. The upload and wear queues, Logged ✓ and the purge requests
+ * stay writable: they hold work not yet on the server.
  */
 export function forgetDisplayCaches(userId: string): void {
-  for (const prefix of DISPLAY_CACHE_PREFIXES) kvRemove(`${prefix}${userId}`);
+  const keys = DISPLAY_CACHE_PREFIXES.map((prefix) => `${prefix}${userId}`);
+  refuseKeys(keys);
+  for (const key of keys) kvRemove(key);
 }

@@ -3,13 +3,15 @@ jest.mock('../AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
 
 import { act, renderHook } from '@testing-library/react-native';
 
-import { kvKeys, kvRemove, kvSet } from '../../lib/kv';
+import { allowUserKeys, kvKeys, kvRemove, kvSet } from '../../lib/kv';
 import { signOut } from '../authService';
 import { useSignOut } from '../useSignOut';
 
 const mockedSignOut = jest.mocked(signOut);
 
 beforeEach(() => {
+  // Signing in lifts the refusal a previous sign-out left.
+  allowUserKeys('user-1');
   for (const key of kvKeys()) kvRemove(key);
   kvSet('closet.v1.user-1', 'x');
   kvSet('wear.queue.user-1', 'x');

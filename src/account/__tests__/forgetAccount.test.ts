@@ -104,7 +104,13 @@ test('forgetDisplayCaches drops the display caches and keeps the queues and Logg
   forgetDisplayCaches(USER);
 
   expect(kvKeys().sort()).toEqual([...kept].sort());
-  // Unlike a deletion, the account can still write: it may sign in again at once.
-  kvSet(`closet.v1.${USER}`, 'y');
-  expect(kvKeys()).toContain(`closet.v1.${USER}`);
+  // A request still in flight can't write a display cache back while the account is signed out...
+  kvSet(`closet.v1.${USER}`, 'late');
+  expect(kvGet(`closet.v1.${USER}`)).toBeNull();
+  // ...but its queues stay writable, and signing in again lifts the refusal.
+  kvSet(`wear.queue.${USER}`, 'y');
+  expect(kvGet(`wear.queue.${USER}`)).toBe('y');
+  allowUserKeys(USER);
+  kvSet(`closet.v1.${USER}`, 'fresh');
+  expect(kvGet(`closet.v1.${USER}`)).toBe('fresh');
 });
