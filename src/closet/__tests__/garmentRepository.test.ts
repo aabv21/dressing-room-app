@@ -177,6 +177,27 @@ describe('uploadGarmentPhoto', () => {
     await expect(uploadGarmentPhoto('user-1', 'g-1', 'full', 'file:///f.webp', client)).rejects.toBe(error);
   });
 
+  test('a body statusCode is trusted only when HTTP is 400: an HTTP 500 with a body of 404 is retried', async () => {
+    const error = Object.assign(new Error('Internal error'), { status: 500, statusCode: '404' });
+    const { client } = fakeClient({ upload: { data: null, error } });
+
+    await expect(uploadGarmentPhoto('user-1', 'g-1', 'full', 'file:///f.webp', client)).rejects.toBe(error);
+  });
+
+  test.each([401, 403])('a %i (an expired or swapped session) is retried, not permanent', async (status) => {
+    const error = Object.assign(new Error('Unauthorized'), { status, statusCode: String(status) });
+    const { client } = fakeClient({ upload: { data: null, error } });
+
+    await expect(uploadGarmentPhoto('user-1', 'g-1', 'full', 'file:///f.webp', client)).rejects.toBe(error);
+  });
+
+  test("storage's HTTP 400 carrying a 403 in the body (RLS) is retried", async () => {
+    const error = Object.assign(new Error('new row violates row-level security policy'), { status: 400, statusCode: '403' });
+    const { client } = fakeClient({ upload: { data: null, error } });
+
+    await expect(uploadGarmentPhoto('user-1', 'g-1', 'full', 'file:///f.webp', client)).rejects.toBe(error);
+  });
+
   test('a network failure (no status) is retried, not permanent', async () => {
     const error = Object.assign(new Error('Network request failed'), { status: undefined, statusCode: undefined });
     const { client } = fakeClient({ upload: { data: null, error } });

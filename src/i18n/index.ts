@@ -47,11 +47,13 @@ export function translate(
   key: MessageKey,
   params?: Readonly<Record<string, string | number>>,
 ): string {
+  // eslint-disable-next-line security/detect-object-injection -- `locale` and `key` are closed unions the type checker enforces
   const template = catalogs[locale][key];
   if (params === undefined) {
     return template;
   }
   return template.replace(/\{(\w+)\}/g, (match, name: string) => {
+    // eslint-disable-next-line security/detect-object-injection -- read-only lookup in the caller's own params; a missing name keeps the placeholder
     const value = params[name];
     if (value === undefined) {
       return match;

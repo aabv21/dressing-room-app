@@ -36,10 +36,13 @@ beforeAll(async () => {
 const uploadedStoragePaths: string[] = [];
 
 afterAll(async () => {
-  if (uploadedStoragePaths.length > 0) {
-    await serviceClient().storage.from('garments').remove(uploadedStoragePaths);
+  try {
+    if (uploadedStoragePaths.length > 0) {
+      await serviceClient().storage.from('garments').remove(uploadedStoragePaths);
+    }
+  } finally {
+    await Promise.all(createdUserIds.map((id) => deleteUser(id)));
   }
-  await Promise.all(createdUserIds.map((id) => deleteUser(id)));
 });
 
 test("A's select on profiles returns only A's own row", async () => {

@@ -32,7 +32,6 @@ yarn-error.*
 
 # local env files
 .env*.local
-.env.local
 
 # Supabase local state
 supabase/.temp/

@@ -38,23 +38,37 @@ type QueueRow = {
   created_at: number;
 };
 
+// NOTE: the database opens at import, so this module is the only one that may import expo-sqlite's
+// queue file, and tests mock expo-sqlite before importing it. Upgrade path: open it lazily on the
+// first call if a screen ever needs this module without the queue.
 const db = openDatabaseSync('upload-queue.db');
+
+/** The schema version in `PRAGMA user_version`: a later change migrates from it. */
+const SCHEMA_VERSION = 1;
+
+const tableExisted =
+  db.getFirstSync<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'upload_queue'") !==
+  null;
 
 db.execSync(`
   CREATE TABLE IF NOT EXISTS upload_queue (
     garment_id TEXT PRIMARY KEY NOT NULL,
     user_id TEXT NOT NULL,
-    "replace" INTEGER NOT NULL,
+    "replace" INTEGER NOT NULL CHECK ("replace" IN (0, 1)),
     source_uri TEXT NOT NULL,
-    stage TEXT NOT NULL,
+    stage TEXT NOT NULL CHECK (stage IN ('captured', 'prepared', 'uploaded')),
     full_uri TEXT,
     thumb_uri TEXT,
     attempts INTEGER NOT NULL,
     next_attempt_at INTEGER NOT NULL,
-    failed INTEGER NOT NULL,
+    failed INTEGER NOT NULL CHECK (failed IN (0, 1)),
     created_at INTEGER NOT NULL
   );
 `);
+// NOTE: a table created before version 1 keeps its columns without the CHECKs (SQLite can't add one
+// in place) and stays at version 0, so a future migration sees what it really has; no released
+// install has one. Only a table created here is stamped with this version.
+if (!tableExisted) db.execSync(`PRAGMA user_version = ${String(SCHEMA_VERSION)}`);
 
 function rowToItem(row: QueueRow): QueueItem {
   return {
@@ -139,11 +153,24 @@ function deleteIfExists(uri: string | null): void {
   }
 }
 
-export function enqueuePhotos(userId: string, sourceUris: readonly string[]): QueueItem[] {
+/**
+ * Copies and queues each photo. A photo that can't be copied (a full disk, a source gone meanwhile)
+ * is counted in `failed` and the rest are still queued. Each photo is created one millisecond after
+ * the previous one, so a burst uploads in the order it was taken.
+ */
+export function enqueuePhotos(userId: string, sourceUris: readonly string[]): { items: QueueItem[]; failed: number } {
   const now = Date.now();
-  return sourceUris.map((sourceUri) => {
+  const items: QueueItem[] = [];
+  let failed = 0;
+  sourceUris.forEach((sourceUri, index) => {
     const garmentId = Crypto.randomUUID();
-    const copiedUri = copyIntoUploads(garmentId, sourceUri);
+    let copiedUri: string;
+    try {
+      copiedUri = copyIntoUploads(garmentId, sourceUri);
+    } catch {
+      failed += 1;
+      return;
+    }
     const item: QueueItem = {
       garmentId,
       userId,
@@ -155,11 +182,12 @@ export function enqueuePhotos(userId: string, sourceUris: readonly string[]): Qu
       attempts: 0,
       nextAttemptAt: 0,
       failed: false,
-      createdAt: now,
+      createdAt: now + index,
     };
     upsert(item);
-    return item;
+    items.push(item);
   });
+  return { items, failed };
 }
 
 export function enqueueReplacement(userId: string, garmentId: string, sourceUri: string): QueueItem {

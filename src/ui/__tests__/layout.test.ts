@@ -27,6 +27,16 @@ describe('useBottomChrome', () => {
     expect(buttonBottomEdge).toBe(0 + 22);
   });
 
+  test.each(['tabs', 'none'] as const)(
+    "with chrome '%s', the content's bottom padding clears the whole CTA zone, its fade included",
+    async (chrome) => {
+      const { result } = await renderHook(() => useBottomChrome(chrome));
+      const zoneTop = result.current.ctaBottom + layout.ctaZoneBottomPadding + layout.ctaHeight + layout.ctaZoneTopPadding;
+
+      expect(result.current.contentPaddingBottom).toBe(zoneTop);
+    },
+  );
+
   test("chrome 'tabs' keeps the existing tab-bar-aware offsets", async () => {
     const { result } = await renderHook(() => useBottomChrome('tabs'));
 

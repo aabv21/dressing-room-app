@@ -1,8 +1,8 @@
 // The For you tab: 3–5 "what you're missing" ideas from `for-you`, each with "Search in stores".
 // Rendered directly with auth, focus and the AI client mocked; kv is the in-memory test store.
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
-import { Linking } from 'react-native';
+import { Alert, Linking } from 'react-native';
 
 import ForYouScreen from '../app/(tabs)/for-you';
 import { I18nProvider } from '../i18n/I18nProvider';
@@ -119,6 +119,20 @@ describe('the ideas', () => {
     await fireEvent.press(screen.getByRole('button', { name: /^Buscar en tiendas/ }));
 
     expect(openURL).toHaveBeenCalledWith('https://www.google.com/search?q=blazer%20camel%20mujer&hl=es');
+  });
+
+  test("a browser that won't open says so instead of failing silently", async () => {
+    const alert = jest.spyOn(Alert, 'alert');
+    openURL.mockImplementation(() => Promise.reject(new Error('no browser')));
+    mockedFetch.mockReturnValue(ok({ kind: 'ok', ideas: [BLAZER] }));
+    await renderIn('en');
+
+    await fireEvent.press(await screen.findByRole('button', { name: /^Search in stores/ }));
+
+    await waitFor(() => {
+      expect(alert).toHaveBeenCalledWith("Couldn't open the browser. Try again.");
+    });
+    alert.mockRestore();
   });
 
   test('an unknown template key shows no line instead of the raw key', async () => {

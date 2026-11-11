@@ -33,6 +33,8 @@ export type LuckyList = {
    * couldn't connect.
    */
   offline: boolean;
+  /** The error of the latest fetch when an earlier list is shown instead; null when it succeeded. */
+  refetchError: AiError | null;
   /** Fetches again after an error. */
   reload: () => void;
   /** The local day the list is for (`localDate()`, re-read on returning to the foreground). */
@@ -144,9 +146,9 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
 
   // The inputs the next request uses, so a queued one runs with the latest of them. Declared before
   // the fetch effects, so it's up to date when they run in the same commit.
-  const latest = useRef({ userId, occasion, day, query, fingerprint });
+  const latest = useRef({ userId, occasion, day, query, fingerprint, focused });
   useEffect(() => {
-    latest.current = { userId, occasion, day, query, fingerprint };
+    latest.current = { userId, occasion, day, query, fingerprint, focused };
   });
   const inFlight = useRef(false);
   const queued = useRef(false);
@@ -185,7 +187,9 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
             ? { ...previous, failed: outcome.error }
             : { query: inputs.query, outcome, failed: null },
         );
-      } while (takeQueued());
+        // A trigger that came in meanwhile runs now, unless the screen lost focus: coming back
+        // fetches anyway.
+      } while (takeQueued() && latest.current.focused);
       inFlight.current = false;
     })();
   }, []);
@@ -200,7 +204,10 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
   // Closet changes, debounced.
   useEffect(() => {
     if (!focused || !closetReady || fingerprint === fetchedFingerprint.current) return undefined;
-    const timer = setTimeout(run, CLOSET_REFETCH_DELAY_MS);
+    // Another trigger (focus, occasion) may fetch this same closet before the delay ends.
+    const timer = setTimeout(() => {
+      if (latest.current.fingerprint !== fetchedFingerprint.current) run();
+    }, CLOSET_REFETCH_DELAY_MS);
     return () => {
       clearTimeout(timer);
     };
@@ -266,6 +273,7 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     missing: response?.kind === 'too_small' ? response.missing : [],
     error: response === null && outcome?.ok === false ? outcome.error : null,
     offline: response !== null && failed === 'network',
+    refetchError: failed,
     reload,
     day,
   };

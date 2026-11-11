@@ -65,16 +65,22 @@ export async function signedPhotoUrls(paths: readonly string[], client: Client =
 /**
  * The status that describes a storage failure. Storage answers most client errors with HTTP 400
  * and the real status in the body (`{"statusCode":"413",...}` for a file over the bucket limit),
- * which storage-js exposes as `statusCode`; a `fetch` that never got a response has neither.
+ * which storage-js exposes as `statusCode`; the body is trusted only on that HTTP 400, so a server
+ * error's body can't turn it into a client error. A `fetch` that never got a response has neither.
  */
 function storageStatus(error: { status: number | undefined; statusCode: string | undefined }): number | undefined {
   const fromBody = Number(error.statusCode);
-  return Number.isInteger(fromBody) && fromBody >= 100 && fromBody < 600 ? fromBody : error.status;
+  const bodyStatus = Number.isInteger(fromBody) && fromBody >= 100 && fromBody < 600 ? fromBody : undefined;
+  return error.status === 400 && bodyStatus !== undefined ? bodyStatus : (error.status ?? bodyStatus);
 }
 
-/** A 4xx means this request will never succeed as sent; 408 (timeout) and 429 (rate limit) are worth retrying. */
+/**
+ * A 4xx means this request will never succeed as sent; 408 (timeout) and 429 (rate limit) are worth
+ * retrying, and so are 401 and 403: an expired session (refreshed on the next run) or the RLS check
+ * failing under another account's session (`SessionMismatchError`'s case) aren't the photo's fault.
+ */
 function isPermanentStatus(status: number | undefined): boolean {
-  return status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429;
+  return status !== undefined && status >= 400 && status < 500 && ![401, 403, 408, 429].includes(status);
 }
 
 /**

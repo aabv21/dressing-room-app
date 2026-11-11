@@ -100,6 +100,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     localeRef.current = locale;
   }, [locale]);
   const languageSyncedForRef = useRef<string | null>(null);
+  // The account whose profile read last succeeded: a token refresh doesn't need to read it again.
+  const profileLoadedForRef = useRef<string | null>(null);
 
   async function loadProfile(nextUserId: string): Promise<boolean> {
     let profile: Profile | null | undefined;
@@ -117,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     }
     let onboarding: boolean;
     if (loaded) {
+      profileLoadedForRef.current = nextUserId;
       onboarding = profile?.onboarding_completed_at !== null && profile?.onboarding_completed_at !== undefined;
       cacheOnboarding(nextUserId, onboarding);
       syncLanguage(nextUserId, profile?.language ?? null, localeRef.current, languageSyncedForRef);
@@ -158,6 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         currentUserIdRef.current = null;
         unconfirmedSessionRef.current = false;
         languageSyncedForRef.current = null;
+        profileLoadedForRef.current = null;
         clearCachedOnboarding();
         setUserId(null);
         setEmail(null);
@@ -192,6 +196,11 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         // new user can't leave the old user's value on screen in the meantime.
         setOnboardingComplete(false);
         setStatus('loading');
+      }
+      // A token refresh changes nothing in the profile; it still loads one that never loaded (an
+      // offline launch settling once the network is back).
+      if (event === 'TOKEN_REFRESHED' && !userChanged && profileLoadedForRef.current === nextUserId) {
+        return;
       }
       void loadProfile(nextUserId);
     });

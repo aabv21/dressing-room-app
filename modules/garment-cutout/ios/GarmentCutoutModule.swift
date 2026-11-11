@@ -15,13 +15,14 @@ public class GarmentCutoutModule: Module {
       return false
     }
 
-    // Runs on the module's background queue, not the main thread.
+    // A cut-out takes a second or more: it runs on a global queue of its own, not the module queue
+    // other async native calls share.
     AsyncFunction("cutOut") { (uri: String) -> String? in
       guard #available(iOS 17, *) else {
         throw CutOutUnavailableException()
       }
       return try GarmentCutter.cutOut(uri: uri)
-    }
+    }.runOnQueue(DispatchQueue.global(qos: .userInitiated))
   }
 }
 

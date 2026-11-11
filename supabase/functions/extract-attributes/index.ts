@@ -15,7 +15,8 @@ function required(name: string): string {
 function readEnv(): ExtractEnv {
   const anthropicBaseUrl = Deno.env.get('ANTHROPIC_BASE_URL');
   return {
-    supabaseUrl: required('SUPABASE_URL'),
+    // The handler appends API paths to it: a trailing slash would double the separator.
+    supabaseUrl: required('SUPABASE_URL').replace(/\/+$/, ''),
     serviceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
     webhookSecret: required('EXTRACT_WEBHOOK_SECRET'),
     anthropicApiKey: required('ANTHROPIC_API_KEY'),

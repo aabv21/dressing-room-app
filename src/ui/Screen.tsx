@@ -4,6 +4,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AnchoredCta } from './AnchoredCta';
+import { CtaBackdrop } from './CtaBackdrop';
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
 import { colors, gradients, spacing, textScale } from './theme';
@@ -73,6 +74,7 @@ export function ScreenTitle({
 export function Screen(props: ScreenProps): React.JSX.Element {
   const { cta, chrome = 'tabs', headerAccessory, titleVariant = 'default' } = props;
   const contentInsets = useScreenContentInsets(chrome);
+  const { top: statusBar } = useSafeAreaInsets();
 
   return (
     <LinearGradient colors={gradients.background} style={styles.fill}>
@@ -101,6 +103,16 @@ export function Screen(props: ScreenProps): React.JSX.Element {
           </ScrollView>
         </KeyboardAvoidingView>
       )}
+      {props.scroll === false ? null : (
+        // Scrolled content fades out under the status bar instead of running into its icons.
+        <LinearGradient
+          colors={[gradients.background[0], 'rgba(255,255,255,0)']}
+          style={[styles.scrim, { height: statusBar }]}
+          pointerEvents="none"
+          testID="status-scrim"
+        />
+      )}
+      {cta && chrome === 'none' ? <CtaBackdrop /> : null}
       {cta ? <AnchoredCta {...cta} chrome={chrome} /> : null}
     </LinearGradient>
   );
@@ -109,6 +121,12 @@ export function Screen(props: ScreenProps): React.JSX.Element {
 const styles = StyleSheet.create({
   fill: {
     flex: 1,
+  },
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   content: {
     paddingHorizontal: spacing.md,

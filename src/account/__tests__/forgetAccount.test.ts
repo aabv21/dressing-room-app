@@ -1,7 +1,7 @@
 import { cacheOnboarding, cachedOnboarding, isLanguageSavePending, markLanguageSavePending } from '../../auth/deviceState';
 import { queuePurgeRequests, requestQueuePurge } from '../../closet/upload/queuePurge';
 import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
-import { forgetAccountOnDevice } from '../forgetAccount';
+import { forgetAccountOnDevice, forgetDisplayCaches } from '../forgetAccount';
 
 const USER = '0b7f6d7e-1111-4c4c-9a9a-000000000001';
 const OTHER = '0b7f6d7e-2222-4c4c-9a9a-000000000002';
@@ -17,6 +17,9 @@ test("removes every kv entry kept under the user's id, the day's occasions inclu
     `outfit.worn.${USER}`,
     `today.lucky.${USER}`,
     `forYou.ideas.${USER}`,
+    // The offline wear history and the queued "I'll wear it"s (Plan 6d).
+    `wears.v1.${USER}`,
+    `wear.queue.${USER}`,
     `today.occasion.${USER}.2026-11-08`,
     `today.occasion.${USER}.2026-11-09`,
   ]) {
@@ -91,4 +94,23 @@ test("keeps a queue purge request for the user, which outlives the account's oth
 
   expect(queuePurgeRequests()).toEqual([USER]);
   expect(kvGet(`closet.v1.${USER}`)).toBeNull();
+});
+
+test('forgetDisplayCaches drops the display caches and keeps the queues and Logged ✓', () => {
+  const display = [`closet.v1.${USER}`, `today.lucky.${USER}`, `forYou.ideas.${USER}`, `wears.v1.${USER}`];
+  const kept = [`wear.queue.${USER}`, `outfit.worn.${USER}`, `queue.purge.${USER}`, 'closet.v1.other-user'];
+  for (const key of [...display, ...kept]) kvSet(key, 'x');
+
+  forgetDisplayCaches(USER);
+
+  expect(kvKeys().sort()).toEqual([...kept].sort());
+  // A request still in flight can't write a display cache back while the account is signed out...
+  kvSet(`closet.v1.${USER}`, 'late');
+  expect(kvGet(`closet.v1.${USER}`)).toBeNull();
+  // ...but its queues stay writable, and signing in again lifts the refusal.
+  kvSet(`wear.queue.${USER}`, 'y');
+  expect(kvGet(`wear.queue.${USER}`)).toBe('y');
+  allowUserKeys(USER);
+  kvSet(`closet.v1.${USER}`, 'fresh');
+  expect(kvGet(`closet.v1.${USER}`)).toBe('fresh');
 });

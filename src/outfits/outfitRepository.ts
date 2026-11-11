@@ -21,16 +21,26 @@ export type LogWearInput = {
   score: number | null;
 };
 
+/**
+ * `log_wear`'s own refusals (a garment that isn't the caller's own, or gone; too few garments):
+ * retrying the same wear can't succeed. Matched by the function's message, since its 42501 would
+ * otherwise read like a missing session's "permission denied", which a retry can fix.
+ */
+const isLogWearRefusal = (error: { message?: string }): boolean => error.message?.startsWith('log_wear') === true;
+
 /** Logs a wear of `input.garmentIds` on `input.wornOn`; retrying with the same `wearId` is safe. */
 export function logWear(input: LogWearInput, client: Client = supabase): Promise<RequestResult> {
-  return runRequest(() =>
-    client.rpc('log_wear', {
-      p_wear_id: input.wearId,
-      p_garment_ids: [...input.garmentIds],
-      p_worn_on: input.wornOn,
-      ...(input.occasion !== null && { p_occasion: input.occasion }),
-      ...(input.score !== null && { p_score: input.score }),
-    }),
+  return runRequest(
+    () =>
+      client.rpc('log_wear', {
+        p_wear_id: input.wearId,
+        p_garment_ids: [...input.garmentIds],
+        p_worn_on: input.wornOn,
+        ...(input.occasion !== null && { p_occasion: input.occasion }),
+        ...(input.score !== null && { p_score: input.score }),
+      }),
+    undefined,
+    isLogWearRefusal,
   );
 }
 

@@ -12,6 +12,7 @@ import { kvGet, kvRemove } from '../lib/kv';
 import { storeLucky } from '../outfits/storedLucky';
 import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
+import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
 import { getProfile, type Profile } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
@@ -98,6 +99,7 @@ beforeEach(() => {
   mockCloset.status = 'ready';
   mockedFetch.mockReset();
   mockedLogWear.mockReset();
+  kvRemove(wearQueueKey('user-1'));
   mockedUuid.mockReset();
   mockedUuid.mockReturnValueOnce('wear-1').mockReturnValueOnce('wear-2');
   mockedPush.mockClear();
@@ -293,6 +295,75 @@ describe('the lucky list', () => {
     expect(mockedFetch).toHaveBeenLastCalledWith({ occasion: 'office', date: '2026-11-08' });
   });
 
+  test('when every outfit is filtered out and a refetch fails, Today shows the error, not the empty message', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(ok(list([FIRST])));
+    const view = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    mockedFetch.mockResolvedValue({ ok: false, error: 'network' });
+    mockCloset.garments = CLOSET.map((g) => (g.id === JEANS ? { ...g, status: 'laundry' } : g));
+    await view.rerender(<TodayScreen />);
+    await advance(CLOSET_REFETCH_DELAY_MS);
+
+    expect(await screen.findByText("Couldn't reach the AI. Check your internet and try again.")).toBeOnTheScreen();
+    expect(screen.queryByText('No outfit came up today. Add a few more pieces to your closet.')).toBeNull();
+  });
+
+  test("a late result for an older occasion never replaces the current occasion's settled list", async () => {
+    mockedFetch.mockReturnValueOnce(ok(list([FIRST])));
+    await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    // Office, then straight back: the Office request is in flight when "no occasion" settles again.
+    const office = deferred(list([SECOND]));
+    const again = deferred(list([FIRST]));
+    mockedFetch.mockReturnValueOnce(office.promise).mockReturnValueOnce(again.promise);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+    await act(async () => {
+      office.resolve();
+      await Promise.resolve();
+    });
+
+    // The no-occasion list stays on screen while its own refetch is still on the way.
+    expect(screen.getByText('Jeans · Blue')).toBeOnTheScreen();
+    expect(screen.queryByText('Skirt · Camel')).toBeNull();
+  });
+
+  test('a pending debounce timer is cancelled when another trigger fetches the same fingerprint', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+
+    mockCloset.garments = CLOSET.map((g) => (g.id === SKIRT ? { ...g, colors: ['black'] } : g));
+    await view.rerender(<TodayScreen />);
+    // The occasion change fetches at once, with the new closet.
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+
+    await advance(CLOSET_REFETCH_DELAY_MS);
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a queued follow-up fetch doesn't run after blur", async () => {
+    const first = deferred(list());
+    mockedFetch.mockReturnValueOnce(first.promise).mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Office' }));
+
+    mockFocus.focused = false;
+    await view.rerender(<TodayScreen />);
+    await act(async () => {
+      first.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+  });
+
   test('a new wear count alone does not refetch', async () => {
     mockedFetch.mockReturnValue(ok(list()));
     const view = await render(<TodayScreen />);
@@ -360,7 +431,8 @@ describe("I'll wear it", () => {
       garmentIds: FIRST.garmentIds,
       wornOn: '2026-11-08',
       occasion: null,
-      score: null,
+      // The outfit's Jev score, so Stats' average and the diary show it.
+      score: 88,
     });
     expect(screen.getByRole('button', { name: "I'll wear it" })).toBeDisabled();
 
@@ -376,34 +448,61 @@ describe("I'll wear it", () => {
     expect(screen.getByRole('button', { name: "I'll wear it" })).toBeEnabled();
   });
 
-  test('a network error shows the message in the notice and the button works again with the same wear id', async () => {
+  test('offline, I\'ll wear it shows Logged and the queued note', async () => {
     mockedFetch.mockReturnValue(ok(list()));
-    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' }).mockResolvedValueOnce({ ok: true });
+    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' });
     await render(<TodayScreen />);
 
     await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
-    expect(await screen.findByText("Couldn't connect. Check your internet and try again.")).toBeOnTheScreen();
+    expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeDisabled();
+    expect(screen.getByText("Logged — it syncs when you're back online.")).toBeOnTheScreen();
+    expect(queuedWears('user-1').map((w) => [w.wearId, w.score])).toEqual([['wear-1', 88]]);
+    expect(mockedLogWear).toHaveBeenCalledTimes(1);
+  });
+
+  test('the queued note goes once the wear has been sent', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'network' });
+    const view = await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+    expect(await screen.findByText("Logged — it syncs when you're back online.")).toBeOnTheScreen();
+
+    // The flusher sent it and refreshed the closet, which re-renders Today.
+    dequeueWear('user-1', 'wear-1');
+    await view.rerender(<TodayScreen />);
+
+    expect(screen.queryByText("Logged — it syncs when you're back online.")).toBeNull();
+    expect(screen.getByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
+  });
+
+  test('another error shows the message and the button works again with the same wear id', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear.mockResolvedValueOnce({ ok: false, error: 'unknown' }).mockResolvedValueOnce({ ok: true });
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+    expect(await screen.findByText('Something went wrong. Try again.')).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: "I'll wear it" })).toBeEnabled();
 
     await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
     expect(await screen.findByRole('button', { name: 'Logged ✓' })).toBeOnTheScreen();
     expect(mockedLogWear.mock.calls.map(([input]) => input.wearId)).toEqual(['wear-1', 'wear-1']);
-    expect(screen.queryByText("Couldn't connect. Check your internet and try again.")).toBeNull();
+    expect(queuedWears('user-1')).toEqual([]);
   });
 
   test("a lost wear for one outfit keeps its id after trying another one", async () => {
     mockedFetch.mockReturnValue(ok(list()));
     mockedLogWear
-      .mockResolvedValueOnce({ ok: false, error: 'network' })
-      .mockResolvedValueOnce({ ok: false, error: 'network' })
+      .mockResolvedValueOnce({ ok: false, error: 'unknown' })
+      .mockResolvedValueOnce({ ok: false, error: 'unknown' })
       .mockResolvedValueOnce({ ok: true });
     await render(<TodayScreen />);
 
     await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
-    await screen.findByText("Couldn't connect. Check your internet and try again.");
+    await screen.findByText('Something went wrong. Try again.');
     await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
     await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
-    await screen.findByText("Couldn't connect. Check your internet and try again.");
+    await screen.findByText('Something went wrong. Try again.');
     await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
     await fireEvent.press(screen.getByRole('button', { name: "I'll wear it" }));
 
@@ -442,7 +541,7 @@ describe('other states', () => {
     mockedFetch.mockReturnValue(ok(list(undefined, null)));
     await render(<TodayScreen />);
 
-    await fireEvent.press(await screen.findByRole('button', { name: 'Add your city for the weather' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Sunday · Add your city for the weather' }));
     expect(mockedPush).toHaveBeenCalledWith('/city');
   });
 
@@ -451,9 +550,16 @@ describe('other states', () => {
     mockedGetProfile.mockResolvedValue({ city_name: 'Atlantis' } as Profile);
     await render(<TodayScreen />);
 
-    await fireEvent.press(await screen.findByRole('button', { name: 'Weather unavailable for Atlantis' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Sunday · Weather unavailable for Atlantis' }));
     expect(mockedPush).toHaveBeenCalledWith('/city');
     expect(screen.queryByText('Add your city for the weather')).toBeNull();
+  });
+
+  test('the header shows the weekday while the weather is still unknown', async () => {
+    mockedFetch.mockReturnValue(new Promise(() => undefined));
+    await render(<TodayScreen />);
+
+    expect(await screen.findByText('Sunday')).toBeOnTheScreen();
   });
 
   test('with weather the profile is not read', async () => {

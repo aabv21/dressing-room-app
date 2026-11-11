@@ -38,7 +38,7 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 
 | Component | Runs | What it does |
 |---|---|---|
-| Expo app | Phone | Five tabs (Today, Closet, Build, For you, Profile) plus the camera, review, garment detail, rating and city screens. Keeps the closet, today's lucky list and the last For you ideas in a key-value store for offline reading. |
+| Expo app | Phone | Five tabs (Today, Closet, Build, For you, Profile) plus the camera, review, garment detail, rating and city screens. Keeps the closet, today's lucky list, the last For you ideas and the last fetched wear history in a key-value store for offline reading. |
 | Upload queue | Phone | `src/closet/upload/`: a SQLite queue that takes each photo through prepare, upload and commit, saving the stage reached before the next starts. Two items at a time, backoff from 5 s doubling to 10 min, 8 attempts. |
 | `garment-cutout` | Phone | A local native module: iOS 17+ Vision foreground masks and Android ML Kit subject segmentation remove the photo's background. Without it, the original photo is kept. |
 | Auth | Supabase | Email and password (8 characters or more), Sign in with Apple and Sign in with Google through native ID tokens, and a 6-digit password-reset code by email. |
@@ -170,7 +170,7 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | `public.rating_cache`, `lucky_cache`, `for_you_cache` | AI results by cache key; a degraded entry is served for an hour, a For you entry for 7 days | A daily `pg_cron` job deletes degraded entries after 2 hours, rating and lucky entries after 30 days and For you entries after 8 days, except each user's newest For you entry; the account's deletion removes the rest |
 | `public.weather_cache` | Forecast summaries by place and hour, with no user id | 2 days (the same daily job; [`database.md`](database.md) has the details) |
 | `public.apple_tokens` | The Sign in with Apple refresh token, for revocation | Until the account is deleted |
-| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list and For you ideas, cached images | Copies go after upload; the rest until sign-out or deletion clears it |
+| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list, For you ideas and wear history, cached images | Copies go after upload; the rest until sign-out or deletion clears it |
 | `~/dressing-room-backups/` | Nightly dumps and photos on the owner's Mac | The newest 14 complete backups |
 
 ## What happens when something fails
@@ -186,6 +186,8 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | Open-Meteo fails or the city can't be geocoded | The weather is unknown: weather fit is neutral and the unsafe-for-weather check is ignored. A failed forecast for known coordinates marks the lucky list degraded. | Automatic. |
 | A daily quota is used up | Rating and lucky answer 429, and the app says so; For you serves its last entry first. | The next UTC day. |
 | The network fails on Today or For you | The app shows the last good answer with an offline note. | The next focus or reconnect refetches. |
+| "I'll wear it" without a connection (Today or the rating) | The wear goes to an on-device queue, the outfit shows Logged ✓ with "Logged — it syncs when you're back online.", and Stats and Diary count it. The queue is sent on the next launch, foreground or reconnect; the client wear id makes a resend harmless. A wear the server refuses (a garment deleted meanwhile) is dropped. | Automatic. Every other write (saving an outfit, garment edits and status changes, Donate, the "Wear it" pin, a Diary delete of a sent wear) needs the connection and shows its error instead: the owner's 2026-11-11 decision, so no edit can conflict with a later one. |
+| The network fails on Stats or Diary | Both show the stored wear history with an "Offline — your history as of …" note; Diary's Delete is disabled meanwhile. A Diary month older than the stored range shows the load error. | The next focus refetches. |
 | A deletion answer is lost | The marker stays, uploads stay paused, and the app says the deletion couldn't be confirmed. | The next check asks Auth: gone means the local cleanup; still there after 10 minutes lifts the marker. |
 | A backup step fails | The run exits 1 and leaves its `.partial` folder; no complete backup is rotated away. | Fix the cause; the next run starts clean. |
 
@@ -284,6 +286,19 @@ target, so the owner session sets spend caps or alerts with Anthropic and TypeSa
   the rating to Claude, the lucky list to the pre-score, and For you's lines to templates.
 - **A nightly backup on the owner's Mac, over a cloud copy.** The free tier has no downloadable
   backups, and the data is family data, so it stays local, encrypted at rest when FileVault is on.
+- **For you refreshes on demand, not on a schedule.** The spec's §5.2 lists a weekly pg_cron
+  refresh, but §3.7 only asks that the ideas change at most weekly. The function recomputes on the
+  tab's focus once its 7-day entry has expired (or the closet changed), so nothing runs, and costs,
+  for an account that never opens the tab.
+- **Only "I'll wear it" queues offline.** It is the morning's one write, and `log_wear` is already
+  idempotent by its client wear id, so a resend can't double-log. Garment edits, statuses, Donate,
+  pins, saved outfits and a Diary delete need the connection and show their error: queuing them
+  would mean ordering and merging edits that can conflict, for a case the owner accepted on
+  2026-11-11.
+- **"Missing something?" names a piece from the stored For you answer.** Mockup 01 screen 3 names
+  the piece that would lift the outfit. The rating screen takes it from the last For you ideas on the
+  device for the outfit's weakest slot, which costs no Jev call; computing it per rating would add
+  up to 10 Jev calls to every low score.
 
 ## Regenerating the diagrams
 

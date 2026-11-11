@@ -9,7 +9,9 @@ import type { Garment } from '../closet/garmentRepository';
 import { formatDayTitle, formatMonthTitle } from '../closet/DiarySegment';
 import { translate } from '../i18n';
 import { kvRemove } from '../lib/kv';
+import { enqueueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { isWornToday, markWornToday } from '../outfits/wornToday';
+import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
 import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
 import { colors } from '../ui/theme';
@@ -121,6 +123,8 @@ beforeEach(() => {
   mockedListWears.mockImplementation((from) => Promise.resolve(from === '2026-10-01' ? october() : []));
   mockedDeleteWear.mockResolvedValue({ ok: true });
   kvRemove('outfit.worn.user-1');
+  kvRemove(storedWearsKey('user-1'));
+  kvRemove(wearQueueKey('user-1'));
 });
 
 /** The buttons of the last `Alert.alert` call. */
@@ -218,6 +222,72 @@ describe('month view', () => {
     expect(mockedListWears).toHaveBeenLastCalledWith('2026-10-01', '2026-10-31');
   });
 
+  test('a fetched month is stored up to today', async () => {
+    await openDiary();
+
+    expect(readStoredWears('user-1')).toEqual({ from: '2026-10-01', to: '2026-10-28', wears: october() });
+  });
+
+  test('offline diary shows a stored month, and a month before the stored range shows the error', async () => {
+    storeWears('user-1', '2026-10-01', '2026-10-28', october());
+    mockedListWears.mockRejectedValue(new Error('offline'));
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+
+    expect(await screen.findByText('19 outfits')).toBeOnTheScreen();
+    expect(screen.getByText('Offline — your history as of October 28.')).toBeOnTheScreen();
+    for (const button of screen.getAllByRole('button', { name: 'Delete' })) expect(button).toBeDisabled();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Previous month' }));
+    expect(await screen.findByText("Couldn't load your outfit history. Check your internet and try again.")).toBeOnTheScreen();
+  });
+
+  test("a month's late answer never replaces the month switched to", async () => {
+    let finishOctober: (wears: WearWithItems[]) => void = () => undefined;
+    mockedListWears.mockImplementation((from) =>
+      from === '2026-10-01'
+        ? new Promise((resolve) => {
+            finishOctober = resolve;
+          })
+        : Promise.resolve([]),
+    );
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Previous month' }));
+    expect(await screen.findByText('No outfits logged this month')).toBeOnTheScreen();
+    await act(async () => {
+      finishOctober(october());
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole('header', { name: 'September 2026' })).toBeOnTheScreen();
+    expect(screen.getByText('No outfits logged this month')).toBeOnTheScreen();
+    expect(screen.queryByText('19 outfits')).toBeNull();
+  });
+
+  test('offline, a queued wear can still be deleted while the sent ones wait for the connection', async () => {
+    storeWears('user-1', '2026-10-01', '2026-10-28', october());
+    enqueueWear('user-1', { wearId: 'queued-1', garmentIds: [JEANS], wornOn: '2026-10-28', occasion: null, score: null });
+    mockedListWears.mockRejectedValue(new Error('offline'));
+    const alert = jest.spyOn(Alert, 'alert');
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+    expect(await screen.findByText('20 outfits')).toBeOnTheScreen();
+
+    expect(within(wearCard('w-28')).getByRole('button', { name: 'Delete' })).toBeDisabled();
+    const queued = within(wearCard('queued-1')).getByRole('button', { name: 'Delete' });
+    expect(queued).toBeEnabled();
+    await fireEvent.press(queued);
+    await act(() => {
+      lastAlertButtons(alert).find((button) => button.style === 'destructive')?.onPress?.();
+    });
+
+    expect(queuedWears('user-1')).toEqual([]);
+    expect(mockedDeleteWear).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
   test('a load failure shows the error instead of the count', async () => {
     mockedListWears.mockRejectedValue(new Error('offline'));
     await render(<ClosetScreen />);
@@ -302,6 +372,55 @@ describe('deleting a wear', () => {
     expect(mockRefresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('diary-thumb-2026-10-28')).toBeNull();
     expect(screen.queryByTestId('diary-wear-w-28')).toBeNull();
+    alert.mockRestore();
+  });
+
+  test('a wear queued offline shows on its day, and Delete removes it from the queue without a request', async () => {
+    enqueueWear('user-1', { wearId: 'queued-1', garmentIds: [JEANS], wornOn: '2026-10-28', occasion: null, score: null });
+    markWornToday('user-1', '2026-10-28', [JEANS]);
+    const alert = jest.spyOn(Alert, 'alert');
+    await render(<ClosetScreen />);
+    await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+    expect(await screen.findByText('20 outfits')).toBeOnTheScreen();
+
+    await fireEvent.press(within(wearCard('queued-1')).getByRole('button', { name: 'Delete' }));
+    const confirm = lastAlertButtons(alert).find((button) => button.style === 'destructive');
+    await act(() => {
+      confirm?.onPress?.();
+    });
+
+    expect(mockedDeleteWear).not.toHaveBeenCalled();
+    expect(queuedWears('user-1')).toEqual([]);
+    expect(isWornToday('user-1', '2026-10-28', [JEANS])).toBe(false);
+    expect(await screen.findByText('19 outfits')).toBeOnTheScreen();
+    alert.mockRestore();
+  });
+
+  test('a double tap on Delete asks once and deletes once', async () => {
+    const alert = jest.spyOn(Alert, 'alert');
+    let finish: (value: { ok: true }) => void = () => undefined;
+    mockedDeleteWear.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await openDiary();
+
+    const remove = within(wearCard('w-28')).getByRole('button', { name: 'Delete' });
+    await fireEvent.press(remove);
+    const confirm = lastAlertButtons(alert).find((button) => button.style === 'destructive');
+    await act(() => {
+      confirm?.onPress?.();
+      confirm?.onPress?.();
+    });
+    await fireEvent.press(remove);
+
+    expect(mockedDeleteWear).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish({ ok: true });
+      await Promise.resolve();
+    });
     alert.mockRestore();
   });
 

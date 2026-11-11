@@ -55,11 +55,28 @@ describe('withClothingType', () => {
     });
   });
 
-  test('clears a body type the new set does not offer', () => {
+  test('clears a body type the new set does not offer, and remembers it', () => {
     expect(withClothingType(draft({ clothingType: 'feminine', bodyType: 'hourglass' }), 'masculine')).toEqual({
       clothingType: 'masculine',
       bodyType: null,
+      clearedBodyType: 'hourglass',
     });
+  });
+
+  test('toggling the clothing type back restores the last valid body type', () => {
+    const start = draft({ clothingType: 'feminine', bodyType: 'hourglass' });
+    const away = { ...start, ...withClothingType(start, 'masculine') };
+    const back = { ...away, ...withClothingType(away, 'feminine') };
+
+    expect(back.bodyType).toBe('hourglass');
+    expect(back.clearedBodyType).toBeNull();
+  });
+
+  test('a body type picked meanwhile wins over the remembered one', () => {
+    const start = draft({ clothingType: 'feminine', bodyType: 'hourglass' });
+    const away = { ...start, ...withClothingType(start, 'masculine'), bodyType: 'rectangle' as const };
+
+    expect(withClothingType(away, 'feminine')).toEqual({ clothingType: 'feminine' });
   });
 });
 

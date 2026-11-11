@@ -9,6 +9,8 @@ const mockQueue = {
   clear: jest.fn(),
   resume: jest.fn(),
 };
+// The signed-in layout mounts it; it would load the Supabase client through logWear.
+jest.mock('../outfits/WearQueueFlusher', () => ({ WearQueueFlusher: () => null }));
 jest.mock('../closet/UploadQueueProvider', () => ({
   UploadQueueProvider: ({ children }: { children?: React.ReactNode }) => children,
   useUploadQueue: () => ({

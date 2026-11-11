@@ -665,7 +665,7 @@ describe('cache and quota', () => {
 
     const changes: [string, () => void][] = [
       ['an edit', () => (w.garments = closet().map((row, i) => (i === 0 ? { ...row, colors: ['cream'] } : row)))],
-      ['a profile edit', () => (w.profile = { ...PROFILE, updated_at: '2026-11-07T00:00:00Z' })],
+      ['a profile edit', () => (w.profile = { ...PROFILE, styles: ['elegant'], updated_at: '2026-11-07T00:00:00Z' })],
     ];
     for (const [, change] of changes) {
       const before = [...w.cache.keys()];
@@ -675,6 +675,13 @@ describe('cache and quota', () => {
       expect(w.cache.size).toBe(1);
       expect([...w.cache.keys()]).not.toEqual(before);
     }
+  });
+
+  test('a language-only profile change keeps the cached ideas', async () => {
+    const w = world();
+    await forYou(w);
+    w.profile = { ...PROFILE, updated_at: '2026-11-07T00:00:00Z' };
+    expect(count((await forYou(w)).calls, 'quota')).toBe(0);
   });
 
   test('a malformed cache entry is a miss', async () => {

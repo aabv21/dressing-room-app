@@ -1,7 +1,9 @@
 import { useCallback, useState } from 'react';
 
+import { forgetDisplayCaches } from '../account/forgetAccount';
 import { useI18n } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
+import { useAuth } from './AuthProvider';
 import { signOut } from './authService';
 import type { AuthErrorKey } from './errors';
 
@@ -12,6 +14,7 @@ import type { AuthErrorKey } from './errors';
  */
 export function useSignOut(): { signOut: () => void; signingOut: boolean; error: AuthErrorKey | undefined } {
   const { t } = useI18n();
+  const { userId } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<AuthErrorKey | undefined>(undefined);
 
@@ -20,12 +23,13 @@ export function useSignOut(): { signOut: () => void; signingOut: boolean; error:
     setSigningOut(true);
     void signOut().then((result) => {
       setSigningOut(false);
+      if (result.ok && userId !== null) forgetDisplayCaches(userId);
       if (!result.ok) {
         setError(result.error);
         announceForAccessibility(t(result.error));
       }
     });
-  }, [t]);
+  }, [t, userId]);
 
   return { signOut: run, signingOut, error };
 }
