@@ -637,6 +637,14 @@ describe('the lucky list', () => {
     }
   });
 
+  test('a language-only profile change keeps the cached list', async () => {
+    const w = world();
+    await lucky(w);
+    w.profile = { ...PROFILE, updated_at: '2026-11-08T07:00:00Z' };
+    const { calls } = await lucky(w);
+    expect(count(calls, 'jev')).toBe(0);
+  });
+
   test('a profile edit is a new cache entry', async () => {
     const w = world();
     await lucky(w);

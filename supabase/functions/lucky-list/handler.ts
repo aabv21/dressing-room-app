@@ -42,6 +42,7 @@ import {
   sha256Hex,
   userIdFromJwt,
   weatherSummaryFrom,
+  profileIdentity,
 } from '../_shared/userContext.ts';
 import { locationKey, type WeatherSummary } from '../_shared/weather.ts';
 
@@ -88,7 +89,7 @@ export const MAX_PER_PIECE = 4;
  * lands inside the app's function deadline.
  */
 export const RANK_BUDGET_MS = 15_000;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 type LuckyInput = { date: string; occasion: Occasion | null };
 
@@ -128,6 +129,8 @@ const locationOf = (profile: ProfileRow | null): string | null =>
  * carries whether `pinned_on` equals *this request's* date, not the raw value: "Wear it" sets
  * `pinned_on` to tomorrow, and the raw date would otherwise change today's fingerprint too,
  * spending quota and re-ranking a list that "Wear it" was never meant to touch.
+ * The profile part is `profileIdentity`: the fields a list depends on, not `updated_at`, so a
+ * language toggle keeps today's list.
  */
 function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, input: LuckyInput): Promise<string> {
   // Only garments that can be candidates count: an upload still being read (no category
@@ -154,7 +157,7 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
       occasion: input.occasion,
       location: locationOf(profile),
       fingerprint,
-      profile: profile?.updated_at ?? null,
+      profile: profileIdentity(profile),
     }),
   );
 }

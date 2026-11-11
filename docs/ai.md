@@ -317,9 +317,12 @@ owner session (see "Calibration" below):
 
 ### Reasons
 
-Template keys, never model text: the two strongest dimensions with normalized ≥ 0.6 as
-`rating.reason.<dimension>.good`, and the weakest with normalized < 0.5 as
-`rating.reason.<dimension>.warn` (ties keep the dimension order above). `color_harmony`'s good reason
+Template keys, never model text, 2–3 of them (spec §3.5): the two strongest dimensions with
+normalized ≥ 0.6 as `rating.reason.<dimension>.good`, and the weakest with normalized < 0.5 as
+`rating.reason.<dimension>.warn`. While that gives fewer than two, the list fills in this order:
+the weakest as `warn` if none is picked yet and it is below 0.6, the strongest unused dimension at
+0.5 or above as `good`, then the next weakest as `warn`. Scores are compared at 3 decimals, so float
+noise can't flip a tie, and ties keep the dimension order above. `color_harmony`'s good reason
 gets `params.colors`: the outfit's first three distinct color enum values, comma-separated, which
 the app localizes through `garment.color.*` before interpolating.
 
@@ -351,8 +354,10 @@ their range are clamped instead of rejected.
 user's JWT (`verify_jwt = true`). Garments and the profile are read with that JWT, so RLS applies;
 the quota, `rating_cache` and `weather_cache` use the service role. The cache key hashes each
 garment's id and rating-relevant columns (category, colors, pattern, formality, fit, seasons,
-warmth, status; not `updated_at`, which logging a wear bumps), `profile.updated_at`, the occasion,
-the season, the weather band and rain. `donated` is one more `status` the outfit rules already
+warmth, status; not `updated_at`, which logging a wear bumps), the profile's rating-relevant fields
+(`profileIdentity`: clothing type, body type, height, age group, styles and the city's coordinates;
+not `updated_at`, so a language toggle keeps the entry), the occasion, the season, the weather band
+and rain. `CACHE_VERSION` is 2. `donated` is one more `status` the outfit rules already
 exclude (not `available`), so a donated garment is never a swap candidate, exactly like one in the
 laundry or lent out.
 
@@ -373,7 +378,8 @@ laundry or lent out.
 **Degraded results.** `rating_cache` stores the result with an internal `degraded` marker, which is
 stripped from every response. A result is degraded when it is a Claude estimate, or when its swap
 search was skipped or failed (the closet read failed, every candidate's rating failed, or the time
-budget ran out). `cacheGet` serves a degraded entry only while it is younger than an hour
+budget ran out). A search the budget cut short still offers a qualifying swap among the candidates
+it already rated; the result is degraded either way, since the unrated ones might have been better. `cacheGet` serves a degraded entry only while it is younger than an hour
 (`rating_cache.created_at`; `cachePut` rewrites `created_at` on every upsert), then treats it as a
 miss, so the next call recomputes and counts against the quota. Any other entry never expires.
 
@@ -393,7 +399,8 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
 2. `missingSlots` non-empty → `{ kind: 'too_small', missing, weather }`, with no cache, quota or Jev.
    `donated` is one more `status` the rules already exclude (not `available`), so a donated
    garment counts towards no slot and is never a candidate, exactly like one in the laundry.
-3. The cache key hashes the date, the occasion, `locationKey(profile)`, `profile.updated_at` and a
+3. The cache key (`CACHE_VERSION` 2) hashes the date, the occasion, `locationKey(profile)`,
+   `profileIdentity(profile)` (not `updated_at`, so a language toggle keeps the list) and a
    closet fingerprint: each garment's id and rating-relevant columns (category, colors, pattern,
    formality, fit, seasons, warmth, status, and whether `pinned_on` equals *this request's* date;
    not `updated_at` or `last_worn_at`, which logging a wear bumps), so an "I'll wear it" tap
@@ -771,8 +778,9 @@ hemisphere without one).
 2. Fewer than 3 wardrobe garments with a category (not donated; laundry and lent count) →
    `{ kind: 'too_small' }`, with no cache, quota or model call (a brand-new closet). A closet that
    is all in the wash still gets ideas.
-3. The cache key hashes a version, the language, the season, `profile.updated_at` (clothing type,
-   body, styles) and a wardrobe fingerprint: every categorized garment that isn't donated, by its id
+3. The cache key hashes a version (`CACHE_VERSION` 3), the language, the season,
+   `profileIdentity(profile)` (clothing type, body, styles; not `updated_at`, so saving the profile
+   without changing those keeps the entry) and a wardrobe fingerprint: every categorized garment that isn't donated, by its id
    and rating-relevant columns (category, colors, pattern, formality, fit, seasons, warmth; not
    `status`, so the laundry and lending keep the entry, nor `updated_at` or `last_worn_at`, which
    logging a wear bumps, nor `pinned_on`). Donating a garment changes it; the season turning is a

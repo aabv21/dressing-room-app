@@ -33,6 +33,7 @@ import {
   sha256Hex,
   userIdFromJwt,
   UUID,
+  profileIdentity,
 } from '../_shared/userContext.ts';
 import type { WeatherSummary } from '../_shared/weather.ts';
 
@@ -69,7 +70,7 @@ export const MAX_SWAP_CANDIDATES = 8;
 export const SWAP_BUDGET_MS = 15_000;
 const MIN_GARMENTS = 2;
 const MAX_GARMENTS = 6;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 type RateInput = { garmentIds: string[]; occasion: Occasion | null; date: string };
 
@@ -125,8 +126,9 @@ async function readInput(request: Request): Promise<RateInput | null> {
 
 /**
  * The cache key: each garment's rating-relevant columns (not `updated_at`, which logging a wear
- * bumps, so a wear would otherwise spend the quota again), the profile version, the occasion, the
- * season and the weather bucket.
+ * bumps, so a wear would otherwise spend the quota again), the profile's rating-relevant fields
+ * (`profileIdentity`, so a language toggle keeps the entry), the occasion, the season and the
+ * weather bucket.
  */
 function cacheKey(outfit: readonly RuleGarment[], ctx: RatingContext): Promise<string> {
   const items = [...outfit]
@@ -136,7 +138,7 @@ function cacheKey(outfit: readonly RuleGarment[], ctx: RatingContext): Promise<s
     JSON.stringify({
       v: CACHE_VERSION,
       items,
-      profile: ctx.profile?.updated_at ?? null,
+      profile: profileIdentity(ctx.profile),
       occasion: ctx.occasion,
       season: ctx.season,
       weatherBand: ctx.weather?.band ?? null,
@@ -158,7 +160,8 @@ const overBudget = (ctx: RatingContext): boolean => Date.now() - ctx.startedAt >
  * slot that pass the occasion/season/weather rules on their own (Jev judges the combination),
  * least recently worn first, capped at `MAX_SWAP_CANDIDATES`, each rated with Jev (never the
  * fallback). A swap is offered only when it beats `current` by `swapMinGain`. No candidate
- * rating starts after `SWAP_BUDGET_MS`; a search cut short that way is `UNKNOWN_SWAP`.
+ * rating starts after `SWAP_BUDGET_MS`; a search cut short that way still offers a qualifying swap
+ * it already found, and otherwise is `UNKNOWN_SWAP`; either way the result is cached as degraded.
  */
 async function findSwap(
   ctx: RatingContext,
@@ -204,13 +207,17 @@ async function findSwap(
     const rating = await jevRating(ctx.env, ctx.fetch, stateFor(ctx, variant), ctx.rand);
     return rating === null ? null : { toId: candidate.id, score: rating.score };
   });
-  if (rated.includes('skipped')) return UNKNOWN_SWAP;
+  // A search the budget cut short still offers a qualifying swap it already found (cached as degraded).
+  const skipped = rated.includes('skipped');
   const scored = rated.filter((entry) => entry !== null && entry !== 'skipped');
   // Every candidate's rating failed: nothing is known about them, so don't claim none is better.
   if (scored.length === 0) return UNKNOWN_SWAP;
   const best = scored.reduce((a, b) => (b.score > a.score ? b : a));
-  if (best.score - current < RATING_CONFIG.swapMinGain) return { swap: null, noBetterSwap: true, degraded: false };
-  return { swap: { fromId: from.id, toId: best.toId, score: best.score }, noBetterSwap: false, degraded: false };
+  if (best.score - current < RATING_CONFIG.swapMinGain) {
+    // A cut-short search can't claim the unrated candidates are no better.
+    return skipped ? UNKNOWN_SWAP : { swap: null, noBetterSwap: true, degraded: false };
+  }
+  return { swap: { fromId: from.id, toId: best.toId, score: best.score }, noBetterSwap: false, degraded: skipped };
 }
 
 function resultFrom(

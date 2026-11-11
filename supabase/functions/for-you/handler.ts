@@ -58,6 +58,7 @@ import {
   runJev,
   sha256Hex,
   userIdFromJwt,
+  profileIdentity,
 } from '../_shared/userContext.ts';
 
 export type ForYouDeps = { env: FnEnv; fetch: typeof fetch; now?: () => number };
@@ -108,7 +109,7 @@ export const LINES_DEADLINE_MS = 38_000;
 /** With no more than this left before `LINES_DEADLINE_MS`, Claude is skipped and every idea gets its template. */
 export const MIN_LINES_TIMEOUT_MS = 2_000;
 // Bump whenever the archetypes, the gain rules or the response shape change: it's what invalidates the stored entries.
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 const LANGUAGES = ['en', 'es'] as const satisfies readonly Language[];
 
@@ -146,7 +147,7 @@ function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
 }
 
 /**
- * The cache key: the language, the season, `profile.updated_at` (clothing type, body and styles)
+ * The cache key: the language, the season, `profileIdentity` (clothing type, body and styles)
  * and a fingerprint of the wardrobe's categorized garments — id and rating-relevant columns, not
  * `status` (the laundry and lending don't change For you), nor `updated_at` or `last_worn_at`,
  * which logging a wear bumps (as lucky-list's; a wear would otherwise spend the quota again).
@@ -164,7 +165,7 @@ function cacheKey(
     .sort(byId)
     .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth]);
   return sha256Hex(
-    JSON.stringify({ v: CACHE_VERSION, fingerprint, profile: profile?.updated_at ?? null, language, season }),
+    JSON.stringify({ v: CACHE_VERSION, fingerprint, profile: profileIdentity(profile), language, season }),
   );
 }
 
