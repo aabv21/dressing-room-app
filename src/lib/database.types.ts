@@ -204,6 +204,9 @@ isOneToOne: false
             "consume_quota":
 { Args: { "p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
                            },
+"keep_alive":
+{ Args: Record<PropertyKey, never>; Returns: string
+                           },
 "log_wear":
 { Args: { "p_garment_ids": (string)[],"p_occasion"?: Database["public"]['Enums']["occasion"],"p_score"?: number,"p_wear_id": string,"p_worn_on": string }; Returns: string
                            },
