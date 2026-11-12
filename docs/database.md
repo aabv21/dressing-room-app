@@ -598,6 +598,15 @@ NOTE: the trigger also blocks the service role, so an admin reset of onboarding 
 run with the trigger disabled: `set local session_replication_role = replica;` in the same
 transaction as the `update` (as the table owner).
 
+### Keep-alive
+
+Supabase pauses a free project after 7 days without activity. `public.keep_alive()` returns
+`now()` and reads no table. It's the one function `anon` may execute, granted explicitly so that
+`.github/workflows/keepalive.yml` can call it daily with the public anon key. Without users for a
+week, the hosted project still sees activity. The workflow reads the repository variables
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` (AGENTS.md's Owner session). pgTAP:
+`supabase/tests/keep_alive.test.sql`.
+
 ### Account deletion and data export (Plan 5)
 
 Three Edge Functions, all `verify_jwt = true` and called by the signed-in user
