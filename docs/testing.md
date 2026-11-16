@@ -640,8 +640,8 @@ block). `integration/helpers.ts`'s `latestEmailCode(email)`:
 NOTE: the local stack allows `[auth.rate_limit].email_sent = 2` emails per hour. `requestPasswordReset`
 reports `over_email_send_rate_limit` as success (a code was already sent), and GoTrue returns the
 same code when that project-wide cap is reached, so past it a user is told a code is on its way
-when none is. The integration session must set the email and SMTP/SES sending limits generously
-for the hosted project.
+when none is. The integration session must set the hosted email rate limit generously (30 an hour, within
+Brevo's free 300 a day).
 
 To check a code by hand during manual testing, open `http://127.0.0.1:54424` in a browser while
 `pnpm db:start` is running and read the message body directly — the reset email template
