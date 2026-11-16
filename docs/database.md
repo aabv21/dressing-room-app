@@ -458,8 +458,10 @@ select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'extrac
 ```
 
 and the function's own secrets with
-`pnpm exec supabase secrets set EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`
-(`ANTHROPIC_BASE_URL` stays unset there, so the function uses `https://api.anthropic.com`).
+`supabase secrets set --project-ref <ref> EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`,
+run from an empty directory: from the repo, the CLI also pushes `config.toml`'s local-only
+`[edge_runtime.secrets]` (AGENTS.md). `ANTHROPIC_BASE_URL` stays unset there, so the function uses
+`https://api.anthropic.com`.
 
 ### Logging a wear
 
