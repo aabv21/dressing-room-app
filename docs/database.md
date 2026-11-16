@@ -458,8 +458,10 @@ select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'extrac
 ```
 
 and the function's own secrets with
-`pnpm exec supabase secrets set EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`
-(`ANTHROPIC_BASE_URL` stays unset there, so the function uses `https://api.anthropic.com`).
+`supabase secrets set --project-ref <ref> EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`,
+run from an empty directory: from the repo, the CLI also pushes `config.toml`'s local-only
+`[edge_runtime.secrets]` (AGENTS.md). `ANTHROPIC_BASE_URL` stays unset there, so the function uses
+`https://api.anthropic.com`.
 
 ### Logging a wear
 
@@ -597,6 +599,15 @@ back into onboarding. The app's `completeOnboarding` sends Postgres's `'now'` li
 NOTE: the trigger also blocks the service role, so an admin reset of onboarding (back to null) must
 run with the trigger disabled: `set local session_replication_role = replica;` in the same
 transaction as the `update` (as the table owner).
+
+### Keep-alive
+
+Supabase pauses a free project after 7 days without activity. `public.keep_alive()` returns
+`now()` and reads no table. It's the one function `anon` may execute, granted explicitly so that
+`.github/workflows/keepalive.yml` can call it daily with the public anon key. Without users for a
+week, the hosted project still sees activity. The workflow reads the repository variables
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` (AGENTS.md's Owner session). pgTAP:
+`supabase/tests/keep_alive.test.sql`.
 
 ### Account deletion and data export (Plan 5)
 

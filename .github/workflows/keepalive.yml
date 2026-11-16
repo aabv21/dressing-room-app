@@ -1,0 +1,38 @@
+name: Keep alive
+
+# Supabase pauses a free project after 7 days without activity, and a family app can go a week
+# unused. A daily call to `public.keep_alive()` (it reads nothing) keeps the hosted project awake.
+# Needs the repository variables SUPABASE_URL and SUPABASE_ANON_KEY, both public values the app
+# already ships; until they're set, it only logs a notice.
+# NOTE: GitHub stops scheduled workflows in a repository with no activity for 60 days (it emails a
+# warning first); Dependabot's weekly pull requests normally keep it active. Upgrade path: the Pro
+# plan, which never pauses.
+on:
+  schedule:
+    - cron: '23 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping the hosted project
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Call keep_alive
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::notice::SUPABASE_URL and SUPABASE_ANON_KEY aren't set as repository variables yet; nothing to ping."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/keep_alive" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H 'Content-Type: application/json' \
+            -d '{}'

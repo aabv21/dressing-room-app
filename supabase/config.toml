@@ -201,7 +201,7 @@ password_requirements = ""
 # NOTE: `requestPasswordReset` reports `over_email_send_rate_limit` as success (a code was already
 # sent), but GoTrue returns that same code when this project-wide hourly email cap is reached, so
 # a user past the cap is told a code is on its way when none is. The integration session must set
-# this (and the hosted SMTP/SES sending limits) generously for the family's real usage.
+# this (and the hosted SMTP sending limits) generously for the family's real usage.
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
 email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
@@ -413,7 +413,8 @@ inspector_port = 8183
 # The Deno major version to use.
 deno_version = 2
 
-# Local-only values; the hosted project sets its own with `supabase secrets set`.
+# Local-only values; the hosted project sets its own with `supabase secrets set`, run from an empty
+# directory: from this repo the CLI pushes these values to the hosted project too (AGENTS.md).
 # EXTRACT_WEBHOOK_SECRET must match the `extract_webhook_secret` Vault secret in
 # seed.sql. ANTHROPIC_BASE_URL points at integration/mockAnthropic.ts on the
 # host, so local runs never reach the real Claude API. The TypeSafe (Jev) and

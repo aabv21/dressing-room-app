@@ -126,12 +126,12 @@ Everything above runs offline. These steps need the owner's accounts, once, at t
 
 1. Pick the final app name and bundle id.
 2. Create the hosted Supabase project, link it, push the migrations, deploy the seven functions, and mirror `supabase/config.toml`'s Auth settings in the dashboard.
-3. Set the hosted secrets (the extraction webhook's Vault secrets and `EXTRACT_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, and the `APPLE_*` ones, without which account deletion can't revoke Sign in with Apple), configure Sign in with Apple and Google and the Amazon SES email sender, and set spend caps or alerts with Anthropic and TypeSafe.
+3. Set the hosted secrets (the extraction webhook's Vault secrets and `EXTRACT_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, and the `APPLE_*` ones, without which account deletion can't revoke Sign in with Apple), configure Sign in with Apple and Google and the email sender (custom SMTP through Brevo), and set spend caps or alerts with Anthropic and TypeSafe.
 4. Run `eas init`, set the app's four public `EXPO_PUBLIC_*` values as EAS environment variables, then rebuild the dev client (`garment-cutout` is a local native module and `expo-sharing` has native code, so an older dev client fails to load the Profile tab).
 5. Run the live checks on real phones: the AI and weather services, the camera and cut-outs, large text and screen readers, sign-in, export and deletion.
 6. Label about 50 saved outfits and run `pnpm calibrate` to tune Jev's weights and bands.
 7. Schedule the nightly `pnpm backup` with launchd and restore it once.
-8. Publish the [privacy policy](docs/privacy-policy.md) (fill in its `<owner email>`) on GitHub Pages and fill in the App Store and Play privacy forms.
+8. Publish the [privacy policy](docs/privacy-policy.md) on GitHub Pages and fill in the App Store and Play privacy forms.
 9. Run `pnpm e2e`.
 10. Run `eas build` and `eas submit` against [`eas.json`](./eas.json)'s profiles, to put a build on TestFlight and the Play internal track, and add testers.
 11. Check CI's first `database` run.
