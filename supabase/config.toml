@@ -413,7 +413,8 @@ inspector_port = 8183
 # The Deno major version to use.
 deno_version = 2
 
-# Local-only values; the hosted project sets its own with `supabase secrets set`.
+# Local-only values; the hosted project sets its own with `supabase secrets set`, run from an empty
+# directory: from this repo the CLI pushes these values to the hosted project too (AGENTS.md).
 # EXTRACT_WEBHOOK_SECRET must match the `extract_webhook_secret` Vault secret in
 # seed.sql. ANTHROPIC_BASE_URL points at integration/mockAnthropic.ts on the
 # host, so local runs never reach the real Claude API. The TypeSafe (Jev) and
