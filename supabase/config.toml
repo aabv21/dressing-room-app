@@ -201,7 +201,7 @@ password_requirements = ""
 # NOTE: `requestPasswordReset` reports `over_email_send_rate_limit` as success (a code was already
 # sent), but GoTrue returns that same code when this project-wide hourly email cap is reached, so
 # a user past the cap is told a code is on its way when none is. The integration session must set
-# this (and the hosted SMTP/SES sending limits) generously for the family's real usage.
+# this (and the hosted SMTP sending limits) generously for the family's real usage.
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
 email_sent = 2
 # Number of SMS messages that can be sent per hour. Requires auth.sms to be enabled.
