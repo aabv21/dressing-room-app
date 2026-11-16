@@ -7,7 +7,7 @@ Last updated: November 9, 2026
 Dressing Room is a digital closet app: you photograph your clothes, and it suggests outfits, rates
 the outfits you build and keeps track of what you wear. This page explains what the app collects,
 where it is kept, who processes it and how you can export or delete it. Questions go to
-`<owner email>`.
+[hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
 
 ## What the app collects
 
@@ -60,7 +60,7 @@ folder until it is uploaded.
 | Open-Meteo | Your city's coordinates, or the city's name when there are none | The day's weather |
 | Apple | Your Sign in with Apple identity, and, when you delete your account, a request to revoke the app's access | Sign-in, and ending that link when you leave |
 | Google | Your Sign in with Google identity | Sign-in |
-| Amazon SES | Your email address and the confirmation or reset code | Sending your account's emails |
+| Brevo | Your email address and the confirmation or reset code | Sending your account's emails |
 
 The AI services receive these requests from the app's server, never directly from your phone, and
 the app's server never sends them your photos except for the garment recognition described above.
@@ -91,4 +91,4 @@ give your city or body details at all.
 ## Changes and contact
 
 If this policy changes, the new version will be posted on this page with a new date. For any
-question, or to ask for your data or its deletion, write to `<owner email>`.
+question, or to ask for your data or its deletion, write to [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
