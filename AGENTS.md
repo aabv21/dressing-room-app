@@ -183,7 +183,7 @@ The local backend is Supabase running in Docker (via OrbStack), driven only thro
 
 ## Release
 
-`eas.json` holds the EAS Build and EAS Submit configuration; `app.json` has no `extra.eas.projectId` or top-level `owner` yet — `eas init` sets both, in the owner session below.
+`eas.json` holds the EAS Build and EAS Submit configuration; `app.json`'s `extra.eas.projectId` and top-level `owner` link it to the EAS project `@aabv211996/dressing-room-app`. The CLI isn't a dependency: run it as `pnpm dlx eas-cli@27 <command>` (`eas.json` requires 27 or later).
 
 - `cli.version: ">= 27.0.0"` — EAS CLI stops with an error when the installed version is older than the major this config was written against.
 - Three build profiles: `development` (`distribution: "internal"`, `developmentClient: true`, for a build with `expo-dev-client`), `preview` (`distribution: "internal"` too; on iOS that's an ad-hoc build by default since this is a regular Apple Developer membership, not an Enterprise one, so `ios.enterpriseProvisioning` doesn't apply; on Android `android.buildType: "apk"` so the artifact installs directly instead of needing a store), and `production` (`distribution: "store"`, `autoIncrement: true` so every build bumps the developer-facing build number without a commit).
@@ -234,7 +234,7 @@ Checks that need the owner's accounts or hardware, run once at the end, in this 
 
 ### 4. EAS project and dev client
 
-- **`eas init`** writes `app.json`'s `extra.eas.projectId` and top-level `owner`.
+- **`eas init`** writes `app.json`'s `extra.eas.projectId` and top-level `owner`. NOTE: it also writes the plugins' resolved config into `app.json` (permissions, localizations, router `extra`); keep only those two keys, since the plugins generate the rest at prebuild.
 - **EAS environment variables.** For each of `development`, `preview` and `production`, `eas env:set` the four `EXPO_PUBLIC_*` values with `--visibility plaintext` (the hosted Supabase URL and anon key, and the two Google client ids), as shown in "Release" above, and check them with `eas env:list`. Without them a cloud build crashes at launch.
 - **Rebuild the dev client** (`pnpm expo run:ios` / `pnpm expo run:android`, or an EAS `development` build), since garment-cutout is a local native module, `expo-sharing` (data export) has native code and the Google `iosUrlScheme` changed; an older dev client fails to load the Profile tab.
 
