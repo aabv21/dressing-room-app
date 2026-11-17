@@ -4,12 +4,12 @@
     "appVersionSource": "remote"
   },
   "build": {
-    "development": {
-      "distribution": "internal",
-      "developmentClient": true,
-      "environment": "development"
+    "base": {
+      "node": "24.22.1",
+      "pnpm": "11.1.0"
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "environment": "preview",
       "android": {
@@ -17,6 +17,7 @@
       }
     },
     "production": {
+      "extends": "base",
       "distribution": "store",
       "autoIncrement": true,
       "environment": "production"
