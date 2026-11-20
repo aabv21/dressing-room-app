@@ -108,6 +108,7 @@ Update `architecture.md` (and its diagrams) when a change alters a component, a 
 - Lint: typescript-eslint `strictTypeChecked` + `eslint-plugin-security` recommended + `eslint-plugin-react-hooks` recommended (see Supply-chain hardening for why not `eslint-config-expo`).
 - App identity (provisional until the owner picks a name): display name "Dressing Room", slug `dressing-room-app`, scheme `dressingroom`, bundle id / package `com.aabv21.dressingroom`.
 - Light-only appearance (`userInterfaceStyle: "light"`) — v1 has no dark palette.
+- The app icon and splash are provisional (a white hanger on the accent violet): `assets/images/icon.svg` is the source of the five PNGs in `assets/images/`; replace them all when the real logo exists.
 - Wear counts are always spelled out ("never worn" / "1 wear" / "N wears"; es: "sin usar" / "1 uso" / "N usos"), never "N×".
 - CTAs are anchored pill buttons, 48pt tall minimum, 44pt hit targets everywhere.
 - No secrets in the app yet. Never put keys in `EXPO_PUBLIC_*`: they are inlined into the bundle.
