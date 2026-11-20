@@ -576,3 +576,4 @@ describe('SignInScreen errors', () => {
     expect(await within(screen.getByTestId('sign-in-email-container')).findByText('Enter your email.')).toBeOnTheScreen();
   });
 });
+
