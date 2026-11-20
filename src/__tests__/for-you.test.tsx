@@ -23,6 +23,7 @@ jest.mock('../auth/AuthProvider', () => ({
 
 jest.mock('../outfits/aiClient', () => ({
   fetchForYou: jest.fn(),
+  localDate: () => '2026-11-20',
 }));
 
 const mockedFetch = jest.mocked(fetchForYou);
@@ -100,7 +101,7 @@ describe('the ideas', () => {
     expect(screen.getByText("Finishes outfits you can't complete today.")).toBeOnTheScreen();
     expect(screen.getAllByRole('button', { name: /^Search in stores/ })).toHaveLength(2);
     expect(mockedFetch).toHaveBeenCalledTimes(1);
-    expect(mockedFetch).toHaveBeenCalledWith({ language: 'en' });
+    expect(mockedFetch).toHaveBeenCalledWith({ language: 'en', date: '2026-11-20' });
   });
 
   test('render in Spanish, and "Buscar en tiendas" opens the encoded Google search with hl=es', async () => {
@@ -114,7 +115,7 @@ describe('the ideas', () => {
     expect(await screen.findByText('Combina con 8 de tus prendas (+14 outfits)')).toBeOnTheScreen();
     expect(screen.getByText('PARA TI')).toBeOnTheScreen();
     expect(screen.getByText('Ponla sobre los outfits que ya usas para completarlos.')).toBeOnTheScreen();
-    expect(mockedFetch).toHaveBeenCalledWith({ language: 'es' });
+    expect(mockedFetch).toHaveBeenCalledWith({ language: 'es', date: '2026-11-20' });
 
     await fireEvent.press(screen.getByRole('button', { name: /^Buscar en tiendas/ }));
 

@@ -384,6 +384,7 @@ describe('rating', () => {
       p_user_id: USER_ID,
       p_kind: 'rating',
       p_limit: 50,
+      p_day: DATE,
     });
     const put = JSON.parse(calls.find((call) => call.route === 'cachePut')?.body ?? '') as Row;
     expect(put.user_id).toBe(USER_ID);

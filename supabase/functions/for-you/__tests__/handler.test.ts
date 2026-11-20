@@ -268,6 +268,23 @@ function forYouRequest(
 
 type OkBody = { kind: 'ok'; ideas: ForYouCard[] };
 
+describe('the quota day', () => {
+  const quotaDay = (calls: readonly { route: string; body?: string | undefined }[]): unknown =>
+    (JSON.parse(calls.find((call) => call.route === 'quota')?.body ?? '{}') as { p_day?: unknown }).p_day;
+
+  test("counts on the app's local day when it sends one", async () => {
+    const { calls } = await forYou(world(), forYouRequest({ language: 'en', date: '2026-11-09' }));
+    expect(quotaDay(calls)).toBe('2026-11-09');
+  });
+
+  test('falls back to the UTC day without a date or with an invalid one (older apps)', async () => {
+    for (const body of [{ language: 'en' }, { language: 'en', date: 'nope' }]) {
+      const { calls } = await forYou(world(), forYouRequest(body));
+      expect(quotaDay(calls)).toBe('2026-11-08');
+    }
+  });
+});
+
 async function forYou(w: World, request: Request = forYouRequest(), now = NOW) {
   const fake = fakeFetch(w);
   const response = await handleForYou(request, { env: ENV, fetch: fake.fetch, now: () => now });
@@ -426,7 +443,7 @@ describe('the ideas', () => {
     expect(jevPeak()).toBeLessThanOrEqual(5);
     expect(count(calls, 'claude')).toBe(1);
     const quota = calls.find((call) => call.route === 'quota');
-    expect(JSON.parse(quota?.body ?? '{}')).toEqual({ p_user_id: USER_ID, p_kind: 'for_you', p_limit: FOR_YOU_DAILY_LIMIT });
+    expect(JSON.parse(quota?.body ?? '{}')).toEqual({ p_user_id: USER_ID, p_kind: 'for_you', p_limit: FOR_YOU_DAILY_LIMIT, p_day: '2026-11-08' });
     expect(FOR_YOU_DAILY_LIMIT).toBe(1);
 
     expect(body).not.toHaveProperty('degraded');

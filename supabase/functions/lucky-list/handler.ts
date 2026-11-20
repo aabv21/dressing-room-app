@@ -340,7 +340,7 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
     const hit = fromCache(await cacheGet(env, fetchFn, 'lucky_cache', userId, key), closet, input.date, weather);
     if (hit !== null) return reply('cached', 200, hit);
 
-    if (!(await consumeQuota(env, fetchFn, userId, 'lucky', LUCKY_DAILY_LIMIT))) {
+    if (!(await consumeQuota(env, fetchFn, userId, 'lucky', LUCKY_DAILY_LIMIT, input.date))) {
       return reply('over_quota', 429, { error: 'over_quota' });
     }
 

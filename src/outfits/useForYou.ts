@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n';
-import { fetchForYou, type AiError, type AiOutcome } from './aiClient';
+import { fetchForYou, localDate, type AiError, type AiOutcome } from './aiClient';
 import { readStoredForYou, storeForYou } from './storedForYou';
 import type { ForYouCard, ForYouResponse } from './types';
 
@@ -79,7 +79,7 @@ export function useForYou(): ForYouIdeas {
     void (async () => {
       do {
         const inputs = latest.current;
-        const outcome = await fetchForYou({ language: inputs.locale });
+        const outcome = await fetchForYou({ language: inputs.locale, date: localDate() });
         if (!mounted.current) return;
         if (outcome.ok && inputs.userId !== null) storeForYou(inputs.userId, inputs.locale, outcome.result);
         // A failed refetch keeps the ideas already shown for this query.

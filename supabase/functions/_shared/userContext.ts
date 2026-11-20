@@ -441,7 +441,8 @@ export async function getWeather(
 // --- Quota and result caches -------------------------------------------------------------------
 
 /**
- * `public.consume_quota` for the caller; throws when the RPC itself fails.
+ * `public.consume_quota` for the caller on `day`, the app's local calendar day (the database falls
+ * back to the UTC day when it is more than a day off); throws when the RPC itself fails.
  * NOTE: two identical requests that both miss the cache at once both spend quota and both call the
  * model (a double tap the app's busy locks already prevent). Upgrade path: an advisory lock on the
  * cache key around the miss.
@@ -452,11 +453,12 @@ export async function consumeQuota(
   userId: string,
   kind: 'rating' | 'lucky' | 'for_you',
   limit: number,
+  day: string,
 ): Promise<boolean> {
   const allowed = await restJson(fetchFn, `${env.supabaseUrl}/rest/v1/rpc/consume_quota`, {
     method: 'POST',
     headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-    body: JSON.stringify({ p_user_id: userId, p_kind: kind, p_limit: limit }),
+    body: JSON.stringify({ p_user_id: userId, p_kind: kind, p_limit: limit, p_day: day }),
   });
   return allowed === true;
 }

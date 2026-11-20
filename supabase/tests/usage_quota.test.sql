@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(9);
+select plan(14);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -54,6 +54,31 @@ select is(
   'p_limit 0 always returns false'
 );
 
+-- The 4-argument version counts the caller's local day (the app sends it), within one day of UTC.
+select is(
+  public.consume_quota('11111111-1111-1111-1111-111111111111', 'rating', 1, (now() at time zone 'utc')::date + 1),
+  true,
+  'a local day ahead of UTC gets its own counter'
+);
+
+select is(
+  public.consume_quota('11111111-1111-1111-1111-111111111111', 'rating', 1, (now() at time zone 'utc')::date),
+  true,
+  'the UTC day is a separate counter from the local day ahead of it'
+);
+
+select is(
+  public.consume_quota('11111111-1111-1111-1111-111111111111', 'rating', 1, (now() at time zone 'utc')::date),
+  false,
+  'a second call on the same local day is refused'
+);
+
+select is(
+  public.consume_quota('11111111-1111-1111-1111-111111111111', 'rating', 1, (now() at time zone 'utc')::date + 3),
+  false,
+  'a day more than one day from UTC counts on the UTC day'
+);
+
 reset role;
 
 -- Clients can never call consume_quota directly, even for their own id.
@@ -65,6 +90,13 @@ select throws_ok(
   '42501',
   null,
   'authenticated calling consume_quota raises a policy error'
+);
+
+select throws_ok(
+  $$ select public.consume_quota('11111111-1111-1111-1111-111111111111', 'rating', 2, current_date) $$,
+  '42501',
+  null,
+  'authenticated calling the local-day consume_quota raises a policy error'
 );
 
 -- Clients can never read usage_counters directly either.

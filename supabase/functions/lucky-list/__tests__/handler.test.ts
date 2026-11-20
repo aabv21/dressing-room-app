@@ -379,7 +379,7 @@ describe('the lucky list', () => {
     expect(jevPeak()).toBeLessThanOrEqual(5);
     expect(jevPeak()).toBeGreaterThan(1);
     const quota = calls.find((call) => call.route === 'quota');
-    expect(JSON.parse(quota?.body ?? '{}')).toEqual({ p_user_id: USER_ID, p_kind: 'lucky', p_limit: LUCKY_DAILY_LIMIT });
+    expect(JSON.parse(quota?.body ?? '{}')).toEqual({ p_user_id: USER_ID, p_kind: 'lucky', p_limit: LUCKY_DAILY_LIMIT, p_day: DATE });
     expect(LUCKY_DAILY_LIMIT).toBe(10);
 
     expect(body).not.toHaveProperty('degraded');

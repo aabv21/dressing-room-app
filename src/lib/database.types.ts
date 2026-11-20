@@ -203,6 +203,8 @@ isOneToOne: false
           Functions: {
             "consume_quota":
 { Args: { "p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
+                           } |
+{ Args: { "p_day": string,"p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
                            },
 "keep_alive":
 { Args: Record<PropertyKey, never>; Returns: string

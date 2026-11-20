@@ -417,11 +417,11 @@ describe('getWeather', () => {
 describe('consumeQuota and the caches', () => {
   test('consumeQuota calls the rpc with the service role', async () => {
     const { fetch, calls } = fakeFetch(() => json(200, false));
-    expect(await consumeQuota(ENV, fetch, USER_ID, 'rating', 50)).toBe(false);
+    expect(await consumeQuota(ENV, fetch, USER_ID, 'rating', 50, '2026-11-08')).toBe(false);
     const [call] = calls;
     expect(call?.url.pathname).toBe('/rest/v1/rpc/consume_quota');
     expect(call?.method).toBe('POST');
-    expect(JSON.parse(call?.body ?? '')).toEqual({ p_user_id: USER_ID, p_kind: 'rating', p_limit: 50 });
+    expect(JSON.parse(call?.body ?? '')).toEqual({ p_user_id: USER_ID, p_kind: 'rating', p_limit: 50, p_day: '2026-11-08' });
     expect(call?.headers.get('authorization')).toBe(`Bearer ${ENV.serviceRoleKey}`);
   });
 
@@ -429,13 +429,13 @@ describe('consumeQuota and the caches', () => {
     'consumeQuota refuses a 200 whose body is %s, not exactly true',
     async (_label, body) => {
       const { fetch } = fakeFetch(() => json(200, body));
-      expect(await consumeQuota(ENV, fetch, USER_ID, 'rating', 50)).toBe(false);
+      expect(await consumeQuota(ENV, fetch, USER_ID, 'rating', 50, '2026-11-08')).toBe(false);
     },
   );
 
   test('consumeQuota throws when the rpc fails', async () => {
     const { fetch } = fakeFetch(() => json(500, { message: 'boom' }));
-    await expect(consumeQuota(ENV, fetch, USER_ID, 'lucky', 10)).rejects.toThrow();
+    await expect(consumeQuota(ENV, fetch, USER_ID, 'lucky', 10, '2026-11-08')).rejects.toThrow();
   });
 
   test('cacheGet returns the cached result, null on a miss or an error', async () => {
@@ -501,8 +501,8 @@ describe('consumeQuota and the caches', () => {
 
   test('consumeQuota passes the for_you kind through', async () => {
     const { fetch, calls } = fakeFetch(() => json(200, true));
-    expect(await consumeQuota(ENV, fetch, USER_ID, 'for_you', 1)).toBe(true);
-    expect(JSON.parse(calls[0]?.body ?? '')).toEqual({ p_user_id: USER_ID, p_kind: 'for_you', p_limit: 1 });
+    expect(await consumeQuota(ENV, fetch, USER_ID, 'for_you', 1, '2026-11-08')).toBe(true);
+    expect(JSON.parse(calls[0]?.body ?? '')).toEqual({ p_user_id: USER_ID, p_kind: 'for_you', p_limit: 1, p_day: '2026-11-08' });
   });
 
   test('cachePut upserts with the service role and reports failure instead of throwing', async () => {

@@ -278,7 +278,7 @@ async function rate(
   const cached = await cacheGet(ctx.env, ctx.fetch, 'rating_cache', userId, key);
   if (cached !== null) return { outcome: 'cached', status: 200, body: await recheckSwap(ctx, withoutMarker(cached)) };
 
-  if (!(await consumeQuota(ctx.env, ctx.fetch, userId, 'rating', RATING_DAILY_LIMIT))) {
+  if (!(await consumeQuota(ctx.env, ctx.fetch, userId, 'rating', RATING_DAILY_LIMIT, ctx.date))) {
     return { outcome: 'over_quota', status: 429, body: { error: 'over_quota' } };
   }
 

@@ -47,6 +47,7 @@ import {
   cacheReadNewest,
   CLAUDE_TIMEOUT_MS,
   consumeQuota,
+  isIsoDate,
   type FnEnv,
   loadGarments,
   loadProfile,
@@ -122,7 +123,8 @@ function reply(outcome: Outcome, status: number, body: unknown): Response {
   return json(status, body);
 }
 
-async function readLanguage(request: Request): Promise<Language | null> {
+/** The language, and the app's local day when it sends a valid one (older apps send none). */
+async function readInput(request: Request): Promise<{ language: Language; date: string | null } | null> {
   let body: unknown;
   try {
     body = await request.json();
@@ -130,7 +132,9 @@ async function readLanguage(request: Request): Promise<Language | null> {
     return null;
   }
   if (!isRecord(body)) return null;
-  return LANGUAGES.find((language) => language === body.language) ?? null;
+  const language = LANGUAGES.find((candidate) => candidate === body.language);
+  if (language === undefined) return null;
+  return { language, date: isIsoDate(body.date) ? body.date : null };
 }
 
 const byId = (a: RuleGarment, b: RuleGarment): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -309,8 +313,10 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
   const auth = request.headers.get('authorization');
   const userId = userIdFromJwt(auth);
   if (auth === null || userId === null) return reply('invalid', 401, { error: 'unauthorized' });
-  const language = await readLanguage(request);
-  if (language === null) return reply('invalid', 400, { error: 'invalid_input' });
+  const input = await readInput(request);
+  if (input === null) return reply('invalid', 400, { error: 'invalid_input' });
+  const { language } = input;
+  const day = input.date ?? new Date(startedAt).toISOString().slice(0, 10);
 
   const { env, fetch: fetchFn } = deps;
   try {
@@ -325,13 +331,13 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
 
     // NOTE: a city typed without coordinates isn't geocoded here, so it gets no season rule (as in
     // the tropics). Upgrade path: `getLocalWeather`'s geocoded latitude.
-    const season = seasonOf(new Date(now()).toISOString().slice(0, 10), profile?.city_lat ?? null);
+    const season = seasonOf(day, profile?.city_lat ?? null);
     const key = await cacheKey(wardrobe, profile, language, season);
     const row = await cacheRead(env, fetchFn, 'for_you_cache', userId, key);
     const stored = row === null ? null : fromCache(row.result);
     if (row !== null && stored !== null && cacheFresh(row, now(), FOR_YOU_TTL_MS)) return reply('cached', 200, stored);
 
-    if (!(await consumeQuota(env, fetchFn, userId, 'for_you', FOR_YOU_DAILY_LIMIT))) {
+    if (!(await consumeQuota(env, fetchFn, userId, 'for_you', FOR_YOU_DAILY_LIMIT, day))) {
       const stale = await staleAnswer(deps, userId, stored, wardrobe);
       if (stale !== null) return reply('stale', 200, stale);
       return reply('over_quota', 429, { error: 'over_quota' });

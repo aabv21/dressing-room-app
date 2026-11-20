@@ -112,15 +112,15 @@ describe('fetchLuckyList', () => {
 });
 
 describe('fetchForYou', () => {
-  test('a successful call sends the language and returns the ideas', async () => {
+  test("a successful call sends the language and the local day, and returns the ideas", async () => {
     const result: ForYouResponse = { kind: 'too_small' };
     const invoke = jest.fn(() => Promise.resolve({ data: result, error: null }));
     const client = fakeClient(invoke);
 
-    const outcome = await fetchForYou({ language: 'es' }, client);
+    const outcome = await fetchForYou({ language: 'es', date: '2026-12-15' }, client);
 
     expect(outcome).toEqual({ ok: true, result });
-    expect(invoke).toHaveBeenCalledWith('for-you', { body: { language: 'es' } });
+    expect(invoke).toHaveBeenCalledWith('for-you', { body: { language: 'es', date: '2026-12-15' } });
   });
 
   test.each([
@@ -129,13 +129,13 @@ describe('fetchForYou', () => {
   ] as const)('an HTTP %i response maps to %s', async (status, expected) => {
     const client = fakeClient(() => Promise.resolve({ data: null, error: httpError(status) }));
 
-    expect(await fetchForYou({ language: 'en' }, client)).toEqual({ ok: false, error: expected });
+    expect(await fetchForYou({ language: 'en', date: '2026-12-15' }, client)).toEqual({ ok: false, error: expected });
   });
 
   test('a fetch failure maps to network', async () => {
     const client = fakeClient(() => Promise.resolve({ data: null, error: new FunctionsFetchError(new TypeError('offline')) }));
 
-    expect(await fetchForYou({ language: 'en' }, client)).toEqual({ ok: false, error: 'network' });
+    expect(await fetchForYou({ language: 'en', date: '2026-12-15' }, client)).toEqual({ ok: false, error: 'network' });
   });
 });
 

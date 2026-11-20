@@ -213,9 +213,10 @@ export" below for how the row is written and used.
 ### `public.usage_counters`
 
 Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
-`supabase/functions/extract-attributes/handler.ts`), the Plan 4 rating quota (50 per user per UTC
-day), the Plan 4 feeling-lucky quota (10 per user per UTC day) and the Plan 5 For-you quota (1 per
-user per UTC day, counting cache misses only).
+`supabase/functions/extract-attributes/handler.ts`), the rating quota (50 per user per day), the
+feeling-lucky quota (10 per user per day) and the For-you quota (1 per user per day, counting cache
+misses only). Those three count the user's local day (see the 4-argument `consume_quota` below), so
+they reset at the user's midnight wherever they live.
 `(user_id uuid references auth.users on delete cascade, day date, kind quota_kind, count integer
 not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has four
 values: `extraction` (Plan 3), `rating`/`lucky` (Plan 4, added by `alter type … add value` in
@@ -237,6 +238,14 @@ the conflicting row makes `returning` produce no row, not a row holding `false` 
 reads that absence as `false` via `coalesce`). Each call therefore does at most one state change:
 either the counter moves up by one and the function returns `true`, or nothing changes and it
 returns `false`.
+
+`public.consume_quota(p_user_id, p_kind, p_limit, p_day date)` (`20261120120000_quota_local_day.sql`)
+is the same function with the day given: rating, the lucky list and For you pass the app's local
+calendar day from the request. It counts on `p_day` when it is within one day of the UTC date (every
+time zone is) and on the UTC day otherwise, so a phone with a wrong date can't open new counters at
+will. NOTE: changing the device date can spread one user's calls over up to 3 day counters in 24 h,
+acceptable at these limits; upgrade path: a time zone stored on the profile. The 3-argument version
+stays for extraction, which runs from a trigger with no client day.
 
 ## RLS and storage rules
 
@@ -798,7 +807,7 @@ discards both the user and its profile row — no cleanup step is needed.
   succeeds, another user's raises `42501`, and inserting `extraction_status` raises `42501`; a
   client can't update `extraction_status`, `wear_count` or `user_id`; an update leaves
   `created_at` unchanged and moves `updated_at`.
-- `usage_quota.test.sql` — `consume_quota` returns `true` up to `p_limit` and `false` after (and
+- `usage_quota.test.sql` — `consume_quota` returns `true` up to `p_limit` and `false` after; the local-day version gives a day ahead of UTC its own counter and puts a day more than one day off on the UTC day (and
   stays refused for that user and kind); a different user is tracked independently; `p_limit 0` always returns `false`; calling the
   function or reading `usage_counters` directly as `authenticated` raises a policy error.
 - `garment_extraction_trigger.test.sql` — `garments_request_extraction` exists, fires only `after
