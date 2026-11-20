@@ -83,7 +83,7 @@ type RatingContext = {
   profile: ProfileRow | null;
   occasion: Occasion | null;
   weather: WeatherSummary | null;
-  season: Season;
+  season: Season | null;
   date: string;
   startedAt: number;
 };

@@ -158,7 +158,7 @@ function cacheKey(
   wardrobe: readonly RuleGarment[],
   profile: ProfileRow | null,
   language: Language,
-  season: Season,
+  season: Season | null,
 ): Promise<string> {
   const fingerprint = wardrobe
     .filter((g) => g.category !== null)
@@ -323,9 +323,8 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
       return reply('too_small', 200, { kind: 'too_small' } satisfies ForYouResponse);
     }
 
-    // NOTE: the season comes from the UTC date and the profile's stored latitude (northern without
-    // one): a city typed without coordinates isn't geocoded here, so a southern-hemisphere user who
-    // typed one gets northern seasons. Upgrade path: `getLocalWeather`'s geocoded latitude.
+    // NOTE: a city typed without coordinates isn't geocoded here, so it gets no season rule (as in
+    // the tropics). Upgrade path: `getLocalWeather`'s geocoded latitude.
     const season = seasonOf(new Date(now()).toISOString().slice(0, 10), profile?.city_lat ?? null);
     const key = await cacheKey(wardrobe, profile, language, season);
     const row = await cacheRead(env, fetchFn, 'for_you_cache', userId, key);

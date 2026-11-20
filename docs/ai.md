@@ -173,7 +173,8 @@ reasons.
     `medium`, else `tall`; masculine below 170 cm `short`, up to 183 cm `medium`, else `tall`.
     Exact measurements, sizes and names never reach any model.
   - `context`: `occasion` (or null), `weather` (`WeatherSummary` or null when the city is unknown),
-    `season`.
+    `season` (null within 23.44° of the equator or without a city: no seasons there, only weather;
+    see `seasonOf`).
   - `outfit`: one entry per piece with `slot`, `category`, `colors`, `pattern`, `formality`, `fit`.
 - **Questions**, all in one request: 8 Score questions keyed by dimension, 2 Noul hard failures,
   and the `weakest_piece` Choice. Level descriptions describe situations, not degrees, because
@@ -771,8 +772,8 @@ and opens it in the system browser.
 
 `POST { language: 'en' | 'es' }` with the user's JWT (`verify_jwt = true`). Garments and the profile
 are read with that JWT, so RLS applies; the quota and `for_you_cache` use the service role. No
-weather is read: the season comes from the UTC date and the profile's stored latitude (the northern
-hemisphere without one).
+weather is read: the season comes from the UTC date and the profile's stored latitude; within
+23.44° of the equator, or without a latitude, there is no season rule.
 
 1. Load the garments and the profile.
 2. Fewer than 3 wardrobe garments with a category (not donated; laundry and lent count) →
@@ -836,8 +837,8 @@ is skipped and every idea gets its template (degraded). So the answer lands by a
 cache write, inside the app's 45 s function deadline. The database reads have no timeout of their
 own: a stalled read can still exceed it, as in the other functions.
 
-NOTE: a city typed without coordinates isn't geocoded, so its season is the northern one (wrong for
-a southern-hemisphere user who typed a city). Upgrade path: `getLocalWeather`'s geocoded latitude.
+NOTE: a city typed without coordinates isn't geocoded, so it gets no season rule. Upgrade path:
+`getLocalWeather`'s geocoded latitude.
 
 ### On the device
 

@@ -654,7 +654,7 @@ export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (t:
  */
 export function ratingState(
   profile: ProfileRow | null,
-  context: { occasion: Occasion | null; weather: WeatherSummary | null; season: Season },
+  context: { occasion: Occasion | null; weather: WeatherSummary | null; season: Season | null },
   outfit: readonly RuleGarment[],
 ): RatingState {
   const clothingType = profile?.clothing_type ?? null;

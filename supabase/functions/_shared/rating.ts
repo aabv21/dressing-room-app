@@ -117,7 +117,7 @@ export type RatingState = {
     age_group: AgeGroup | null;
     styles: Style[];
   };
-  context: { occasion: Occasion | null; weather: WeatherSummary | null; season: Season };
+  context: { occasion: Occasion | null; weather: WeatherSummary | null; season: Season | null };
   outfit: RatingPiece[];
 };
 
