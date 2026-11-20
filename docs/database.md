@@ -299,7 +299,7 @@ privileges), the client gets back only:
   violation is checked before row filtering, so it fails the same way regardless of which row is
   targeted.
 - `grant update (pinned_on)` (Plan 5, `20261109000000_insights_account.sql`) — the client can also
-  set `pinned_on` on their own garment. Unused-for-6-months' "Wear it" sets it to tomorrow's local
+  set `pinned_on` on their own garment. Unused-for-6-months' "Suggest tomorrow" sets it to tomorrow's local
   date; `lucky-list` includes the garment in that day's outfits when any complete outfit with it
   passes the rules. Nothing clears it automatically — the day simply passes.
 

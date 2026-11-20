@@ -234,7 +234,7 @@ export const es: Record<MessageKey, string> = {
   'onboarding.clothing.feminine': 'Femenina',
   'onboarding.clothing.feminineHint': 'Blusas, faldas, vestidos, carteras…',
   'onboarding.clothing.masculine': 'Masculina',
-  'onboarding.clothing.masculineHint': 'Camisas, franelas, pantalones…',
+  'onboarding.clothing.masculineHint': 'Camisas, camisetas, pantalones…',
   'onboarding.clothing.everything': 'De todo un poco',
   'onboarding.clothing.everythingHint': 'Todas las categorías',
 

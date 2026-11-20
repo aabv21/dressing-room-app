@@ -175,7 +175,7 @@ Outfits, Stats and Diary:
   caption capped for large text with the ring growing with them).
 - `src/__tests__/closet-stats.test.tsx` — the segments, the KPIs per period ("1 outfit logged",
   "2 outfits logged"), most worn, a color opening the filtered closet, the balance, the unused list
-  (Wear it and Donate, its row at the largest text sizes) and donated garments left out of Items and
+  (Suggest tomorrow and Donate, its row at the largest text sizes) and donated garments left out of Items and
   Build.
 - `src/__tests__/closet-diary.test.tsx` — the month calendar (worn days, month navigation, day
   numbers that stay inside their cells at a large text size, where the thumbnail shrinks), a day's

@@ -405,8 +405,8 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
    closet fingerprint: each garment's id and rating-relevant columns (category, colors, pattern,
    formality, fit, seasons, warmth, status, and whether `pinned_on` equals *this request's* date;
    not `updated_at` or `last_worn_at`, which logging a wear bumps), so an "I'll wear it" tap
-   doesn't reshuffle the day's list, but a new "Wear it" pin for today does recompute it — a pin
-   for tomorrow (what "Wear it" actually sets, per "Unused for 6 months" above) leaves today's
+   doesn't reshuffle the day's list, but a new "Suggest tomorrow" pin for today does recompute it — a pin
+   for tomorrow (what "Suggest tomorrow" actually sets, per "Unused for 6 months" above) leaves today's
    fingerprint, and so today's cached list, untouched. A hit keeps the list as ranked but
    recomputes each outfit's `freshThisWeek` from the current wear dates, and answers with this
    hour's weather (the stored one, validated, only when this hour's is unknown). So on a hit Today
@@ -441,7 +441,7 @@ with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role
      outerwear on a hot day) never claims a forced draw, so it can't crowd out an admissible
      sibling pin; that pin's own odds stay unforced, same as with no pin at all. An admissible pin
      is also kept through the first pass's 7-day recent-wear exclusion (so a wear logged between
-     the "Wear it" tap and the pinned day can't silently drop it), and a pinned outerwear piece is
+     the "Suggest tomorrow" tap and the pinned day can't silently drop it), and a pinned outerwear piece is
      tried even on a day the weather doesn't call for outerwear (the per-piece rules allow
      outerwear any day; only a cold day requires it). After generation, candidates are kept only
      when they contain one of the pinned garments, and only when at least one generated candidate
@@ -772,14 +772,14 @@ and opens it in the system browser.
 
 `POST { language: 'en' | 'es', date?: 'YYYY-MM-DD' }` (the app's local day) with the user's JWT (`verify_jwt = true`). Garments and the profile
 are read with that JWT, so RLS applies; the quota and `for_you_cache` use the service role. No
-weather is read: the season comes from that date (the UTC date without one) and the profile's stored latitude; within
+weather is read: the season comes from that date (the UTC date without one) and the profile's latitude (a typed city is geocoded); within
 23.44° of the equator, or without a latitude, there is no season rule.
 
 1. Load the garments and the profile.
 2. Fewer than 3 wardrobe garments with a category (not donated; laundry and lent count) →
    `{ kind: 'too_small' }`, with no cache, quota or model call (a brand-new closet). A closet that
    is all in the wash still gets ideas.
-3. The cache key hashes a version (`CACHE_VERSION` 3), the language, the season,
+3. The cache key hashes a version (`CACHE_VERSION` 4), the language, the season,
    `profileIdentity(profile)` (clothing type, body, styles; not `updated_at`, so saving the profile
    without changing those keeps the entry) and a wardrobe fingerprint: every categorized garment that isn't donated, by its id
    and rating-relevant columns (category, colors, pattern, formality, fit, seasons, warmth; not
@@ -837,8 +837,8 @@ is skipped and every idea gets its template (degraded). So the answer lands by a
 cache write, inside the app's 45 s function deadline. The database reads have no timeout of their
 own: a stalled read can still exceed it, as in the other functions.
 
-NOTE: a city typed without coordinates isn't geocoded, so it gets no season rule. Upgrade path:
-`getLocalWeather`'s geocoded latitude.
+A city typed without coordinates is geocoded (`geocodedLatitude`, Open-Meteo, 5 s) for its
+latitude; when that fails, there is no season rule for that request.
 
 ### On the device
 

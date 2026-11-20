@@ -381,6 +381,16 @@ async function fetchJson(fetchFn: FetchFn, url: string, init: RequestInit, timeo
  * and upserts the cache (best effort: a failed write still returns the weather). No city, a
  * city that can't be geocoded, or any Open-Meteo failure gives `weather: null`, never a throw.
  */
+/** A typed city's latitude from Open-Meteo's geocoding, or null when it can't be found or the call fails. */
+export async function geocodedLatitude(env: FnEnv, fetchFn: FetchFn, cityName: string): Promise<number | null> {
+  try {
+    const body = await fetchJson(fetchFn, geocodeUrl(`${trimSlash(env.geocodingUrl)}/v1/search`, cityName.trim()), {}, WEATHER_TIMEOUT_MS);
+    return parseGeocode(body)?.lat ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getLocalWeather(
   env: FnEnv,
   fetchFn: FetchFn,

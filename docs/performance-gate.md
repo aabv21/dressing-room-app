@@ -22,7 +22,7 @@ renders 500 fixture thumbnails in a `ClosetGrid` (FlashList + expo-image), with:
     ("Image cache cleared · stats reset", or a failure message if the clear didn't succeed).
   - The HUD only counts frames while the grid is actively scrolling (`onScrollActiveChange`) — it
     is not a free-running FPS counter.
-- the Gallery and Burst mode CTAs, both present but disabled (fixture mode has no real upload flow).
+- the Gallery and Take photos CTAs, both present but disabled (fixture mode has no real upload flow).
 
 The refresh rate (`Hz`) in the HUD is **inferred from the measured median frame time**, not read
 from the OS — e.g. a median near 8.3 ms infers 120 Hz, near 16.7 ms infers 60 Hz. Use whatever the

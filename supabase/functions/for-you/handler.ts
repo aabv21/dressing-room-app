@@ -47,6 +47,7 @@ import {
   cacheReadNewest,
   CLAUDE_TIMEOUT_MS,
   consumeQuota,
+  geocodedLatitude,
   isIsoDate,
   type FnEnv,
   loadGarments,
@@ -110,7 +111,7 @@ export const LINES_DEADLINE_MS = 38_000;
 /** With no more than this left before `LINES_DEADLINE_MS`, Claude is skipped and every idea gets its template. */
 export const MIN_LINES_TIMEOUT_MS = 2_000;
 // Bump whenever the archetypes, the gain rules or the response shape change: it's what invalidates the stored entries.
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 const LANGUAGES = ['en', 'es'] as const satisfies readonly Language[];
 
@@ -329,9 +330,10 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
       return reply('too_small', 200, { kind: 'too_small' } satisfies ForYouResponse);
     }
 
-    // NOTE: a city typed without coordinates isn't geocoded here, so it gets no season rule (as in
-    // the tropics). Upgrade path: `getLocalWeather`'s geocoded latitude.
-    const season = seasonOf(day, profile?.city_lat ?? null);
+    // A city typed without coordinates is geocoded for its latitude, so a temperate city keeps its season.
+    const cityName = profile?.city_name ?? null;
+    const lat = profile?.city_lat ?? (cityName === null ? null : await geocodedLatitude(env, fetchFn, cityName));
+    const season = seasonOf(day, lat);
     const key = await cacheKey(wardrobe, profile, language, season);
     const row = await cacheRead(env, fetchFn, 'for_you_cache', userId, key);
     const stored = row === null ? null : fromCache(row.result);

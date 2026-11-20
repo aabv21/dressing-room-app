@@ -323,7 +323,7 @@ describe('stats', () => {
     expect(screen.getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
   });
 
-  test('a lent or uncategorized row offers no "Wear it", only Donate', async () => {
+  test('a lent or uncategorized row offers no "Suggest tomorrow", only Donate', async () => {
     const old = { ...done, created_at: '2026-01-10T12:00:00.000Z' } as const;
     mockSetGarments([
       garment({ ...old, id: OLD_COAT, category: 'coat', colors: ['green'], status: 'lent' }),
@@ -332,7 +332,7 @@ describe('stats', () => {
     await openStatsLoaded();
 
     expect(screen.getByText('Lent out')).toBeOnTheScreen();
-    expect(screen.queryByRole('button', { name: /^Wear it/ })).not.toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: /^Suggest tomorrow/ })).not.toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: /^Donate, .* · Red$/ })).toBeOnTheScreen();
   });

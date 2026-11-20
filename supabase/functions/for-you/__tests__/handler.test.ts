@@ -89,7 +89,8 @@ const PROFILE: Row = {
   updated_at: '2026-11-01T00:00:00Z',
 };
 
-type RouteName = 'closet' | 'profile' | 'quota' | 'cacheGet' | 'cacheNewest' | 'cachePut' | 'cachePrune' | 'jev' | 'claude';
+type RouteName = 'closet' | 'profile' | 'quota' | 'cacheGet' | 'cacheNewest' | 'cachePut' | 'cachePrune' | 'jev' | 'claude'
+  | 'geocode';
 type Call = { route: RouteName; url: URL; body: string | undefined };
 type FitState = { user: Row; outfit: { category: string; colors: string[] }[] };
 
@@ -99,6 +100,7 @@ function routeOf(method: string, url: URL): RouteName {
   if (url.pathname === '/rest/v1/garments' && method === 'GET') return 'closet';
   if (url.pathname === '/rest/v1/profiles' && method === 'GET') return 'profile';
   if (url.pathname === '/rest/v1/rpc/consume_quota' && method === 'POST') return 'quota';
+  if (url.origin === ENV.geocodingUrl && url.pathname === '/v1/search' && method === 'GET') return 'geocode';
   if (url.pathname === '/rest/v1/for_you_cache') {
     if (method === 'GET') return url.searchParams.has('cache_key') ? 'cacheGet' : 'cacheNewest';
     return method === 'DELETE' ? 'cachePrune' : 'cachePut';
@@ -210,6 +212,8 @@ function fakeFetch(w: World) {
         return json(200, w.profile === null ? [] : [w.profile]);
       case 'quota':
         return json(200, w.quota);
+      case 'geocode':
+        return json(200, { results: [{ latitude: 40.4168, longitude: -3.7038 }] });
       case 'cacheGet': {
         const key = (url.searchParams.get('cache_key') ?? '').replace(/^eq\./, '');
         const row = w.cache.get(key);
@@ -267,6 +271,21 @@ function forYouRequest(
 }
 
 type OkBody = { kind: 'ok'; ideas: ForYouCard[] };
+
+describe('a city typed without coordinates', () => {
+  const typed = { ...PROFILE, city_name: 'Madrid', city_lat: null, city_lon: null };
+
+  test('is geocoded, so a temperate city keeps its season', async () => {
+    const { body, calls } = await forYou(world({ profile: typed }));
+    expect(count(calls, 'geocode')).toBe(1);
+    expect(body).toMatchObject({ kind: 'ok' });
+  });
+
+  test('a profile with coordinates is not geocoded', async () => {
+    const { calls } = await forYou(world());
+    expect(count(calls, 'geocode')).toBe(0);
+  });
+});
 
 describe('the quota day', () => {
   const quotaDay = (calls: readonly { route: string; body?: string | undefined }[]): unknown =>
