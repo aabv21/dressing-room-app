@@ -72,7 +72,7 @@ test('shows the title, the slot rows with placeholders, and the Top grid first',
   expect(row('Top, Pick one')).toBeSelected();
   expect(row('Bottom, Pick one')).not.toBeSelected();
   expect(row('Shoes, Pick one')).toBeOnTheScreen();
-  expect(row('Over · Accessories, optional')).toBeOnTheScreen();
+  expect(row('Outerwear · Accessories, optional')).toBeOnTheScreen();
   expect(cell('Blouse, 9 wears')).toBeOnTheScreen();
   expect(screen.queryByLabelText(/^Sneakers, /)).not.toBeOnTheScreen();
 });
@@ -175,7 +175,7 @@ test('a dress in the Bottom row replaces the top and bottom, and dress + shoes c
 
 test('the optional row takes outerwear and one accessory, all sent to /rate', async () => {
   await render(<BuildScreen />);
-  await fireEvent.press(row('Over · Accessories, optional'));
+  await fireEvent.press(row('Outerwear · Accessories, optional'));
   await fireEvent.press(cell('Blazer, 3 wears'));
   await fireEvent.press(cell('Bag, never worn'));
 

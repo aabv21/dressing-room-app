@@ -640,7 +640,7 @@ describe('searchQuery', () => {
 
   it.each([
     ['flannel-shirt', 'masculine', 'flannel shirt men', 'camisa de franela hombre'],
-    ['breton-tee', 'feminine', 'striped breton t-shirt women', 'franela marinera a rayas mujer'],
+    ['breton-tee', 'feminine', 'striped breton t-shirt women', 'camiseta marinera a rayas mujer'],
     ['floral-dress', 'feminine', 'floral dress women', 'vestido floreado mujer'],
     ['denim-jacket', 'masculine', 'denim jacket men', 'chaqueta de jean hombre'],
     ['black-leather-jacket', 'feminine', 'black leather jacket women', 'chaqueta de cuero negra mujer'],

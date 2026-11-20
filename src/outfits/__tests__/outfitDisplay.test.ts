@@ -39,7 +39,7 @@ describe('pieceLabel', () => {
   test('is the category label plus the first color label, in es', () => {
     const garment = { category: 't_shirt' as const, colors: ['blue' as const, 'navy' as const] };
 
-    expect(pieceLabel(garment, (key) => translate('es', key))).toBe('Franela · Azul');
+    expect(pieceLabel(garment, (key) => translate('es', key))).toBe('Camiseta · Azul');
   });
 
   test('is the category label plus the first color label, in en', () => {

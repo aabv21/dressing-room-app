@@ -61,7 +61,7 @@ export const ARCHETYPES: readonly Archetype[] = [
   // Shared staples.
   staple('all', 'white-tee', 't_shirt', ['white'], 2, ALL_YEAR, 1, 'regular'),
   staple('all', 'black-tee', 't_shirt', ['black'], 2, ALL_YEAR, 1, 'regular'),
-  searchedAs(staple('all', 'breton-tee', 't_shirt', ['navy', 'white'], 2, NOT_WINTER, 1, 'regular', 'striped'), 'striped breton t-shirt', 'franela marinera a rayas'),
+  searchedAs(staple('all', 'breton-tee', 't_shirt', ['navy', 'white'], 2, NOT_WINTER, 1, 'regular', 'striped'), 'striped breton t-shirt', 'camiseta marinera a rayas'),
   staple('all', 'white-shirt', 'shirt', ['white'], 3, ALL_YEAR, 1, 'regular'),
   staple('all', 'light-blue-shirt', 'shirt', ['light_blue'], 3, ALL_YEAR, 1, 'regular'),
   staple('all', 'navy-sweater', 'sweater', ['navy'], 3, COLD_HALF, 3, 'regular'),

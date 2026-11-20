@@ -91,7 +91,7 @@ beforeEach(() => {
 });
 
 describe('granted', () => {
-  test('tapping the shutter twice shows "2 photos" and "Done, process 2"', async () => {
+  test('tapping the shutter twice shows "2 photos" and "Add 2 to closet"', async () => {
     await render(<CameraScreen />);
 
     await fireEvent.press(screen.getByTestId('camera-shutter'));
@@ -103,7 +103,7 @@ describe('granted', () => {
     await waitFor(() => {
       expect(screen.getByText('2 photos')).toBeOnTheScreen();
     });
-    expect(screen.getByRole('button', { name: 'Done, process 2' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Add 2 to closet' })).toBeOnTheScreen();
   });
 
   test('a second tap while the first capture is pending is ignored', async () => {
@@ -163,7 +163,7 @@ describe('granted', () => {
       expect(screen.getByText('2 photos')).toBeOnTheScreen();
     });
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Done, process 2' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Add 2 to closet' }));
 
     expect(mockEnqueue).toHaveBeenCalledWith(['file:///a.jpg', 'file:///b.jpg']);
     expect(mockRouter.back).toHaveBeenCalledTimes(1);
@@ -267,7 +267,7 @@ describe('granted', () => {
     await waitFor(() => {
       expect(screen.getByText('1 photo')).toBeOnTheScreen();
     });
-    await fireEvent.press(screen.getByRole('button', { name: 'Done, process 1' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Add 1 to closet' }));
 
     await waitFor(() => {
       expect(mockPreventRemoveCallback).toBeUndefined();

@@ -141,7 +141,7 @@ describe('fixture mode', () => {
     await render(<ClosetScreen />);
 
     expect(screen.getByRole('button', { name: 'Gallery' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Burst mode' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Take photos' })).toBeDisabled();
   });
 });
 
@@ -348,10 +348,10 @@ describe('real mode', () => {
     alert.mockRestore();
   });
 
-  test('Burst mode opens the camera', async () => {
+  test('Take photos opens the camera', async () => {
     await render(<ClosetScreen />);
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Burst mode' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Take photos' }));
 
     expect(router.push).toHaveBeenCalledWith('/camera');
   });
