@@ -66,3 +66,21 @@ test('the notice slot shows its content above the buttons', async () => {
   expect(screen.getByText("Couldn't save.")).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
 });
+
+test('a commit press is a light haptic and still runs the action; a ghost press is a selection tick', async () => {
+  const Haptics = jest.requireMock<typeof import('expo-haptics')>('expo-haptics');
+  jest.mocked(Haptics.impactAsync).mockClear();
+  jest.mocked(Haptics.selectionAsync).mockClear();
+  const wear = jest.fn();
+  await render(
+    <AnchoredCta
+      primary={{ label: 'Me lo pongo', tone: 'commit', onPress: wear }}
+      secondary={{ label: 'Otro', tone: 'ghost', onPress: jest.fn() }}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Me lo pongo' }));
+  expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+  expect(wear).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByRole('button', { name: 'Otro' }));
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});

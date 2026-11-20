@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useI18n } from '../i18n';
+import { tapHaptic } from './feedback';
 import { TABS, useBottomChrome } from './layout';
 import { textScale } from './theme';
 
@@ -74,6 +75,7 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
                 canPreventDefault: true,
               });
               if (!selected && !event.defaultPrevented) {
+                tapHaptic('selection');
                 navigateToTab(route.key);
               }
             };

@@ -1,4 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { androidRipple, pressedStyle, tapHaptic } from './feedback';
 
 import { colors, layout, selectionRing, textScale } from './theme';
 
@@ -17,8 +19,12 @@ export function OptionCard(props: {
       accessibilityRole="radio"
       accessibilityState={{ selected, checked: selected }}
       accessibilityLabel={`${title}. ${subtitle}`}
-      onPress={onPress}
-      style={[styles.card, selected ? styles.cardOn : null]}
+      onPress={() => {
+        tapHaptic('selection');
+        onPress();
+      }}
+      android_ripple={androidRipple}
+      style={({ pressed }) => [styles.card, selected ? styles.cardOn : null, pressed && Platform.OS === 'ios' && pressedStyle]}
       testID={testID}
     >
       <Text

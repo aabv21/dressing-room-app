@@ -89,3 +89,21 @@ test('only the selected tab shows its lens', async () => {
   expect(opacity('closet')).toBe(1);
   expect(['index', 'build', 'for-you', 'profile'].map(opacity)).toEqual([0, 0, 0, 0]);
 });
+
+test('pressing a tab is a selection tick', async () => {
+  const Haptics = jest.requireMock<typeof import('expo-haptics')>('expo-haptics');
+  jest.mocked(Haptics.selectionAsync).mockClear();
+  await render(
+    <GlassTabBar
+      {...({
+        state: { index: 1, routes },
+        emitter: { emit: jest.fn(() => ({ defaultPrevented: false })) },
+        navigateToTab: jest.fn(),
+        descriptors: {},
+        insets: { top: 0, bottom: 0, left: 0, right: 0 },
+      } as unknown as BottomTabBarProps)}
+    />,
+  );
+  await fireEvent.press(screen.getByRole('tab', { name: 'Build' }));
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});

@@ -25,3 +25,11 @@ test('a named tablist whose selected tab exposes its state, capped for large tex
   await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
   expect(onChange).toHaveBeenCalledWith('diary');
 });
+
+test('pressing a segment is a selection tick', async () => {
+  const Haptics = jest.requireMock<typeof import('expo-haptics')>('expo-haptics');
+  jest.mocked(Haptics.selectionAsync).mockClear();
+  await render(<SegmentTabs options={options} value="stats" onChange={jest.fn()} accessibilityLabel="Closet sections" />);
+  await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});
