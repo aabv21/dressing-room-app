@@ -1,4 +1,3 @@
-import * as ImagePicker from 'expo-image-picker';
 import { router, useIsFocused } from 'expo-router';
 import { Camera, ChevronRight, ImageIcon, X } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
@@ -22,6 +21,7 @@ import { StatsSegment } from '../../closet/StatsSegment';
 import { CLOSET_GOAL, GoalCard } from '../../closet/GoalCard';
 import { perfFixtureItems } from '../../closet/perfFixtureItems';
 import { useUploadQueue } from '../../closet/UploadQueueProvider';
+import { useGalleryImport } from '../../closet/useGalleryImport';
 import { useNow } from '../../closet/useNow';
 import { pluralKey, useI18n } from '../../i18n';
 import { PERF_HUD_HEIGHT, PerfHud } from '../../perf/PerfHud';
@@ -40,7 +40,6 @@ function perfFixturesUrl(): string | undefined {
   return url ? url : undefined;
 }
 
-const GALLERY_SELECTION_LIMIT = 30;
 const CLOCK_TICK_MS = 30_000;
 // ChipGroup's chips are 36 pt tall with hitSlop up to the 44 pt minimum.
 const CHIP_SLOP = (layout.minHitTarget - 36) / 2;
@@ -212,7 +211,7 @@ function ItemsSegment({
     setCategory('all');
   }, []);
 
-  const { retryFailed, discardFailed, enqueue } = queue;
+  const { retryFailed, discardFailed } = queue;
   const showFailedOptions = useCallback(() => {
     Alert.alert(t('closet.failed.title'), t('closet.failed.message'), [
       { text: t('closet.failed.cancel'), style: 'cancel' },
@@ -285,25 +284,7 @@ function ItemsSegment({
     router.push(`/garment/${id}`);
   }, []);
 
-  const pickFromGallery = useCallback(async () => {
-    let result: ImagePicker.ImagePickerResult;
-    try {
-      result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsMultipleSelection: true,
-        selectionLimit: GALLERY_SELECTION_LIMIT,
-        quality: 1,
-      });
-    } catch {
-      // The system picker failed to open (no photo access, a broken picker): say so.
-      Alert.alert(t('closet.error.picker'));
-      return;
-    }
-    if (result.canceled) {
-      return;
-    }
-    enqueue(result.assets.map((asset) => asset.uri));
-  }, [enqueue, t]);
+  const { pickFromGallery } = useGalleryImport();
 
   const cta = useMemo<React.ComponentProps<typeof AnchoredCta>>(
     () => ({

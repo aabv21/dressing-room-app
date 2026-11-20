@@ -53,6 +53,8 @@ jest.mock('expo-router', () => ({
   },
 }));
 
+jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
+
 const mockEnqueue = jest.fn();
 jest.mock('../closet/UploadQueueProvider', () => ({
   useUploadQueue: jest.fn(),
@@ -287,6 +289,42 @@ describe('denied', () => {
 
     expect(openSettings).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('camera-shutter')).not.toBeOnTheScreen();
+  });
+});
+
+describe('denied, a way out', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- the module mock above
+  const picker = require('expo-image-picker') as { launchImageLibraryAsync: jest.Mock };
+
+  beforeEach(() => {
+    mockPermissionState = { granted: false, status: 'denied', canAskAgain: false };
+  });
+
+  test('Close goes back', async () => {
+    await render(<CameraScreen />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+    expect(mockRouter.back).toHaveBeenCalledTimes(1);
+  });
+
+  test('Choose from gallery enqueues the picked photos and goes back', async () => {
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///a.jpg' }, { uri: 'file:///b.jpg' }] });
+    await render(<CameraScreen />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose from gallery' }));
+    await waitFor(() => {
+      expect(mockRouter.back).toHaveBeenCalledTimes(1);
+    });
+    expect(mockEnqueue).toHaveBeenCalledWith(['file:///a.jpg', 'file:///b.jpg']);
+  });
+
+  test('a cancelled picker keeps the user on the screen with nothing enqueued', async () => {
+    picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true, assets: null });
+    await render(<CameraScreen />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Choose from gallery' }));
+    await waitFor(() => {
+      expect(picker.launchImageLibraryAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(mockEnqueue).not.toHaveBeenCalled();
+    expect(mockRouter.back).not.toHaveBeenCalled();
   });
 });
 
