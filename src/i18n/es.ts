@@ -168,6 +168,7 @@ export const es: Record<MessageKey, string> = {
   'auth.field.email': 'Correo',
   'auth.field.emailPlaceholder': 'correo@ejemplo.com',
   'auth.field.password': 'Contraseña',
+  'auth.field.passwordHint': 'Mínimo 8 caracteres',
   'auth.field.passwordPlaceholder': 'Contraseña',
   'auth.forgotPassword': '¿Olvidaste tu contraseña?',
   'auth.haveAccount': 'Ya tengo cuenta',

@@ -20,45 +20,44 @@ export default function WelcomeScreen() {
   const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [fieldError, setFieldError] = useState<string | undefined>(undefined);
+  const [emailError, setEmailError] = useState<string | undefined>(undefined);
+  const [passwordError, setPasswordError] = useState<string | undefined>(undefined);
   const [socialError, setSocialError] = useState<string | undefined>(undefined);
   const [checkEmail, setCheckEmail] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [socialSubmitting, setSocialSubmitting] = useState(false);
   const passwordRef = useRef<TextInputInstance>(null);
 
-  function showFieldError(message: string): void {
-    setFieldError(message);
+  function showFieldError(field: 'email' | 'password', message: string): void {
+    (field === 'email' ? setEmailError : setPasswordError)(message);
     announceForAccessibility(message);
   }
 
   async function handleCreateAccount(): Promise<void> {
-    setFieldError(undefined);
+    setEmailError(undefined);
+    setPasswordError(undefined);
     setCheckEmail(false);
     const trimmedEmail = email.trim();
     if (trimmedEmail === '') {
-      showFieldError(t('auth.error.emailRequired'));
+      showFieldError('email', t('auth.error.emailRequired'));
       return;
     }
     if (!isValidEmail(trimmedEmail)) {
-      showFieldError(t('auth.error.emailInvalid'));
+      showFieldError('email', t('auth.error.emailInvalid'));
       return;
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
-      showFieldError(t('auth.error.weakPassword'));
+      showFieldError('password', t('auth.error.weakPassword'));
       return;
     }
     setSubmitting(true);
     try {
       const result = await signUpWithEmail(trimmedEmail, password);
       if (!result.ok) {
-        showFieldError(t(result.error));
+        showFieldError('password', t(result.error));
         return;
       }
-      // `needsConfirmation` is only true once the integration session turns
-      // Supabase email confirmations on — locally and in v1 (confirmations off) `signUp` already
-      // returns a session, `AuthProvider`'s `onAuthStateChange` picks it up, and the root guard
-      // navigates on its own with no message needed here.
+      // With email confirmations off, `signUp` already returns a session and the root guard navigates.
       if (result.needsConfirmation) {
         setCheckEmail(true);
         announceForAccessibility(t('auth.checkEmail'));
@@ -165,6 +164,7 @@ export default function WelcomeScreen() {
             passwordRef.current?.focus();
           }}
           submitBehavior="submit"
+          error={emailError}
           testID="welcome-email"
         />
         <TextField
@@ -181,7 +181,8 @@ export default function WelcomeScreen() {
           onSubmitEditing={() => {
             void handleCreateAccount();
           }}
-          error={fieldError}
+          error={passwordError}
+          hint={t('auth.field.passwordHint')}
           testID="welcome-password"
         />
         {checkEmail ? (

@@ -166,6 +166,7 @@ export const en = {
   'auth.field.email': 'Email',
   'auth.field.emailPlaceholder': 'you@example.com',
   'auth.field.password': 'Password',
+  'auth.field.passwordHint': 'At least 8 characters',
   'auth.field.passwordPlaceholder': 'Password',
   'auth.forgotPassword': 'Forgot your password?',
   'auth.haveAccount': 'I already have an account',
