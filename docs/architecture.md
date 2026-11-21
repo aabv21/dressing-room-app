@@ -4,7 +4,7 @@ This page follows a garment from the camera to a rated outfit, then covers the o
 paths, the data model, failures, security, scaling and costs, the reasons behind each design
 choice, and how to regenerate the diagrams.
 
-![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, and a garment insert starts the extraction function](diagrams/system-context.svg)
+![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, a garment insert starts the extraction function, Auth mails through Brevo, GitHub Actions calls the keep-alive daily, and the owner's Mac backs up the database and photos](diagrams/system-context.svg)
 
 System context: [interactive page](diagrams/system-context.html) · [source](diagrams/system-context.json)
 
@@ -63,7 +63,7 @@ weights in [`ai.md`](ai.md); and the tables, policies and grants in [`database.m
 
 ## How a garment gets into the closet
 
-![Upload pipeline: a photo goes from the camera or gallery into the upload queue, which uploads both WebP files and inserts the garment row; the insert trigger calls extract-attributes, which reads the photo, asks Claude and writes the attributes back while the garment is still pending, and the app polls until the review queue can ask about the doubts](diagrams/upload-pipeline.svg)
+![Upload pipeline: a photo goes from the camera or gallery into the upload queue, which uploads both WebP files and inserts the garment row; the insert trigger calls extract-attributes, which reads the photo, asks Claude and writes the attributes back only while the garment is still pending, unreviewed and unedited, and the app polls until the review queue can ask about the doubts](diagrams/upload-pipeline.svg)
 
 Upload pipeline: [interactive page](diagrams/upload-pipeline.html) · [source](diagrams/upload-pipeline.json)
 
@@ -83,7 +83,8 @@ Upload pipeline: [interactive page](diagrams/upload-pipeline.html) · [source](d
    against the 100-a-day quota, downloads `full.webp` and asks Claude for its category, colors,
    pattern, material, formality, seasons, warmth, fit and occasions. The parser keeps only catalog
    values and marks anything dropped or low-confidence as doubtful. The write-back applies only
-   while the garment is still `pending` and not yet reviewed.
+   while the garment is still `pending`, not yet reviewed and not edited since it was read (its
+   `updated_at`).
 6. **Review.** While a garment is pending, the closet refreshes every 5 s. The review queue then
    asks only the doubted fields, as quick choices. Any failure (over quota, a refusal, a timeout,
    or a row still pending after 10 minutes) sends the garment to review with empty fields, so the
@@ -91,7 +92,7 @@ Upload pipeline: [interactive page](diagrams/upload-pipeline.html) · [source](d
 
 ## How an outfit gets rated
 
-![Rating sequence: the rating screen calls rate-outfit with the garment ids; the function reads the garments and profile with the user's token, gets the weather, checks the cache and the quota, asks Jev, falls back to Claude, searches a swap for a weak outfit, caches the result and answers](diagrams/rating-sequence.svg)
+![Rating sequence: the rating screen calls rate-outfit with the garment ids; the function reads the garments and profile with the user's token, gets the weather, checks the cache and the quota, asks Jev, falls back to Claude (or answers 503 when both fail), searches a swap for a weak outfit, caches the result and answers](diagrams/rating-sequence.svg)
 
 Rating sequence: [interactive page](diagrams/rating-sequence.html) · [source](diagrams/rating-sequence.json)
 

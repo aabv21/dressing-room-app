@@ -9,7 +9,7 @@
     "column_fit": "spread",
     "viewBox": [
       1700,
-      972
+      1002
     ]
   },
   "participants": [
@@ -74,17 +74,17 @@
     },
     {
       "from": 605,
-      "to": 670,
+      "to": 700,
       "label": "6 Claude fallback"
     },
     {
-      "from": 694,
-      "to": 789,
+      "from": 724,
+      "to": 819,
       "label": "7 Swap search"
     },
     {
-      "from": 813,
-      "to": 878,
+      "from": 843,
+      "to": 908,
       "label": "8 Cache and answer"
     }
   ],
@@ -175,21 +175,28 @@
     },
     {
       "from": "fn",
+      "to": "app",
+      "y": 680,
+      "label": "both failed: 503 rating_unavailable",
+      "variant": "return"
+    },
+    {
+      "from": "fn",
       "to": "db",
-      "y": 709,
+      "y": 739,
       "label": "the closet (RLS), weakest slot only"
     },
     {
       "from": "fn",
       "to": "jev",
-      "y": 739,
+      "y": 769,
       "label": "up to 8 candidates, 5 at once",
       "note": "below 70 · none after 15 s"
     },
     {
       "from": "jev",
       "to": "fn",
-      "y": 769,
+      "y": 799,
       "label": "answers per candidate",
       "variant": "return",
       "note": "code offers a swap 5+ points better"
@@ -197,13 +204,13 @@
     {
       "from": "fn",
       "to": "db",
-      "y": 828,
+      "y": 858,
       "label": "cache result (degraded: 1 h)"
     },
     {
       "from": "fn",
       "to": "app",
-      "y": 858,
+      "y": 888,
       "label": "score, label, reasons, swap",
       "variant": "emphasis"
     }
@@ -222,7 +229,7 @@
       "dot": "rose",
       "title": "Bounded spend",
       "items": [
-        "50 ratings per user per UTC day, cache misses only",
+        "50 ratings per user per day (the user's local day), cache misses only",
         "A cache hit calls no model",
         "Worst case about 40 s, inside the app's 45 s deadline"
       ]

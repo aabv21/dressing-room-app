@@ -58,7 +58,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 
 ## Architecture
 
-![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, and a garment insert starts the extraction function](docs/diagrams/system-context.svg)
+![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, a garment insert starts the extraction function, Auth mails through Brevo, GitHub Actions calls the keep-alive daily, and the owner's Mac backs up the database and photos](docs/diagrams/system-context.svg)
 
 The app talks only to one Supabase project, with the user's session: Auth, Postgres with row-level security on every table, a private photo bucket, and seven Edge Functions. Background removal, resizing and a resumable upload queue run on the phone, and so do Stats and Diary. Only the Edge Functions call the outside services: Claude labels each garment photo, TypeSafe's Jev rates outfits from bucketed, enum-only data (never photos or measurements), and Open-Meteo gives the weather. Code owns the workflow; per-user daily quotas and caches come before any paid call, and each model failure has a fallback.
 

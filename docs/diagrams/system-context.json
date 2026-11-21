@@ -25,7 +25,7 @@
       "type": "external",
       "label": "Apple · Google",
       "sublabel": "sign-in ID tokens",
-      "row": 0,
+      "row": 2,
       "col": 0,
       "size": [
         150,
@@ -38,6 +38,18 @@
       "label": "Dressing Room app",
       "sublabel": "Expo · upload queue",
       "row": 1,
+      "col": 0,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub Actions",
+      "sublabel": "keepalive.yml, daily",
+      "row": 3,
       "col": 0,
       "size": [
         150,
@@ -62,7 +74,19 @@
       "label": "Auth",
       "sublabel": "password · ID tokens",
       "row": 0,
-      "col": 2,
+      "col": 1,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "brevo",
+      "type": "external",
+      "label": "Brevo",
+      "sublabel": "SMTP relay",
+      "row": 0,
+      "col": 0,
       "size": [
         150,
         64
@@ -85,7 +109,7 @@
       "type": "database",
       "label": "Storage",
       "sublabel": "private garments bucket",
-      "row": 3,
+      "row": 0,
       "col": 2,
       "size": [
         150,
@@ -96,9 +120,21 @@
       "id": "postgres",
       "type": "database",
       "label": "Postgres 17",
-      "sublabel": "RLS on every table",
-      "brand": "postgresql",
+      "sublabel": "RLS · pg_cron prune",
       "row": 2,
+      "col": 2,
+      "size": [
+        150,
+        64
+      ],
+      "brand": "postgresql"
+    },
+    {
+      "id": "backup",
+      "type": "external",
+      "label": "Owner's Mac",
+      "sublabel": "launchd backup, 03:30",
+      "row": 3,
       "col": 2,
       "size": [
         150,
@@ -110,13 +146,13 @@
       "type": "external",
       "label": "Anthropic",
       "sublabel": "Claude Haiku 5.5",
-      "brand": "anthropic",
       "row": 0,
       "col": 4,
       "size": [
         150,
         64
-      ]
+      ],
+      "brand": "anthropic"
     },
     {
       "id": "typesafe",
@@ -147,12 +183,12 @@
       "type": "external",
       "label": "Apple ID",
       "sublabel": "token exchange · revoke",
+      "row": 3,
+      "col": 4,
       "size": [
         150,
         64
-      ],
-      "row": 3,
-      "col": 4
+      ]
     }
   ],
   "boundaries": [
@@ -175,8 +211,9 @@
       "from": "app",
       "to": "idp",
       "label": "sign in",
-      "fromSide": "top",
-      "toSide": "bottom"
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
     },
     {
       "id": "api",
@@ -186,19 +223,45 @@
       "variant": "emphasis"
     },
     {
+      "id": "keepalive",
+      "from": "github",
+      "to": "gateway",
+      "label": "rpc/keep_alive",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "labelSegment": 0
+    },
+    {
       "id": "to-auth",
       "from": "gateway",
       "to": "auth",
       "label": "sessions",
       "fromSide": "top",
-      "toSide": "left"
+      "toSide": "bottom"
+    },
+    {
+      "id": "smtp",
+      "from": "auth",
+      "to": "brevo",
+      "label": "reset code",
+      "fromSide": "left",
+      "toSide": "right"
     },
     {
       "id": "to-functions",
       "from": "gateway",
       "to": "functions",
       "label": "verify_jwt",
-      "variant": "emphasis"
+      "variant": "emphasis",
+      "labelDy": 22
+    },
+    {
+      "id": "to-storage",
+      "from": "gateway",
+      "to": "storage",
+      "label": "photos (RLS)",
+      "fromSide": "right",
+      "toSide": "left"
     },
     {
       "id": "to-rest",
@@ -206,35 +269,16 @@
       "to": "postgres",
       "label": "PostgREST (RLS)",
       "fromSide": "bottom",
-      "toSide": "left",
-      "labelAt": [
-        468,
-        370
-      ],
-      "via": [
-        [
-          375,
-          370
-        ]
-      ]
+      "toSide": "left"
     },
     {
-      "id": "to-storage",
-      "from": "gateway",
+      "id": "fn-storage",
+      "from": "functions",
       "to": "storage",
-      "label": "photos (RLS)",
-      "fromSide": "bottom",
-      "toSide": "left",
-      "labelAt": [
-        468,
-        504
-      ],
-      "via": [
-        [
-          375,
-          504
-        ]
-      ]
+      "label": "service role",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDx": -40
     },
     {
       "id": "fn-db",
@@ -243,10 +287,7 @@
       "label": "user JWT · service role",
       "fromSide": "bottom",
       "toSide": "top",
-      "labelAt": [
-        635,
-        303
-      ]
+      "labelDy": 24
     },
     {
       "id": "trigger",
@@ -255,33 +296,24 @@
       "label": "on insert",
       "variant": "dashed",
       "fromSide": "right",
-      "toSide": "right",
-      "labelAt": [
-        771,
-        310
-      ]
+      "toSide": "right"
     },
     {
-      "id": "fn-storage",
-      "from": "functions",
-      "to": "storage",
-      "label": "service role",
-      "fromSide": "right",
-      "toSide": "right",
-      "labelAt": [
-        810,
-        440
-      ],
-      "via": [
-        [
-          810,
-          236
-        ],
-        [
-          810,
-          504
-        ]
-      ]
+      "id": "dump",
+      "from": "backup",
+      "to": "postgres",
+      "label": "pg_dump",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "backup-photos",
+      "from": "backup",
+      "to": "gateway",
+      "label": "photos",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "labelSegment": 0
     },
     {
       "id": "claude",
@@ -302,20 +334,14 @@
       "from": "functions",
       "to": "meteo",
       "label": "city or coords",
-      "labelAt": [
-        987,
-        370
-      ]
+      "labelSegment": 2
     },
     {
       "id": "apple",
       "from": "functions",
       "to": "appleid",
       "label": "refresh token",
-      "labelAt": [
-        987,
-        504
-      ]
+      "labelSegment": 2
     }
   ],
   "cards": [
@@ -343,7 +369,7 @@
       "items": [
         "Claude: a 784 px cut-out and enum values",
         "Jev: height, age and body buckets, never photos",
-        "Open-Meteo: the city name or its coordinates"
+        "Brevo: the reset-code email; Open-Meteo: the city"
       ]
     }
   ]
