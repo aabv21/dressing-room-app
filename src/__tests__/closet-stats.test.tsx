@@ -282,7 +282,7 @@ describe('stats', () => {
     expect(row).toHaveStyle({ flexDirection: 'column' });
     expect(within(row).getByText('Coat · Green').props.numberOfLines).toBeUndefined();
     expect(screen.getByTestId(`unused-minis-${OLD_COAT}`)).toHaveStyle({ flexWrap: 'wrap' });
-    expect(within(row).getByRole('button', { name: 'Wear it, Coat · Green' })).toBeOnTheScreen();
+    expect(within(row).getByRole('button', { name: 'Suggest tomorrow, Coat · Green' })).toBeOnTheScreen();
     expect(within(row).getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
   });
 
@@ -293,7 +293,7 @@ describe('stats', () => {
     expect(screen.getByLabelText('Top, 1')).toBeOnTheScreen();
     expect(screen.getByLabelText('Bottom, 2')).toBeOnTheScreen();
     expect(screen.getByLabelText('Shoes, 1')).toBeOnTheScreen();
-    expect(screen.getByLabelText('Over, 1')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Outerwear, 1')).toBeOnTheScreen();
 
     const insight = screen.getByRole('link', {
       name: 'Tip: One more top that matches would take you from 2 to 4 possible outfits. → For you',
@@ -308,7 +308,7 @@ describe('stats', () => {
     expect(screen.getByText('Coat · Green')).toBeOnTheScreen();
     expect(screen.queryByText('T-shirt · Black')).not.toBeOnTheScreen();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Suggest tomorrow, Coat · Green' }));
 
     expect(mockedUpdate).toHaveBeenCalledWith(OLD_COAT, { pinned_on: '2026-11-09' });
     expect(await screen.findByText('Pinned for tomorrow ✓')).toBeOnTheScreen();
@@ -317,13 +317,13 @@ describe('stats', () => {
   test('a pinned row keeps Donate', async () => {
     await openStats();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Suggest tomorrow, Coat · Green' }));
 
     expect(await screen.findByText('Pinned for tomorrow ✓')).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
   });
 
-  test('a lent or uncategorized row offers no "Wear it", only Donate', async () => {
+  test('a lent or uncategorized row offers no "Suggest tomorrow", only Donate', async () => {
     const old = { ...done, created_at: '2026-01-10T12:00:00.000Z' } as const;
     mockSetGarments([
       garment({ ...old, id: OLD_COAT, category: 'coat', colors: ['green'], status: 'lent' }),
@@ -332,7 +332,7 @@ describe('stats', () => {
     await openStatsLoaded();
 
     expect(screen.getByText('Lent out')).toBeOnTheScreen();
-    expect(screen.queryByRole('button', { name: /^Wear it/ })).not.toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: /^Suggest tomorrow/ })).not.toBeOnTheScreen();
     expect(screen.getByRole('button', { name: 'Donate, Coat · Green' })).toBeOnTheScreen();
     expect(screen.getByRole('button', { name: /^Donate, .* · Red$/ })).toBeOnTheScreen();
   });
@@ -341,7 +341,7 @@ describe('stats', () => {
     await openStats();
     mockedLocalDate.mockReturnValue('2026-11-09');
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Suggest tomorrow, Coat · Green' }));
 
     expect(mockedUpdate).toHaveBeenCalledWith(OLD_COAT, { pinned_on: '2026-11-10' });
     expect(await screen.findByText('Pinned for tomorrow ✓')).toBeOnTheScreen();
@@ -356,7 +356,7 @@ describe('stats', () => {
     );
     await openStats();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Suggest tomorrow, Coat · Green' }));
     // A refresh lands while the pin is in flight.
     await act(async () => {
       mockSetGarments(mockStore.garments.map((g) => (g.id === OLD_COAT ? { ...g, wear_count: 3 } : g)));
@@ -416,10 +416,10 @@ describe('stats', () => {
     mockedUpdate.mockResolvedValue({ ok: false, error: 'network' });
     await openStats();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Wear it, Coat · Green' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Suggest tomorrow, Coat · Green' }));
 
     expect(await screen.findByText("Couldn't save. Check your internet and try again.")).toBeOnTheScreen();
-    expect(screen.getByRole('button', { name: 'Wear it, Coat · Green' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Suggest tomorrow, Coat · Green' })).toBeOnTheScreen();
     expect(screen.queryByText('Pinned for tomorrow ✓')).not.toBeOnTheScreen();
   });
 

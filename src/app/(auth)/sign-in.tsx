@@ -17,24 +17,26 @@ export default function SignInScreen() {
   const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailError, setEmailError] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const passwordRef = useRef<TextInputInstance>(null);
 
-  function showError(message: string): void {
-    setError(message);
+  function showError(message: string, field: 'email' | 'password' = 'password'): void {
+    (field === 'email' ? setEmailError : setError)(message);
     announceForAccessibility(message);
   }
 
   async function handleSignIn(): Promise<void> {
     setError(undefined);
+    setEmailError(undefined);
     const trimmedEmail = email.trim();
     if (trimmedEmail === '') {
-      showError(t('auth.error.emailRequired'));
+      showError(t('auth.error.emailRequired'), 'email');
       return;
     }
     if (!isValidEmail(trimmedEmail)) {
-      showError(t('auth.error.emailInvalid'));
+      showError(t('auth.error.emailInvalid'), 'email');
       return;
     }
     setSubmitting(true);
@@ -51,7 +53,7 @@ export default function SignInScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen
         title={t('auth.signIn.title')}
         chrome="none"
@@ -99,6 +101,7 @@ export default function SignInScreen() {
             passwordRef.current?.focus();
           }}
           submitBehavior="submit"
+          error={emailError}
           testID="sign-in-email"
         />
         <TextField

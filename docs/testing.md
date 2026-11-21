@@ -175,7 +175,7 @@ Outfits, Stats and Diary:
   caption capped for large text with the ring growing with them).
 - `src/__tests__/closet-stats.test.tsx` — the segments, the KPIs per period ("1 outfit logged",
   "2 outfits logged"), most worn, a color opening the filtered closet, the balance, the unused list
-  (Wear it and Donate, its row at the largest text sizes) and donated garments left out of Items and
+  (Suggest tomorrow and Donate, its row at the largest text sizes) and donated garments left out of Items and
   Build.
 - `src/__tests__/closet-diary.test.tsx` — the month calendar (worn days, month navigation, day
   numbers that stay inside their cells at a large text size, where the thumbnail shrinks), a day's
@@ -481,7 +481,7 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `garments_rules.test.sql` — the garments CHECKs (formality, warmth, colors, photo version) and
   the column grants: a client inserts only `id` and its own `user_id`, and never updates
   `extraction_status`, `wear_count` or `user_id`; `updated_at` moves on update.
-- `usage_quota.test.sql` — `consume_quota()`'s per-user, per-day counter and its limit, and that
+- `usage_quota.test.sql` — `consume_quota()`'s per-user, per-day counter and its limit, the local-day version's ±1-day guard, and that
   clients can neither call it nor read `usage_counters`.
 - `ai_caches.test.sql` — `rating_cache`, `lucky_cache` and `weather_cache` are server-only (no
   client select or insert, anon included), and the `rating` and `lucky` quota kinds count

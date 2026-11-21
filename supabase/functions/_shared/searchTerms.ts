@@ -51,7 +51,7 @@ const EN_CATEGORY: Record<GarmentCategory, string> = {
 type EsForm = 'm' | 'f' | 'mp' | 'fp';
 
 const ES_CATEGORY: Record<GarmentCategory, readonly [word: string, form: EsForm]> = {
-  t_shirt: ['franela', 'f'],
+  t_shirt: ['camiseta', 'f'],
   blouse: ['blusa', 'f'],
   shirt: ['camisa', 'f'],
   polo: ['polo', 'm'],
@@ -73,7 +73,7 @@ const ES_CATEGORY: Record<GarmentCategory, readonly [word: string, form: EsForm]
   sneakers: ['tenis', 'mp'],
   shoes: ['zapatos', 'mp'],
   heels: ['tacones', 'mp'],
-  flats: ['baletas', 'fp'],
+  flats: ['bailarinas', 'fp'],
   sandals: ['sandalias', 'fp'],
   boots: ['botas', 'fp'],
   loafers: ['mocasines', 'mp'],
@@ -145,7 +145,7 @@ const ES_CATEGORIES = new Map(Object.entries(ES_CATEGORY));
 const EN_COLORS = new Map(Object.entries(EN_COLOR));
 const ES_COLORS = new Map(Object.entries(ES_COLOR));
 
-/** The store-search noun for a category ("blazer", "franela"). */
+/** The store-search noun for a category ("blazer", "camiseta"). */
 export function categoryTerm(category: GarmentCategory, language: Language): string {
   return (language === 'es' ? ES_CATEGORIES.get(category)?.[0] : EN_CATEGORIES.get(category)) ?? category;
 }

@@ -37,3 +37,13 @@ test("the selected chip's label uses weight 700, as in the mockups", async () =>
   await render(<ChipGroup options={options} selected={['month']} onChange={jest.fn()} multiple={false} />);
   expect(StyleSheet.flatten(screen.getByText('Month').props.style)).toMatchObject({ fontWeight: '700' });
 });
+
+test('pressing a chip is a selection tick; a disabled chip stays still', async () => {
+  const Haptics = jest.requireMock<typeof import('expo-haptics')>('expo-haptics');
+  jest.mocked(Haptics.selectionAsync).mockClear();
+  await render(<ChipGroup options={options} selected={['week']} onChange={jest.fn()} />);
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Month' }));
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Year' }));
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});

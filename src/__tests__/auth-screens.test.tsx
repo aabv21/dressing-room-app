@@ -65,6 +65,27 @@ beforeEach(() => {
 });
 
 describe('WelcomeScreen', () => {
+  test('each error shows under its own field, and the password rule is shown up front', async () => {
+    Platform.OS = 'ios';
+    await render(<WelcomeScreen />);
+    const emailField = (): ReturnType<typeof screen.getByTestId> => screen.getByTestId('welcome-email-container');
+    const passwordField = (): ReturnType<typeof screen.getByTestId> => screen.getByTestId('welcome-password-container');
+    expect(within(passwordField()).getByText('At least 8 characters')).toBeOnTheScreen();
+
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'not-an-email');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'longenough1');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create account' }));
+    expect(await within(emailField()).findByText('Enter a valid email address.')).toBeOnTheScreen();
+    expect(within(passwordField()).queryByText('Enter a valid email address.')).not.toBeOnTheScreen();
+
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'short@example.com');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'short1');
+    await fireEvent.press(screen.getByRole('button', { name: 'Create account' }));
+    expect(await within(passwordField()).findByText('Use at least 8 characters.')).toBeOnTheScreen();
+    expect(within(passwordField()).queryByText('At least 8 characters')).not.toBeOnTheScreen();
+    expect(within(emailField()).queryByText('Enter a valid email address.')).not.toBeOnTheScreen();
+  });
+
   test('shows a two-line hero headline, the language toggle, Apple/Google, placeholder-only fields and footer links on iOS', async () => {
     Platform.OS = 'ios';
     await render(<WelcomeScreen />);
@@ -545,3 +566,14 @@ describe('ForgotPasswordScreen', () => {
     expect(screen.queryByRole('button', { name: 'Back to sign in' })).toBeNull();
   });
 });
+
+describe('SignInScreen errors', () => {
+  test('an empty email shows its error under the email field', async () => {
+    Platform.OS = 'ios';
+    await render(<SignInScreen />);
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'longenough1');
+    await fireEvent.press(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await within(screen.getByTestId('sign-in-email-container')).findByText('Enter your email.')).toBeOnTheScreen();
+  });
+});
+

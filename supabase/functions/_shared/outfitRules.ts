@@ -41,7 +41,8 @@ export type Outfit = readonly RuleGarment[];
 
 export type RuleContext = {
   occasion: Occasion | null;
-  season: Season;
+  /** `null`: no season rule (the tropics, or no city), so the weather alone filters. */
+  season: Season | null;
   weather: WeatherSummary | null;
   today: string;
   /**
@@ -89,15 +90,19 @@ function isRecentlyWorn(item: RuleGarment, today: string): boolean {
   return days >= 0 && days < RECENT_WEAR_DAYS;
 }
 
+/** Within this many degrees of the equator there are no seasons to dress for, only weather. */
+export const TROPIC_LATITUDE = 23.44;
+
 /**
  * Month-and-hemisphere season: Dec–Feb is winter in the north and summer in the south, Mar–May
- * spring in the north and autumn in the south, and so on. `lat` is the user's current city
- * latitude; its sign picks the hemisphere, and `null` (no city, or a city that can't be geocoded)
- * defaults to the northern one.
+ * spring in the north and autumn in the south, and so on. `lat` is the user's city latitude.
+ * `null` in the tropics and without a latitude (no city, or one that can't be geocoded): the
+ * season rule is then off and the day's weather decides.
  */
-export function seasonOf(date: string, lat: number | null): Season {
+export function seasonOf(date: string, lat: number | null): Season | null {
+  if (lat === null || Math.abs(lat) < TROPIC_LATITUDE) return null;
   const month = Number(date.slice(5, 7));
-  const north = lat === null || lat >= 0;
+  const north = lat >= 0;
 
   // Northern-hemisphere month -> season; the south is offset by two quarters.
   const northernSeason: Season =
@@ -151,7 +156,7 @@ function formalityRangeFor(occasion: Occasion | null): readonly [number, number]
 /** Season and formality admissibility shared by `passesRules` and `generateCandidates`'s outerwear-availability check, so the two can't drift. */
 function isAdmissible(item: RuleGarment, ctx: Pick<RuleContext, 'occasion' | 'season'>): boolean {
   if (item.status !== 'available' || item.category === null) return false;
-  if (item.seasons.length > 0 && !item.seasons.includes(ctx.season)) return false;
+  if (ctx.season !== null && item.seasons.length > 0 && !item.seasons.includes(ctx.season)) return false;
   const [minFormality, maxFormality] = formalityRangeFor(ctx.occasion);
   if (item.formality !== null && (item.formality < minFormality || item.formality > maxFormality)) return false;
   return true;

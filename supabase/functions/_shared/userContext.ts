@@ -381,6 +381,16 @@ async function fetchJson(fetchFn: FetchFn, url: string, init: RequestInit, timeo
  * and upserts the cache (best effort: a failed write still returns the weather). No city, a
  * city that can't be geocoded, or any Open-Meteo failure gives `weather: null`, never a throw.
  */
+/** A typed city's latitude from Open-Meteo's geocoding, or null when it can't be found or the call fails. */
+export async function geocodedLatitude(env: FnEnv, fetchFn: FetchFn, cityName: string): Promise<number | null> {
+  try {
+    const body = await fetchJson(fetchFn, geocodeUrl(`${trimSlash(env.geocodingUrl)}/v1/search`, cityName.trim()), {}, WEATHER_TIMEOUT_MS);
+    return parseGeocode(body)?.lat ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getLocalWeather(
   env: FnEnv,
   fetchFn: FetchFn,
@@ -441,7 +451,8 @@ export async function getWeather(
 // --- Quota and result caches -------------------------------------------------------------------
 
 /**
- * `public.consume_quota` for the caller; throws when the RPC itself fails.
+ * `public.consume_quota` for the caller on `day`, the app's local calendar day (the database falls
+ * back to the UTC day when it is more than a day off); throws when the RPC itself fails.
  * NOTE: two identical requests that both miss the cache at once both spend quota and both call the
  * model (a double tap the app's busy locks already prevent). Upgrade path: an advisory lock on the
  * cache key around the miss.
@@ -452,11 +463,12 @@ export async function consumeQuota(
   userId: string,
   kind: 'rating' | 'lucky' | 'for_you',
   limit: number,
+  day: string,
 ): Promise<boolean> {
   const allowed = await restJson(fetchFn, `${env.supabaseUrl}/rest/v1/rpc/consume_quota`, {
     method: 'POST',
     headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-    body: JSON.stringify({ p_user_id: userId, p_kind: kind, p_limit: limit }),
+    body: JSON.stringify({ p_user_id: userId, p_kind: kind, p_limit: limit, p_day: day }),
   });
   return allowed === true;
 }
@@ -654,7 +666,7 @@ export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (t:
  */
 export function ratingState(
   profile: ProfileRow | null,
-  context: { occasion: Occasion | null; weather: WeatherSummary | null; season: Season },
+  context: { occasion: Occasion | null; weather: WeatherSummary | null; season: Season | null },
   outfit: readonly RuleGarment[],
 ): RatingState {
   const clothingType = profile?.clothing_type ?? null;

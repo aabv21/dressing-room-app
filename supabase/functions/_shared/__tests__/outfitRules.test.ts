@@ -53,8 +53,38 @@ describe('seasonOf', () => {
     expect(seasonOf('2026-01-15', 40)).toBe('winter');
   });
 
-  test('a null latitude defaults to the northern hemisphere', () => {
-    expect(seasonOf('2026-01-15', null)).toBe('winter');
+  test('no season in the tropics or without a latitude', () => {
+    expect(seasonOf('2026-12-15', 4.71)).toBeNull(); // Bogotá
+    expect(seasonOf('2026-07-01', 10.48)).toBeNull(); // Caracas
+    expect(seasonOf('2026-12-15', -23.0)).toBeNull();
+    expect(seasonOf('2026-12-15', null)).toBeNull();
+  });
+
+  test('seasons outside the tropics are unchanged', () => {
+    expect(seasonOf('2026-12-15', 40.4)).toBe('winter');
+    expect(seasonOf('2026-12-15', -34.6)).toBe('summer');
+    expect(seasonOf('2026-07-01', 23.44)).toBe('summer');
+  });
+});
+
+describe('the season rule', () => {
+  const summerOnlyOutfit = (): RuleGarment[] => [
+    garment({ category: 't_shirt', seasons: ['summer'] }),
+    garment({ category: 'shorts', seasons: ['summer'] }),
+    garment({ category: 'sneakers' }),
+  ];
+
+  test('a summer-only outfit passes when there is no season', () => {
+    expect(passesRules(summerOnlyOutfit(), { ...MILD_CTX, season: null })).toBe(true);
+  });
+
+  test('a summer-only outfit is still rejected in winter', () => {
+    expect(passesRules(summerOnlyOutfit(), { ...MILD_CTX, season: 'winter' })).toBe(false);
+  });
+
+  test('garments with no seasons stay admissible in any season', () => {
+    const outfit = [garment({ category: 't_shirt' }), garment({ category: 'jeans' }), garment({ category: 'sneakers' })];
+    expect(passesRules(outfit, { ...MILD_CTX, season: 'winter' })).toBe(true);
   });
 });
 

@@ -70,3 +70,8 @@ test('garment statuses read as neutral Spanish, the same for any garment', () =>
   expect(es['garment.status.lent']).toBe('En préstamo');
   expect(es['garment.status.donated']).toBe('Donación');
 });
+
+test('the Spanish table is neutral Latin American Spanish, without regionalisms', () => {
+  const text = Object.values(es).join(' ').toLowerCase();
+  for (const word of ['franela', 'baleta', 'chancleta', 'guayo']) expect(text).not.toContain(word);
+});

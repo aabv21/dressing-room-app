@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { androidRipple, pressedStyle, tapHaptic } from './feedback';
 import { colors, layout, radii } from './theme';
 
 const CHIP_HEIGHT = 36;
@@ -73,14 +74,17 @@ export function ChipGroup<T extends string>(props: {
             disabled={disabled}
             hitSlop={{ top: VERTICAL_SLOP, bottom: VERTICAL_SLOP, left: 2, right: 2 }}
             onPress={() => {
+              tapHaptic('selection');
               toggle(option.value);
             }}
-            style={[
+            android_ripple={androidRipple}
+            style={({ pressed }) => [
               styles.chip,
               accent ? styles.chipAccent : null,
               stretch ? styles.stretch : null,
               isOn ? (accent ? styles.chipAccentOn : styles.chipOn) : null,
               disabled ? styles.disabled : null,
+              pressed && Platform.OS === 'ios' && pressedStyle,
             ]}
           >
             {option.swatch === undefined ? null : (

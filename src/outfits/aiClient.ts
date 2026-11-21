@@ -70,8 +70,8 @@ export function fetchLuckyList(
 }
 
 /** For you's ideas, with the lines and store-search words in `language` (the app's current locale). */
-export function fetchForYou(input: { language: Locale }, client: Client = supabase): Promise<AiOutcome<ForYouResponse>> {
-  return invoke<ForYouResponse>('for-you', { language: input.language }, client);
+export function fetchForYou(input: { language: Locale; date: string }, client: Client = supabase): Promise<AiOutcome<ForYouResponse>> {
+  return invoke<ForYouResponse>('for-you', { language: input.language, date: input.date }, client);
 }
 
 /** The device's local calendar day as `YYYY-MM-DD`, matching the functions' `isIsoDate` input. */

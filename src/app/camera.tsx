@@ -12,6 +12,7 @@ import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ShotStrip } from '../closet/ShotStrip';
+import { useGalleryImport } from '../closet/useGalleryImport';
 import { useUploadQueue } from '../closet/UploadQueueProvider';
 import { pluralKey, useI18n } from '../i18n';
 import { AnchoredCta } from '../ui/AnchoredCta';
@@ -23,6 +24,7 @@ function PermissionGate({ children }: { children: React.ReactNode }): React.JSX.
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
+  const { pickFromGallery } = useGalleryImport();
 
   useEffect(() => {
     if (permission !== null && !permission.granted && permission.canAskAgain) {
@@ -38,6 +40,17 @@ function PermissionGate({ children }: { children: React.ReactNode }): React.JSX.
   if (!permission.granted) {
     return (
       <View style={[styles.fill, styles.centered, { paddingBottom: insets.bottom + 24 }]}>
+        {/* A full-screen modal can't be swiped away on iOS, so the denied state needs its own exit. */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('camera.permission.close')}
+          onPress={() => {
+            router.back();
+          }}
+          style={[styles.closeButton, styles.deniedClose, { top: insets.top + 12 }]}
+        >
+          <X size={20} color="#ffffff" />
+        </Pressable>
         <Text style={styles.deniedText}>{t('camera.permission.denied')}</Text>
         <Pressable
           accessibilityRole="button"
@@ -47,6 +60,17 @@ function PermissionGate({ children }: { children: React.ReactNode }): React.JSX.
           }}
         >
           <Text style={styles.settingsLabel}>{t('camera.permission.openSettings')}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.galleryButton}
+          onPress={() => {
+            void pickFromGallery().then((picked) => {
+              if (picked) router.back();
+            });
+          }}
+        >
+          <Text style={styles.galleryLabel}>{t('camera.permission.gallery')}</Text>
         </Pressable>
       </View>
     );
@@ -235,6 +259,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  deniedClose: {
+    position: 'absolute',
+    left: 20,
+    marginLeft: 0,
+  },
+  galleryButton: {
+    minHeight: layout.minHitTarget,
+    marginTop: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  galleryLabel: {
+    color: '#ffffff',
+    fontWeight: '700',
+    fontSize: 14,
   },
   closeButton: {
     width: layout.minHitTarget,

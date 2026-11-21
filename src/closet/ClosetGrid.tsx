@@ -1,9 +1,10 @@
 import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { memo, useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatWearCount, useI18n, type Locale } from '../i18n';
+import { androidRipple, pressedStyle, tapHaptic } from '../ui/feedback';
 import { colors, radii, selectionRing, spacing, textScale } from '../ui/theme';
 
 export type GridItem = {
@@ -62,6 +63,7 @@ const GridCell = memo(function GridCell({
   }, [item.thumbUri]);
 
   const onCellPress = useCallback(() => {
+    tapHaptic('selection');
     onPress?.(item.id);
   }, [onPress, item.id]);
 
@@ -70,7 +72,8 @@ const GridCell = memo(function GridCell({
   return (
     <View style={styles.cell} testID={`grid-cell-${item.id}`}>
       <Pressable
-        style={[styles.cellInner, selected === true ? styles.cellSelected : null]}
+        android_ripple={onPress ? androidRipple : undefined}
+        style={({ pressed }) => [styles.cellInner, selected === true ? styles.cellSelected : null, pressed && Platform.OS === 'ios' && pressedStyle]}
         onPress={onPress ? onCellPress : undefined}
         accessibilityRole={onPress ? 'button' : undefined}
         accessibilityLabel={accessibilityLabel}

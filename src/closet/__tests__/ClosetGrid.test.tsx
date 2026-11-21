@@ -152,3 +152,13 @@ test('the badge and wear count over a thumbnail are capped for large text, and i
   expect(cell).toHaveProp('accessibilityShowsLargeContentViewer', true);
   expect(cell).toHaveProp('accessibilityLargeContentTitle', 'Jeans, In the laundry, 2 wears');
 });
+
+test('pressing a cell is a selection tick and still reports the item', async () => {
+  const Haptics = jest.requireMock<typeof import('expo-haptics')>('expo-haptics');
+  jest.mocked(Haptics.selectionAsync).mockClear();
+  const onPressItem = jest.fn();
+  await render(<ClosetGrid items={[{ id: 'a', thumbUri: '', wearCount: 6, label: 'Heels' }]} onPressItem={onPressItem} />);
+  await fireEvent.press(screen.getByLabelText('Heels, 6 wears'));
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+  expect(onPressItem).toHaveBeenCalledWith('a');
+});

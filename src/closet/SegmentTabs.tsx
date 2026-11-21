@@ -1,5 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { androidRipple, pressedStyle, tapHaptic } from '../ui/feedback';
 import { colors, layout, radii, textScale } from '../ui/theme';
 
 const SEGMENT_HEIGHT = 34;
@@ -33,10 +34,12 @@ export function SegmentTabs<T extends string>(props: {
             hitSlop={{ top: VERTICAL_SLOP, bottom: VERTICAL_SLOP, left: 0, right: 0 }}
             onPress={() => {
               if (!selected) {
+                tapHaptic('selection');
                 onChange(option.value);
               }
             }}
-            style={[styles.segment, selected ? styles.segmentOn : null]}
+            android_ripple={androidRipple}
+            style={({ pressed }) => [styles.segment, selected ? styles.segmentOn : null, pressed && Platform.OS === 'ios' && pressedStyle]}
           >
             <Text
               style={[styles.label, selected ? styles.labelOn : null]}

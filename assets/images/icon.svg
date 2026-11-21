@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Provisional app icon: a white clothes hanger on the app's accent violet. -->
+  <rect width="1024" height="1024" fill="#7c3aed"/>
+  <g fill="none" stroke="#ffffff" stroke-width="52" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M512 452 L512 410 C512 384 528 370 548 356 C574 338 584 312 572 286 C560 260 532 248 506 252 C478 256 460 278 458 304"/>
+    <path d="M512 452 L254 628 C226 648 240 690 274 690 L750 690 C784 690 798 648 770 628 Z"/>
+  </g>
+</svg>

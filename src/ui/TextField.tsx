@@ -35,6 +35,8 @@ type TextFieldProps = {
    * blur-and-submit behavior. Replaces the deprecated `blurOnSubmit` prop. */
   submitBehavior?: TextInputProps['submitBehavior'];
   error?: string | undefined;
+  /** Help shown under the field (e.g. a password rule) until there is an error to show instead. */
+  hint?: string | undefined;
   testID?: string;
   /** Default 'none' (emails, codes); free-text fields such as a city name pass 'words'. */
   autoCapitalize?: TextInputProps['autoCapitalize'];
@@ -63,6 +65,7 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
     onBlur,
     submitBehavior,
     error,
+    hint,
     testID,
     autoCapitalize = 'none',
     leading,
@@ -130,6 +133,8 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
         <Text style={styles.error} accessibilityLiveRegion="polite">
           {error}
         </Text>
+      ) : hint !== undefined ? (
+        <Text style={styles.hint}>{hint}</Text>
       ) : null}
     </View>
   );
@@ -192,5 +197,9 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: 12,
     fontWeight: '600',
+  },
+  hint: {
+    color: colors.muted,
+    fontSize: 12,
   },
 });

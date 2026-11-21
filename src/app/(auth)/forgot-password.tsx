@@ -171,7 +171,7 @@ export default function ForgotPasswordScreen() {
 
   if (step === 'email') {
     return (
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <Screen
           title={t('auth.forgotPassword.title')}
           chrome="none"
@@ -218,7 +218,7 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Screen
         title={t('auth.forgotPassword.title')}
         chrome="none"

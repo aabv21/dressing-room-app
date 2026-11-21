@@ -47,6 +47,8 @@ import {
   cacheReadNewest,
   CLAUDE_TIMEOUT_MS,
   consumeQuota,
+  geocodedLatitude,
+  isIsoDate,
   type FnEnv,
   loadGarments,
   loadProfile,
@@ -109,7 +111,7 @@ export const LINES_DEADLINE_MS = 38_000;
 /** With no more than this left before `LINES_DEADLINE_MS`, Claude is skipped and every idea gets its template. */
 export const MIN_LINES_TIMEOUT_MS = 2_000;
 // Bump whenever the archetypes, the gain rules or the response shape change: it's what invalidates the stored entries.
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 const LANGUAGES = ['en', 'es'] as const satisfies readonly Language[];
 
@@ -122,7 +124,8 @@ function reply(outcome: Outcome, status: number, body: unknown): Response {
   return json(status, body);
 }
 
-async function readLanguage(request: Request): Promise<Language | null> {
+/** The language, and the app's local day when it sends a valid one (older apps send none). */
+async function readInput(request: Request): Promise<{ language: Language; date: string | null } | null> {
   let body: unknown;
   try {
     body = await request.json();
@@ -130,7 +133,9 @@ async function readLanguage(request: Request): Promise<Language | null> {
     return null;
   }
   if (!isRecord(body)) return null;
-  return LANGUAGES.find((language) => language === body.language) ?? null;
+  const language = LANGUAGES.find((candidate) => candidate === body.language);
+  if (language === undefined) return null;
+  return { language, date: isIsoDate(body.date) ? body.date : null };
 }
 
 const byId = (a: RuleGarment, b: RuleGarment): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -158,7 +163,7 @@ function cacheKey(
   wardrobe: readonly RuleGarment[],
   profile: ProfileRow | null,
   language: Language,
-  season: Season,
+  season: Season | null,
 ): Promise<string> {
   const fingerprint = wardrobe
     .filter((g) => g.category !== null)
@@ -309,8 +314,10 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
   const auth = request.headers.get('authorization');
   const userId = userIdFromJwt(auth);
   if (auth === null || userId === null) return reply('invalid', 401, { error: 'unauthorized' });
-  const language = await readLanguage(request);
-  if (language === null) return reply('invalid', 400, { error: 'invalid_input' });
+  const input = await readInput(request);
+  if (input === null) return reply('invalid', 400, { error: 'invalid_input' });
+  const { language } = input;
+  const day = input.date ?? new Date(startedAt).toISOString().slice(0, 10);
 
   const { env, fetch: fetchFn } = deps;
   try {
@@ -323,16 +330,16 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
       return reply('too_small', 200, { kind: 'too_small' } satisfies ForYouResponse);
     }
 
-    // NOTE: the season comes from the UTC date and the profile's stored latitude (northern without
-    // one): a city typed without coordinates isn't geocoded here, so a southern-hemisphere user who
-    // typed one gets northern seasons. Upgrade path: `getLocalWeather`'s geocoded latitude.
-    const season = seasonOf(new Date(now()).toISOString().slice(0, 10), profile?.city_lat ?? null);
+    // A city typed without coordinates is geocoded for its latitude, so a temperate city keeps its season.
+    const cityName = profile?.city_name ?? null;
+    const lat = profile?.city_lat ?? (cityName === null ? null : await geocodedLatitude(env, fetchFn, cityName));
+    const season = seasonOf(day, lat);
     const key = await cacheKey(wardrobe, profile, language, season);
     const row = await cacheRead(env, fetchFn, 'for_you_cache', userId, key);
     const stored = row === null ? null : fromCache(row.result);
     if (row !== null && stored !== null && cacheFresh(row, now(), FOR_YOU_TTL_MS)) return reply('cached', 200, stored);
 
-    if (!(await consumeQuota(env, fetchFn, userId, 'for_you', FOR_YOU_DAILY_LIMIT))) {
+    if (!(await consumeQuota(env, fetchFn, userId, 'for_you', FOR_YOU_DAILY_LIMIT, day))) {
       const stale = await staleAnswer(deps, userId, stored, wardrobe);
       if (stale !== null) return reply('stale', 200, stale);
       return reply('over_quota', 429, { error: 'over_quota' });

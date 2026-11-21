@@ -119,7 +119,7 @@ export function ownsArchetype(garments: readonly RuleGarment[], archetype: Pick<
  * occasion, the given season and no weather, and `MAX_FORMALITY_SPREAD` — counted up to
  * `GAIN_CAP`, and the distinct user garments in the outfits counted.
  */
-export function archetypeGain(archetype: Archetype, garments: readonly RuleGarment[], ctx: { season: Season }): Gain {
+export function archetypeGain(archetype: Archetype, garments: readonly RuleGarment[], ctx: { season: Season | null }): Gain {
   // `passesRules` never reads `today`; it's only there for the lucky list's recent-wear checks.
   const rules: RuleContext = { occasion: null, season: ctx.season, weather: null, today: '' };
   const piece = archetypeGarment(archetype);
@@ -185,7 +185,7 @@ function capPerSlot<T extends ForYouIdea>(ranked: readonly T[], perSlot: number,
 }
 
 /** The clothing type's archetypes the user doesn't own, with gain > 0, best gain first (ties: `compareTies`). */
-export function rankByGain(garments: readonly RuleGarment[], clothingType: ClothingType, season: Season): ForYouIdea[] {
+export function rankByGain(garments: readonly RuleGarment[], clothingType: ClothingType, season: Season | null): ForYouIdea[] {
   return archetypesFor(clothingType)
     .filter((archetype) => !ownsArchetype(garments, archetype))
     .map((archetype) => ({ archetype, gain: archetypeGain(archetype, garments, { season }) }))

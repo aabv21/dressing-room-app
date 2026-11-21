@@ -25,9 +25,9 @@ function readEnv(): FnEnv {
     typesafeBaseUrl: withDefault('TYPESAFE_BASE_URL', 'https://api.typesafe.ai'),
     anthropicApiKey: required('ANTHROPIC_API_KEY'),
     anthropicBaseUrl: withDefault('ANTHROPIC_BASE_URL', 'https://api.anthropic.com'),
-    // For you reads no weather (the season comes from the date and the profile's latitude).
+    // For you reads no weather; it geocodes a typed city for its season's hemisphere.
     openMeteoUrl: '',
-    geocodingUrl: '',
+    geocodingUrl: withDefault('OPEN_METEO_GEOCODING_URL', 'https://geocoding-api.open-meteo.com'),
   };
 }
 

@@ -1,7 +1,8 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import type { LucideIcon } from 'lucide-react-native';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { androidRipple, pressedStyle, tapHaptic } from './feedback';
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
 import { colors, gradients, layout, radii, textScale } from './theme';
@@ -17,7 +18,12 @@ export type CtaAction = {
 };
 
 function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBasisPercent?: number }) {
-  const { label, onPress, tone, icon: Icon, disabled = false } = action;
+  const { label, tone, icon: Icon, disabled = false } = action;
+  const onPress = (): void => {
+    tapHaptic(tone === 'ghost' ? 'selection' : 'commit');
+    action.onPress();
+  };
+  const pressed = (state: { pressed: boolean }) => state.pressed && Platform.OS === 'ios' && pressedStyle;
   const textStyle = tone === 'ghost' ? styles.labelDark : styles.labelLight;
   const iconColor = tone === 'ghost' ? colors.ink : '#ffffff';
 
@@ -42,7 +48,8 @@ function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBas
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onPress}
-        style={[styles.button, flexStyle, disabled ? styles.disabled : null]}
+        android_ripple={androidRipple}
+        style={(state) => [styles.button, flexStyle, disabled ? styles.disabled : null, pressed(state)]}
       >
         <LinearGradient colors={gradients.ai} style={styles.fill}>
           {content}
@@ -57,11 +64,13 @@ function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBas
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[
+      android_ripple={androidRipple}
+      style={(state) => [
         styles.button,
         flexStyle,
         tone === 'commit' ? styles.commitFill : styles.ghostFill,
         disabled ? styles.disabled : null,
+        pressed(state),
       ]}
     >
       {content}
