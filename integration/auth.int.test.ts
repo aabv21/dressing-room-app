@@ -1,7 +1,7 @@
 // integration/auth.int.test.ts
 //
 // Exercises authService against a locally running Supabase stack (see helpers.ts for the
-// `.env.local` + client setup, and AGENTS.md's "Local backend" section for the `db:*` scripts).
+// `.env.local` + client setup, and docs/local-stack.md for the `db:*` scripts).
 // Run with `pnpm db:start && pnpm db:reset && pnpm env:local && pnpm test:int`.
 
 import {

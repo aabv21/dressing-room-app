@@ -3,6 +3,13 @@ import { Dimensions } from 'react-native';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import; see https://jestjs.io/docs/jest-object#jestmockmodulename-factory-options
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 jest.mock('expo-localization', () => ({ getLocales: () => [{ languageTag: 'en-US', languageCode: 'en' }] }));
+// expo-network's native module is absent under Jest: online by default; a suite that tests
+// connectivity mocks the module itself.
+jest.mock('expo-network', () => ({
+  useNetworkState: () => ({ isConnected: true, isInternetReachable: true }),
+  addNetworkStateListener: () => ({ remove: () => undefined }),
+  getNetworkStateAsync: () => Promise.resolve({ isConnected: true, isInternetReachable: true }),
+}));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(() => Promise.resolve()),
   impactAsync: jest.fn(() => Promise.resolve()),

@@ -193,7 +193,7 @@ export function ClosetGrid(props: {
       <View style={[styles.emptyScreen, { paddingTop: insetTop }]}>
         {header}
         <View style={styles.empty}>
-          <Text style={styles.emptyText}>{emptyText ?? t('grid.empty', { count: 10 })}</Text>
+          <Text style={styles.emptyText}>{emptyText ?? t('grid.empty')}</Text>
         </View>
       </View>
     );

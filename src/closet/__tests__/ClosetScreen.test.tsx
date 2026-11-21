@@ -34,6 +34,8 @@ jest.mock('../../outfits/aiClient', () => require('../../test/outfitClientsMock'
 jest.mock('../../stats/wearsRepository', () => require('../../test/statsClientsMock'));
 // The Diary segment reads the signed-in user (its deletes clear Today's worn record).
 jest.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
+const mockNetwork: { current: { isConnected?: boolean; isInternetReachable?: boolean } } = { current: {} };
+jest.mock('expo-network', () => ({ useNetworkState: () => mockNetwork.current }));
 jest.mock('../garmentRepository', () => ({ updateGarment: jest.fn() }));
 
 type ClosetState = {
@@ -105,6 +107,7 @@ beforeEach(() => {
   setFixturesUrl(undefined);
   setCloset([]);
   mockQueue.current = { pending: 0, failed: 0 };
+  mockNetwork.current = {};
 });
 
 afterEach(() => {
@@ -149,25 +152,23 @@ describe('real mode', () => {
   test.each([
     ['unset', undefined],
     ['empty', ''],
-  ])('fixtures URL %s: an empty closet shows the goal at 0/10 and the empty state, no HUD', async (_, value) => {
+  ])('fixtures URL %s: an empty closet shows the first-outfit goal and the empty state, no HUD', async (_, value) => {
     setFixturesUrl(value);
     await render(<ClosetScreen />);
 
     expect(screen.getByText('YOUR CLOSET')).toBeOnTheScreen();
-    expect(screen.getByText('Your 10 favorites')).toBeOnTheScreen();
-    expect(screen.getByText('0/10')).toBeOnTheScreen();
-    expect(screen.getByText('Add your 10 favorites to get started.')).toBeOnTheScreen();
+    expect(screen.getByText('Your first outfit')).toBeOnTheScreen();
+    expect(screen.getByText('Take photos of a top, a bottom and shoes to start.')).toBeOnTheScreen();
+    expect(screen.queryByText(/10 favorites/)).not.toBeOnTheScreen();
     expect(screen.queryByTestId('perf-hud')).not.toBeOnTheScreen();
     expect(screen.queryByRole('radio')).not.toBeOnTheScreen();
   });
 
-  test('with 7 garments: the goal reads 7/10 and the chips count all and each slot', async () => {
+  test('with 7 garments, a first outfit exists: no goal card, and the chips count all and each slot', async () => {
     setCloset(closetOf(SEVEN));
     await render(<ClosetScreen />);
 
-    expect(screen.getByText('7/10')).toBeOnTheScreen();
-    expect(screen.getByText('With 10 pieces I can already put outfits together. Add the rest whenever you like.')).toBeOnTheScreen();
-    expect(screen.getByRole('progressbar')).toHaveAccessibilityValue({ min: 0, max: 10, now: 7 });
+    expect(screen.queryByText('Your first outfit')).not.toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: 'All 7' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Tops 3' })).toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: 'Bottoms 2' })).toBeOnTheScreen();
@@ -255,6 +256,18 @@ describe('real mode', () => {
 
     expect(screen.getByText('Processing 3 photos…')).toBeOnTheScreen();
     expect(screen.getByTestId('grid-leading-tile')).toBeOnTheScreen();
+  });
+
+  test('offline, the pending tile says it is waiting for the internet, and says Processing again once back', async () => {
+    setCloset(closetOf(SEVEN));
+    mockQueue.current = { pending: 2, failed: 0 };
+    mockNetwork.current = { isConnected: false, isInternetReachable: false };
+    const view = await render(<ClosetScreen />);
+    expect(screen.getByText('Waiting for internet · 2 photos')).toBeOnTheScreen();
+
+    mockNetwork.current = { isConnected: true, isInternetReachable: true };
+    await view.rerender(<ClosetScreen />);
+    expect(screen.getByText('Processing 2 photos…')).toBeOnTheScreen();
   });
 
   test('failed uploads show a tile whose alert offers retry or discard', async () => {

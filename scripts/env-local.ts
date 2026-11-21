@@ -30,7 +30,7 @@ const OWNED_KEYS: ReadonlySet<string> = new Set([
  *
  * When `existing` (an already-read `.env.local`) is given, this merges rather than clobbers: the
  * four Supabase keys are (re)written in their fixed order first, and every other line from
- * `existing` — e.g. `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, set by hand or by the integration session —
+ * `existing` — e.g. `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, set by hand from the owner runbook —
  * is kept, in its original order, after them. Without `existing`, the result is just the four keys,
  * matching the previous (pre-merge) behavior.
  */

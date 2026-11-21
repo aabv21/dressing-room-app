@@ -200,7 +200,7 @@ password_requirements = ""
 [auth.rate_limit]
 # NOTE: `requestPasswordReset` reports `over_email_send_rate_limit` as success (a code was already
 # sent), but GoTrue returns that same code when this project-wide hourly email cap is reached, so
-# a user past the cap is told a code is on its way when none is. The integration session must set
+# a user past the cap is told a code is on its way when none is. The owner runbook sets
 # this (and the hosted SMTP sending limits) generously for the family's real usage.
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
 email_sent = 2
@@ -331,8 +331,8 @@ max_frequency = "5s"
 # Use an external OAuth provider. The full list of providers are: `apple`, `azure`, `bitbucket`,
 # `discord`, `facebook`, `github`, `gitlab`, `google`, `keycloak`, `linkedin_oidc`, `notion`, `twitch`,
 # `twitter`, `x`, `slack`, `spotify`, `workos`, `zoom`.
-# Disabled locally: ID-token sign-in is unit-tested with mocks here. The integration session
-# enables this with real client IDs once the owner has registered the app with Apple/Google.
+# Disabled locally: ID-token sign-in is unit-tested with mocks here. The hosted project enables
+# it with real client IDs (docs/owner-runbook.md).
 [auth.external.apple]
 enabled = false
 client_id = ""
@@ -348,8 +348,8 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
-# Disabled locally: ID-token sign-in is unit-tested with mocks here. The integration session
-# enables this with real client IDs once the owner has registered the app with Apple/Google.
+# Disabled locally: ID-token sign-in is unit-tested with mocks here. The hosted project enables
+# it with real client IDs (docs/owner-runbook.md).
 [auth.external.google]
 enabled = false
 client_id = ""
@@ -414,7 +414,7 @@ inspector_port = 8183
 deno_version = 2
 
 # Local-only values; the hosted project sets its own with `supabase secrets set`, run from an empty
-# directory: from this repo the CLI pushes these values to the hosted project too (AGENTS.md).
+# directory: from this repo the CLI pushes these values to the hosted project too (docs/owner-runbook.md).
 # EXTRACT_WEBHOOK_SECRET must match the `extract_webhook_secret` Vault secret in
 # seed.sql. ANTHROPIC_BASE_URL points at integration/mockAnthropic.ts on the
 # host, so local runs never reach the real Claude API. The TypeSafe (Jev) and
@@ -435,7 +435,7 @@ OPEN_METEO_GEOCODING_URL = "http://host.docker.internal:54498"
 # as LOCAL_APPLE_PRIVATE_KEY. No key is ever committed. A bare `supabase start` without it leaves
 # APPLE_PRIVATE_KEY unset or, depending on the CLI, the literal "env(LOCAL_APPLE_PRIVATE_KEY)";
 # appleEnvFrom treats both as missing, so apple-token answers `skipped` and deletion skips the
-# revoke. Hosted projects set their own with `supabase secrets set` (AGENTS.md).
+# revoke. Hosted projects set their own with `supabase secrets set` (docs/owner-runbook.md).
 APPLE_TEAM_ID = "LOCALTEAM0"
 APPLE_KEY_ID = "LOCALKEY00"
 APPLE_CLIENT_ID = "local.dressing-room.test"

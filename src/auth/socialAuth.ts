@@ -97,13 +97,12 @@ function isConfiguredClientId(value: string | undefined): value is string {
 /**
  * Configures `GoogleSignin` on first use only (configuring repeatedly is unnecessary and the
  * library doesn't expect it). Returns `false` without configuring when either public client ID is
- * missing, blank, or still the `.env.example` placeholder — this is a setup problem (the
- * integration session fills these in; see AGENTS.md), not a per-attempt user error, so it's logged
- * once via `console.warn` rather than silently retried every tap.
+ * missing, blank, or still a placeholder — a setup problem (copy the ids from `.env.example` into
+ * `.env.local`), not a per-attempt user error, so it's logged once via `console.warn`.
  *
  * OAuth client IDs are not secrets — they identify the app to Google, the way a
  * bundle id does, and are meant to ship in the client. `EXPO_PUBLIC_*` inlines these at build time
- * (see Expo's docs and this repo's AGENTS.md); Expo's static analysis requires literal member
+ * (see Expo's docs and AGENTS.md's Guardrails); Expo's static analysis requires literal member
  * expressions wherever they're read, which is why they're read directly here rather than through a
  * helper that takes the key name as a variable.
  */
@@ -133,7 +132,7 @@ function ensureGoogleConfigured(): boolean {
  * the ID token. GoTrue's OIDC verification (`token_oidc.go`) rejects the sign-in outright when
  * only one side carries a nonce or the hashes don't match, so passing one here made every Google
  * sign-in fail. Passing none is therefore correct for this library version, not a regression in
- * security: see the AGENTS.md NOTE on `skip_nonce_check` for what the integration session sets to
+ * security: see docs/red-team.md's "Parked" on `skip_nonce_check`, which the hosted project sets to
  * make the server-side match. NOTE: ceiling — Google sign-in on this app has no replay protection
  * from a custom nonce today. Upgrade path: a library version that exposes iOS's nonce, or Universal
  * Sign In (this package's paid tier), either of which would let a matching nonce be passed again.

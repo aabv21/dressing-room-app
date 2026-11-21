@@ -495,7 +495,7 @@ describe('donated garments', () => {
     expect(screen.queryByTestId(`grid-cell-${DONATED_TEE}`)).not.toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: 'All 5' })).toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: 'Tops 1' })).toBeOnTheScreen();
-    expect(screen.getByText('5/10')).toBeOnTheScreen();
+    expect(screen.queryByText('Your first outfit')).not.toBeOnTheScreen();
   });
 
   test('are gone from Build', async () => {

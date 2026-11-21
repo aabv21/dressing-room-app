@@ -39,7 +39,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 - Accounts: email/password sign-up and sign-in, Sign in with Google and Sign in with Apple (iOS), and a 6-digit password-reset code sent by email.
 - A three-step onboarding flow (clothing type, body measurements, style and occasions) with a skip action on all but the first step, backed by a Postgres profile row protected by row-level security.
 - An editable Profile tab (clothing, body, style sections) sharing its form with onboarding, plus the language override, sign-out and a Privacy section: body data is visible only to you and the AI only gets ranges; "Export my data" shares a JSON file of your profile, garments, outfits, wears and 7-day photo links; "Delete account" (two confirms) removes your photos, revokes Sign in with Apple (once the owner sets the Apple key) and deletes your account and every row, then clears this phone's copy of your data (its saved data, data exports and cached photos) and signs you out. If the answer is lost, uploads stay paused and the app checks at the next launch whether the account is gone; it never deletes without your tap.
-- A Closet tab with a virtualized three-column grid (FlashList + expo-image), a "Your 10 favorites" goal card and slot filter chips.
+- A Closet tab with a virtualized three-column grid (FlashList + expo-image), a "Your first outfit" goal card (top, bottom and shoes, or a dress and shoes); the burst camera can undo its last photo, the upload tile says when it is waiting for the internet, and Review confirms every garment the AI was sure of in one tap and slot filter chips.
 - Stats (Closet tab): week, month or 6 months of how much of your closet you wear, outfits logged, the average outfit score and your streak; what you wear most, your colors (tap one to filter the closet), the closet balance with how many more outfits one piece would open, and what you haven't worn in 6 months, with "Suggest tomorrow" (in tomorrow's suggestions) and "Donate".
 - Diary (Closet tab): a month calendar with each worn day's outfit; tap a day for its pieces, occasion and score, or delete a wear.
 - Adding clothes: a burst camera (one garment per shot, no forms) and a gallery multi-select. Each photo goes through a queue kept on the phone: on-device background removal (iOS Vision, Android ML Kit), a resized WebP and thumbnail, then an upload to private storage. The queue resumes after the app is closed or offline, without losing or duplicating a photo.
@@ -53,12 +53,12 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 - Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome, such as the tab bar, anchored buttons, the score ring and calendar cells, stops between 1.2× and 1.5×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
 - Jev calibration: `pnpm calibrate export|collect|eval` turns hand-labeled saved outfits into an agreement report (Spearman's ρ, band accuracy, a confusion matrix) with suggested weights, bands and confidence aggregate. Real labels stay in gitignored files.
 - Nightly hosted backup: `pnpm backup` dumps the database and downloads every photo with a sha256 manifest to the owner's Mac, keeping the newest 14, with a tested restore.
-- Release config: `eas.json` profiles for development, internal preview and store builds, each reading the app's public `EXPO_PUBLIC_*` values from its EAS environment, and EAS Submit to TestFlight and the Play internal track.
+- Release config: `eas.json` profiles for internal preview and store builds, each reading the app's public `EXPO_PUBLIC_*` values from its EAS environment, and EAS Submit to TestFlight and the Play internal track.
 - Fixture mode for performance testing: with `EXPO_PUBLIC_PERF_FIXTURES_URL` set, the Closet grid shows 500 generated thumbnails served from your computer, a disabled upload CTA, and a frame-stats HUD (frames, dropped frames, p95 and median frame time, inferred refresh rate). Tap the HUD to reset it; long-press it to also clear the image caches for a cold pass.
 
 ## Architecture
 
-![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, and a garment insert starts the extraction function](docs/diagrams/system-context.svg)
+![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, a garment insert starts the extraction function, Auth mails through Brevo, GitHub Actions calls the keep-alive daily, and the owner's Mac backs up the database and photos](docs/diagrams/system-context.svg)
 
 The app talks only to one Supabase project, with the user's session: Auth, Postgres with row-level security on every table, a private photo bucket, and seven Edge Functions. Background removal, resizing and a resumable upload queue run on the phone, and so do Stats and Diary. Only the Edge Functions call the outside services: Claude labels each garment photo, TypeSafe's Jev rates outfits from bucketed, enum-only data (never photos or measurements), and Open-Meteo gives the weather. Code owns the workflow; per-user daily quotas and caches come before any paid call, and each model failure has a fallback.
 
@@ -67,8 +67,10 @@ How it works, how it fails, and why it's built this way: [`docs/architecture.md`
 | Document | Covers |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | Components, request lifecycles, data model, failures, security, scaling and costs, design decisions |
+| [`docs/api.md`](docs/api.md) | Every endpoint: request, response, statuses, auth, timeouts, quotas and the outside providers |
 | [`docs/ai.md`](docs/ai.md) | Every prompt, schema, Jev question and weight, the calibration workflow, quotas and costs |
-| [`docs/database.md`](docs/database.md) | Tables, enums, RLS and grants, storage rules, account deletion and export, hosted backups |
+| [`docs/database.md`](docs/database.md) | Tables, enums, RLS and grants, storage rules, account deletion and export |
+| [`docs/owner-runbook.md`](docs/owner-runbook.md) | The owner's steps with their status, the release config, hosted backups and the tested restore |
 | [`docs/red-team.md`](docs/red-team.md) | Prompt injection, the output sanitizers, quota abuse and cross-user access, each with the test that pins it |
 | [`docs/testing.md`](docs/testing.md) | Every test suite, the end-to-end flows and what CI runs |
 | [`docs/performance-gate.md`](docs/performance-gate.md) | The on-device scroll-performance go/no-go protocol (status: pending) |
@@ -83,7 +85,7 @@ pnpm install
 pnpm db:start     # Postgres, Auth, Storage, Studio, Mailpit and the Edge Runtime in Docker (first run pulls images)
 pnpm db:reset     # the migrations and the local seed
 pnpm env:local    # writes .env.local with the app's Supabase URL and anon key
-pnpm expo run:ios # builds the dev client and opens it in the simulator (keeps Metro running)
+pnpm expo run:ios # builds the debug app with expo run and opens it in the simulator (keeps Metro running)
 ```
 
 Local sign-up confirmations and password-reset codes are caught by Mailpit at `http://127.0.0.1:54424` instead of being emailed. `pnpm db:stop` stops the stack when you're done.
@@ -95,7 +97,7 @@ node integration/mockServices.ts --serve --level 0.8 --temp 14   # mock Jev and 
 node integration/mockAnthropic.ts --serve ok                      # mock Claude: every photo gets the `ok` fixture's attributes
 ```
 
-Without them, a new garment goes to review with empty fields, a rating falls back and then fails, and the weather is unknown. See [`AGENTS.md`](./AGENTS.md)'s "Local backend" for the stack's ports, secrets and mocks, and its "Commands" for the full list.
+Without them, a new garment goes to review with empty fields, a rating falls back and then fails, and the weather is unknown. See [`docs/local-stack.md`](docs/local-stack.md) for the stack's ports, secrets and mocks, and [`AGENTS.md`](./AGENTS.md)'s "Commands" for the full list.
 
 Closet grid with performance fixtures (iOS simulator):
 
@@ -118,25 +120,13 @@ pnpm e2e                                   # Maestro flows on the iOS simulator:
 
 `pnpm test` needs no Docker. `db:test` and `test:int` need the local stack (`pnpm db:start && pnpm db:reset && pnpm env:local`). `pnpm e2e` also needs the dev build on a booted simulator, Metro, Maestro and Java 17 (`brew install maestro openjdk@17`); it starts the mocks and signs up a fresh `@example.com` user itself. AI calls are tested against recorded-shape fixtures and mocks, never the real APIs.
 
-CI runs the quality gate (supply-chain settings, typecheck, lint, unit tests, expo-doctor), a security job (gitleaks, `pnpm audit`), workflow linting (actionlint, zizmor), and a database job (pgTAP, a generated-types drift check and the integration tests). A separate CodeQL workflow (pull requests, `main` and weekly) analyzes the code once the repo is public; it skips itself while the repo is private. [`docs/testing.md`](docs/testing.md) lists every suite.
+CI runs the quality gate (supply-chain settings, typecheck, lint, unit tests, expo-doctor), a security job (gitleaks, `pnpm audit`), workflow linting (actionlint, zizmor), and a database job (pgTAP, a generated-types drift check and the integration tests). A separate CodeQL workflow (pull requests, `main`, `develop` and weekly) analyzes the code once the repo is public; it skips itself while the repo is private. [`docs/testing.md`](docs/testing.md) lists every suite.
 
 ## Owner setup
 
-Everything above runs offline. These steps need the owner's accounts, once, at the end, in this order:
-
-1. Pick the final app name and bundle id.
-2. Create the hosted Supabase project, link it, push the migrations, deploy the seven functions, and mirror `supabase/config.toml`'s Auth settings in the dashboard.
-3. Set the hosted secrets (the extraction webhook's Vault secrets and `EXTRACT_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, and the `APPLE_*` ones, without which account deletion can't revoke Sign in with Apple), configure Sign in with Apple and Google and the email sender (custom SMTP through Brevo), and set spend caps or alerts with Anthropic and TypeSafe.
-4. Run `eas init`, set the app's four public `EXPO_PUBLIC_*` values as EAS environment variables, then rebuild the dev client (`garment-cutout` is a local native module and `expo-sharing` has native code, so an older dev client fails to load the Profile tab).
-5. Run the live checks on real phones: the AI and weather services, the camera and cut-outs, large text and screen readers, sign-in, export and deletion.
-6. Label about 50 saved outfits and run `pnpm calibrate` to tune Jev's weights and bands.
-7. Schedule the nightly `pnpm backup` with launchd and restore it once.
-8. Publish the [privacy policy](docs/privacy-policy.md) on GitHub Pages and fill in the App Store and Play privacy forms.
-9. Run `pnpm e2e`.
-10. Run `eas build` and `eas submit` against [`eas.json`](./eas.json)'s profiles, to put a build on TestFlight and the Play internal track, and add testers.
-11. Check CI's first `database` run.
-
-The full checklist is [`AGENTS.md`](./AGENTS.md)'s "Owner session".
+Everything above runs offline. The steps that need the owner's accounts (the hosted project, its
+secrets, sign-in providers, EAS builds, live checks, calibration, backups and the store releases)
+are in [`docs/owner-runbook.md`](docs/owner-runbook.md), each with its status.
 
 ## Costs
 

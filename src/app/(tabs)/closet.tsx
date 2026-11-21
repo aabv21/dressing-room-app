@@ -1,3 +1,4 @@
+import { useNetworkState } from 'expo-network';
 import { router, useIsFocused } from 'expo-router';
 import { Camera, ChevronRight, ImageIcon, X } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
@@ -5,20 +6,12 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 
 import { ClosetGrid, type LeadingTile } from '../../closet/ClosetGrid';
 import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
-import {
-  categoryCounts,
-  hasAnyColor,
-  isActive,
-  reviewQueue,
-  slotCounts,
-  toGridItems,
-  type ColorFilter,
-} from '../../closet/closetSelectors';
+import { categoryCounts, type ColorFilter, firstOutfitProgress, hasAnyColor, isActive, toGridItems, reviewQueue, slotCounts } from '../../closet/closetSelectors';
 import { GARMENT_CATEGORIES, PALETTE_HEX, SLOTS, type GarmentCategory, type Slot } from '../../closet/catalog';
 import { DiarySegment } from '../../closet/DiarySegment';
 import { SegmentTabs } from '../../closet/SegmentTabs';
 import { StatsSegment } from '../../closet/StatsSegment';
-import { CLOSET_GOAL, GoalCard } from '../../closet/GoalCard';
+import { GoalCard } from '../../closet/GoalCard';
 import { perfFixtureItems } from '../../closet/perfFixtureItems';
 import { useUploadQueue } from '../../closet/UploadQueueProvider';
 import { useGalleryImport } from '../../closet/useGalleryImport';
@@ -159,6 +152,7 @@ function ItemsSegment({
   const reviewCount = useMemo(() => reviewQueue(garments, now).length, [garments, now]);
 
   const activeCount = useMemo(() => garments.filter(isActive).length, [garments]);
+  const firstOutfit = useMemo(() => firstOutfitProgress(garments), [garments]);
   const colorSet = useMemo(() => (colorFilter === null ? undefined : new Set(colorFilter.colors)), [colorFilter]);
   // The chips count what the color filter leaves, so "All" matches the grid.
   const visible = useMemo(
@@ -221,15 +215,18 @@ function ItemsSegment({
   }, [t, retryFailed, discardFailed]);
 
   const { pending, failed } = queue;
+  const network = useNetworkState();
+  // Unknown counts as online, so the usual label stays until the device says otherwise.
+  const offline = network.isConnected === false || network.isInternetReachable === false;
   const leadingTile = useMemo<LeadingTile | undefined>(() => {
     if (pending > 0) {
-      return { label: t(pluralKey('closet.processing', pending), { count: pending }) };
+      return { label: t(pluralKey(offline ? 'closet.waiting' : 'closet.processing', pending), { count: pending }) };
     }
     if (failed > 0) {
       return { label: t(pluralKey('closet.failed', failed), { count: failed }), tone: 'error', onPress: showFailedOptions };
     }
     return undefined;
-  }, [pending, failed, t, showFailedOptions]);
+  }, [pending, failed, offline, t, showFailedOptions]);
 
   const header = (
     <View style={styles.header}>
@@ -239,9 +236,9 @@ function ItemsSegment({
       {status === 'loading' && garments.length === 0 ? (
         // The first read on a fresh launch: a spinner, not the empty closet's goal card.
         <ActivityIndicator accessibilityLabel={t('closet.loading')} color={colors.accent} style={styles.loading} />
-      ) : activeCount < CLOSET_GOAL ? (
-        <GoalCard count={activeCount} />
-      ) : null}
+      ) : firstOutfit.complete ? null : (
+        <GoalCard progress={firstOutfit} />
+      )}
       {reviewCount > 0 ? <ReviewBanner count={reviewCount} /> : null}
       {colorFilter === null ? null : <ColorFilterChip filter={colorFilter} onClear={onClearColor} />}
       {activeCount > 0 ? (

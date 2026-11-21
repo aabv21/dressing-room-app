@@ -1,6 +1,6 @@
 # Database: schema, RLS and storage
 
-The local backend is Supabase (Postgres 17) run via `pnpm db:*` scripts (see `AGENTS.md`). This
+The local backend is Supabase (Postgres 17) run via `pnpm db:*` scripts (see [`local-stack.md`](local-stack.md)). This
 document covers the `public.profiles`, `public.garments` and `public.usage_counters` tables, their
 enums, the signup trigger, row level security, the `garments` storage bucket, and what account
 deletion and data export do to them. See
@@ -228,8 +228,8 @@ adding it). RLS is enabled with **no policies at all** and `revoke all` from
 both `anon` and `authenticated` — the table has no API surface of its own; every read and write goes
 through `public.consume_quota()`.
 
-`public.consume_quota(p_user_id uuid, p_kind public.quota_kind, p_limit integer) returns boolean` is
-`security definer` with `set search_path = ''`, `execute` revoked from `public`, `anon` and
+`public.consume_quota()` (both signatures in [`api.md`](api.md#rpcs)) is `security definer` with
+`set search_path = ''`, `execute` revoked from `public`, `anon` and
 `authenticated`, and granted only to `service_role` — only the Edge Functions call it (extraction,
 rating, lucky list and For you), never a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
 `(p_user_id, today in UTC, p_kind)`, incrementing `count` only `where count < p_limit`, and returns
@@ -239,8 +239,8 @@ reads that absence as `false` via `coalesce`). Each call therefore does at most 
 either the counter moves up by one and the function returns `true`, or nothing changes and it
 returns `false`.
 
-`public.consume_quota(p_user_id, p_kind, p_limit, p_day date)` (`20261120120000_quota_local_day.sql`)
-is the same function with the day given: rating, the lucky list and For you pass the app's local
+The 4-argument `consume_quota` (`20261120120000_quota_local_day.sql`) is the same function with the
+day given: rating, the lucky list and For you pass the app's local
 calendar day from the request. It counts on `p_day` when it is within one day of the UTC date (every
 time zone is) and on the UTC day otherwise, so a phone with a wrong date can't open new counters at
 will. NOTE: changing the device date can spread one user's calls over up to 3 day counters in 24 h,
@@ -458,7 +458,7 @@ function keeps running, finishes its own 30 s Claude timeout and writes the resu
 the db container, where `127.0.0.1:54421` is the container itself, so the URL uses Kong's container
 name on the stack's Docker network. `integration/extraction.int.test.ts` proves the whole path.
 
-**Hosted values** are set by hand in the owner's integration session, never from a file in this
+**Hosted values** are set by hand from the owner runbook (`docs/owner-runbook.md`), never from a file in this
 repo:
 
 ```sql
@@ -469,14 +469,14 @@ select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'extrac
 and the function's own secrets with
 `supabase secrets set --project-ref <ref> EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`,
 run from an empty directory: from the repo, the CLI also pushes `config.toml`'s local-only
-`[edge_runtime.secrets]` (AGENTS.md). `ANTHROPIC_BASE_URL` stays unset there, so the function uses
+`[edge_runtime.secrets]` ([`owner-runbook.md`](owner-runbook.md#setting-a-hosted-secret)). `ANTHROPIC_BASE_URL` stays unset there, so the function uses
 `https://api.anthropic.com`.
 
 ### Logging a wear
 
-`public.log_wear(p_wear_id uuid, p_garment_ids uuid[], p_worn_on date, p_occasion public.occasion
-default null, p_score smallint default null) returns uuid` is the documented, and only intended,
-way to log a wear. It is `security invoker` with `set search_path = ''`, `execute` revoked from
+`public.log_wear()` (its signature, return value and error codes are in
+[`api.md`](api.md#rpcs)) is the documented, and only intended, way to log a wear. It is
+`security invoker` with `set search_path = ''`, `execute` revoked from
 `public` and `anon`, granted to `authenticated` only. Being `security invoker` (not `security
 definer`) is deliberate: the actual inserts into `outfits`, `outfit_items` and `wears` run as the
 calling role, so they're still gated by those tables' own insert policies — the function doesn't
@@ -508,7 +508,7 @@ the function falls through to step 4's insert, whose primary key conflict on `we
 fresh random uuid per tap), but the behavior is still "raise," never "silently attach to or
 overwrite someone else's wear."
 
-`public.save_outfit(p_garment_ids uuid[]) returns uuid` is the sibling RPC for saving a combination
+`public.save_outfit()` is the sibling RPC for saving a combination
 without logging a wear: same garment-array validation and ownership check as steps 2–3 above (not
 idempotent — it has no caller-supplied id to check against), but it inserts only `outfits` (with
 `saved_at = now()`) and `outfit_items`, no `wears` row, and returns the outfit id instead. Calling
@@ -615,7 +615,7 @@ Supabase pauses a free project after 7 days without activity. `public.keep_alive
 `now()` and reads no table. It's the one function `anon` may execute, granted explicitly so that
 `.github/workflows/keepalive.yml` can call it daily with the public anon key. Without users for a
 week, the hosted project still sees activity. The workflow reads the repository variables
-`SUPABASE_URL` and `SUPABASE_ANON_KEY` (AGENTS.md's Owner session). pgTAP:
+`SUPABASE_URL` and `SUPABASE_ANON_KEY` ([`owner-runbook.md`](owner-runbook.md#2-hosted-project)). pgTAP:
 `supabase/tests/keep_alive.test.sql`.
 
 ### Account deletion and data export (Plan 5)
@@ -633,9 +633,8 @@ inside them, never in `src/`.
   `auth.identities` with provider `apple` (read with the service role through
   `GET /auth/v1/admin/users/{uid}`). Only then does it upsert `public.apple_tokens (user_id,
   refresh_token)` with the service role; otherwise it stores nothing and revokes the new token, best
-  effort. It answers 200 with an outcome word (`stored`, `skipped` without the `APPLE_*` secrets,
-  `invalid`, `exchange_failed`, `identity_mismatch`, `lookup_failed`, `store_failed`); the token
-  never leaves the server.
+  effort. It answers 200 with an outcome word ([`api.md`](api.md#apple-token)); the token never leaves
+  the server.
 - **`delete-account`** — in this order:
   0. confirms the caller with `GET /auth/v1/user` and the caller's own token, before anything
      irreversible; only Auth's `user_not_found` means an earlier attempt already finished, so it
@@ -663,52 +662,16 @@ inside them, never in `src/`.
   verified JWT's `sub`. Storage objects are removed first because nothing cascades into
   `storage.objects`.
 
-  The app (`src/account/`) first writes the kv marker `account.deleting.<uid>`, then pauses its
-  upload queue (a stage in flight finishes), so no photo lands after the listing, and sends the
-  session's access token explicitly. It reports the account deleted only on
-  `{ outcome: 'deleted' }`, or on a 401 for which Auth's `GET /user` with that same token answers
-  `user_not_found` (a retry after a lost 200). Any other 401 (an expired token,
-  `session_not_found`, a refresh token that's gone) or no session at all doesn't prove the account
-  is gone, so the app tells the user to sign in again and then delete the account again
-  (`reauth`), and signs out locally, keeping the queue and the kv entries (the marker turns
-  `reauth`). Signing in doesn't finish anything by itself: the check below sees the account still
-  there and removes the marker, and the user taps "Delete account" again. On a deletion the app
-  clears the queue, signs out locally, clears every kv key under the user's id (the marker
-  included) and refuses that user's later kv writes for the rest of the process, so a request still
-  in flight can't write them back; then it removes the data exports from the cache directory and
-  clears expo-image's memory and disk caches. Either sign-out happens only while the stored session
-  is still that user's (or there is none): an answer that arrives after another account signed in
-  never signs it out, and the Profile tab's Sign out is disabled while a deletion runs.
-  Any other failure (network, a 500, a gateway 502/504) may come after the server already deleted
-  the user, so the marker stays: the user stays signed in, is told the deletion couldn't be
-  confirmed and that photo uploads are paused, and can tap again.
-
-  While the marker exists that user's queue never runs. The marker holds its state and the time it
-  was written (`deleting:<ms>` / `reauth:<ms>`). Any value whose state is `deleting` or `reauth`
-  counts, whatever its time; a missing or malformed time, or one more than the settle window in the
-  future, is stamped anew at the next check, so the window below starts over instead of being
-  skipped.
-  A launch, sign-in, return to the foreground or reconnect with the marker present only asks Auth,
-  with that session's token, whether the account still exists, and never deletes anything without a
-  tap: `user_not_found` gets the same local cleanup and sign-out as a confirmed deletion; the same
-  user, more than 10 minutes after the marker (the function may still be sweeping storage after the
-  app's 45 s timeout, up to the Edge Functions wall clock), removes the marker and lets the queue
-  run; anything else keeps the marker for the next check. A session that ends while the marker says
-  `deleting` (supabase-js signs out by itself once the account is gone) drops that account's kv
-  data and records the kv request `queue.purge.<uid>` (the queue store isn't loaded at that point).
-  The next upload queue provider to mount, for whichever user signs in next, clears that account's
-  queued rows and photo copies and then drops the request; a failed clear keeps it for the next
-  mount. Until then the photos never upload without that user's session. If that same account signs
-  in again before another account does, its session shows the account still exists, so the
-  request is only dropped and its queue runs as before. The request survives the account's kv cleanup until it has been carried out.
+  What the app does around the call (the marker, the paused queue, `reauth`, the local cleanup and
+  the later checks) is in [`app.md`](app.md#account-deletion-on-the-device).
 - **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
   and `wears` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
   caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still
   reads every row. Photo URLs are signed with the service role for 7 days,
   only for `{uid}/{garmentId}/{full,thumb}.webp` paths built from the caller's own garments (a
-  missing variant is `null`, and a garment with no photo at all is left out of `photos`). The answer
-  is `{ exportedAt, profile, garments, outfits, wears, photos: [{ garmentId, full, thumb }] }`.
+  missing variant is `null`, and a garment with no photo at all is left out of `photos`). The answer's
+  shape is in [`api.md`](api.md#export-data).
 
 NOTE: locally the signed export URLs start with the Edge Runtime's internal `SUPABASE_URL`
 (`http://kong:8000`), so they only open after swapping in `http://127.0.0.1:54421`; hosted, it's the
@@ -785,264 +748,12 @@ Test users are created by inserting directly into `auth.users` with explicit, fi
 the test transaction; the insert fires the signup trigger, and the rollback at the end of the file
 discards both the user and its profile row — no cleanup step is needed.
 
-- `profiles_rls.test.sql` — cross-user isolation: A sees only A's row, A's update targeting B's row
-  changes nothing, A can't insert (for anyone, nor upsert their own row), A's delete of their own
-  row removes nothing, and the anon role can't read the table at all.
-- `storage_rls.test.sql` — bucket configuration (private, 2 MiB, three MIME types) plus the same
-  cross-user isolation for `storage.objects`.
-- `profiles_constraints.test.sql` — every CHECK constraint rejects an out-of-range or malformed
-  value (`height_cm = 300`, `waist_cm = 10`, an 11-character `top_size`, an 81-character or blank
-  `city_name`, `city_lat` without `city_lon`, onboarding completed with a null `clothing_type`) and
-  accepts a fully valid row; updating one coordinate of a stored pair passes.
-- `profiles_onboarding_clock.test.sql` — completing onboarding (by update, or by an insert as the
-  table owner) stores the server's `now()`, not the client-sent time; a second completion or a null
-  keeps the original time.
-- `profiles_write_rules.test.sql` — a client update can't change `created_at`.
-- `garments_rls.test.sql` — cross-user isolation: B selects, updates or deletes A's garment and
-  gets 0 rows/no effect, B can't insert a row claiming A as owner, and the anon role can't read the
-  table at all.
-- `garments_rules.test.sql` — every CHECK constraint (`formality`, `warmth`, 4 colors,
-  `photo_version`) rejects an out-of-range value; an insert with only `id` gets `user_id` from the
-  caller and defaults `status`/`extraction_status`; an insert stating the caller's own `user_id`
-  succeeds, another user's raises `42501`, and inserting `extraction_status` raises `42501`; a
-  client can't update `extraction_status`, `wear_count` or `user_id`; an update leaves
-  `created_at` unchanged and moves `updated_at`.
-- `usage_quota.test.sql` — `consume_quota` returns `true` up to `p_limit` and `false` after; the local-day version gives a day ahead of UTC its own counter and puts a day more than one day off on the UTC day (and
-  stays refused for that user and kind); a different user is tracked independently; `p_limit 0` always returns `false`; calling the
-  function or reading `usage_counters` directly as `authenticated` raises a policy error.
-- `garment_extraction_trigger.test.sql` — `garments_request_extraction` exists, fires only `after
-  insert … for each row` and calls `request_garment_extraction()`, which is `security definer` and
-  not executable by `authenticated`; with both Vault secrets set (test values, inside the
-  transaction) an insert queues one `net.http_request_queue` POST carrying the garment id, the
-  secret header and the 5 s timeout; with them deleted, an insert still succeeds and queues nothing;
-  with a URL pg_net rejects (so queueing the request raises), the insert still succeeds and keeps
-  its row.
-- `outfits_wears.test.sql` — `log_wear` for A with 3 garments creates one outfit, 3 `outfit_items`
-  and one wear (returning the caller-supplied wear id), and sets `wear_count`/`last_worn_at` on all
-  3 garments; **calling it again with the same wear id is idempotent** (a retry after a lost
-  response must not log the wear twice): it returns the same id, logs no additional wear or outfit,
-  and the counts stay put; a second, distinct `log_wear` reusing 2 of the 3 garments bumps those to
-  `wear_count` 2 and moves `last_worn_at` to the later date; **A deleting that second wear as
-  `authenticated` (not `postgres`)** restores both garments to `wear_count` 1 and falls
-  `last_worn_at` back to the remaining wear's date (not null, since each is still in the first wear)
-  — proving the `security definer` trigger fires correctly for a real client-issued delete, not just
-  one run as the table owner; deleting a garment's only remaining wear drops its `last_worn_at` to
-  null; `log_wear` by B referencing A's garment raises `42501`; a single garment or a duplicate id
-  raises `22023` for both `log_wear` and `save_outfit`; `save_outfit` by A referencing B's garment
-  raises `42501`; `save_outfit` stamps `saved_at`, creates no `wears` row and never changes any
-  garment's `wear_count`; B selecting A's outfits or wears returns 0 rows; **B selecting A's
-  `outfit_items` by `outfit_id` or by `garment_id` returns 0 rows** (asserted directly against
-  `outfit_items`, not through a join with `outfits` that would pass even under a vacuous
-  `using (true)` policy); **an authenticated `update` on `outfits`, `outfit_items` or `wears` now raises
-  `42501`** (a real privilege error, since update is revoked outright — see "RLS and storage rules"
-  above), and so does an authenticated `delete` on `outfits`/`outfit_items`; **B deleting A's wear
-  by id removes 0 rows** and leaves A's wear and counts unchanged; **`log_wear` by B reusing A's
-  wear id raises `23505`**, leaving A's wear A's and logging nothing for B; deleting a garment
-  cascades its `outfit_items` rows. Also the cross-tenant direct-insert paths: B inserting a `wears`
-  row with their own `user_id` but A's `outfit_id` raises `42501` and leaves A's `wear_count`
-  unchanged; B inserting an `outfit_items` row into A's outfit (even naming B's own garment) raises
-  `42501`; B inserting an `outfit_items` row naming A's garment (even into B's own outfit) raises
-  `42501`.
-- `ai_caches.test.sql` — `authenticated` and `anon` can neither select nor insert
-  `rating_cache`/`lucky_cache`/`weather_cache` (select and insert are both checked for **both**
-  roles, so an unrevoked insert path on either role can't pass silently); `consume_quota(A, 'rating',
-  1)` returns `true` then `false`; `consume_quota(A, 'lucky', 1)` still returns `true` even though
-  `'rating'` is exhausted for the same user — the two `quota_kind` values are tracked independently.
-- `schema_hygiene.test.sql` — checklist rules checked across the whole `public` schema, so a new
-  table or function can't miss one silently: no trigger function is executable by `anon` or
-  `authenticated`, and no index is a leading-column prefix of another index on the same table (the
-  longer one already serves its lookups, so the shorter one is only a write cost).
-- `insights_account.test.sql` (Plan 5) — the client can set their own `pinned_on` and `status =
-  'donated'` on `garments`; `authenticated` and `anon` can neither select nor insert
-  `apple_tokens`/`for_you_cache`; `consume_quota(A, 'for_you', 1)` returns `true` then `false`, same
-  independence as the other kinds; **the cascade assertion**, checked generically against
-  `pg_constraint`/`pg_attribute` rather than one hand-written assertion per table: every `public`
-  table with a `user_id` column (`profiles`, `garments`, `outfits`, `wears`, `usage_counters`,
-  `rating_cache`, `lucky_cache`, `for_you_cache`, `apple_tokens` — a second assertion pins this exact
-  set, so a future table quietly dropping or renaming `user_id` fails loudly instead of shrinking the
-  checked set) has a foreign key to `auth.users` with `confdeltype = 'c'` (`ON DELETE CASCADE`); and,
-  with a full fixture (a garment, an outfit, an outfit item, a wear, a usage counter and all three
-  user-scoped caches) built for a second user as `postgres` (bypassing RLS), deleting that
-  `auth.users` row leaves 0 matching rows in every one of those tables.
-
-- `cache_cleanup.test.sql` — `prune_expired_caches()` with rows on each side of every limit: a
-  rating or lucky row over 30 days old and a degraded one over 2 hours old go, while a 29-day-old
-  row, a degraded one 90 minutes old and a non-object `result` stay; a weather hour 3 days old goes
-  and one a day old stays; a For you row 10 days old goes unless it is the user's newest (a user's
-  only row, 20 days old, stays), and one 5 days old stays; the job's run history over 30 days old
-  goes. The job `prune-expired-caches` exists once, runs `select public.prune_expired_caches()` at
-  `0 4 * * *` and stays single when scheduled again under the same name. The function is `security
-  definer`, owned by `postgres`, with an empty `search_path`; `public` has no execute grant, and
-  `anon` and `authenticated` can't execute it (a call raises `42501`).
+Every test file and what it pins is listed in [`testing.md`](testing.md#pgtap-supabaseteststestsql).
 
 See `docs/testing.md` for how this suite fits alongside the Jest projects, and which commands need
 Docker.
 
 ## Hosted backups
 
-The hosted project is on Supabase's free tier, which has no downloadable backups, so the owner's Mac
-takes one every night with `pnpm backup` (`scripts/backup.ts`), scheduled by launchd. Backups hold
-real family data. They are written only to `~/dressing-room-backups/`, never inside this repository,
-and never to GitHub, whose Actions artifacts aren't private on a public repo. `BACKUP_DIR` must be a
-folder of its own: the script refuses one inside the repository, and also the home folder or the
-filesystem root, since each run tightens the folder to `0700`.
-
-### What a backup holds
-
-Each run writes `~/dressing-room-backups/<UTC time>/`, for example `2026-11-09T03-30-00Z/`:
-
-- `schema.sql`: `pnpm exec supabase db dump --db-url <BACKUP_DB_URL without its password>`, with
-  the password in `PGPASSWORD`: the schema of the project's own schemas (`public`), as it was at
-  backup time.
-- `data.sql`: the same command with `--data-only --use-copy`, which holds the rows of `public`,
-  `auth` (users, identities, sessions) and `storage.objects`. It leaves out `storage.buckets`, since
-  the `garments` bucket row comes from a migration and would collide on restore. It also leaves out
-  Storage's vector tables, which the `postgres` role can't write and this project doesn't use, and
-  pg_net's transient queue and responses. The CLI's data dump leaves out the `cron` schema on its
-  own (checked against the local stack with the job scheduled), so a restore never collides with
-  the `prune-expired-caches` job the migrations create. The dump starts with `SET session_replication_role =
-  replica`, so no trigger fires on restore: no signup profile, no extraction request, and no
-  second wear count.
-- `garments/<user id>/<garment id>/{full,thumb}.webp`: every object in the `garments` bucket,
-  listed and downloaded with the service role through Storage's REST API.
-- `manifest.json`: `createdAt`, plus each file's `path`, `size` and `sha256`.
-
-A backup is credential material, not only personal data. `auth.users` holds bcrypt password
-hashes, `auth.sessions` and `auth.refresh_tokens` hold live refresh tokens, and
-`public.apple_tokens` holds Sign in with Apple refresh tokens in plaintext. So every file is `0600`
-and every folder `0700`. The script runs under `umask 077`, the plist sets `Umask` 63 (`077`), and
-each run re-tightens the backup root to `0700`. Keep FileVault on. Time Machine copies
-`~/dressing-room-backups` too, so back up to an encrypted Time Machine disk, or exclude the folder
-with `tmutil addexclusion ~/dressing-room-backups`.
-
-A run writes into `<UTC time>.partial/` and renames it only once every step has succeeded. It then
-deletes all but the newest 14 complete backups. If any step fails (the dump, a refused key, or one
-object's download), the run exits 1 and leaves its `.partial` folder for inspection. It starts no
-new download after the first one fails, and it deletes no complete backup. Each run starts by
-deleting `.partial` folders more than 7 days old, judged by the time in their name. It also logs
-the newest complete backup's name and age, so even a failing job's log shows how old the last good
-backup is. The log has outcome words only: the database URL, its password and the service-role key
-are redacted. The password never reaches a command line,
-where `ps` would show it: the dump gets `BACKUP_DB_URL` without it and the password in
-`PGPASSWORD`.
-
-The backup doesn't hold the Vault secrets (`extract_attributes_url`, `extract_webhook_secret`) or
-the function secrets. Those are set by hand (see `AGENTS.md`'s "Local backend").
-
-### Setup (owner's Mac)
-
-The dump runs `pg_dump` in Docker, so OrbStack must be running when the job fires at 03:30: set
-it to open at login.
-
-1. Put the settings in a file only you can read, outside the repo, for example
-   `~/.config/dressing-room/backup.env` (`chmod 600`):
-
-   ```bash
-   BACKUP_DB_URL=postgresql://postgres.<ref>:<percent-encoded password>@<pooler host>:5432/postgres
-   SUPABASE_URL=https://<ref>.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=<service-role key>
-   # BACKUP_DIR=~/dressing-room-backups   (the default)
-   ```
-
-   `BACKUP_DB_URL` is the session pooler's connection string (Dashboard → Connect → Session
-   pooler), since the free tier's direct connection is IPv6 only. Percent-encode the password's
-   special characters (`@` as `%40`, `%` as `%25`, `/` as `%2F`); a URL that doesn't parse, or a
-   password that isn't valid percent-encoding, is refused with that hint and never echoed.
-
-2. Run it once by hand: `node --env-file="$HOME/.config/dressing-room/backup.env" scripts/backup.ts`.
-   It prints `backup: complete <UTC time>`.
-
-3. Schedule it. Copy `scripts/launchd/com.aabv21.dressing-room-backup.plist.example` to
-   `~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist` and replace the `/ABSOLUTE/PATH`
-   placeholders. Use a stable `node` path (not a per-shell fnm path), and put `node`, `pnpm` and
-   `docker` on the plist's `PATH`. Then load it:
-
-   ```bash
-   plutil -lint ~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist
-   launchctl kickstart -p gui/$(id -u)/com.aabv21.dressing-room-backup   # one run now
-   tail ~/Library/Logs/dressing-room-backup.log
-   ```
-
-   The job runs at 03:30 every day. If the Mac was asleep, it runs when the Mac wakes. If the log
-   shows `EPERM` or `Operation not permitted` for the repository path, macOS is blocking launchd's
-   `node` from `~/Documents`. Give that `node` binary Full Disk Access, or run the job from a clone
-   outside `~/Documents`.
-
-### Restore
-
-Restore into a database that already has the migrations: a fresh local stack (`pnpm db:reset`), or
-a new hosted project after `pnpm exec supabase link --project-ref <ref>` and
-`pnpm exec supabase db push`. `schema.sql` is the record of the schema at backup time. Compare it
-with the migrations if they may have changed since then. Don't apply it on top of them.
-
-You need `psql`. Install it with `brew install libpq`, which is keg-only, so put
-`$(brew --prefix libpq)/bin` on `PATH`. For a local target without it, run
-`docker exec -i supabase_db_dressing-room-app psql -U postgres -d postgres --single-transaction
---variable ON_ERROR_STOP=1 --quiet < "$BACKUP/data.sql"` instead of step 2.
-
-No secret goes on a command line, where `ps` would show it. The database URL has no password, since
-`psql` reads it from `PGPASSWORD`. `curl` reads the key headers from stdin (`-K-`), and `printf` is
-a shell builtin, not a process. Steps 1 to 3 are chained with `&&`, so a failed check, a `psql` error
-or a failed upload stops everything after it. Run this from the repository root, in zsh or bash:
-
-```bash
-BACKUP=~/dressing-room-backups/<UTC time>
-TARGET_DB_URL='postgresql://postgres.<ref>@<pooler host>:5432/postgres'   # no password in it
-SUPABASE_URL='https://<ref>.supabase.co'
-read -rs PGPASSWORD && export PGPASSWORD   # the target database's password
-read -rs SERVICE_KEY                       # the target's service-role key
-
-# 1. Check the backup first: every size and sha256 in manifest.json.
-# 2. The rows, in one transaction. Any error rolls the whole restore back.
-# 3. The photos. data.sql already restored their storage.objects rows; this uploads the bytes over
-#    them, and stops at the first upload that fails.
-# Each step runs only if the one before it succeeded.
-node scripts/backup.ts --verify "$BACKUP" &&
-  psql --single-transaction --variable ON_ERROR_STOP=1 --quiet \
-    --dbname "$TARGET_DB_URL" --file "$BACKUP/data.sql" &&
-  (cd "$BACKUP/garments" && find . -type f -print0 | while IFS= read -r -d '' f; do
-    printf 'header = "apikey: %s"\nheader = "Authorization: Bearer %s"\n' "$SERVICE_KEY" "$SERVICE_KEY" |
-      curl -K- -fsS -o /dev/null -X POST -H 'x-upsert: true' -H 'content-type: image/webp' \
-        --data-binary "@$f" "$SUPABASE_URL/storage/v1/object/garments/${f#./}" ||
-      { echo "photo upload failed: ${f#./}" >&2; exit 1; }
-  done) && echo 'restore complete'
-
-# 4. Spot-check row counts against the source.
-psql --dbname "$TARGET_DB_URL" -Atc "select 'auth.users', count(*) from auth.users
-  union all select 'profiles', count(*) from public.profiles
-  union all select 'garments', count(*) from public.garments
-  union all select 'storage.objects', count(*) from storage.objects
-  union all select 'outfits', count(*) from public.outfits
-  union all select 'outfit_items', count(*) from public.outfit_items
-  union all select 'wears', count(*) from public.wears
-  union all select 'sum(wear_count)', coalesce(sum(wear_count), 0) from public.garments"
-```
-
-For a local target, `TARGET_DB_URL` is `postgresql://postgres@127.0.0.1:54422/postgres`, with
-`PGPASSWORD=postgres` (a local-only value). `SUPABASE_URL` is `http://127.0.0.1:54421`, and
-`SERVICE_KEY` is `SUPABASE_SERVICE_ROLE_KEY` from `.env.local` (`pnpm env:local`). On a hosted
-target, set the Vault and function secrets again afterwards.
-
-This procedure was tested against the local stack, as written above, in zsh. Two fictional
-`@example.com` users had 6 garments, 12 photos, 2 outfits and 4 wears. The steps were `pnpm backup`
-with the local URLs and a `BACKUP_DIR` outside the repo, then `pnpm db:reset`, then steps 1 to 4,
-with the two `read`s replaced by assignments. The restored counts matched the source, and so did
-content digests of `garments`, `profiles`, `wears`, `auth.users` and `storage.objects`. Every
-downloaded photo matched its `manifest.json` sha256, and a restored user could sign in with their
-password and read their 3 garments through RLS. A tampered photo made step 1 fail, and an upload to
-a wrong URL stopped step 3 at the first photo. Once the `pg_cron` job existed, a data dump of the
-local stack held no `cron` rows, and step 2 restored it into a freshly reset stack, which kept its
-single `prune-expired-caches` job.
-
-### Local dump
-
-To keep a copy of the local database while developing, run the same script against the local
-stack, with a `BACKUP_DIR` outside the repo, since manual testing can leave real account data in it.
-Restore it with the steps above:
-
-```bash
-set -a; source .env.local; set +a
-BACKUP_DB_URL="$SUPABASE_DB_URL" SUPABASE_URL="$EXPO_PUBLIC_SUPABASE_URL" \
-  BACKUP_DIR=~/dressing-room-local-backups pnpm backup
-```
+The nightly backup of the hosted project, what it holds, its setup and the tested restore are in
+[`owner-runbook.md`](owner-runbook.md#7-backups).

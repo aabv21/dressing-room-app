@@ -11,6 +11,6 @@ export interface GarmentCutoutNative {
   cutOut(uri: string): Promise<string | null>;
 }
 
-// Optional so a build without the native module (Expo Go, web, an old dev client) gets `null`
+// Optional so a build without the native module (Expo Go, web, a build from before the module) gets `null`
 // instead of a crash at import time.
 export default requireOptionalNativeModule<GarmentCutoutNative>('GarmentCutout');

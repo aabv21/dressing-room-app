@@ -3,7 +3,7 @@ packages:
 
 # Supply-chain hardening. Every value is written explicitly, even where it equals pnpm's own
 # default, so the effective config doesn't silently drift if a future pnpm major changes a
-# default. See AGENTS.md's "Supply-chain hardening" section for what each setting does.
+# default. See CONTRIBUTING.md's "Supply-chain hardening" section for what each setting does.
 minimumReleaseAge: 4320 # minutes (3 days); blocks installing a package version published more recently
 minimumReleaseAgeExclude: [] # override pnpm's default exclusions; nothing is exempt from the age gate
 trustPolicy: no-downgrade # installs fail if a package's trust evidence regresses from an earlier release

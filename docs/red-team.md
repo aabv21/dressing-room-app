@@ -42,7 +42,7 @@ Untrusted input reaches those calls only as:
   array; there is no free-text column.
 
 What a model can do at worst: write wrong enum values onto the caller's own garment (which the
-review queue shows them), mark it `failed` or `not_garment`, or rate an outfit wrongly. It can't
+review queue shows them), mark it `failed`, or rate an outfit wrongly. It can't
 reach another user's data, call a tool, write a column outside the attribute set, or put free text
 anywhere but a For you card.
 
@@ -137,6 +137,13 @@ Owner decisions or accepted limits, not code changes:
   is open with no email confirmation, and GoTrue limits sign-ups and sign-ins to 30 per IP per
   5 minutes. On the hosted project, email confirmation, a CAPTCHA, or closing sign-ups to the
   owner's household are dashboard settings for the owner.
+- **Google sign-in has no nonce replay protection.** `@react-native-google-signin/google-signin`
+  v17's free `signIn()` sends no nonce on Android and a hidden one on iOS that the library doesn't
+  expose; sending a custom one made every sign-in fail GoTrue's OIDC check. So `signInWithIdToken`
+  gets no nonce for Google, and `[auth.external.google].skip_nonce_check` is `true` locally and on
+  the hosted project (without it every Google sign-in fails). Apple's flow still uses a nonce.
+  Upgrade path: a library version that exposes iOS's nonce, or Universal Sign In (the package's paid
+  tier). See `src/auth/socialAuth.ts`'s `signInWithGoogle`.
 - **Storage per user.** The bucket caps each photo at 2 MiB and three image types, but not a
   user's total, and a photo uploads before its garment row exists, so a policy can't require the
   row. Accepted at 4 users on the free tier's 1 GB. Upgrade path: a per-folder object count in the
@@ -145,7 +152,7 @@ Owner decisions or accepted limits, not code changes:
   extraction quota that call costs only a `consume_quota` round trip. Accepted for the same reason.
 - **Provider spend caps.** Quotas bound the spend per user; they don't enforce the monthly ceiling.
   The Anthropic and TypeSafe spend limits and alerts are console settings for the owner
-  (`AGENTS.md`'s "Owner session").
+  ([`owner-runbook.md`](owner-runbook.md#3-secrets-keys-and-spend-caps)).
 - **For you's lines are free text.** 90 code points at most, and shown as plain text. The input
   holds no user data, so only the model itself could put something odd there, such as a URL or
   bidi characters. Accepted; upgrade path: drop lines with control or bidi characters in

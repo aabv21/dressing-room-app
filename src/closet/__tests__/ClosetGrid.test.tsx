@@ -7,7 +7,7 @@ jest.mock('@shopify/flash-list', () => require('../../test/flashListMock'));
 
 test('empty closet shows the friendly empty state', async () => {
   await render(<ClosetGrid items={[]} />);
-  expect(screen.getByText('Add your 10 favorites to get started.')).toBeOnTheScreen();
+  expect(screen.getByText('Take photos of a top, a bottom and shoes to start.')).toBeOnTheScreen();
 });
 
 test('cells spell out wear counts', async () => {
@@ -115,7 +115,7 @@ test('a leading tile alone still renders the grid instead of the empty state', a
   await render(<ClosetGrid items={[]} leadingTile={{ label: 'Processing 1 photo…' }} />);
 
   expect(screen.getByText('Processing 1 photo…')).toBeOnTheScreen();
-  expect(screen.queryByText('Add your 10 favorites to get started.')).not.toBeOnTheScreen();
+  expect(screen.queryByText('Take photos of a top, a bottom and shoes to start.')).not.toBeOnTheScreen();
 });
 
 test('selectedIds marks the chosen cells with a ring and as selected; without it no cell is', async () => {
@@ -136,7 +136,7 @@ test('selectedIds marks the chosen cells with a ring and as selected; without it
 test('emptyText replaces the closet empty state', async () => {
   await render(<ClosetGrid items={[]} emptyText="No shoes available." />);
   expect(screen.getByText('No shoes available.')).toBeOnTheScreen();
-  expect(screen.queryByText('Add your 10 favorites to get started.')).not.toBeOnTheScreen();
+  expect(screen.queryByText('Take photos of a top, a bottom and shoes to start.')).not.toBeOnTheScreen();
 });
 
 test('the badge and wear count over a thumbnail are capped for large text, and iOS shows the cell enlarged on a long press', async () => {

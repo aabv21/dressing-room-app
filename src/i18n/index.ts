@@ -79,6 +79,7 @@ export function formatWearCount(count: number, locale: Locale): string {
 
 export type PluralBase =
   | 'closet.processing'
+  | 'closet.waiting'
   | 'closet.failed'
   | 'closet.reviewBanner'
   | 'camera.count'
