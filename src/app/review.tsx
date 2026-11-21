@@ -5,11 +5,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
-import { AccessibilityInfo, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { GARMENT_FIELDS, type ClothingType, type GarmentField } from '../closet/catalog';
 import { useCloset, usePendingPolling } from '../closet/ClosetProvider';
-import { fieldsToAsk, isStalePending, reviewQueue } from '../closet/closetSelectors';
+import { fieldsToAsk, isStalePending, reviewQueue, sureGarments } from '../closet/closetSelectors';
 import { ConfirmedRow, FieldEditor, fieldValuesOf } from '../closet/GarmentFields';
 import { confirmReview, type Garment } from '../closet/garmentRepository';
 import { GarmentPhoto } from '../closet/GarmentPhoto';
@@ -38,8 +38,10 @@ function ReviewCard(props: {
   total: number;
   onSkip: () => void;
   onConfirmed: (id: string) => void;
+  /** "Confirm the N the AI was sure of", shown when at least two garments need no answer. */
+  batch: { count: number; running: boolean; failed: boolean; onPress: () => void } | null;
 }): React.JSX.Element {
-  const { garment, now, clothingType, index, total, onSkip, onConfirmed } = props;
+  const { garment, now, clothingType, index, total, onSkip, onConfirmed, batch } = props;
   const { t } = useI18n();
   const insets = useScreenContentInsets('none');
   const { replaceLocal } = useCloset();
@@ -110,6 +112,27 @@ function ReviewCard(props: {
             style={[styles.trackFill, { width: `${String((index / total) * 100)}%` }]}
           />
         </View>
+        {batch === null ? null : (
+          <View style={styles.batch}>
+            {batch.count >= 2 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ disabled: batch.running }}
+                disabled={batch.running}
+                onPress={batch.onPress}
+                style={({ pressed }) => [styles.batchButton, pressed || batch.running ? styles.batchButtonDim : null]}
+              >
+                <Check size={16} color={colors.accentText} />
+                <Text style={styles.batchLabel}>{t('review.confirmSure', { count: batch.count })}</Text>
+              </Pressable>
+            ) : null}
+            {batch.failed ? (
+              <Text style={styles.error} accessibilityRole="alert">
+                {t('review.confirmSure.error')}
+              </Text>
+            ) : null}
+          </View>
+        )}
         {notice === null ? null : <Text style={styles.notice}>{notice}</Text>}
         <GarmentPhoto garment={garment} />
         <View>{BASIC_FIELDS.filter((field) => !asked.has(field)).map(row)}</View>
@@ -142,12 +165,12 @@ function ReviewCard(props: {
                 </Text>
               ),
             })}
-        secondary={{ label: t('review.skip'), tone: 'ghost', onPress: onSkip, disabled: saving }}
+        secondary={{ label: t('review.skip'), tone: 'ghost', onPress: onSkip, disabled: saving || batch?.running === true }}
         primary={{
           label: t('review.confirm'),
           tone: 'commit',
           icon: Check,
-          disabled: saving || values.category === null,
+          disabled: saving || batch?.running === true || values.category === null,
           onPress: () => {
             void confirm();
           },
@@ -183,7 +206,8 @@ function CaughtUp(): React.JSX.Element {
 
 export default function ReviewScreen(): React.JSX.Element {
   usePendingPolling(useIsFocused());
-  const { garments } = useCloset();
+  const { t } = useI18n();
+  const { garments, replaceLocal } = useCloset();
   const clothingType = useClothingType();
   // A pending garment joins the queue once it turns stale (10 minutes).
   const now = useNow(CLOCK_TICK_MS);
@@ -224,6 +248,32 @@ export default function ReviewScreen(): React.JSX.Element {
     setConfirmed((previous) => new Set(previous).add(id));
   }, []);
 
+  const sure = useMemo(() => sureGarments(queue, now), [queue, now]);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchFailed, setBatchFailed] = useState(false);
+  // One garment at a time, stopping at the first failure: what was saved stays confirmed, and the
+  // rest stays in the queue for another try or the card.
+  const confirmSure = useCallback(async () => {
+    setBatchRunning(true);
+    setBatchFailed(false);
+    let saved = 0;
+    for (const g of sure) {
+      const values = fieldValuesOf(g);
+      const result = await confirmReview(g.id, values);
+      if (!result.ok) {
+        setBatchFailed(true);
+        break;
+      }
+      replaceLocal({ ...g, ...values, reviewed_at: new Date().toISOString() });
+      onConfirmed(g.id);
+      saved += 1;
+    }
+    setBatchRunning(false);
+    AccessibilityInfo.announceForAccessibility(
+      saved === sure.length ? t('review.confirmSure.done', { count: saved }) : t('review.confirmSure.error'),
+    );
+  }, [sure, replaceLocal, onConfirmed, t]);
+
   if (current === undefined) {
     return <CaughtUp />;
   }
@@ -238,6 +288,11 @@ export default function ReviewScreen(): React.JSX.Element {
       total={confirmed.size + queue.length}
       onSkip={onSkip}
       onConfirmed={onConfirmed}
+      batch={
+        sure.length >= 2 || batchFailed
+          ? { count: sure.length, running: batchRunning, failed: batchFailed, onPress: () => void confirmSure() }
+          : null
+      }
     />
   );
 }
@@ -254,6 +309,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: spacing.sm,
+  },
+  batch: {
+    gap: spacing.xs,
+  },
+  batchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+  },
+  batchButtonDim: {
+    opacity: 0.6,
+  },
+  batchLabel: {
+    color: colors.accentText,
+    fontSize: 14,
+    fontWeight: '700',
   },
   progressText: {
     color: colors.muted,

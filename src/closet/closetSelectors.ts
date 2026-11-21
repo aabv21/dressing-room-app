@@ -75,6 +75,11 @@ export function fieldsToAsk(g: Garment, now: number): GarmentField[] {
   );
 }
 
+/** The garments in `queue` the AI was sure of: nothing to ask and a category, in queue order. */
+export function sureGarments(queue: readonly Garment[], now: number): Garment[] {
+  return queue.filter((g) => g.category !== null && fieldsToAsk(g, now).length === 0);
+}
+
 /** Active garments per slot; slots with none are absent, and uncategorized garments aren't counted. */
 export function slotCounts(garments: readonly Garment[]): Partial<Record<Slot, number>> {
   const counts = new Map<Slot, number>();

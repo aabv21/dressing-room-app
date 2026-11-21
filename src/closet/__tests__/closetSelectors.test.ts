@@ -3,6 +3,7 @@ import type { Garment } from '../garmentRepository';
 import {
   categoryCounts,
   fieldsToAsk,
+  sureGarments,
   isLivePending,
   isStalePending,
   reviewQueue,
@@ -223,4 +224,33 @@ test('categoryCounts counts active garments in the slot', () => {
 
   expect(categoryCounts(garments, 'bottom')).toEqual(new Map([['jeans', 2], ['skirt', 1]]));
   expect(categoryCounts(garments, 'all')).toEqual(new Map([['jeans', 2], ['skirt', 1], ['t_shirt', 1]]));
+});
+
+describe('sureGarments', () => {
+  const sure = (id: string, overrides: Partial<Garment> = {}): Garment =>
+    garment({
+      id,
+      extraction_status: 'done',
+      category: 'jeans',
+      colors: ['navy'],
+      formality: 2,
+      seasons: ['spring'],
+      uncertain_fields: [],
+      ...overrides,
+    });
+
+  test('keeps only garments with nothing to ask, in queue order', () => {
+    const queue = [
+      sure('a'),
+      sure('b', { uncertain_fields: ['fit'] }),
+      sure('c', { extraction_status: 'failed' }),
+      sure('d', { colors: [] }),
+      sure('e'),
+    ];
+    expect(sureGarments(queue, NOW).map((g) => g.id)).toEqual(['a', 'e']);
+  });
+
+  test('a garment with no category is never sure', () => {
+    expect(sureGarments([sure('a', { category: null })], NOW)).toEqual([]);
+  });
 });
