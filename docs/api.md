@@ -217,7 +217,7 @@ never waits for it.
 ### `export-data`
 
 - Request: `POST {}`.
-- Response: `DataExport` (`export-data/handler.ts`): `{ exportedAt, profile, garments, outfits (each
+- Response: `DataExport` (`export-data/handler.ts`): `{ exportedAt, profile, garments (every column, `price` and `currency` included), outfits (each
   with items: [{ garment_id }]), wears, dismissedOutfits, photos: [{ garmentId, full, thumb }] }`.
   The app refuses a document without `dismissedOutfits` (`isDataExport`), so the function ships
   before or with an app that reads it. Rows are read with
@@ -245,7 +245,7 @@ All through PostgREST with the user's JWT; RLS limits every row to the caller's 
 | Table | App calls | Client grants beyond RLS | Module |
 | --- | --- | --- | --- |
 | `profiles` | select own; update changed columns only (never upsert); `completeOnboarding` sends `'now'` | No insert or delete policy; `created_at` kept and `onboarding_completed_at` stamped by triggers | `src/profile/profileRepository.ts` |
-| `garments` | select all own, newest first; upsert `{ id, user_id }` ignoring duplicates; update attributes, status, `pinned_on`, `suggest`, `photo_version`, `reviewed_at`; delete | Insert only `id`, `user_id`; update only the attribute columns, `status`, `photo_version`, `reviewed_at`, `pinned_on`, `suggest` | `src/closet/garmentRepository.ts`, `src/closet/upload/queueSteps.ts` |
+| `garments` | select all own, newest first; upsert `{ id, user_id }` ignoring duplicates; update attributes, status, `pinned_on`, `suggest`, `price` with `currency`, `photo_version`, `reviewed_at`; delete | Insert only `id`, `user_id`; update only the attribute columns, `status`, `photo_version`, `reviewed_at`, `pinned_on`, `suggest`, `price`, `currency` | `src/closet/garmentRepository.ts`, `src/closet/upload/queueSteps.ts` |
 | `wears` | select by `worn_on` range with `outfits(outfit_items(garment_id))`, pages of 1000, at most 20; delete own | No update; insert only through `log_wear` in practice | `src/stats/wearsRepository.ts` |
 | `outfits`, `outfit_items` | select saved outfits with `outfit_items(garment_id)`, newest first; delete a saved one (its items cascade); otherwise through the RPCs and inside `wears` selects | No update; delete only on `outfits`, and only a saved outfit no wear points at | `src/outfits/savedOutfits.ts` |
 | `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates (upsert on `user_id,outfit_key`); delete one by key (Today's Undo) or all own (Profile's restore); count own (head) | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` (which also sets `garments.suggest` false, or true for the Undo) |

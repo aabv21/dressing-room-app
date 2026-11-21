@@ -36,6 +36,8 @@ function garment(overrides: Partial<Garment> = {}): Garment {
     last_worn_at: null,
     pinned_on: null,
     suggest: true,
+    price: null,
+    currency: null,
     photo_version: 1,
     wear_count: 0,
     ...overrides,

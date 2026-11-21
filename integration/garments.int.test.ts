@@ -67,6 +67,19 @@ test("B can't select, update or delete A's garment", async () => {
   expect(row).toEqual({ user_id: userAId, status: 'available' });
 });
 
+test("A prices their own garment; B's price update reaches none", async () => {
+  const own = await clientA.from('garments').update({ price: 49.9, currency: 'USD' }).eq('id', garmentId).select('price, currency');
+  expect(own.error).toBeNull();
+  expect(own.data).toEqual([{ price: 49.9, currency: 'USD' }]);
+
+  const foreign = await clientB.from('garments').update({ price: 1, currency: 'COP' }).eq('id', garmentId).select('id');
+  expect(foreign.error).toBeNull();
+  expect(foreign.data).toEqual([]);
+
+  const { data: row } = await serviceClient().from('garments').select('price, currency').eq('id', garmentId).single();
+  expect(row).toEqual({ price: 49.9, currency: 'USD' });
+});
+
 test("B can't download A's photo or upload into A's folder", async () => {
   const download = await clientB.storage.from('garments').download(`${userAId}/${garmentId}/full.webp`);
   expect(download.data).toBeNull();

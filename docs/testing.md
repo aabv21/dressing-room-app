@@ -441,7 +441,7 @@ Supabase stack:
 - `account.int.test.ts` — the account functions end to end through the gateway: `apple-token`
   exchanges a code with the mock Apple and stores the refresh token (and stores nothing for a code
   whose Apple user isn't the caller's); `export-data` returns the
-  caller's rows (dismissed outfits included) and signed photo URLs; `delete-account` removes the caller's photos, revokes the
+  caller's rows (dismissed outfits and garment prices included) and signed photo URLs; `delete-account` removes the caller's photos, revokes the
   Apple token with the mock and deletes the auth user, whose rows cascade, and a retry with the
   same token answers `deleted` without calling Apple again. A second user is untouched throughout.
 - `rls.int.test.ts` — the cross-user RLS boundary: user A can never read, update, list or delete
@@ -454,7 +454,8 @@ Supabase stack:
 - `garments.int.test.ts` — `public.garments` and the photo folder through supabase-js: user B can't
   select, update or delete A's garment, download A's `full.webp` or upload into A's folder; the same
   id inserted twice with `upsert(…, { ignoreDuplicates: true })` (the app's retried upload) leaves one
-  row; a client update of `extraction_status` fails with `42501`.
+  row; a client update of `extraction_status` fails with `42501`; A prices their own garment, and
+  B's price update reaches no row.
 - `garmentRepository.int.test.ts` — `src/closet/garmentRepository.ts` signed in as a normal user:
   both photo variants upload (upsert) and the row is created as the upload queue does it,
   `listGarments` returns it newest first, `signedPhotoUrls` gives URLs that fetch the photo (HTTP
@@ -555,6 +556,9 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   defaults to true and is client-writable on the caller's own garments only; `save_outfit` stores
   its score; a saved outfit is deleted only by its owner, only while no wear points at it, with its
   items cascading, while `outfit_items` keeps delete revoked.
+- `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
+  `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
+  on the caller's own garments only, and not writable by anon.
 - `insights_account.test.sql` — the `donated` status and the client-writable `pinned_on`, the
   `for_you` quota kind, the server-only `for_you_cache` and `apple_tokens`, and that every public
   table with a `user_id` cascades from `auth.users` (deleting a user empties them all).
