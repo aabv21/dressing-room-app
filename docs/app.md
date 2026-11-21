@@ -232,6 +232,19 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   says "Couldn't undo" and offers Undo again for a new window.
 - `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
   Today and the rating screen; Diary's Delete and the undo call `unmarkWornToday`.
+- `ShareCard.tsx`, `ShareOutfitSheet.tsx` and `shareOutfit.ts`: "Share" on the rating result (the
+  header's share icon) and on Today's card opens a sheet with the card the outfit is shared as: the
+  pieces' cut-out thumbnails stacked as a look on a light background, the score when known, and a
+  small "Dressing Room" footer. "Share image" calls `shareOutfitImage`, which checks
+  `Sharing.isAvailableAsync()`, captures the card with `react-native-view-shot`'s `captureRef`
+  (`format: 'png'`, `result: 'tmpfile'`) and opens `Sharing.shareAsync(uri, { mimeType: 'image/png',
+  UTI: 'public.png' })`; it never throws, so a capture or share-sheet failure (or no sharing on the
+  device) stays in the sheet as an announced message. The card's view has `collapsable={false}` so
+  Android keeps it for the capture. `react-native-view-shot` is a native module (added with
+  `pnpm expo install`; a new build is needed). Its `react-native` export is the raw `.tsx` source,
+  which fails this repo's strict compiler flags, so `tsconfig.json`'s `paths` points the package at
+  its compiled `lib/index`: TypeScript reads `lib/index.d.ts`, and Metro (which honors the same
+  `paths`) bundles `lib/index.js`. Drop that entry once the package's source passes the flags.
 - `OutfitStack.tsx`, `ScoreRing.tsx` (the number and arc count up to the score, or show it at once
   with Reduce Motion; the rating screen adds a success haptic as the result arrives), and `types.ts`
   (the functions' response types, re-exported from their `handler.ts`).

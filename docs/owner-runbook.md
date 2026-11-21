@@ -70,6 +70,20 @@ init`, the OAuth clients and the store records.
     and Save with a score all fail.
   - An old app on the new schema and functions works: `save_outfit` still takes the garment ids
     alone, and old builds never send `suggest`.
+- **Pending (after merge).** Wave 5a-3 (price and cost per wear, stores by country, sharing an
+  outfit image), after 5a-2 and in this order:
+  1. `pnpm exec supabase db push` for `20261121130000_garment_price.sql` (`garments.price` and
+     `garments.currency`, their checks and column grants);
+  2. `pnpm exec supabase functions deploy export-data` (its garment read is `select=*`, so its code
+     doesn't change; this makes sure the deployed one is 5a-2's and reads the new columns);
+  3. then a new app build (EAS `preview` for the family's APK, and the store profiles when they're
+     set up): the wave adds a native module, `react-native-view-shot`, so a JavaScript-only reload
+     of an older build can't run it.
+
+  Incompatible combinations:
+  - The new app on the old schema: saving a price fails ("Couldn't save"), and nothing else does;
+    the closet still loads, since it selects `*`.
+  - An old app on the new schema works: it never sends a price, and unpriced rows read as before.
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
   manual `gh workflow run keepalive.yml` answers the server time from `public.keep_alive()`. GitHub

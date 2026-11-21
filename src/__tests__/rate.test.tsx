@@ -1,10 +1,12 @@
 // The "How does it look?" result screen (mockup 01 screen 3): the score ring, label, AI confidence,
 // reasons, a one-tap swap, and Save / I'll wear it. Rendered directly with the closet, the AI
 // client and the outfit repository mocked.
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { randomUUID } from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import * as Sharing from 'expo-sharing';
+import { captureRef } from 'react-native-view-shot';
 
 import RateScreen from '../app/rate';
 import { I18nProvider } from '../i18n/I18nProvider';
@@ -58,6 +60,7 @@ jest.mock('../outfits/outfitRepository', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(() => Promise.resolve(true)), shareAsync: jest.fn() }));
 // Reduce Motion on, so the ring shows its score at once; ScoreRing.test covers the count-up.
 jest.mock('react-native-reanimated', () => ({
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
@@ -773,4 +776,72 @@ test('a failed undo says so and keeps Undo for a retry', async () => {
   expect(await screen.findByText("Couldn't undo. You can delete it from your Diary.")).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'Logged ✓' })).toBeDisabled();
+});
+
+describe('sharing the outfit as an image', () => {
+  beforeEach(() => {
+    jest.mocked(captureRef).mockClear();
+    jest.mocked(Sharing.shareAsync).mockReset();
+    jest.mocked(Sharing.shareAsync).mockResolvedValue(undefined);
+  });
+
+  test('Share opens the card with the pieces, the score and the footer, and shares the captured PNG', async () => {
+    mockedRate.mockReturnValue(ok(result({ score: 82 })));
+    await render(<RateScreen />);
+    await screen.findByText('82%');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Share' }));
+
+    const card = screen.getByTestId('share-card');
+    expect(within(card).getByText('82')).toBeOnTheScreen();
+    expect(within(card).getByText('Dressing Room')).toBeOnTheScreen();
+    expect(within(card).getAllByTestId(/^share-piece-/)).toHaveLength(3);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Share image' }));
+
+    expect(captureRef).toHaveBeenCalledTimes(1);
+    expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///cache/outfit.png', expect.objectContaining({ mimeType: 'image/png' }));
+    expect(screen.queryByTestId('share-card')).not.toBeOnTheScreen();
+  });
+
+  test('a failed capture shows a message in the sheet instead of crashing', async () => {
+    jest.mocked(captureRef).mockRejectedValueOnce(new Error('not laid out'));
+    mockedRate.mockReturnValue(ok(result()));
+    await render(<RateScreen />);
+    await screen.findByText('78%');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Share' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Share image' }));
+
+    expect(await screen.findByText("Couldn't create the image. Try again.")).toBeOnTheScreen();
+    expect(screen.getByTestId('share-card')).toBeOnTheScreen();
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  test('no Share while the rating is loading', async () => {
+    mockedRate.mockReturnValue(new Promise(() => undefined));
+    await render(<RateScreen />);
+
+    expect(screen.queryByRole('button', { name: 'Share' })).toBeNull();
+  });
+
+  test('in Spanish', async () => {
+    kvSet('locale-preference', 'es');
+    mockedRate.mockReturnValue(ok(result()));
+    try {
+      await render(
+        <I18nProvider>
+          <RateScreen />
+        </I18nProvider>,
+      );
+      await screen.findByText('78%');
+      await fireEvent.press(screen.getByRole('button', { name: 'Compartir' }));
+
+      expect(screen.getByRole('header', { name: 'Compartir este outfit' })).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Compartir imagen' })).toBeOnTheScreen();
+      expect(screen.getByRole('button', { name: 'Cerrar' })).toBeOnTheScreen();
+    } finally {
+      kvSet('locale-preference', 'system');
+    }
+  });
 });

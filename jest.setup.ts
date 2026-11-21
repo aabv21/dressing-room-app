@@ -12,6 +12,10 @@ jest.mock('expo-network', () => ({
   addNetworkStateListener: () => ({ remove: () => undefined }),
   getNetworkStateAsync: () => Promise.resolve({ isConnected: true, isInternetReachable: true }),
 }));
+// react-native-view-shot's native capture is absent under Jest: a capture answers a fixed PNG file.
+jest.mock('react-native-view-shot', () => ({
+  captureRef: jest.fn(() => Promise.resolve('file:///cache/outfit.png')),
+}));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(() => Promise.resolve()),
   impactAsync: jest.fn(() => Promise.resolve()),

@@ -1,9 +1,10 @@
 // The Today tab (mockup 01 screen 1): the weather line, occasion chips, the "feeling lucky" card,
 // "Another" and "I'll wear it". Rendered directly with the closet, auth, the AI client and the
 // outfit repository mocked.
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
 import { randomUUID } from 'expo-crypto';
 import { router } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import TodayScreen from '../app/(tabs)/index';
@@ -71,6 +72,7 @@ jest.mock('../outfits/outfitRepository', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(() => Promise.resolve(true)), shareAsync: jest.fn() }));
 jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn(() => Promise.resolve({ ok: true })) }));
 
 jest.mock('../profile/profileRepository', () => ({ getProfile: jest.fn() }));
@@ -981,3 +983,52 @@ describe('offline', () => {
   });
 });
 
+
+describe("sharing Today's outfit as an image", () => {
+  beforeEach(() => {
+    jest.mocked(Sharing.isAvailableAsync).mockResolvedValue(true);
+    jest.mocked(Sharing.shareAsync).mockReset();
+    jest.mocked(Sharing.shareAsync).mockResolvedValue(undefined);
+  });
+
+  test("Share on the card shows the outfit's card with its score and shares the PNG", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Share' }));
+
+    const card = screen.getByTestId('share-card');
+    expect(within(card).getAllByTestId(/^share-piece-/)).toHaveLength(4);
+    expect(within(card).getByText('88')).toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Share image' }));
+
+    expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///cache/outfit.png', expect.objectContaining({ mimeType: 'image/png' }));
+  });
+
+  test('a failed share shows a message instead of crashing, and Close dismisses the sheet', async () => {
+    jest.mocked(Sharing.shareAsync).mockRejectedValue(new Error('sheet failed'));
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Share' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Share image' }));
+
+    expect(await screen.findByText("Couldn't create the image. Try again.")).toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByTestId('share-card')).not.toBeOnTheScreen();
+  });
+
+  test("a device that can't share says so", async () => {
+    jest.mocked(Sharing.isAvailableAsync).mockResolvedValue(false);
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Share' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Share image' }));
+
+    expect(await screen.findByText("Sharing isn't available on this device.")).toBeOnTheScreen();
+    expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+});

@@ -2,7 +2,7 @@
 // for a low score) with Save / I'll wear it. Pushed from Today and Build: `/rate?ids=…[&occasion=…]`.
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, CircleAlert, Layers, RotateCw, Sparkles } from 'lucide-react-native';
+import { Check, CircleAlert, Layers, RotateCw, Share2, Sparkles } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -29,6 +29,7 @@ import { OutfitStack } from '../outfits/OutfitStack';
 import { missingPieceIdea, pieceLabel } from '../outfits/outfitDisplay';
 import { readStoredForYou } from '../outfits/storedForYou';
 import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
+import { ShareOutfitSheet } from '../outfits/ShareOutfitSheet';
 import type { RatingReason, RatingResult } from '../outfits/types';
 import { useWearLog } from '../outfits/useWearLog';
 import { announceForAccessibility } from '../ui/a11y';
@@ -366,6 +367,8 @@ function RateOutfit({
   );
 
   const waitStage = useWaitStage(rating.kind === 'loading');
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareable = rating.kind === 'result' && pieces.length > 0;
 
   const retry = useCallback(() => {
     setRating({ kind: 'loading' });
@@ -500,9 +503,33 @@ function RateOutfit({
           <View style={styles.headerTitle}>
             <ScreenTitle title={t('rate.title')} />
           </View>
+          {shareable ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('share.action')}
+              hitSlop={4}
+              onPress={() => {
+                setShareOpen(true);
+              }}
+              style={styles.shareButton}
+            >
+              <Share2 size={20} color={colors.accentText} />
+            </Pressable>
+          ) : null}
         </View>
         {body}
       </ScrollView>
+      {rating.kind === 'result' ? (
+        <ShareOutfitSheet
+          visible={shareOpen}
+          garments={pieces}
+          thumbUrls={thumbUrls}
+          score={rating.result.score}
+          onClose={() => {
+            setShareOpen(false);
+          }}
+        />
+      ) : null}
       {cta === null ? null : (
         <>
           <CtaBackdrop />
@@ -543,6 +570,12 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
+  },
+  shareButton: {
+    minWidth: layout.minHitTarget,
+    minHeight: layout.minHitTarget,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   loading: {
     alignItems: 'center',

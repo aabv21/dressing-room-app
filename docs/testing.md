@@ -12,8 +12,10 @@ Component and hook tests under `src/**/*.test.[jt]sx?`, running under `jest-expo
 environment. `jest.setup.ts` mocks:
 
 - `react-native-safe-area-context` — the package's own Jest mock, so insets are deterministic.
-- `expo-localization` — `getLocales()` returns a fixed `en-US` locale, so i18n-dependent tests don't
-  depend on the host machine's language.
+- `expo-localization` — `getLocales()` returns a fixed `en-US` locale (region `US`, currency
+  `USD`), so i18n-dependent tests don't depend on the host machine's language or region.
+- `react-native-view-shot` — `captureRef` answers a fixed `file://` PNG, since the native capture
+  is absent under Jest; a suite that tests a failed capture overrides it.
 - `expo-sqlite/kv-store` — replaced with an in-memory `Map` behind the same synchronous
   `getItemSync`/`setItemSync`/`removeItemSync`/`getAllKeysSync` API `src/lib/kv.ts` calls, since
   there is no native SQLite module under Jest.
@@ -68,7 +70,14 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   and is disabled until something changed, a network error keeps the edit, the status and the "Use
   in suggestions" switch save at once and revert on error (a row without `suggest` shows it on), delete confirms first and goes back (or to the closet with no history), a
   failed delete keeps the screen, Replace photo queues the picked photo, editors are disabled while
-  the AI is still reading, and an unknown id shows "not found".
+  the AI is still reading, and an unknown id shows "not found". The price: a typed price saves with
+  the device's currency or a picked one, clearing it clears the currency, a currency with no price
+  saves nothing, an invalid price disables Save with a hint, cost per wear shows for a priced
+  garment (also never worn, in Spanish, and nothing for a row cached without the columns).
+- `src/closet/__tests__/price.test.ts` — `parsePrice` in both decimal styles with grouping, junk
+  and the `numeric(10,2)` ceiling; `priceText` round-trips; `costPerWear` with 0, 1 and 12 wears;
+  `formatMoney` per locale and currency; `deviceCurrency`'s USD fallback; `currencyChoices`;
+  `priceOf` for a cached row.
 
 The Profile tab's Privacy section (data export and account deletion):
 
@@ -180,14 +189,21 @@ Outfits, Stats and Diary:
   5-second Undo, a failure keeping the outfit), a closet row cached without `suggest` still shown,
   the too-small, weather,
   quota and error states (over quota opens Build, a missing piece the closet), the staged loading
-  copy, and the stored list offline (its note wraps at a large text size).
+  copy, the stored list offline (its note wraps at a large text size), and Share (the outfit's card
+  with its score shared as a PNG, a failed share and a device that can't share shown in the sheet).
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
   row, a pick moving on to the next empty slot, the disabled button naming what's missing,
   unavailable garments left out, and a slot row at a large text size.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
-  the confidence line only when low or estimated, the success haptic, the swap (hidden when its target is out of suggestions), Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
+  the confidence line only when low or estimated, the success haptic, the swap (hidden when its target is out of suggestions), Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too. Share: the card with the pieces, score and footer, the captured PNG shared, a failed capture shown in the sheet, no Share while loading, and the Spanish copy.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
-  quota and offline states, and one request at a time.
+  quota and offline states, one request at a time, and "Search in stores": the region's stores in a
+  sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, and a browser
+  that won't open.
+- `src/outfits/__tests__/storeLinks.test.ts` — `storeLinksFor`: each region's stores and exact
+  URLs, a lower-case or missing region, every query URL-encoded, and Mercado Libre's hyphens.
+- `src/outfits/__tests__/shareOutfit.test.ts` — the captured PNG shared with its MIME type, no
+  capture when the device can't share, and a capture or share-sheet failure answering `failed`.
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
   shared by Today and the rating per user and day, also after a restart, and cleared for a deleted
   wear.
@@ -217,8 +233,9 @@ Outfits, Stats and Diary:
   growing with them).
 - `src/__tests__/closet-stats.test.tsx` — the segments, a failed history read and its retry, the KPIs per period ("1 outfit logged",
   "2 outfits logged"), most worn, a color opening the filtered closet, the balance, the unused list
-  (Suggest tomorrow and Donate, its row at the largest text sizes) and donated garments left out of Items and
-  Build.
+  (Suggest tomorrow and Donate, its row at the largest text sizes), the cost per wear card (best value
+  and forgotten piece, one block per currency, hidden with nothing priced, in Spanish) and donated
+  garments left out of Items and Build.
 - `src/__tests__/closet-diary.test.tsx` — the month calendar (worn days, month navigation, day
   numbers that stay inside their cells at a large text size, where the thumbnail shrinks), a day's
   wears, deleting a wear (today's too), and the empty and Spanish months.
@@ -228,7 +245,8 @@ Outfits, Stats and Diary:
   (and a failed delete keeping the outfit); the stored list offline; the empty state; and
   `?segment=saved` opening it.
 - `src/stats/__tests__/` — `periods.test.ts` (the period ranges and the Monday-first month grid),
-  `statsModel.test.ts` (the KPIs, most worn, color shares and slot balance) and
+  `statsModel.test.ts` (the KPIs, most worn, color shares, slot balance and cost per wear per
+  currency) and
   `wearsRepository.test.ts` (the wears query, its paging in ranges of 1000 until a short page,
   at most 20 pages, a failed later page throwing, and Diary's delete) and `storedWears.test.ts` (the
   stored year round-trips, a malformed value reads as null, `wearsInRange` refuses a range before
