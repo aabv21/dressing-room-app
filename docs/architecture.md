@@ -24,7 +24,7 @@ It runs in three places:
   and Android. Background removal, resizing and the upload queue run here, and so do Stats and
   Diary, which are computed from the garments and wears already on the device.
 - **One Supabase project.** Auth, Postgres 17 with row-level security on every table, a private
-  Storage bucket, and seven Edge Functions. Every request from the app goes through the project's
+  Storage bucket, and eight Edge Functions. Every request from the app goes through the project's
   API gateway with the user's session token; the app holds no other credential.
 - **Three AI and data services,** called only from the Edge Functions: Anthropic (Claude Haiku
   5.5), TypeSafe (its Jev judgment model) and Open-Meteo (weather and geocoding). Apple and Google
@@ -147,6 +147,21 @@ counts, for each staple the user doesn't own, the complete outfits it would make
 a missing line falls back to a template. Over the quota, the function serves the last entry it has
 rather than a 429.
 
+**Planner.** The Plan screen writes one plan per day through the `plan_outfit` RPC (own garments,
+14 days ahead, checked again by RLS) and keeps the window in kv for Today, which shows "Planned for
+today" first. A plan is never a wear: only its "I'll wear it" calls `log_wear`. The daily reminder
+stays local: with a plan in the next seven firings, the phone schedules one weekly notification per
+weekday instead of the daily one, the planned days naming their pieces.
+
+**Trip packing.** "Pack for a trip" calls `trip-plan` with a city, dates (up to 10 days), an
+optional occasion and the language. A closet missing a required slot gets `too_small`. Otherwise a
+cache keyed by the trip and the closet answers for 6 hours; a miss counts against 5 a day before
+the function geocodes the city and reads Open-Meteo's 16-day daily forecast. Each day gets the
+lucky rules under its own weather (the season alone past the forecast), ranked by how few new pieces
+it adds and then the pre-score, with no Jev or Claude call, and the answer carries a packing list by
+slot. Nothing is stored for the user unless they tap Save (`saved_trips`); check-offs stay on the
+phone.
+
 **Data export.** Profile → "Export my data" calls `export-data`, which reads the caller's rows
 with the caller's token, signs each photo URL for 7 days with the service role, and returns one
 JSON document that the app hands to the share sheet.
@@ -162,7 +177,7 @@ reconnect only asks Auth whether the account still exists.
 
 ## What gets stored where
 
-![Data model: auth.users owns every row through on-delete-cascade user_id keys; outfit_items and wears cascade from their outfit and garment; profiles, garments, outfits, outfit_items, wears and the photos are client tables under RLS, and the quota counters, result caches, Apple tokens and weather cache are service-role only](diagrams/data-model.svg)
+![Data model: auth.users owns every row through on-delete-cascade user_id keys; outfit_items and wears cascade from their outfit and garment; profiles, garments, outfits, outfit_items, wears, dismissed outfits, plans, saved trips and the photos are client tables under RLS, and the quota counters, result caches (trip plans included), Apple tokens and weather cache are service-role only](diagrams/data-model.svg)
 
 Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/data-model.json)
 
@@ -172,11 +187,13 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | `public.garments` | One row per garment: enum attributes, doubted fields, extraction status, status (available, laundry, lent, donated), photo version, wear count, last worn, a "Suggest tomorrow" pin | Until the user deletes it or the account |
 | `public.outfits`, `outfit_items`, `public.wears` | Saved and worn outfits, their pieces, and each wear's day, occasion and score | Until deleted (a wear from the diary) or the account |
 | `garments` bucket | `full.webp` (784 px) and `thumb.webp` (256 px) per garment | Until the garment or the account is deleted |
-| `public.usage_counters` | Per user, day and kind: extraction (UTC day); rating, lucky, for_you (the user's local day) | Until the account is deleted |
+| `public.planned_outfits`, `public.saved_trips` | One planned outfit per day (garment ids and occasion); trips the user saved with their plan's snapshot | Until the user removes them or the account |
+| `public.usage_counters` | Per user, day and kind: extraction (UTC day); rating, lucky, for_you, trip (the user's local day) | Until the account is deleted |
 | `public.rating_cache`, `lucky_cache`, `for_you_cache` | AI results by cache key; a degraded entry is served for an hour, a For you entry for 7 days | A daily `pg_cron` job deletes degraded entries after 2 hours, rating and lucky entries after 30 days and For you entries after 8 days, except each user's newest For you entry; the account's deletion removes the rest |
+| `public.trip_cache` | Trip plans by trip and closet; a degraded one is served for an hour, others for 6 hours | The daily job deletes entries after 7 hours |
 | `public.weather_cache` | Forecast summaries by place and hour, with no user id | 2 days (the same daily job; [`database.md`](database.md) has the details) |
 | `public.apple_tokens` | The Sign in with Apple refresh token, for revocation | Until the account is deleted |
-| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list, For you ideas and wear history, cached images, the daily reminder's time and its scheduled notification | Copies go after upload; the rest until sign-out or deletion clears it (sign-out turns the reminder off and keeps its time) |
+| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list, For you ideas, wear history and plans, a trip's packing check-offs, cached images, the daily reminder's time and its scheduled notification | Copies go after upload; the rest until sign-out or deletion clears it (sign-out turns the reminder off and keeps its time) |
 | `~/dressing-room-backups/` | Nightly dumps and photos on the owner's Mac | The newest 14 complete backups |
 
 ## What happens when something fails

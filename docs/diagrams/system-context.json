@@ -96,7 +96,7 @@
       "id": "functions",
       "type": "backend",
       "label": "Edge Functions",
-      "sublabel": "7 · quotas · caches",
+      "sublabel": "8 · quotas · caches",
       "row": 1,
       "col": 2,
       "size": [
