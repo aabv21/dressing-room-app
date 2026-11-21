@@ -39,6 +39,8 @@ garment hexes, each segment and legend entry tappable).
 ## Translations (`src/i18n/`)
 
 `en.ts` is the source of truth and `es.ts` the only other table (neutral Latin American Spanish).
+The app speaks to the user in the second person, never as "I" or "we"; only button labels in the
+user's own voice ("I'll wear it", "Export my data") say "I" or "my".
 `I18nProvider` follows the device language, with an in-app override.
 
 ## The closet (`src/closet/`)
@@ -183,8 +185,9 @@ button's notice slot, and lists household mode as "Coming soon", a row with no a
   `unmarkWornToday` and a closet refresh.
 - `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
   Today and the rating screen; Diary's Delete and the undo call `unmarkWornToday`.
-- `OutfitStack.tsx`, `ScoreRing.tsx`, and `types.ts` (the functions' response types, re-exported
-  from their `handler.ts`).
+- `OutfitStack.tsx`, `ScoreRing.tsx` (the number and arc count up to the score, or show it at once
+  with Reduce Motion; the rating screen adds a success haptic as the result arrives), and `types.ts`
+  (the functions' response types, re-exported from their `handler.ts`).
 
 ## Stats and Diary (`src/stats/`)
 

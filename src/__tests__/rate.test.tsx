@@ -3,6 +3,7 @@
 // client and the outfit repository mocked.
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { randomUUID } from 'expo-crypto';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 
 import RateScreen from '../app/rate';
@@ -57,6 +58,12 @@ jest.mock('../outfits/outfitRepository', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+// Reduce Motion on, so the ring shows its score at once; ScoreRing.test covers the count-up.
+jest.mock('react-native-reanimated', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+  ...(require('../test/reanimatedMock') as Record<string, unknown>),
+  useReducedMotion: () => true,
+}));
 jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn(() => Promise.resolve({ ok: true })) }));
 
 const mockedRate = jest.mocked(rateOutfit);
@@ -110,14 +117,15 @@ beforeEach(() => {
   kvRemove(storedForYouKey('user-1'));
 });
 
-test('rates the outfit on mount and shows the score, label and AI confidence', async () => {
+test('rates the outfit on mount and shows the score and label, with no confidence line when the AI is sure', async () => {
   mockedRate.mockReturnValue(ok(result()));
   await render(<RateScreen />);
 
   expect(await screen.findByText('78%')).toBeOnTheScreen();
   expect(screen.getByText('Looks good')).toBeOnTheScreen();
-  expect(screen.getByText('AI confidence: 85%')).toBeOnTheScreen();
+  expect(screen.queryByText(/AI confidence|isn't very sure|estimate/)).toBeNull();
   expect(screen.getByText('HOW DOES IT LOOK?')).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'How does it look?' })).toBeOnTheScreen();
   expect(mockedRate).toHaveBeenCalledTimes(1);
   expect(mockedRate).toHaveBeenCalledWith({
     garmentIds: [TOP, SKIRT, HEELS],
@@ -144,12 +152,35 @@ test('an unknown occasion param is sent as no occasion', async () => {
   expect(mockedRate).toHaveBeenCalledWith(expect.objectContaining({ occasion: null }));
 });
 
-test('an estimated rating shows the estimated confidence', async () => {
+test('an estimated rating says so in words', async () => {
   mockedRate.mockReturnValue(ok(result({ estimated: true, confidence: null })));
   await render(<RateScreen />);
 
-  expect(await screen.findByText('AI confidence: estimated')).toBeOnTheScreen();
-  expect(screen.queryByText(/AI confidence: \d/)).toBeNull();
+  expect(await screen.findByText('This score is an estimate.')).toBeOnTheScreen();
+  expect(screen.queryByText(/%$/, { includeHiddenElements: false })).toBeTruthy();
+  expect(screen.queryByText(/AI confidence/)).toBeNull();
+});
+
+test.each([
+  [59, true],
+  [60, false],
+] as const)('a confidence of %i shows the low-confidence line: %s', async (confidence, shown) => {
+  mockedRate.mockReturnValue(ok(result({ confidence })));
+  await render(<RateScreen />);
+  await screen.findByText('78%');
+
+  expect(screen.queryByText("The AI isn't very sure about this one.") !== null).toBe(shown);
+});
+
+test('the result arrives with a success haptic, once', async () => {
+  const notify = jest.mocked(Haptics.notificationAsync);
+  notify.mockClear();
+  mockedRate.mockReturnValue(ok(result()));
+  await render(<RateScreen />);
+  await screen.findByText('78%');
+
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
 });
 
 test('renders good and warn reasons with their icons, localizing the colors', async () => {

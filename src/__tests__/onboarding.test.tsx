@@ -191,7 +191,7 @@ describe('Body step', () => {
     await fireEvent.press(hipsNarrow);
     await fireEvent.press(within(panel).getByRole('radio', { name: 'Defined' }));
 
-    expect(screen.getByText('We suggest: Trapezoid')).toBeTruthy();
+    expect(screen.getByText('Suggested for you: Trapezoid')).toBeTruthy();
     expect(screen.getByRole('radio', { name: 'Trapezoid' })).toBeSelected();
 
     await fireEvent.press(screen.getByRole('button', { name: 'Next' }));

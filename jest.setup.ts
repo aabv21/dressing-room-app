@@ -13,7 +13,9 @@ jest.mock('expo-network', () => ({
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(() => Promise.resolve()),
   impactAsync: jest.fn(() => Promise.resolve()),
+  notificationAsync: jest.fn(() => Promise.resolve()),
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy', Soft: 'soft', Rigid: 'rigid' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 
 // `expo-sqlite/kv-store` wraps a native SQLite database; under Jest there is no native module to

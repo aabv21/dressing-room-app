@@ -1,5 +1,7 @@
 // The score as an arc in the ai gradient over a light track, with the percentage and label inside.
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { useI18n } from '../i18n';
@@ -10,6 +12,27 @@ const STROKE = 10;
 const GRADIENT_ID = 'scoreRingAi';
 const NUMBER_LINE = 32;
 const CAPTION_LINE = 16;
+/** How long the number and arc take to count up to the score. */
+export const COUNT_UP_MS = 700;
+
+/** The number shown while it counts up from 0 (ease-out); the score at once with Reduce Motion on. */
+function useCountUp(value: number): number {
+  const reducedMotion = useReducedMotion();
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (reducedMotion) return undefined;
+    const start = Date.now();
+    let frame = requestAnimationFrame(function tick() {
+      const progress = Math.min(1, (Date.now() - start) / COUNT_UP_MS);
+      setShown(Math.round(value * (1 - (1 - progress) ** 3)));
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [value, reducedMotion]);
+  return reducedMotion ? value : shown;
+}
 
 type Geometry = {
   size: number;
@@ -54,14 +77,16 @@ function AiGradient(): React.JSX.Element {
 }
 
 /**
- * Drawn at its final value (never animated). Ring and number are one progressbar named "Score", read
- * once; the caption (e.g. "Looks good") sits outside it so it's read as its own text.
+ * Counts up to the score (at once with Reduce Motion). Ring and number are one progressbar named
+ * "Score" whose value is the final score from the start, read once; the caption (e.g. "Looks good")
+ * sits outside it so it's read as its own text.
  */
 export function ScoreRing({ score, caption }: { score: number; caption: string }): React.JSX.Element {
   const { t } = useI18n();
   const g = useGeometry();
   const value = Math.min(100, Math.max(0, Math.round(score)));
-  const percent = `${String(value)}%`;
+  const shown = useCountUp(value);
+  const percent = `${String(shown)}%`;
   return (
     <View style={[styles.box, { width: g.size, height: g.size }]} testID="score-ring">
       <View
@@ -74,7 +99,7 @@ export function ScoreRing({ score, caption }: { score: number; caption: string }
         <Svg width={g.size} height={g.size} style={StyleSheet.absoluteFill}>
           <AiGradient />
           <Circle cx={g.center} cy={g.center} r={g.radius} stroke={colors.track} strokeWidth={g.stroke} fill="none" />
-          {value === 0 ? null : (
+          {shown === 0 ? null : (
             <Circle
               testID="score-ring-arc"
               cx={g.center}
@@ -84,7 +109,7 @@ export function ScoreRing({ score, caption }: { score: number; caption: string }
               strokeWidth={g.stroke}
               strokeLinecap="round"
               strokeDasharray={`${String(g.circumference)} ${String(g.circumference)}`}
-              strokeDashoffset={g.circumference * (1 - value / 100)}
+              strokeDashoffset={g.circumference * (1 - shown / 100)}
               // Starts the arc at 12 o'clock.
               transform={`rotate(-90 ${String(g.center)} ${String(g.center)})`}
               fill="none"

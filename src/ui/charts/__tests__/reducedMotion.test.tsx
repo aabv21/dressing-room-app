@@ -49,5 +49,6 @@ test('the score ring draws its final arc at once', async () => {
   await render(<ScoreRing score={78} caption="Looks good" />);
   const circumference = 2 * Math.PI * ((112 - 10) / 2);
   expect(screen.getByTestId('score-ring-arc')).toHaveProp('strokeDashoffset', circumference * (1 - 0.78));
+  expect(screen.getByText('78%', { includeHiddenElements: true })).toBeOnTheScreen();
   expect(mockTimings).toEqual([]);
 });

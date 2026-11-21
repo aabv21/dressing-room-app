@@ -179,7 +179,7 @@ Outfits, Stats and Diary:
   row, a pick moving on to the next empty slot, the disabled button naming what's missing,
   unavailable garments left out, and a slot row at a large text size.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
-  the swap, Save, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
+  the confidence line only when low or estimated, the success haptic, the swap, Save, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, and one request at a time.
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
@@ -203,8 +203,9 @@ Outfits, Stats and Diary:
 - `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
   and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
-  a large text size, a thumbnail's neutral fill and border) and `ScoreRing.test.tsx` (one progressbar named "Score", the number and
-  caption capped for large text with the ring growing with them).
+  a large text size, a thumbnail's neutral fill and border) and `ScoreRing.test.tsx` (one progressbar named "Score" valued at the final
+  score, the number counting up to it, the number and caption capped for large text with the ring
+  growing with them).
 - `src/__tests__/closet-stats.test.tsx` — the segments, a failed history read and its retry, the KPIs per period ("1 outfit logged",
   "2 outfits logged"), most worn, a color opening the filtered closet, the balance, the unused list
   (Suggest tomorrow and Donate, its row at the largest text sizes) and donated garments left out of Items and
@@ -231,15 +232,17 @@ Shared UI, the app shell and helpers:
   (the wait's stages at 6 and 20 s, starting over for each wait, its timers cleared on unmount), `Screen.test.tsx`
   (the status-bar scrim above scrolled content, the CTA backdrop with no chrome, the upper-cased
   title read in mixed case) and
-  `feedback.test.ts` (`tapHaptic`: a light impact for a commit, a selection tick for a choice, and
+  `feedback.test.ts` (`tapHaptic`: a light impact for a commit, a selection tick for a choice, a
+  success notification for a result, and
   a device that rejects haptics neither throws nor leaves the rejection unhandled).
 - `src/ui/charts/__tests__/charts.test.tsx` — `HorizontalBars` (rows as buttons, selection, the
   columns growing with the text and the stacked rows above the large-text threshold),
   `ProportionBar` (widths, each color read once, 44 pt targets) and `KpiTile` (a full row at a large
-  text size). `reducedMotion.test.tsx` — with Reduce Motion on, the bars and the score ring render
-  their final state without animating.
+  text size). `reducedMotion.test.tsx` — with Reduce Motion on, the bars and the score ring (arc and
+  number) render their final state without animating.
 - `src/i18n/__tests__/` — `i18n.test.ts` (es has exactly the en keys, every reason and label the
-  functions send has a message, neutral Spanish statuses) and `I18nProvider.test.tsx` (the device
+  functions send has a message, neutral Spanish statuses, the app never speaking as "I" or "we", the
+  kind body-type warning) and `I18nProvider.test.tsx` (the device
   language, the override and its persistence).
 - `src/lib/__tests__/` — `supabase.test.ts` (the client's options, a missing URL or key named in the
   error, auto-refresh with the app state), `fetchWithTimeout.test.ts` (12 s, 45 s for function

@@ -75,3 +75,25 @@ test('the Spanish table is neutral Latin American Spanish, without regionalisms'
   const text = Object.values(es).join(' ').toLowerCase();
   for (const word of ['franela', 'baleta', 'chancleta', 'guayo']) expect(text).not.toContain(word);
 });
+
+// Button labels in the user's own voice ("I'll wear it") are the user speaking, not the app.
+const USER_VOICE: ReadonlySet<string> = new Set([
+  'outfit.wear',
+  'auth.haveAccount',
+  'onboarding.style.useLocation',
+  'profile.privacy.export',
+]);
+
+test('the app speaks in the second person, never as I or we', () => {
+  const appVoice = (table: Record<string, string>) =>
+    Object.entries(table).filter(([key]) => !USER_VOICE.has(key));
+  const enFirstPerson = /\b(I|I'm|I'll|I've|me|my|we|we're|we'll|we've|us|our)\b/i;
+  expect(appVoice(en).filter(([, text]) => enFirstPerson.test(text))).toEqual([]);
+  const esFirstPerson = /\b(pude|pudimos|podemos|puedo|enviaremos|enviamos|sugerimos|mostramos|muestro|nuestro|nuestra)\b/i;
+  expect(appVoice(es).filter(([, text]) => esFirstPerson.test(text))).toEqual([]);
+});
+
+test('the body-type warning suggests, kindly, instead of judging', () => {
+  expect(en['rating.reason.body_flattery.warn']).toBe('Another cut may suit you better (from your profile)');
+  expect(es['rating.reason.body_flattery.warn']).toBe('Otro corte podría quedarte mejor (según tu perfil)');
+});

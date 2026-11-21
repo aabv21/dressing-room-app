@@ -35,6 +35,7 @@ import { ActionNotice, UndoNotice } from '../ui/ActionNotice';
 import { AnchoredCta, type CtaAction } from '../ui/AnchoredCta';
 import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
+import { tapHaptic } from '../ui/feedback';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { useWaitStage } from '../ui/useWaitStage';
 import { colors, fontSizes, gradients, layout, radii, spacing } from '../ui/theme';
@@ -47,6 +48,14 @@ type Rating = { kind: 'loading' } | { kind: 'result'; result: RatingResult } | {
 const NOTICE_ROOM = 56;
 /** Below this score with no swap shown, the rating points to For you. */
 const FOR_YOU_BELOW = 70;
+/** Below this confidence the rating says the AI isn't sure; above it the number would read as a second score. */
+const LOW_CONFIDENCE = 60;
+
+/** The confidence in words, only when it should temper the score; null otherwise. */
+function confidenceNote(result: RatingResult, t: Translate): string | null {
+  if (result.estimated || result.confidence === null) return t('rate.confidence.estimated');
+  return result.confidence < LOW_CONFIDENCE ? t('rate.confidence') : null;
+}
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -205,6 +214,7 @@ function ResultBody({
   onSwap: (fromId: string, toId: string) => void;
 }): React.JSX.Element {
   const { t, locale } = useI18n();
+  const note = confidenceNote(result, t);
   const reasons = result.reasons.flatMap((reason) => {
     const text = reasonText(reason, t, locale);
     return text === null ? [] : [{ reason, text }];
@@ -226,11 +236,7 @@ function ResultBody({
   return (
     <>
       <ScoreRing score={result.score} caption={t(`rating.label.${result.label}`)} />
-      <Text style={styles.confidence}>
-        {result.estimated || result.confidence === null
-          ? t('rate.confidence.estimated')
-          : t('rate.confidence', { value: result.confidence })}
-      </Text>
+      {note === null ? null : <Text style={styles.confidence}>{note}</Text>}
       {reasons.length === 0 ? null : (
         <View style={styles.reasons}>
           {reasons.map(({ reason, text }) => (
@@ -287,9 +293,9 @@ function RateOutfit({
     if (!rateable) return;
     let current = true;
     void rateOutfit({ garmentIds: ids, occasion, date: localDate() }).then((outcome) => {
-      if (current) {
-        setRating(outcome.ok ? { kind: 'result', result: outcome.result } : { kind: 'error', error: outcome.error });
-      }
+      if (!current) return;
+      if (outcome.ok) tapHaptic('success');
+      setRating(outcome.ok ? { kind: 'result', result: outcome.result } : { kind: 'error', error: outcome.error });
     });
     return () => {
       current = false;

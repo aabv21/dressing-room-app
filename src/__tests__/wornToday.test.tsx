@@ -51,6 +51,12 @@ jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-08' }));
 
 jest.mock('../outfits/outfitRepository', () => ({ logWear: jest.fn(), saveOutfit: jest.fn() }));
 jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn() }));
+// Reduce Motion on, so the rating's ring shows its score at once.
+jest.mock('react-native-reanimated', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+  ...(require('../test/reanimatedMock') as Record<string, unknown>),
+  useReducedMotion: () => true,
+}));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
 

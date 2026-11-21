@@ -173,7 +173,7 @@ test('a failed read asks the basics, and Confirm stays disabled until there is a
   mockedConfirmReview.mockResolvedValue({ ok: true });
   await renderReview();
 
-  expect(screen.getByText("We couldn't read this photo. Fill in the basics.")).toBeOnTheScreen();
+  expect(screen.getByText("This photo couldn't be read. Fill in the basics.")).toBeOnTheScreen();
   expect(screen.getByText("The AI isn't sure: what is it?")).toBeOnTheScreen();
   const confirm = screen.getByRole('button', { name: 'Confirm' });
   expect(confirm).toBeDisabled();
