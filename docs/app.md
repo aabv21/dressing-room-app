@@ -129,7 +129,9 @@ database CHECKs), `bodyType.ts`, `useCurrentCity` (expo-location, when-in-use on
 known), `OnboardingProvider` (re-reads the profile itself before any onboarding step renders, so a
 failed launch read can't overwrite a finished profile with defaults), and the shared form: `profileDraft.ts` (the
 state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx` (`ClothingSection`,
-`BodySection`, `StyleSection`), used by onboarding and the Profile tab.
+`BodySection`, `StyleSection`), used by onboarding and the Profile tab. The tab shows "Save changes"
+only while there's a change (or a save, its error or "Saved" to show), with a failed save in the
+button's notice slot, and lists household mode as "Coming soon", a row with no action.
 
 ## Supabase client and storage (`src/lib/`)
 

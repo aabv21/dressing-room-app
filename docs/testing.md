@@ -155,8 +155,9 @@ Accounts, onboarding and the profile:
 - `src/__tests__/onboarding.test.tsx` and `onboarding-arrival.test.tsx` — each step's saves, skips
   and errors, the body-type helper and height slider, a relaunch mid-onboarding, never overwriting
   a finished profile, and landing on the Closet after the last step.
-- `src/__tests__/profile.test.tsx` — the Profile tab: prefilled sections, Save sending only the
-  changed fields, inline validation, the language switch and its saves, another account signing in,
+- `src/__tests__/profile.test.tsx` — the Profile tab: prefilled sections, Save shown only for a
+  change and sending only the changed fields, its error by the button, inline validation, the
+  language switch and its saves, household mode as a coming-soon row, another account signing in,
   and sign-out.
 - `src/__tests__/city.test.tsx` — Today's city sheet: a typed city, the current location (or a
   denied permission), an unchanged city, a failed save or profile read.

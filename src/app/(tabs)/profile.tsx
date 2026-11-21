@@ -1,4 +1,4 @@
-import { Check, Download, LogOut, Trash2 } from 'lucide-react-native';
+import { Check, Download, LogOut, Trash2, Users } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -16,6 +16,7 @@ import { saveProfile } from '../../profile/profileRepository';
 import type { ProfilePatch, Result } from '../../profile/profileRepository';
 import type { BodyField } from '../../profile/validation';
 import { announceForAccessibility } from '../../ui/a11y';
+import { ActionNotice } from '../../ui/ActionNotice';
 import { Screen } from '../../ui/Screen';
 import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 import { LanguageToggle } from '../../ui/LanguageToggle';
@@ -108,6 +109,28 @@ function PrivacySection({ exporting, deleting }: ReturnType<typeof usePrivacyAct
         )}
       </View>
     </>
+  );
+}
+
+/** A preview of a later feature: one row, not a control. */
+function HouseholdSection(): React.JSX.Element {
+  const { t } = useI18n();
+  const title = t('profile.household.title');
+  const soon = t('profile.household.soon');
+  const body = t('profile.household.body');
+  return (
+    <View style={styles.card} accessible accessibilityLabel={`${title}, ${soon.toLocaleLowerCase()}. ${body}`}>
+      <View style={styles.household}>
+        <Users size={18} color={colors.muted} />
+        <View style={styles.householdText}>
+          <View style={styles.householdHead}>
+            <Text style={styles.rowLabel}>{title}</Text>
+            <Text style={styles.soon}>{soon}</Text>
+          </View>
+          <Text style={styles.muted}>{body}</Text>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -258,19 +281,26 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
     return undefined;
   }
 
+  // Only while there's something to save, saving, or to report: an invalid draft keeps it so Save can say why.
+  const showSave = dirty || !validation.ok || saving || saveError !== undefined || justSaved;
   return (
     <Screen
       title={t('screen.profile')}
-      cta={{
-        primary: {
-          label: justSaved && !dirty ? t('profile.saved') : t('profile.save'),
-          tone: 'commit',
-          disabled: saving || (validation.ok && !dirty),
-          onPress: () => {
-            void handleSave();
-          },
-        },
-      }}
+      {...(showSave
+        ? {
+            cta: {
+              primary: {
+                label: justSaved && !dirty ? t('profile.saved') : t('profile.save'),
+                tone: 'commit' as const,
+                disabled: saving || (validation.ok && !dirty),
+                onPress: () => {
+                  void handleSave();
+                },
+              },
+              ...(saveError === undefined ? {} : { notice: <ActionNotice tone="error">{t(saveError)}</ActionNotice> }),
+            },
+          }
+        : {})}
     >
       <View style={styles.form} testID="profile-form">
         <SectionHeading>{t('profile.section.clothes')}</SectionHeading>
@@ -288,12 +318,10 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         <SectionHeading>{t('profile.section.style')}</SectionHeading>
         <StyleSection value={draft} onChange={edit} />
         <LanguageSection onSave={saveLanguage} />
+        <SectionHeading>{t('profile.section.household')}</SectionHeading>
+        <HouseholdSection />
         <AccountAndPrivacy />
-        {saveError !== undefined ? (
-          <Text style={styles.error} accessibilityLiveRegion="polite">
-            {t(saveError)}
-          </Text>
-        ) : null}
+        {saveError === undefined ? null : <View style={styles.noticeRoom} />}
       </View>
     </Screen>
   );
@@ -394,6 +422,35 @@ const styles = StyleSheet.create({
   muted: {
     color: colors.muted,
     fontSize: fontSizes.caption,
+  },
+  household: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+  },
+  householdText: {
+    flex: 1,
+    gap: 2,
+  },
+  householdHead: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  soon: {
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.tint,
+    color: colors.accentText,
+    fontSize: fontSizes.caption,
+    fontWeight: '700',
+  },
+  noticeRoom: {
+    height: 56,
   },
   email: {
     color: colors.ink,
