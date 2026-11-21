@@ -65,6 +65,7 @@ const garment = (n: number, category: GarmentCategory | null, extra: Row = {}): 
   fit: 'regular',
   status: 'available',
   last_worn_at: null,
+  wear_count: 0,
   updated_at: '2026-11-01T00:00:00Z',
   ...extra,
 });

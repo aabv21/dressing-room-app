@@ -323,7 +323,8 @@ beats the current score by at least **5**; otherwise the result is `noBetterSwap
 Swaps are not looked for after a fallback rating: Jev has just failed, and a Jev-scored candidate
 can't be compared with a Claude-estimated score. Candidates are checked one by one against the
 occasion, season and weather rules (`passesRules` on the single piece, without the whole-outfit
-"cold needs outerwear" rule) and taken least recently worn first. When the weakest slot holds two
+"cold needs outerwear" rule) and taken in the order of the lucky list's `preScore` of the single piece
+(days since worn, a neutral color, the rotation bonus), so the least recently and least worn come first. When the weakest slot holds two
 pieces (two accessories), the first is swapped.
 
 ### Unknown weather
@@ -403,8 +404,15 @@ The day's "feeling lucky" outfits for the Today screen (request, response and st
      total. Pieces worn in the last 7 days are avoided while at least 3 candidates survive without
      them: that pass may use half the draws, and the fallback pass the rest.
    - `preScore` is the mean over the base pieces (outerwear included, extras not) of the days since
-     last worn (never worn = 30, capped at 30) plus 5 for a neutral color, so adding a belt never
-     wins and a dress isn't behind separates for having fewer pieces.
+     last worn (never worn = 30, capped at 30), plus 5 for a neutral color, plus a rotation bonus of
+     `ROTATION_BONUS / (1 + wear_count)` (`ROTATION_BONUS` = 3: a never-worn piece gets 3, one worn
+     once 1.5, a piece worn a dozen times about 0.2). So adding a belt never wins, a dress isn't
+     behind separates for having fewer pieces, and between otherwise-equal candidates the one with
+     the least-worn pieces goes first, which also tells apart pieces whose last wear is past the
+     30-day cap. The bonus is worth 3 days unworn and stays under the neutral bonus on purpose: it
+     only orders which 30 candidates Jev rates, never Jev's own ranking, so style still decides.
+     It works on top of the 7-day avoidance above, and `wear_count` is in no cache key (logging a
+     wear must not reshuffle the day's list).
    - Every garment whose `pinned_on` equals the request's date, and that passes the per-piece
      rules on its own, is rotated one at a time through every fourth draw (within its own slot) to
      pick it instead of a random peer, so each is reachable even on a 200-garment closet where its

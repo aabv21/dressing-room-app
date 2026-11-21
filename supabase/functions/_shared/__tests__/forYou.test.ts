@@ -53,6 +53,7 @@ function garment(category: GarmentCategory, overrides: Partial<RuleGarment> = {}
     fit: 'regular',
     status: 'available',
     last_worn_at: null,
+    wear_count: 0,
     updated_at: '2026-11-01T00:00:00Z',
     pinned_on: null,
     ...overrides,

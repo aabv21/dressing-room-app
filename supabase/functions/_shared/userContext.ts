@@ -191,7 +191,8 @@ export async function loadProfile(env: SupabaseEnv, fetchFn: FetchFn, auth: stri
 
 // --- Garments ----------------------------------------------------------------------------------
 
-export const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at,pinned_on';
+export const GARMENT_COLUMNS =
+  'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,wear_count,updated_at,pinned_on';
 const GARMENT_STATUSES = ['available', 'laundry', 'lent', 'donated'] as const satisfies readonly GarmentStatus[];
 
 /** `pinned_on`, read as a plain `YYYY-MM-DD` the way the lucky-list cache key and request dates are compared. */
@@ -214,6 +215,7 @@ export function garmentFrom(row: unknown): RuleGarment {
     fit: oneOf(GARMENT_FITS, row.fit),
     status,
     last_worn_at: stringOrNull(row.last_worn_at),
+    wear_count: typeof row.wear_count === 'number' && Number.isInteger(row.wear_count) && row.wear_count > 0 ? row.wear_count : 0,
     updated_at: row.updated_at,
     pinned_on: pinnedOnOf(row.pinned_on),
   };

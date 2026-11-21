@@ -229,6 +229,7 @@ describe('loadProfile and loadGarments', () => {
       fit: 'regular',
       status: 'available',
       last_worn_at: null,
+      wear_count: 4,
       updated_at: '2026-11-02T00:00:00Z',
       pinned_on: null,
       name: 'my jeans',
@@ -244,6 +245,18 @@ describe('loadProfile and loadGarments', () => {
 
     await loadGarments(ENV, fetch, AUTH);
     expect(calls[1]?.url.searchParams.has('id')).toBe(false);
+  });
+
+  test.each([
+    ['missing', undefined],
+    ['negative', -1],
+    ['not a number', 'many'],
+  ])('loadGarments reads a wear_count that is %s as 0', async (_label, value) => {
+    const row = { id: GARMENT_A, category: 'jeans', status: 'available', updated_at: '2026-11-02T00:00:00Z', wear_count: value };
+    const { fetch, calls } = fakeFetch(() => json(200, [row]));
+    const [garment] = await loadGarments(ENV, fetch, AUTH);
+    expect(garment?.wear_count).toBe(0);
+    expect(calls[0]?.url.searchParams.get('select')).toContain('wear_count');
   });
 
   test('loadGarments throws on a database error', async () => {

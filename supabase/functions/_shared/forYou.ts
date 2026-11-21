@@ -55,6 +55,7 @@ function archetypeGarment(archetype: Archetype): RuleGarment {
     fit: archetype.fit,
     status: 'available',
     last_worn_at: null,
+    wear_count: 0,
     updated_at: '1970-01-01T00:00:00Z',
     pinned_on: null,
   };
