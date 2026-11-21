@@ -1,5 +1,5 @@
-// Stand-ins for the outfit AI client and repository in suites that render the root layout or a whole
-// route tree (which lands on Today) but don't test outfits. The real modules load the Supabase client
+// Stand-ins for the outfit AI client and repository in suites that render the root layout, a whole
+// route tree (which lands on Today) or the Closet tab (whose Saved segment logs wears), but don't test outfits. The real modules load the Supabase client
 // at import time. Use with:
 //
 //   jest.mock('../outfits/aiClient', () => require('../test/outfitClientsMock'));

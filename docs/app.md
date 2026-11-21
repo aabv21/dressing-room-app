@@ -65,7 +65,10 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
   goal), Stats (`StatsSegment.tsx`: period chips, KPI tiles, most worn, colors, balance and the
   unused-for-6-months list with Suggest tomorrow and Donate, computed by `src/stats/`) and Diary
   (`DiarySegment.tsx`: a Monday-first month calendar with each worn day's thumbnail; a tapped day's
-  wears with their pieces, occasion and score, and Delete).
+  wears with their pieces, occasion and score, and Delete) and Saved (`SavedSegment.tsx`: the saved
+  outfits newest first with the saved date and score; Rate opens `/rate?ids=…`, "I'll wear it" goes
+  through `useWearLog` with its Undo, and Delete asks first; offline, the stored list with a note).
+  `/closet?segment=saved` opens Saved (the rating's "See it in Saved") and then clears the param.
 - **`GarmentFields.tsx`**: the per-field chip editors (`FieldEditor`, which can be disabled), the
   read-only `ConfirmedRow` and `changedFields` (the save patch: only the fields that differ), used by
   the review queue (`src/app/review.tsx`) and the garment detail (`src/app/garment/[id].tsx`).
@@ -158,7 +161,11 @@ the button's notice slot until the next edit, and lists household mode as "Comin
 - `aiClient.ts`: `rateOutfit`, `fetchLuckyList` and `fetchForYou` with their `AiError` mapping
   ([`api.md`](api.md#how-the-app-maps-errors)).
 - `outfitRepository.ts`: `logWear` (the idempotent `log_wear` RPC with a client wear id reused on
-  retry) and `saveOutfit`.
+  retry) and `saveOutfit` (with the score the rating showed).
+- `savedOutfits.ts`, `storedSaved.ts` and `useSavedOutfits.ts`: the Saved list: `listSavedOutfits`
+  (at most 200, newest first) and `deleteSavedOutfit` (only a saved outfit no wear points at), the
+  last good list in kv `outfits.saved.v1.<userId>`, and the hook that fetches it on focus and falls
+  back to the stored copy.
 - `outfitDisplay.ts`: the pieces' display order, `pieceLabel` ("Blusa · Negro") and Today's weather
   line.
 - `buildSelection.ts`: Build's selection: one garment per slot, a one-piece and top/bottom exclude

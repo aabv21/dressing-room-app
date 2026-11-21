@@ -88,16 +88,23 @@ describe('logWear', () => {
 });
 
 describe('saveOutfit', () => {
-  test('calls save_outfit with the garment ids', async () => {
+  test('calls save_outfit with the garment ids and the score shown', async () => {
     const { client, rpc } = fakeClient();
 
-    expect(await saveOutfit(['g-1', 'g-2', 'g-3'], client)).toEqual({ ok: true });
-    expect(rpc).toHaveBeenCalledWith('save_outfit', { p_garment_ids: ['g-1', 'g-2', 'g-3'] });
+    expect(await saveOutfit(['g-1', 'g-2', 'g-3'], 82, client)).toEqual({ ok: true });
+    expect(rpc).toHaveBeenCalledWith('save_outfit', { p_garment_ids: ['g-1', 'g-2', 'g-3'], p_score: 82 });
+  });
+
+  test('omits the score when there is none', async () => {
+    const { client, rpc } = fakeClient();
+
+    await saveOutfit(['g-1', 'g-2'], null, client);
+    expect(rpc).toHaveBeenCalledWith('save_outfit', { p_garment_ids: ['g-1', 'g-2'] });
   });
 
   test('a network error maps to the network RequestResult', async () => {
     const { client } = fakeClient({ data: null, error: { code: '', message: 'offline' }, status: 0 });
 
-    expect(await saveOutfit(['g-1'], client)).toEqual({ ok: false, error: 'network' });
+    expect(await saveOutfit(['g-1'], null, client)).toEqual({ ok: false, error: 'network' });
   });
 });

@@ -35,6 +35,7 @@ import { ActionNotice, UndoNotice } from '../ui/ActionNotice';
 import { AnchoredCta, type CtaAction } from '../ui/AnchoredCta';
 import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
+import { LinkText } from '../ui/LinkText';
 import { tapHaptic } from '../ui/feedback';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { useWaitStage } from '../ui/useWaitStage';
@@ -322,13 +323,13 @@ function RateOutfit({
   const [saveError, setSaveError] = useState<RequestError | null>(null);
   const pending = savePending || wearBusy;
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (score: number) => {
     if (saving.current || wearBusy) return;
     saving.current = true;
     setSavePending(true);
     setSaveError(null);
     clearError();
-    const outcome = await saveOutfit(ids);
+    const outcome = await saveOutfit(ids, score);
     saving.current = false;
     if (!mounted.current) return;
     setSavePending(false);
@@ -396,6 +397,19 @@ function RateOutfit({
     notice = <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice>;
   } else if (logged && isQueued(ids)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
+  } else if (saved) {
+    notice = (
+      <View style={styles.savedLink}>
+        <LinkText
+          style={styles.savedLinkText}
+          onPress={() => {
+            router.dismissTo({ pathname: '/closet', params: { segment: 'saved' } });
+          }}
+        >
+          {t('outfit.saved.see')}
+        </LinkText>
+      </View>
+    );
   }
 
   let body: React.ReactNode;
@@ -454,7 +468,7 @@ function RateOutfit({
           tone: 'ghost',
           disabled: saved || pending,
           onPress: () => {
-            void save();
+            void save(result.score);
           },
         }}
         primary={{
@@ -548,6 +562,14 @@ const styles = StyleSheet.create({
   },
   notices: {
     gap: spacing.sm,
+  },
+  savedLink: {
+    alignSelf: 'center',
+  },
+  savedLinkText: {
+    color: colors.accentText,
+    fontSize: fontSizes.body,
+    fontWeight: '700',
   },
   reason: {
     flexDirection: 'row',

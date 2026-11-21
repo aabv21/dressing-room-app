@@ -38,6 +38,9 @@ export function logWear(input: LogWearInput, client: Client = supabase): Promise
   );
 }
 
-export function saveOutfit(garmentIds: readonly string[], client: Client = supabase): Promise<RequestResult> {
-  return runRequest(() => client.rpc('save_outfit', { p_garment_ids: [...garmentIds] }));
+/** `score` is the rating shown, kept with the outfit for the Saved list; null when there's none. */
+export function saveOutfit(garmentIds: readonly string[], score: number | null, client: Client = supabase): Promise<RequestResult> {
+  return runRequest(() =>
+    client.rpc('save_outfit', { p_garment_ids: [...garmentIds], ...(score !== null && { p_score: score }) }),
+  );
 }

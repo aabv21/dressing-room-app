@@ -5,7 +5,8 @@
 // `functions.invoke`; the functions read the closet and the profile with the caller's token (RLS),
 // spend the daily quota, fill `lucky_cache`/`rating_cache`/`weather_cache`/`for_you_cache`, and
 // call Jev and Open-Meteo, here `mockServices.ts` on the host, and Claude, here `mockAnthropic.ts`.
-// Also: `log_wear` from supabase-js bumps the garments' wear count.
+// Also: `log_wear` from supabase-js bumps the garments' wear count, and the Saved list's repository
+// lists, scores and deletes saved outfits.
 //
 // Needs the Edge Runtime: `pnpm db:start` (or `db:start:ci`, which keeps it) and `pnpm env:local`.
 
@@ -15,7 +16,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { signInWithEmail } from '../src/auth/emailAuth';
 import type { Database } from '../src/lib/database.types';
-import { logWear } from '../src/outfits/outfitRepository';
+import { logWear, saveOutfit } from '../src/outfits/outfitRepository';
+import { deleteSavedOutfit, listSavedOutfits } from '../src/outfits/savedOutfits';
 import { ARCHETYPES } from '../supabase/functions/_shared/archetypes.ts';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, serviceClient, uniqueEmail } from './helpers';
 import { type MockAnthropic, startMockAnthropic } from './mockAnthropic';
@@ -371,4 +373,31 @@ test('log_wear from supabase-js bumps wear_count, and the garments select shows 
   expect(Object.values(closet).map((id) => counts.get(id))).toEqual(
     Object.values(closet).map((id) => (worn.includes(id) ? 1 : 0)),
   );
+});
+
+test('saved outfits: listed newest first with their score, deleted by their owner only, never a worn one', async () => {
+  const first = [closet.whiteTee, closet.navyJeans, closet.whiteSneakers];
+  const second = [closet.grayShirt, closet.blackPants, closet.blackLoafers];
+  expect(await saveOutfit(first, null, userA.client)).toEqual({ ok: true });
+  expect(await saveOutfit(second, 84, userA.client)).toEqual({ ok: true });
+
+  const saved = await listSavedOutfits(userA.client);
+  expect(saved.map((outfit) => [[...outfit.garmentIds].sort(), outfit.score])).toEqual([
+    [[...second].sort(), 84],
+    [[...first].sort(), null],
+  ]);
+  // Worn outfits never list, and B sees none of A's.
+  expect(await listSavedOutfits(userB.client)).toEqual([]);
+
+  const [newest] = saved;
+  if (newest === undefined) throw new Error('nothing saved');
+  expect(await deleteSavedOutfit(newest.id, userB.client)).toEqual({ ok: false, error: 'unknown' });
+  expect(await deleteSavedOutfit(newest.id, userA.client)).toEqual({ ok: true });
+  expect((await listSavedOutfits(userA.client)).map((outfit) => outfit.id)).not.toContain(newest.id);
+  const items = await serviceClient().from('outfit_items').select('garment_id').eq('outfit_id', newest.id);
+  expect(items.data).toEqual([]);
+
+  const worn = await serviceClient().from('wears').select('outfit_id').eq('user_id', userA.id).limit(1).single();
+  expect(worn.error).toBeNull();
+  expect(await deleteSavedOutfit(String(worn.data?.outfit_id), userA.client)).toEqual({ ok: false, error: 'unknown' });
 });

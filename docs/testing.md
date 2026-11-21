@@ -103,7 +103,7 @@ The Profile tab's Privacy section (data export and account deletion):
   user signing in drops a `deleting` account's kv data and keeps their own marker for their
   session's check; that account signing in again can write its kv data again.
 - `src/account/__tests__/forgetAccount.test.ts` — every kv key under the user's id goes (each day's
-  `today.occasion.<id>.<date>` too), with the onboarding status and pending language save; another
+  `today.occasion.<id>.<date>` too, and the saved outfits), with the onboarding status and pending language save; another
   account's keys, the device's language preference and a `queue.purge.<id>` request stay; the
   user's later writes are refused
   (also the id-less onboarding and language entries), and lifted once that account signs in again.
@@ -180,7 +180,7 @@ Outfits, Stats and Diary:
   row, a pick moving on to the next empty slot, the disabled button naming what's missing,
   unavailable garments left out, and a slot row at a large text size.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
-  the confidence line only when low or estimated, the success haptic, the swap, Save, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
+  the confidence line only when low or estimated, the success haptic, the swap, Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, and one request at a time.
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
@@ -203,8 +203,9 @@ Outfits, Stats and Diary:
   5 seconds or 15 with a screen reader, a failure keeping the wear and offering Undo again, and a
   wear a flush is sending found on the retry).
 - `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
-  weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
-  and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
+  weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit` with its score),
+  `savedOutfits.test.ts` (the Saved list's query and its delete), `storedLucky.test.ts`,
+  `storedForYou.test.ts` and `storedSaved.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
   a large text size, a thumbnail's neutral fill and border) and `ScoreRing.test.tsx` (one progressbar named "Score" valued at the final
   score, the number counting up to it, the number and caption capped for large text with the ring
   growing with them).
@@ -215,6 +216,10 @@ Outfits, Stats and Diary:
 - `src/__tests__/closet-diary.test.tsx` — the month calendar (worn days, month navigation, day
   numbers that stay inside their cells at a large text size, where the thumbnail shrinks), a day's
   wears, deleting a wear (today's too), and the empty and Spanish months.
+- `src/__tests__/closet-saved.test.tsx` — the Saved segment: saved outfits newest first with the
+  date, the score when known and the pieces; Rate, "I'll wear it" with Undo, Delete after a confirm
+  (and a failed delete keeping the outfit); the stored list offline; the empty state; and
+  `?segment=saved` opening it.
 - `src/stats/__tests__/` — `periods.test.ts` (the period ranges and the Monday-first month grid),
   `statsModel.test.ts` (the KPIs, most worn, color shares and slot balance) and
   `wearsRepository.test.ts` (the wears query, its paging in ranges of 1000 until a short page,
@@ -475,7 +480,9 @@ Supabase stack:
   older entry is pruned), a second call returns the same body with no Jev or Claude call, and a
   Spanish call with the day's miss spent gets that newest entry back (`stale`), not a 429.
   `log_wear` called from supabase-js bumps `wear_count` on exactly the worn garments, as A's own
-  `garments` select shows. Needs the Edge Runtime.
+  `garments` select shows. The Saved list's repository lists A's saved outfits newest first with
+  their score (none for B), deletes one only for its owner (its items cascade), and never deletes a
+  worn outfit. Needs the Edge Runtime.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with

@@ -20,6 +20,7 @@ test("removes every kv entry kept under the user's id, the day's occasions inclu
     // The offline wear history and the queued "I'll wear it"s (Plan 6d).
     `wears.v1.${USER}`,
     `wear.queue.${USER}`,
+    `outfits.saved.v1.${USER}`,
     `today.occasion.${USER}.2026-11-08`,
     `today.occasion.${USER}.2026-11-09`,
   ]) {
@@ -97,7 +98,13 @@ test("keeps a queue purge request for the user, which outlives the account's oth
 });
 
 test('forgetDisplayCaches drops the display caches and keeps the queues and Logged ✓', () => {
-  const display = [`closet.v1.${USER}`, `today.lucky.${USER}`, `forYou.ideas.${USER}`, `wears.v1.${USER}`];
+  const display = [
+    `closet.v1.${USER}`,
+    `today.lucky.${USER}`,
+    `forYou.ideas.${USER}`,
+    `wears.v1.${USER}`,
+    `outfits.saved.v1.${USER}`,
+  ];
   const kept = [`wear.queue.${USER}`, `outfit.worn.${USER}`, `queue.purge.${USER}`, 'closet.v1.other-user'];
   for (const key of [...display, ...kept]) kvSet(key, 'x');
 
