@@ -1,7 +1,10 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors } from '../ui/theme';
+import { useI18n } from '../i18n';
+
+import { tapHaptic } from '../ui/feedback';
+import { colors, layout } from '../ui/theme';
 
 const TILE_SIZE = 34;
 const OVERLAP = -10;
@@ -13,10 +16,11 @@ const VISIBLE_SHOTS = 5;
  * paint order). Only the last 5 are kept on screen — older shots still count toward the total, just
  * not shown — since the strip has no scroll affordance in the mockup.
  */
-export function ShotStrip({ uris }: { uris: readonly string[] }): React.JSX.Element {
+export function ShotStrip({ uris, onRemoveLast }: { uris: readonly string[]; onRemoveLast?: () => void }): React.JSX.Element {
+  const { t } = useI18n();
   const firstVisibleIndex = Math.max(0, uris.length - VISIBLE_SHOTS);
   const visible = uris.slice(firstVisibleIndex);
-  return (
+  const strip = (
     // Decorative: the camera's shot counter already says how many photos there are, and the tiles
     // have nothing to name, so screen readers skip them.
     <View
@@ -40,6 +44,27 @@ export function ShotStrip({ uris }: { uris: readonly string[] }): React.JSX.Elem
       })}
     </View>
   );
+  if (onRemoveLast === undefined || uris.length === 0) return strip;
+  // The newest tile doubles as an undo: a blurry or double shot comes off before it becomes a garment.
+  return (
+    <View>
+      {strip}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('camera.removeLast')}
+        onPress={() => {
+          tapHaptic('selection');
+          onRemoveLast();
+        }}
+        hitSlop={(layout.minHitTarget - TILE_SIZE) / 2}
+        style={styles.removeLast}
+      >
+        <View style={styles.removeBadge}>
+          <Text style={styles.removeBadgeText}>×</Text>
+        </View>
+      </Pressable>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -58,6 +83,30 @@ const styles = StyleSheet.create({
   },
   firstTile: {
     marginLeft: 0,
+  },
+  removeLast: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+  },
+  removeBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeBadgeText: {
+    color: '#0e0d12',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
   },
   image: {
     width: '100%',
