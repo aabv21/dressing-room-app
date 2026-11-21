@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TextInputInstance } from 'react-native';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BackHandler, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { confirmPasswordReset, requestPasswordReset } from '../../auth/authService';
 import type { Result } from '../../auth/authService';
@@ -135,6 +135,19 @@ export default function ForgotPasswordScreen() {
     setCode('');
     setCodeSent(false);
   }
+
+  // Android's back on step 2 goes to step 1, like the chevron, instead of leaving the flow. A listener,
+  // not `usePreventRemove`, so the guard's redirect after a reset is never blocked.
+  useEffect(() => {
+    if (step !== 'code') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleChangeEmail();
+      return true;
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [step]);
 
   const backButton = (
     <Pressable

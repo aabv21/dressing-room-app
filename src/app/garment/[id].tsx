@@ -2,8 +2,8 @@
 // Review's photo, chip editors and anchored CTA.
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useIsFocused, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronLeft, ImageIcon, Trash2 } from 'lucide-react-native';
+import { useIsFocused, useLocalSearchParams, usePreventRemove } from 'expo-router';
+import { Check, ImageIcon, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -22,6 +22,7 @@ import type { RequestError } from '../../lib/requestResult';
 import { useClothingType } from '../../profile/useClothingType';
 import { announceForAccessibility } from '../../ui/a11y';
 import { AnchoredCta } from '../../ui/AnchoredCta';
+import { BackChevron } from '../../ui/BackChevron';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { CtaBackdrop } from '../../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
@@ -175,6 +176,14 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     ]);
   }, [t, remove]);
 
+  // A back press, gesture or the chevron would drop the draft silently; a delete leaves on purpose.
+  usePreventRemove(dirty && !deleting, ({ repeat }) => {
+    Alert.alert(t('garment.discard.title'), t('garment.discard.message'), [
+      { text: t('garment.discard.keep'), style: 'cancel' },
+      { text: t('garment.discard.discard'), style: 'destructive', onPress: repeat },
+    ]);
+  });
+
   // The new photo uploads through the queue; this says so until the garment's photo version moves.
   const [replacedVersion, setReplacedVersion] = useState<number | null>(null);
   // NOTE: the queue reports counts, so any pending upload stands in for this one; upgrade path: per-garment queue state.
@@ -225,16 +234,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
         ]}
       >
         <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('garment.back')}
-            // Narrower than 44 pt to sit close to the title; the slop keeps the 44 pt target.
-            hitSlop={{ left: 8, right: 6 }}
-            style={styles.backButton}
-            onPress={leaveToCloset}
-          >
-            <ChevronLeft size={22} color={colors.ink} />
-          </Pressable>
+          <BackChevron label={t('garment.back')} onPress={leaveToCloset} />
           <View style={styles.headerTitle}>
             <ScreenTitle title={title} />
           </View>
@@ -392,12 +392,6 @@ const styles = StyleSheet.create({
     minWidth: layout.minHitTarget,
     minHeight: layout.minHitTarget,
     justifyContent: 'center',
-  },
-  backButton: {
-    width: 30,
-    minHeight: layout.minHitTarget,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
   },
   deleteButton: {
     alignItems: 'flex-end',

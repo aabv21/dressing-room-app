@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
-import { Platform, StyleSheet } from 'react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { BackHandler, Platform, StyleSheet } from 'react-native';
 
 // Native ESM Jest mode does not hoist factories the way Babel's CJS jest-hoist plugin would (see
 // authService.test.ts's module doc) — every mock factory below is a literal object or inline
@@ -367,6 +367,34 @@ describe('SignInScreen', () => {
 });
 
 describe('ForgotPasswordScreen', () => {
+  test('Android back on step 2 returns to step 1 instead of leaving the flow', async () => {
+    const handlers: Parameters<typeof BackHandler.addEventListener>[1][] = [];
+    const remove = jest.fn();
+    const listen = jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+      handlers.push(handler);
+      return { remove };
+    });
+    mockedRequestPasswordReset.mockResolvedValue({ ok: true });
+    await render(<ForgotPasswordScreen />);
+    expect(handlers).toHaveLength(0);
+
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'reset@example.com');
+    await fireEvent.press(screen.getByRole('button', { name: 'Send code' }));
+    await screen.findByLabelText('Code');
+
+    let handled: boolean | null | undefined;
+    await act(async () => {
+      handled = handlers.at(-1)?.({ type: 'hardwareBackPress', timeStamp: 0 });
+      await Promise.resolve();
+    });
+    expect(handled).toBe(true);
+    expect(await screen.findByLabelText('Email')).toBeTruthy();
+    expect(router.back).not.toHaveBeenCalled();
+    // Back on step 1, the navigator handles the next press again.
+    expect(remove).toHaveBeenCalled();
+    listen.mockRestore();
+  });
+
   test('step 1: Send code calls requestPasswordReset and advances to step 2', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ ok: true });
     await render(<ForgotPasswordScreen />);

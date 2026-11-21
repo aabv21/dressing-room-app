@@ -420,3 +420,19 @@ describe('confirming the garments the AI was sure of', () => {
     });
   });
 });
+
+test('the card has a back button that leaves to the closet', async () => {
+  mockCloset.garments = three();
+  await renderReview();
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+  expect(router.back).toHaveBeenCalled();
+});
+
+test('with nothing left, the back button still leaves to the closet, even from a deep link', async () => {
+  jest.mocked(router.canGoBack).mockReturnValueOnce(false);
+  await render(<ReviewScreen />);
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+  expect(router.replace).toHaveBeenCalledWith('/closet');
+});

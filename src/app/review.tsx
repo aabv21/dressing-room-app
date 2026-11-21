@@ -18,6 +18,7 @@ import type { RequestError } from '../lib/requestResult';
 import { useClothingType } from '../profile/useClothingType';
 import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
+import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { colors, fontSizes, gradients, radii, spacing } from '../ui/theme';
@@ -100,6 +101,7 @@ function ReviewCard(props: {
         ]}
       >
         <View style={styles.titleRow}>
+          <BackChevron label={t('review.back')} onPress={leaveToCloset} />
           <ScreenTitle title={t('review.title')} />
           <Text style={styles.progressText}>{t('review.progress', { index, total })}</Text>
         </View>
@@ -185,7 +187,10 @@ function CaughtUp(): React.JSX.Element {
   return (
     <LinearGradient colors={gradients.background} style={styles.fill}>
       <View style={[styles.content, { paddingTop: insets.top }]}>
-        <ScreenTitle title={t('review.title')} />
+        <View style={styles.titleRow}>
+          <BackChevron label={t('review.back')} onPress={leaveToCloset} />
+          <ScreenTitle title={t('review.title')} />
+        </View>
         <View style={styles.caughtUp}>
           <Text style={styles.caughtUpTitle}>{t('review.done.title')}</Text>
           <Text style={styles.caughtUpBody}>{t('review.done.body')}</Text>
@@ -329,8 +334,8 @@ const styles = StyleSheet.create({
   },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   batch: {
     gap: spacing.xs,

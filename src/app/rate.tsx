@@ -2,7 +2,7 @@
 // for a low score) with Save / I'll wear it. Pushed from Today and Build: `/rate?ids=…[&occasion=…]`.
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronLeft, CircleAlert, RotateCw, Sparkles } from 'lucide-react-native';
+import { Check, CircleAlert, RotateCw, Sparkles } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -33,6 +33,7 @@ import { useWearLog } from '../outfits/useWearLog';
 import { announceForAccessibility } from '../ui/a11y';
 import { ActionNotice } from '../ui/ActionNotice';
 import { AnchoredCta } from '../ui/AnchoredCta';
+import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { colors, fontSizes, gradients, layout, radii, spacing } from '../ui/theme';
@@ -443,16 +444,7 @@ function RateOutfit({
         ]}
       >
         <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('rate.back')}
-            // Narrower than 44 pt so the title sits close to it; the slop keeps the 44 pt target.
-            hitSlop={{ left: 8, right: 6 }}
-            style={styles.backButton}
-            onPress={leaveToBuild}
-          >
-            <ChevronLeft size={22} color={colors.ink} />
-          </Pressable>
+          <BackChevron label={t('rate.back')} onPress={leaveToBuild} />
           <View style={styles.headerTitle}>
             <ScreenTitle title={t('rate.title')} />
           </View>
@@ -499,12 +491,6 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-  },
-  backButton: {
-    width: 30,
-    minHeight: layout.minHitTarget,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
   },
   loading: {
     alignItems: 'center',

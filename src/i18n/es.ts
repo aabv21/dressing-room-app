@@ -116,6 +116,7 @@ export const es: Record<MessageKey, string> = {
   'stats.unused.cancel': 'Cancelar',
 
   'review.title': 'REVISAR',
+  'review.back': 'Volver',
   'review.progress': '{index} de {total}',
   'garment.photo': 'Foto de la prenda',
   'review.unsure': 'La IA no está segura:',
@@ -462,6 +463,10 @@ export const es: Record<MessageKey, string> = {
   'garment.status': 'Estado',
   'garment.reading': 'Leyendo la foto…',
   'garment.back': 'Volver',
+  'garment.discard.title': '¿Descartar tus cambios?',
+  'garment.discard.message': 'Los cambios a esta prenda todavía no están guardados.',
+  'garment.discard.keep': 'Seguir editando',
+  'garment.discard.discard': 'Descartar',
   'garment.save': 'Guardar',
   'garment.categoryRequired': 'Elige una categoría para guardar.',
   'garment.replacePhoto': 'Cambiar foto',

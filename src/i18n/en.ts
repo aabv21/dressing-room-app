@@ -114,6 +114,7 @@ export const en = {
   'stats.unused.cancel': 'Cancel',
 
   'review.title': 'REVIEW',
+  'review.back': 'Back',
   'review.progress': '{index} of {total}',
   'garment.photo': 'Garment photo',
   'review.unsure': "The AI isn't sure:",
@@ -459,6 +460,10 @@ export const en = {
   'garment.status': 'Status',
   'garment.reading': 'Reading the photo…',
   'garment.back': 'Back',
+  'garment.discard.title': 'Discard your changes?',
+  'garment.discard.message': "Your edits to this garment aren't saved yet.",
+  'garment.discard.keep': 'Keep editing',
+  'garment.discard.discard': 'Discard',
   'garment.save': 'Save',
   'garment.categoryRequired': 'Pick a category to save.',
   'garment.replacePhoto': 'Replace photo',

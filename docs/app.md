@@ -16,6 +16,10 @@ code (components, hooks, utils) stays outside `src/app/`.
   `camera`, `review`, `garment/[id]`, `rate` (pushed from Today and Build as
   `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`) and `city` (Today's city, a modal
   sheet).
+- Leaving never drops work silently: the camera with unsent shots and the garment detail with
+  unsaved edits ask first through `usePreventRemove` (Discard / Keep editing), and Android's back on
+  Forgot password's code step returns to the email step. `review`, `rate` and the garment detail
+  share the `BackChevron` beside their title.
 
 ## Shared UI (`src/ui/`)
 
