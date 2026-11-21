@@ -1,12 +1,13 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- the time sheet reads Reduce Motion; see src/test/reanimatedMock.ts's module doc
 jest.mock('react-native-reanimated', () => require('../../test/reanimatedMock'));
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import * as Notifications from 'expo-notifications';
 import { Linking } from 'react-native';
 
 import { I18nProvider } from '../../i18n/I18nProvider';
 import { allowUserKeys, kvKeys, kvRemove, kvSet } from '../../lib/kv';
+import { scheduleReminder } from '../dailyReminder';
 import { ReminderSection } from '../ReminderSection';
 import { readReminder, writeReminder } from '../reminderStore';
 
@@ -135,4 +136,15 @@ test('in Spanish', async () => {
 
   expect(screen.getByRole('switch', { name: 'Notificación diaria' })).toBeTruthy();
   expect(screen.getByRole('button', { name: /^Hora, 7:30/ })).toBeTruthy();
+});
+
+test('a re-schedule that fails elsewhere (a language change) turns the switch off here too', async () => {
+  writeReminder(USER_ID, { enabled: true, hour: 7, minute: 30, notificationId: 'reminder-1', language: 'en' });
+  await renderSection();
+  expect(reminderSwitch()).toBeChecked();
+
+  mocked.scheduleNotificationAsync.mockRejectedValueOnce(new Error('native'));
+  await act(() => scheduleReminder(USER_ID, { hour: 7, minute: 30 }, 'es'));
+
+  expect(reminderSwitch()).not.toBeChecked();
 });

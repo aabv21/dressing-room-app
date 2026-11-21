@@ -94,8 +94,13 @@ test("another notification's tap doesn't navigate", async () => {
   expect(mocked.clearLastNotificationResponse).not.toHaveBeenCalled();
 });
 
+function scheduledReminder(identifier: string): Notifications.NotificationRequest {
+  return { identifier, content: { data: { kind: 'dailyReminder' } }, trigger: null } as unknown as Notifications.NotificationRequest;
+}
+
 test('a language change re-schedules the reminder in the new language', async () => {
   writeReminder(USER, { enabled: true, hour: 7, minute: 30, notificationId: 'reminder-1', language: 'en' });
+  mocked.getAllScheduledNotificationsAsync.mockReset().mockResolvedValue([scheduledReminder('reminder-1')]);
   mocked.scheduleNotificationAsync.mockReset().mockResolvedValue('reminder-2');
   await renderSync();
   expect(mocked.scheduleNotificationAsync).not.toHaveBeenCalled();
@@ -115,6 +120,30 @@ test('an off reminder is never scheduled by a language change', async () => {
   await renderSync();
 
   await fireEvent.press(screen.getByRole('button', { name: 'Español' }));
+
+  expect(mocked.scheduleNotificationAsync).not.toHaveBeenCalled();
+});
+
+test('on but no longer scheduled (a backup restore, an OS purge): mounting schedules it again', async () => {
+  writeReminder(USER, { enabled: true, hour: 6, minute: 45, notificationId: 'gone', language: 'en' });
+  mocked.getAllScheduledNotificationsAsync.mockReset().mockResolvedValue([]);
+  mocked.scheduleNotificationAsync.mockReset().mockResolvedValue('reminder-2');
+
+  await renderSync();
+  await act(() => Promise.resolve());
+
+  expect(mocked.scheduleNotificationAsync).toHaveBeenCalledWith(
+    expect.objectContaining({ trigger: expect.objectContaining({ hour: 6, minute: 45 }) as unknown }),
+  );
+  expect(readReminder(USER)).toMatchObject({ enabled: true, notificationId: 'reminder-2' });
+});
+
+test('on and still scheduled in the same language: mounting changes nothing', async () => {
+  writeReminder(USER, { enabled: true, hour: 6, minute: 45, notificationId: 'reminder-1', language: 'en' });
+  mocked.getAllScheduledNotificationsAsync.mockReset().mockResolvedValue([scheduledReminder('reminder-1')]);
+
+  await renderSync();
+  await act(() => Promise.resolve());
 
   expect(mocked.scheduleNotificationAsync).not.toHaveBeenCalled();
 });

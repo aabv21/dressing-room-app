@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
+import { Linking } from 'react-native';
 
 import CityScreen from '../app/city';
 import { saveProfile, type Profile } from '../profile/profileRepository';
@@ -227,6 +228,10 @@ describe('dictating the city', () => {
     ).toBeOnTheScreen();
     expect(recognition.start).not.toHaveBeenCalled();
     expect(screen.getByDisplayValue('Madrid')).toBeOnTheScreen();
+
+    const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
+    await fireEvent.press(screen.getByRole('link', { name: 'Open settings' }));
+    expect(openSettings).toHaveBeenCalled();
   });
 
   test('nothing heard keeps the field and says so', async () => {

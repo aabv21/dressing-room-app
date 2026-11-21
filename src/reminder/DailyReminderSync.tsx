@@ -1,12 +1,12 @@
-// Mounted while signed in and onboarded: a tap on the reminder opens Today, and a language change
-// re-schedules the reminder's copy in the new language.
+// Mounted while signed in and onboarded: a tap on the reminder opens Today, and an enabled reminder
+// is re-scheduled when the language changed or the OS no longer holds it.
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n';
-import { isReminderResponse, scheduleReminder } from './dailyReminder';
+import { isReminderResponse, isReminderScheduled, scheduleReminder } from './dailyReminder';
 import { readReminder } from './reminderStore';
 
 export function DailyReminderSync(): null {
@@ -29,11 +29,18 @@ export function DailyReminderSync(): null {
   }, []);
 
   useEffect(() => {
-    if (userId === null) return;
+    if (userId === null) return undefined;
     const settings = readReminder(userId);
-    if (settings.enabled && settings.language !== locale) {
-      void scheduleReminder(userId, { hour: settings.hour, minute: settings.minute }, locale);
-    }
+    if (!settings.enabled) return undefined;
+    const run = { live: true };
+    void (async () => {
+      // A restored backup or an OS purge keeps the kv's "on" but drops the notification itself.
+      if (settings.language === locale && (await isReminderScheduled())) return;
+      if (run.live) void scheduleReminder(userId, { hour: settings.hour, minute: settings.minute }, locale);
+    })();
+    return () => {
+      run.live = false;
+    };
   }, [userId, locale]);
 
   return null;

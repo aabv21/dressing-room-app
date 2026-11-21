@@ -6,7 +6,7 @@ import { randomUUID } from 'expo-crypto';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as Speech from 'expo-speech';
-import { Alert, AppState, type AppStateStatus } from 'react-native';
+import { Alert, AppState, Linking, type AppStateStatus } from 'react-native';
 
 import TodayScreen from '../app/(tabs)/index';
 import { I18nProvider } from '../i18n/I18nProvider';
@@ -1199,5 +1199,59 @@ describe('saying the occasion', () => {
 
     expect(screen.getByText('Didn\'t catch that. Try "work", "party" or "gym".')).toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: 'Office' })).not.toBeSelected();
+  });
+});
+
+describe('the voice features together', () => {
+  beforeEach(() => {
+    recognition.start.mockClear();
+    jest.mocked(Speech.speak).mockClear();
+    jest.mocked(Speech.stop).mockClear();
+    kvRemove('locale-preference');
+  });
+
+  test("dictating stops Listen first, so the recognizer doesn't hear the app", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+    jest.mocked(Speech.stop).mockClear();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Say the occasion' }));
+
+    expect(Speech.stop).toHaveBeenCalled();
+    expect(recognition.start).toHaveBeenCalled();
+    expect(jest.mocked(Speech.stop).mock.invocationCallOrder[0]).toBeLessThan(
+      recognition.start.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
+  });
+
+  test("a late stop from an earlier utterance doesn't reset the one playing now", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Stop' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Listen' }));
+
+    await act(() => {
+      jest.mocked(Speech.speak).mock.calls[0]?.[1]?.onStopped?.();
+    });
+
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeOnTheScreen();
+  });
+
+  test('a denied microphone for the occasion offers Open settings', async () => {
+    recognition.requestPermissionsAsync.mockResolvedValueOnce({ granted: false, canAskAgain: false, status: 'denied', expires: 'never' });
+    const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Say the occasion' }));
+
+    expect(
+      await screen.findByText('Microphone access is off for Dressing Room. Turn it on in Settings to dictate.'),
+    ).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('link', { name: 'Open settings' }));
+    expect(openSettings).toHaveBeenCalled();
   });
 });

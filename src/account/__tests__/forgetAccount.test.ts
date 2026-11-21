@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 import { cacheOnboarding, cachedOnboarding, isLanguageSavePending, markLanguageSavePending } from '../../auth/deviceState';
 import { queuePurgeRequests, requestQueuePurge } from '../../closet/upload/queuePurge';
 import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../../lib/kv';
+import { forgetReminder } from '../../reminder/dailyReminder';
 import { reminderKey, writeReminder } from '../../reminder/reminderStore';
 import { forgetAccountOnDevice, forgetDisplayCaches } from '../forgetAccount';
 
@@ -125,11 +126,12 @@ test('forgetDisplayCaches drops the display caches and keeps the queues and Logg
   expect(kvGet(`closet.v1.${USER}`)).toBe('fresh');
 });
 
-test("cancels the account's daily reminder and clears its settings", () => {
+test("cancels the account's daily reminder and clears its settings", async () => {
   writeReminder(USER, { enabled: true, hour: 7, minute: 30, notificationId: 'reminder-1', language: 'en' });
 
   forgetAccountOnDevice(USER);
 
-  expect(jest.mocked(Notifications).cancelScheduledNotificationAsync).toHaveBeenCalledWith('reminder-1');
   expect(kvGet(reminderKey(USER))).toBeNull();
+  await forgetReminder(USER);
+  expect(jest.mocked(Notifications).cancelScheduledNotificationAsync).toHaveBeenCalledWith('reminder-1');
 });

@@ -28,13 +28,21 @@ export function pickVoice(voices: readonly Speech.Voice[], locale: Locale): Spee
 }
 
 // Who is speaking now, so another Listen (or this one's second tap) stops it and each button shows
-// its own state.
-let speakingOwner: symbol | null = null;
+// its own state. Each utterance has its own token: a late `onStopped` from an earlier one can't
+// turn off the button for the one playing now.
+let speaking: { owner: symbol; utterance: symbol } | null = null;
 const listeners = new Set<() => void>();
 
-function setSpeakingOwner(owner: symbol | null): void {
-  speakingOwner = owner;
+function setSpeaking(next: { owner: symbol; utterance: symbol } | null): void {
+  speaking = next;
   for (const listener of listeners) listener();
+}
+
+/** Stops whatever "Listen" is reading (dictation calls it, so the recognizer never hears the app). */
+export function stopSpeaking(): void {
+  if (speaking === null) return;
+  setSpeaking(null);
+  void Speech.stop();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -54,7 +62,7 @@ export function useSpeaker(text: string): { hidden: boolean; speaking: boolean; 
   const { t, locale } = useI18n();
   const focused = useIsFocused();
   const [owner] = useState(() => Symbol('speaker'));
-  const speaking = useSyncExternalStore(subscribe, () => speakingOwner === owner);
+  const isSpeaking = useSyncExternalStore(subscribe, () => speaking?.owner === owner);
   const [voice, setVoice] = useState<VoiceState>({ status: 'unknown' });
 
   useEffect(() => {
@@ -73,29 +81,26 @@ export function useSpeaker(text: string): { hidden: boolean; speaking: boolean; 
     };
   }, [locale]);
 
-  const release = useCallback(() => {
-    if (speakingOwner === owner) setSpeakingOwner(null);
-  }, [owner]);
-
   // Leaving the screen, unmounting or new text (another outfit) stops this button's speech.
   useEffect(
     () => () => {
-      if (speakingOwner !== owner) return;
-      setSpeakingOwner(null);
-      void Speech.stop();
+      if (speaking?.owner === owner) stopSpeaking();
     },
     [owner, text, focused],
   );
 
   const toggle = useCallback(() => {
-    if (speakingOwner === owner) {
-      setSpeakingOwner(null);
-      void Speech.stop();
+    if (speaking?.owner === owner) {
+      stopSpeaking();
       return;
     }
     // Stops whatever else is reading, so utterances never queue up.
     void Speech.stop();
-    setSpeakingOwner(owner);
+    const utterance = Symbol('utterance');
+    setSpeaking({ owner, utterance });
+    const release = (): void => {
+      if (speaking?.utterance === utterance) setSpeaking(null);
+    };
     Speech.speak(text, {
       language: voice.status === 'ready' ? voice.voice.language.replaceAll('_', '-') : locale,
       ...(voice.status === 'ready' ? { voice: voice.voice.identifier } : {}),
@@ -106,7 +111,7 @@ export function useSpeaker(text: string): { hidden: boolean; speaking: boolean; 
         Alert.alert(t('listen.unavailable'));
       },
     });
-  }, [owner, text, voice, locale, release, t]);
+  }, [owner, text, voice, locale, t]);
 
-  return { hidden: voice.status === 'none', speaking, toggle };
+  return { hidden: voice.status === 'none', speaking: isSpeaking, toggle };
 }

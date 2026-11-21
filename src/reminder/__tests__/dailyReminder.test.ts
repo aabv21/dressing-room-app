@@ -1,9 +1,10 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { forgetAccountOnDevice } from '../../account/forgetAccount';
 import { allowUserKeys, kvGet, kvKeys, kvRemove } from '../../lib/kv';
 import {
-  cancelStoredReminder,
+  forgetReminder,
   isReminderResponse,
   REMINDER_CHANNEL_ID,
   scheduleReminder,
@@ -148,12 +149,76 @@ test('turning off a reminder that was never on cancels nothing', async () => {
   expect(mocked.cancelScheduledNotificationAsync).not.toHaveBeenCalled();
 });
 
-test('cancelStoredReminder cancels the stored id without waiting (the account deletion)', async () => {
+test('forgetReminder cancels the stored id (the account deletion)', async () => {
   await turnOnReminder(USER, { hour: 7, minute: 30 }, 'en');
 
-  cancelStoredReminder(USER);
+  await forgetReminder(USER);
 
   expect(mocked.cancelScheduledNotificationAsync).toHaveBeenCalledWith('reminder-1');
+});
+
+describe('against the scheduled notifications themselves, not only the stored id', () => {
+  // A stand-in for the OS's scheduled list: schedule adds, cancel removes, getAll lists.
+  let scheduled: Notifications.NotificationRequest[] = [];
+  let nextId = 0;
+
+  function request(identifier: string, kind: string): Notifications.NotificationRequest {
+    return { identifier, content: { data: { kind } }, trigger: null } as unknown as Notifications.NotificationRequest;
+  }
+
+  beforeEach(() => {
+    scheduled = [];
+    nextId = 0;
+    mocked.scheduleNotificationAsync.mockReset().mockImplementation((input) => {
+      nextId += 1;
+      const identifier = `scheduled-${String(nextId)}`;
+      const kind = (input.content.data as { kind?: string } | undefined)?.kind ?? '';
+      scheduled.push(request(identifier, kind));
+      return Promise.resolve(identifier);
+    });
+    mocked.cancelScheduledNotificationAsync.mockReset().mockImplementation((identifier) => {
+      scheduled = scheduled.filter((entry) => entry.identifier !== identifier);
+      return Promise.resolve();
+    });
+    mocked.getAllScheduledNotificationsAsync.mockReset().mockImplementation(() => Promise.resolve([...scheduled]));
+  });
+
+  test('scheduling also cancels an orphan reminder the stored id never knew', async () => {
+    scheduled.push(request('orphan', 'dailyReminder'), request('other-app-notification', 'other'));
+
+    await turnOnReminder(USER, { hour: 7, minute: 30 }, 'en');
+
+    expect(scheduled.map((entry) => entry.identifier)).toEqual(['other-app-notification', 'scheduled-1']);
+  });
+
+  test('turning it off cancels every scheduled reminder', async () => {
+    await turnOnReminder(USER, { hour: 7, minute: 30 }, 'en');
+    scheduled.push(request('orphan', 'dailyReminder'));
+
+    await turnOffReminder(USER);
+
+    expect(scheduled).toEqual([]);
+  });
+
+  test('a re-schedule queued while the account is deleted leaves no reminder scheduled', async () => {
+    await turnOnReminder(USER, { hour: 7, minute: 30 }, 'en');
+
+    const reschedule = scheduleReminder(USER, { hour: 9, minute: 0 }, 'en');
+    forgetAccountOnDevice(USER);
+    await reschedule;
+    await forgetReminder(USER);
+
+    expect(scheduled).toEqual([]);
+  });
+
+  test('a re-schedule asked for after the deletion schedules nothing', async () => {
+    await turnOnReminder(USER, { hour: 7, minute: 30 }, 'en');
+
+    forgetAccountOnDevice(USER);
+    await expect(scheduleReminder(USER, { hour: 9, minute: 0 }, 'en')).resolves.toBe(false);
+
+    expect(scheduled).toEqual([]);
+  });
 });
 
 test("isReminderResponse: a tap on the reminder, not another notification's or an action button", () => {

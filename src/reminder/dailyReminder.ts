@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
 import { translate, type Locale } from '../i18n';
+import { kvUserRefused } from '../lib/kv';
 import { readReminder, writeReminder, type ReminderTime } from './reminderStore';
 
 export const REMINDER_CHANNEL_ID = 'daily-reminder';
@@ -50,9 +51,32 @@ async function cancelQuietly(id: string | null): Promise<void> {
   }
 }
 
+async function scheduledReminderIds(): Promise<string[]> {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    return scheduled.filter((entry) => entry.content.data?.kind === REMINDER_KIND).map((entry) => entry.identifier);
+  } catch {
+    return [];
+  }
+}
+
+/** The stored id and every scheduled reminder, so one the kv lost track of can't keep firing. */
+async function cancelAllReminders(storedId: string | null): Promise<void> {
+  const ids = new Set(await scheduledReminderIds());
+  if (storedId !== null) ids.add(storedId);
+  for (const id of ids) await cancelQuietly(id);
+}
+
+/** Whether the OS still holds a reminder (a backup restore or an OS purge can drop it). */
+export async function isReminderScheduled(): Promise<boolean> {
+  return (await scheduledReminderIds()).length > 0;
+}
+
 async function scheduleNow(userId: string, time: ReminderTime, language: Locale): Promise<boolean> {
+  // A deleted account (its kv refused) never gets a reminder back, whatever was queued before.
+  if (kvUserRefused(userId)) return false;
   const previous = readReminder(userId);
-  await cancelQuietly(previous.notificationId);
+  await cancelAllReminders(previous.notificationId);
   try {
     await ensureReminderChannel(language);
     const notificationId = await Notifications.scheduleNotificationAsync({
@@ -94,17 +118,20 @@ export function turnOnReminder(userId: string, time: ReminderTime, language: Loc
 export function turnOffReminder(userId: string): Promise<void> {
   return serial(async () => {
     const current = readReminder(userId);
-    await cancelQuietly(current.notificationId);
+    await cancelAllReminders(current.notificationId);
     if (current.enabled || current.notificationId !== null) {
       writeReminder(userId, { ...current, enabled: false, notificationId: null });
     }
   });
 }
 
-/** For the account deletion, which removes the kv key right after: reads the id now, cancels in the background. */
-export function cancelStoredReminder(userId: string): void {
+/**
+ * For the account deletion, which removes the kv key right after: reads the id now and cancels in
+ * the queue, after any change already waiting, so nothing scheduled before it survives.
+ */
+export function forgetReminder(userId: string): Promise<void> {
   const { notificationId } = readReminder(userId);
-  void cancelQuietly(notificationId);
+  return serial(() => cancelAllReminders(notificationId));
 }
 
 /** A tap on the reminder itself (not an action button, not another notification). */

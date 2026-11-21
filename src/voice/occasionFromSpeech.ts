@@ -4,13 +4,14 @@ import type { Occasion } from '../closet/catalog';
 import type { Locale } from '../i18n';
 
 // Checked in this order, so a more specific word wins: "salir a correr" is sport, "cena formal"
-// an event, "fiesta en casa" going out and "home office" the office.
+// an event, "fiesta en casa" going out, and "home office" (in either language) or "oficina en
+// casa" the office.
 const KEYWORDS: Record<Locale, readonly (readonly [Occasion, readonly string[]])[]> = {
   es: [
     ['sport', ['gimnasio', 'gym', 'deporte', 'deportes', 'entrenar', 'entrenamiento', 'correr', 'trotar', 'ejercicio', 'yoga', 'futbol']],
     ['event', ['boda', 'matrimonio', 'evento', 'formal', 'gala', 'ceremonia', 'graduacion', 'grado', 'bautizo', 'quinceanera']],
-    ['office', ['trabajo', 'trabajar', 'oficina', 'reunion', 'entrevista', 'negocios']],
-    ['university', ['universidad', 'facultad', 'clase', 'clases', 'escuela', 'colegio', 'estudiar']],
+    ['office', ['trabajo', 'trabajar', 'oficina', 'oficina en casa', 'office', 'home office', 'reunion', 'entrevista', 'negocios']],
+    ['university', ['universidad', 'la u', 'facultad', 'clase', 'clases', 'escuela', 'colegio', 'estudiar']],
     ['going_out', ['fiesta', 'salir', 'salida', 'rumba', 'cita', 'cena', 'amigos', 'bar', 'discoteca']],
     ['home', ['casa', 'hogar', 'quedarme', 'descansar']],
   ],
@@ -22,6 +23,12 @@ const KEYWORDS: Record<Locale, readonly (readonly [Occasion, readonly string[]])
     ['going_out', ['party', 'going out', 'go out', 'night out', 'date', 'drinks', 'dinner', 'bar', 'club', 'friends']],
     ['home', ['home', 'house', 'stay in', 'staying in', 'relax', 'couch']],
   ],
+};
+
+// Phrases removed before matching, so their words don't count: a medical appointment is no date.
+const IGNORED: Record<Locale, readonly string[]> = {
+  es: ['cita medica', 'cita con el medico', 'cita con el doctor'],
+  en: ['doctor appointment', 'doctors appointment', 'medical appointment'],
 };
 
 /** Lower case, no accents, letters and spaces only, padded so a keyword matches only whole words. */
@@ -37,7 +44,8 @@ function normalize(text: string): string {
 
 /** The occasion the words name, or null when none of the language's keywords is there. */
 export function occasionFromSpeech(text: string, language: Locale): Occasion | null {
-  const words = normalize(text);
+  let words = normalize(text);
+  for (const phrase of language === 'es' ? IGNORED.es : IGNORED.en) words = words.replaceAll(` ${phrase} `, ' ');
   if (words.trim() === '') return null;
   const rules = language === 'es' ? KEYWORDS.es : KEYWORDS.en;
   for (const [occasion, keywords] of rules) {

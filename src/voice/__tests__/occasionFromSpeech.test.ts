@@ -14,6 +14,11 @@ test.each([
   ['fiesta en casa', 'going_out'],
   ['REUNIÓN', 'office'],
   ['futbol', 'sport'],
+  ['office', 'office'],
+  ['home office', 'office'],
+  ['oficina en casa', 'office'],
+  ['voy a la u', 'university'],
+  ['tengo una cita', 'going_out'],
 ] as const)('es: "%s" is %s', (text, occasion) => {
   expect(occasionFromSpeech(text, 'es')).toBe(occasion);
 });
@@ -49,4 +54,9 @@ test('nothing recognizable gives null', () => {
 test("each language's own words: Spanish words don't count in English", () => {
   expect(occasionFromSpeech('fiesta', 'en')).toBeNull();
   expect(occasionFromSpeech('party', 'es')).toBeNull();
+});
+
+test('a medical appointment is not a date', () => {
+  expect(occasionFromSpeech('cita médica', 'es')).toBeNull();
+  expect(occasionFromSpeech('tengo cita médica mañana', 'es')).toBeNull();
 });

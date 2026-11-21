@@ -23,6 +23,7 @@ import type { AiError } from '../../outfits/aiClient';
 import { ActionNotice, UndoNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
+import { OpenSettingsLink } from '../../ui/OpenSettingsLink';
 import { Screen } from '../../ui/Screen';
 import { useWaitStage } from '../../ui/useWaitStage';
 import { useDictation } from '../../voice/dictation';
@@ -592,13 +593,16 @@ export default function TodayScreen(): React.JSX.Element {
         />
       </ScrollView>
       {occasionMissed || occasionDictation.problem !== null ? (
-        <Text style={[styles.muted, styles.dictationNote]} accessibilityLiveRegion="polite">
-          {occasionDictation.problem === 'denied'
-            ? t('dictate.denied')
-            : occasionDictation.problem === 'failed'
-              ? t('dictate.failed')
-              : t('dictate.occasionNoMatch')}
-        </Text>
+        <View style={styles.dictationNote} accessibilityLiveRegion="polite">
+          <Text style={styles.muted}>
+            {occasionDictation.problem === 'denied'
+              ? t('dictate.denied')
+              : occasionDictation.problem === 'failed'
+                ? t('dictate.failed')
+                : t('dictate.occasionNoMatch')}
+          </Text>
+          {occasionDictation.problem === 'denied' ? <OpenSettingsLink /> : null}
+        </View>
       ) : null}
       {lucky.offline ? <OfflineNote /> : null}
       {body}

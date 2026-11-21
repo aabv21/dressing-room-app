@@ -2,15 +2,16 @@
 // (docs/app.md#the-daily-reminder-srcreminder).
 import { ChevronRight } from 'lucide-react-native';
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { useI18n, type Locale } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
 import { BottomSheet } from '../ui/BottomSheet';
 import { ChipGroup } from '../ui/ChipGroup';
+import { OpenSettingsLink } from '../ui/OpenSettingsLink';
 import { colors, fontSizes, layout, radii, spacing } from '../ui/theme';
 import { scheduleReminder, turnOffReminder, turnOnReminder } from './dailyReminder';
-import { readReminder, writeReminder, type ReminderTime } from './reminderStore';
+import { useReminderSettings, writeReminder, type ReminderTime } from './reminderStore';
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const MINUTES = Array.from({ length: 12 }, (_, step) => step * 5);
@@ -77,7 +78,7 @@ function ReminderTimeSheet({
 
 export function ReminderSection({ userId }: { userId: string }): React.JSX.Element {
   const { t, locale } = useI18n();
-  const [settings, setSettings] = useState(() => readReminder(userId));
+  const settings = useReminderSettings(userId);
   // The switch shows the requested state while the permission prompt or scheduling runs.
   const [pending, setPending] = useState<boolean | null>(null);
   const [problem, setProblem] = useState<'denied' | 'failed' | null>(null);
@@ -87,7 +88,6 @@ export function ReminderSection({ userId }: { userId: string }): React.JSX.Eleme
 
   function report(next: 'denied' | 'failed' | null, announcement: string): void {
     setProblem(next);
-    setSettings(readReminder(userId));
     announceForAccessibility(announcement);
   }
 
@@ -113,7 +113,6 @@ export function ReminderSection({ userId }: { userId: string }): React.JSX.Eleme
     if (!settings.enabled) {
       // Kept for when the switch goes on.
       writeReminder(userId, { ...settings, ...next });
-      setSettings(readReminder(userId));
       return;
     }
     setPending(true);
@@ -159,18 +158,7 @@ export function ReminderSection({ userId }: { userId: string }): React.JSX.Eleme
       {problem === null ? null : (
         <View style={styles.problem} accessibilityLiveRegion="polite">
           <Text style={styles.error}>{t(problem === 'denied' ? 'reminder.denied' : 'reminder.failed')}</Text>
-          {problem === 'denied' ? (
-            <Pressable
-              accessibilityRole="link"
-              accessibilityLabel={t('reminder.openSettings')}
-              onPress={() => {
-                void Linking.openSettings();
-              }}
-              style={styles.link}
-            >
-              <Text style={styles.linkLabel}>{t('reminder.openSettings')}</Text>
-            </Pressable>
-          ) : null}
+          {problem === 'denied' ? <OpenSettingsLink /> : null}
         </View>
       )}
       {sheetOpen ? (
@@ -225,16 +213,6 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: fontSizes.bodySmall,
     fontWeight: '600',
-  },
-  link: {
-    alignSelf: 'flex-start',
-    minHeight: layout.minHitTarget,
-    justifyContent: 'center',
-  },
-  linkLabel: {
-    color: colors.accentText,
-    fontSize: fontSizes.bodySmall,
-    fontWeight: '700',
   },
   sheetLabel: {
     color: colors.muted,

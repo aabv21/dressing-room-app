@@ -21,7 +21,8 @@ environment. `jest.setup.ts` mocks:
 - `expo-speech-recognition` — recognition available and on-device, the permission granted, and
   `start`, `stop`, `abort` and `addListener` as spies; `src/test/dictation.ts` types them as plain
   mocks and emits recognition events (`hear(transcript)` sends a final result, then `end`).
-- `expo-notifications` — permission granted, `scheduleNotificationAsync` answering an id, no tap
+- `expo-notifications` — permission granted, `scheduleNotificationAsync` answering an id, nothing
+  in `getAllScheduledNotificationsAsync`, no tap
   response and a listener that does nothing, since the native module is absent under Jest; the
   reminder suites set these with `jest.mocked`.
 - `expo-sqlite/kv-store` — replaced with an in-memory `Map` behind the same synchronous
@@ -148,15 +149,20 @@ The Profile tab's Privacy section (data export and account deletion):
   still can, one `DAILY` trigger at the chosen hour and minute on the reminder channel, the copy in
   English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; denied and a
   scheduling failure store nothing; a re-schedule cancels the stored id first, and two at once never
-  leave two notifications; off cancels and keeps the time; `cancelStoredReminder`;
-  `isReminderResponse` (only a default tap on the reminder).
+  leave two notifications; off cancels and keeps the time; `forgetReminder`;
+  `isReminderResponse` (only a default tap on the reminder). Against a fake of the OS's scheduled
+  list: scheduling also cancels an orphan reminder (never another app notification), off cancels
+  every reminder, and a re-schedule queued during an account deletion, or asked for after it,
+  leaves none scheduled.
 - `src/reminder/__tests__/ReminderSection.test.tsx` — Profile's section: off at 7:30 by default,
   the switch asks and schedules, a new time from the sheet re-schedules (the old id cancelled), a
   time picked while off is kept without scheduling, off cancels, denied stays off with the
-  explanation and "Open settings", a scheduling failure says so, and the Spanish labels.
+  explanation and "Open settings", a scheduling failure says so, the Spanish labels, and a
+  re-schedule that fails elsewhere turns the switch off.
 - `src/reminder/__tests__/DailyReminderSync.test.tsx` — a reminder tap that launched the app or
   arrives while it runs opens Today and is cleared, another notification's doesn't, the listener is
-  removed on unmount, and a language change re-schedules an enabled reminder (never an off one).
+  removed on unmount, a language change re-schedules an enabled reminder (never an off one), and
+  an enabled reminder the OS no longer holds is scheduled again on mount (one still there isn't).
 - `src/voice/__tests__/speech.test.ts` — `pickVoice`: Latin American Spanish before Spain, es-MX
   first, Android's underscore tags, any voice in the language as a fallback, en-US first, an
   enhanced voice within a tag, and null with no voice in the language.
@@ -169,13 +175,19 @@ The Profile tab's Privacy section (data export and account deletion):
   idea's text; another idea's Listen takes over; leaving the tab stops it).
 - `src/voice/__tests__/occasionFromSpeech.test.ts` — every occasion from Spanish and English
   phrases, accents and capitals, the keyword order ("salir a correr", "cena formal", "fiesta en
-  casa", "work out", "home office"), whole words only ("networking", "classic"), each language's
-  own words, and null for empty or unrelated speech. `dictation.test.ts` — `recognitionLanguage`.
+  casa", "work out", "home office", "oficina en casa"), "office" and "la u" in Spanish, whole words
+  only ("networking", "classic"), "cita médica" left unmapped, each language's own words, and null
+  for empty or unrelated speech. `dictation.test.ts` — `recognitionLanguage`.
+  `useDictation.test.tsx` — a mic taking over aborts the other's session and that session's late
+  `end` doesn't stop the new one (which gets the result), and a mic unmounted during the permission
+  prompt never starts.
 - Dictation on the screens, in `city.test.tsx` (the mic asks for the microphone, starts on-device
   in en-US and fills the field, which then saves by name; a second tap stops; denied explains and
-  never starts; nothing heard keeps the field and says so; no mic without recognition; closing
-  while listening aborts) and `today.test.tsx` ("a meeting at work" picks Office and stores it,
-  "fiesta" picks Salidas in Spanish with es-MX, and unrelated words say they weren't caught).
+  never starts, with "Open settings"; nothing heard keeps the field and says so; no mic without
+  recognition; closing while listening aborts) and `today.test.tsx` ("a meeting at work" picks
+  Office and stores it, "fiesta" picks Salidas in Spanish with es-MX, unrelated words say they
+  weren't caught, a denied microphone offers "Open settings", dictating stops Listen first, and a
+  late `onStopped` from an earlier utterance doesn't reset the current one).
 - `src/lib/__tests__/e2eLaunch.test.ts` — the Maestro launch check: `-e2e 1` in the user defaults
   is an end-to-end launch (anything else, or no native settings module, isn't), and only then are
   LogBox's toasts hidden.

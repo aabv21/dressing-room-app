@@ -13,6 +13,7 @@ import { saveProfile, type ProfilePatch } from '../profile/profileRepository';
 import { useCurrentCity } from '../profile/useCurrentCity';
 import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
+import { OpenSettingsLink } from '../ui/OpenSettingsLink';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { TextField } from '../ui/TextField';
 import { colors, fontSizes, gradients, layout, spacing } from '../ui/theme';
@@ -194,9 +195,10 @@ export default function CityScreen(): React.JSX.Element {
           }
         />
         {dictation.problem === null ? null : (
-          <Text style={styles.message} accessibilityLiveRegion="polite">
-            {t(DICTATION_PROBLEM[dictation.problem])}
-          </Text>
+          <View accessibilityLiveRegion="polite">
+            <Text style={styles.message}>{t(DICTATION_PROBLEM[dictation.problem])}</Text>
+            {dictation.problem === 'denied' ? <OpenSettingsLink /> : null}
+          </View>
         )}
         {message === undefined ? null : (
           <Text style={message.error ? styles.error : styles.message} accessibilityLiveRegion="polite">
