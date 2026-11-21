@@ -53,7 +53,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 - Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome, such as the tab bar, anchored buttons, the score ring and calendar cells, stops between 1.2× and 1.5×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
 - Jev calibration: `pnpm calibrate export|collect|eval` turns hand-labeled saved outfits into an agreement report (Spearman's ρ, band accuracy, a confusion matrix) with suggested weights, bands and confidence aggregate. Real labels stay in gitignored files.
 - Nightly hosted backup: `pnpm backup` dumps the database and downloads every photo with a sha256 manifest to the owner's Mac, keeping the newest 14, with a tested restore.
-- Release config: `eas.json` profiles for development, internal preview and store builds, each reading the app's public `EXPO_PUBLIC_*` values from its EAS environment, and EAS Submit to TestFlight and the Play internal track.
+- Release config: `eas.json` profiles for internal preview and store builds, each reading the app's public `EXPO_PUBLIC_*` values from its EAS environment, and EAS Submit to TestFlight and the Play internal track.
 - Fixture mode for performance testing: with `EXPO_PUBLIC_PERF_FIXTURES_URL` set, the Closet grid shows 500 generated thumbnails served from your computer, a disabled upload CTA, and a frame-stats HUD (frames, dropped frames, p95 and median frame time, inferred refresh rate). Tap the HUD to reset it; long-press it to also clear the image caches for a cold pass.
 
 ## Architecture
@@ -118,25 +118,13 @@ pnpm e2e                                   # Maestro flows on the iOS simulator:
 
 `pnpm test` needs no Docker. `db:test` and `test:int` need the local stack (`pnpm db:start && pnpm db:reset && pnpm env:local`). `pnpm e2e` also needs the dev build on a booted simulator, Metro, Maestro and Java 17 (`brew install maestro openjdk@17`); it starts the mocks and signs up a fresh `@example.com` user itself. AI calls are tested against recorded-shape fixtures and mocks, never the real APIs.
 
-CI runs the quality gate (supply-chain settings, typecheck, lint, unit tests, expo-doctor), a security job (gitleaks, `pnpm audit`), workflow linting (actionlint, zizmor), and a database job (pgTAP, a generated-types drift check and the integration tests). A separate CodeQL workflow (pull requests, `main` and weekly) analyzes the code once the repo is public; it skips itself while the repo is private. [`docs/testing.md`](docs/testing.md) lists every suite.
+CI runs the quality gate (supply-chain settings, typecheck, lint, unit tests, expo-doctor), a security job (gitleaks, `pnpm audit`), workflow linting (actionlint, zizmor), and a database job (pgTAP, a generated-types drift check and the integration tests). A separate CodeQL workflow (pull requests, `main`, `develop` and weekly) analyzes the code once the repo is public; it skips itself while the repo is private. [`docs/testing.md`](docs/testing.md) lists every suite.
 
 ## Owner setup
 
-Everything above runs offline. These steps need the owner's accounts, once, at the end, in this order:
-
-1. Pick the final app name and bundle id.
-2. Create the hosted Supabase project, link it, push the migrations, deploy the seven functions, and mirror `supabase/config.toml`'s Auth settings in the dashboard.
-3. Set the hosted secrets (the extraction webhook's Vault secrets and `EXTRACT_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `TYPESAFE_API_KEY`, and the `APPLE_*` ones, without which account deletion can't revoke Sign in with Apple), configure Sign in with Apple and Google and the email sender (custom SMTP through Brevo), and set spend caps or alerts with Anthropic and TypeSafe.
-4. Run `eas init`, set the app's four public `EXPO_PUBLIC_*` values as EAS environment variables, then rebuild the dev client (`garment-cutout` is a local native module and `expo-sharing` has native code, so an older dev client fails to load the Profile tab).
-5. Run the live checks on real phones: the AI and weather services, the camera and cut-outs, large text and screen readers, sign-in, export and deletion.
-6. Label about 50 saved outfits and run `pnpm calibrate` to tune Jev's weights and bands.
-7. Schedule the nightly `pnpm backup` with launchd and restore it once.
-8. Publish the [privacy policy](docs/privacy-policy.md) on GitHub Pages and fill in the App Store and Play privacy forms.
-9. Run `pnpm e2e`.
-10. Run `eas build` and `eas submit` against [`eas.json`](./eas.json)'s profiles, to put a build on TestFlight and the Play internal track, and add testers.
-11. Check CI's first `database` run.
-
-The full checklist is [`AGENTS.md`](./AGENTS.md)'s "Owner session".
+Everything above runs offline. The steps that need the owner's accounts (the hosted project, its
+secrets, sign-in providers, EAS builds, live checks, calibration, backups and the store releases)
+are in [`docs/owner-runbook.md`](docs/owner-runbook.md), each with its status.
 
 ## Costs
 

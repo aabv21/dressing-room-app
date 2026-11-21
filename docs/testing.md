@@ -259,7 +259,7 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
   command line holds the password either, decoded or percent-encoded; the dump gets it in
   `PGPASSWORD`, and a `BACKUP_DB_URL` that isn't a Postgres URL is refused with the percent-encoding
   hint, without being echoed. The real dump, restore and photo upload are checked by hand against
-  the local stack (`docs/database.md`'s "Hosted backups").
+  the local stack ([`owner-runbook.md`](owner-runbook.md#restore)).
 - `scripts/__tests__/e2e.test.ts` — `pnpm e2e`'s pure parts: the fresh `e2e-<epoch ms>@example.com`
   address, `JAVA_HOME` (an existing one kept, Homebrew's `openjdk@17` used when it's unset or empty,
   a message naming `brew install openjdk@17` when there's neither), the `maestro` and

@@ -145,7 +145,7 @@ Owner decisions or accepted limits, not code changes:
   extraction quota that call costs only a `consume_quota` round trip. Accepted for the same reason.
 - **Provider spend caps.** Quotas bound the spend per user; they don't enforce the monthly ceiling.
   The Anthropic and TypeSafe spend limits and alerts are console settings for the owner
-  (`AGENTS.md`'s "Owner session").
+  ([`owner-runbook.md`](owner-runbook.md#3-secrets-keys-and-spend-caps)).
 - **For you's lines are free text.** 90 code points at most, and shown as plain text. The input
   holds no user data, so only the model itself could put something odd there, such as a URL or
   bidi characters. Accepted; upgrade path: drop lines with control or bidi characters in

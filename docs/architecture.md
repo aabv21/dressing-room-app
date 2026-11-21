@@ -258,7 +258,8 @@ Costs, from [`ai.md`](ai.md)'s "Quota and cost":
 | Supabase | free tier |
 
 Typical use fits a $1-a-month target. The quotas bound the spend but don't enforce that
-target, so the owner session sets spend caps or alerts with Anthropic and TypeSafe.
+target, so the owner sets spend caps or alerts with Anthropic and TypeSafe
+([`owner-runbook.md`](owner-runbook.md#3-secrets-keys-and-spend-caps)).
 
 ## Design decisions and their trade-offs
 

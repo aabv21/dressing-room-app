@@ -547,9 +547,9 @@ per Jev request):
 On top of the worst case come the Claude fallbacks (up to about $0.01 a day) and extraction at its
 quota (100 × $0.0003 per user per day, about $3.60 a month for 4 users). So typical use fits the
 target, but the quotas only bound the spend; they don't enforce $1 a month. Holding it relies on
-the providers' spend caps and console limits: the owner session confirms how TypeSafe
-bills (per request or per question) and sets a spend alert if TypeSafe offers one (`AGENTS.md`,
-"Owner session").
+the providers' spend caps and console limits: the owner confirms how TypeSafe bills (per request
+or per question) and sets a spend alert if TypeSafe offers one
+([`owner-runbook.md`](owner-runbook.md#3-secrets-keys-and-spend-caps)).
 
 ### Calibration
 
@@ -559,30 +559,9 @@ against hand labels: the owner and their partner each label about 25 saved outfi
 (`pnpm calibrate <command>`). Re-run the whole workflow whenever the questions, their levels or the
 state change.
 
-**Workflow:**
-
-1. **Export** (once per labeler):
-   `SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… pnpm calibrate export --user <uid> --labeler <name>`.
-   It reads the user's saved outfits (`outfits.saved_at` set) and profile from the hosted project
-   with the service role. Each outfit's `RatingState` comes from `ratingState`, the same function
-   `rate-outfit` uses, with no occasion (saved outfits don't keep one), no weather, and the season
-   of the day it was saved. Incomplete outfits are skipped. New outfits are appended to
-   `calibration/labels.local.json` with `label: null` and a description such as
-   `Saved 2026-11-08: top: blouse (black); bottom: jeans (blue); shoes: sneakers (white)`.
-   Re-running adds only outfits the file doesn't have, and keeps the labels.
-2. **Label** by hand: set each `label` to `bad`, `ok` or `good`. Entries left `null` are ignored.
-3. **Collect**: `TYPESAFE_API_KEY=… pnpm calibrate collect` (`TYPESAFE_BASE_URL` defaults to
-   `https://api.typesafe.ai`). It sends the production request (`buildJevRequest`) once for every
-   labeled outfit without a saved answer, at most 5 at a time, and saves the response bodies to
-   `calibration/answers.local.json`. An answer that doesn't parse isn't saved: the run names it and
-   exits 1, and the next run asks again. Each outfit costs one rating ($0.00004–0.00007).
-4. **Evaluate**: `pnpm calibrate eval [--labels <file>] [--answers <file>]` (the two local files by
-   default) prints a Markdown report and exits 0. It never writes a file or a config.
-
-Both `.local.json` files hold personal data. They are gitignored (`calibration/*.local.json`),
-written readable by the owner only, and never committed. `calibration/example.labels.json` and
-`calibration/example.answers.json` are 12 fictional outfits for the tests and a dry run:
-`pnpm calibrate eval --labels calibration/example.labels.json --answers calibration/example.answers.json`.
+**Workflow.** The owner's steps (export, label, collect, evaluate) and where the personal files
+live are in [`owner-runbook.md`](owner-runbook.md#6-calibration). `calibration/example.labels.json`
+and `calibration/example.answers.json` are 12 fictional outfits for the tests and a dry run.
 
 **Metrics.** Labels count as `bad` = 0, `ok` = 1, `good` = 2. Scores are composed the way the app
 composes them, with the unknown weather neutralized.
