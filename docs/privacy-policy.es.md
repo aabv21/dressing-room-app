@@ -69,9 +69,10 @@ subirse se guarda en la carpeta propia de la app hasta que se sube.
 
 Los servicios de IA reciben estas solicitudes desde el servidor de la app, nunca directamente desde
 tu teléfono, y el servidor nunca les envía tus fotos salvo para el reconocimiento de prendas descrito
-arriba. Cuando tocas "Buscar en tiendas" en una idea de "Para ti", tu navegador abre una búsqueda de
-Google con palabras genéricas como "blazer camel mujer"; a esa búsqueda se aplica la política de
-privacidad de Google.
+arriba. Cuando tocas "Buscar en tiendas" en una idea de "Para ti" y eliges una tienda (Falabella, Mercado
+Libre, Google Shopping o Google, según tu país), tu navegador abre la búsqueda de esa tienda con
+palabras genéricas como "blazer camel mujer"; a esa búsqueda se aplica la política de privacidad de
+la tienda.
 
 ## Cuánto tiempo se guardan
 

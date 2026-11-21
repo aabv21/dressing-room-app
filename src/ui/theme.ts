@@ -58,6 +58,8 @@ export const colors = {
   mutedOnDark: '#bdbac6',
   viewfinder: '#cfc4b2',
   scrimDark: 'rgba(0,0,0,0.55)',
+  // Behind a bottom sheet: dims the screen without hiding it.
+  scrim: 'rgba(20,19,23,0.35)',
   hud: 'rgba(20,19,23,0.85)',
 } as const;
 

@@ -671,6 +671,8 @@ export const en = {
   'forYou.outfits.one': '(+{count} outfit)',
   'forYou.outfits.other': '(+{count} outfits)',
   'forYou.search': 'Search in stores',
+  'forYou.stores.hint': 'Opens its search in your browser',
+  'forYou.stores.cancel': 'Cancel',
   'forYou.loading': 'Looking for ideas…',
   'forYou.empty': 'No ideas right now: your closet already covers the basics.',
   'forYou.tooSmall': 'Add a few more pieces to get ideas',

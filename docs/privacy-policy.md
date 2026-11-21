@@ -67,8 +67,9 @@ folder until it is uploaded.
 
 The AI services receive these requests from the app's server, never directly from your phone, and
 the app's server never sends them your photos except for the garment recognition described above.
-When you tap "Search in stores" on a "For you" idea, your browser opens a Google search for generic
-words such as "camel blazer women"; Google's own privacy policy applies to that search.
+When you tap "Search in stores" on a "For you" idea and pick a store (Falabella, Mercado Libre,
+Google Shopping or Google, depending on your country), your browser opens that store's search for
+generic words such as "camel blazer women"; the store's own privacy policy applies to that search.
 
 ## How long it is kept
 

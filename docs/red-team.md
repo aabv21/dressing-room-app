@@ -79,8 +79,9 @@ should already prevent everything below; the parsers hold even when it doesn't.
 | For you's free-text lines: over-length, unknown ids, duplicates, empty, or a refusal | Whitespace collapsed, 90 code points at most, only the requested ids; anything else falls back to the idea's template key | `supabase/functions/_shared/__tests__/forYou.test.ts`: "drops an over-length line, an unknown id, a duplicate and an empty text"; `for-you/__tests__/handler.test.ts`: "a Claude refusal or an answer with only some lines → templates for the missing ones, degraded" |
 
 The app renders every model-derived string as React Native `Text`, never as HTML or a URL, so a
-line can't run script or open a link. The For you "Search in stores" link is built from catalog
-words (`searchTerms.ts`), not from the line.
+line can't run script or open a link. The For you "Search in stores" links are built from catalog
+words (`searchTerms.ts`), not from the line, and each is a fixed store host with those words
+URL-encoded (`src/outfits/storeLinks.ts`), so no query can point a link elsewhere.
 
 ## Quota abuse
 

@@ -25,7 +25,7 @@ code (components, hooks, utils) stays outside `src/app/`.
 
 Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
 handling; `ScreenTitle` shows the title upper-cased but gives screen readers the words as written), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
-(`useBottomChrome`, `useLargeText`), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
+(`useBottomChrome`, `useLargeText`), `BottomSheet` (React Native's `Modal` sliding up with a title over a `scrim`; a tap outside or the back button closes it; For you's stores and the share sheet use it), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
 `theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
 `fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. `useWaitStage` times an
@@ -209,6 +209,15 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   `outfitIdentity.ts` is the shared outfit key.
 - `useForYou.ts` and `storedForYou.ts`: For you's ideas in the app's language, fetched on focus one
   request at a time, with the last good answer per language in kv `forYou.ideas.<userId>`.
+- `storeLinks.ts` and `StoreSheet.tsx`: For you's "Search in stores" opens a sheet of the stores
+  for the device's region (expo-localization's `regionCode`). `storeLinksFor(region, query,
+  language)` is pure: CO Falabella, Mercado Libre and Google Shopping; MX and AR Mercado Libre and
+  Google Shopping; CL Falabella, Mercado Libre and Google Shopping; PE Falabella and Mercado Libre;
+  BR Mercado Livre; anywhere else (or no region) Google Shopping and Google, in the app language.
+  Each URL is a fixed host with the idea's `searchQuery` URL-encoded (Mercado Libre's listing URLs
+  join the words with hyphens), so nothing in the query changes where a link goes. There are no
+  affiliate tags; `storeUrl` holds the one `NOTE:` where a tag would be appended. A store the
+  browser refuses to open says so (`forYou.openFailed`).
 - `wearQueue.ts`: "I'll wear it" offline. `logWearOrQueue` logs the wear or, on a network failure,
   queues it in kv `wear.queue.<userId>` and reports it logged; `flushWearQueue` sends the queue in
   order, one flush per user, only under that user's stored session, drops a wear the server refuses

@@ -674,6 +674,8 @@ export const es: Record<MessageKey, string> = {
   'forYou.outfits.one': '(+{count} outfit)',
   'forYou.outfits.other': '(+{count} outfits)',
   'forYou.search': 'Buscar en tiendas',
+  'forYou.stores.hint': 'Abre su búsqueda en tu navegador',
+  'forYou.stores.cancel': 'Cancelar',
   'forYou.loading': 'Buscando ideas…',
   'forYou.empty': 'Por ahora no hay ideas: tu clóset ya cubre lo básico.',
   'forYou.tooSmall': 'Agrega algunas prendas más para recibir ideas',
