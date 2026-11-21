@@ -1,0 +1,226 @@
+# The app: modules under `src/`
+
+What each client module does and how the pieces fit. The endpoints they call are in
+[`api.md`](api.md); the tests for each are in [`testing.md`](testing.md).
+
+## Routes (`src/app/`)
+
+Expo Router routes: every file is a screen, and `_layout.tsx` files define navigators. Non-route
+code (components, hooks, utils) stays outside `src/app/`.
+
+- `(auth)/`: Welcome, Sign in and Forgot password. `(onboarding)/`: the clothing, body and style
+  steps.
+- `(tabs)/`: the five tabs. `index.tsx` is Today, `closet.tsx` the Closet, `build.tsx` Build,
+  `for-you.tsx` For you and `profile.tsx` the Profile.
+- The root Stack in `_layout.tsx` registers, inside the signed-in guard and without the tab bar:
+  `camera`, `review`, `garment/[id]`, `rate` (pushed from Today and Build as
+  `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`) and `city` (Today's city, a modal
+  sheet).
+
+## Shared UI (`src/ui/`)
+
+Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
+handling), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
+(`useBottomChrome`, `useLargeText`) and `theme.ts`. `feedback.ts` holds `tapHaptic` (a light impact
+for commit actions, a selection tick for choices, silent on a device without haptics) and the
+pressed styles. `charts/` holds the Stats charts: `KpiTile`, `HorizontalBars` (most worn; bars grow
+with reanimated unless reduced motion is on, rows tappable) and `ProportionBar` (the colors, real
+garment hexes, each segment and legend entry tappable).
+
+## Translations (`src/i18n/`)
+
+`en.ts` is the source of truth and `es.ts` the only other table (neutral Latin American Spanish).
+`I18nProvider` follows the device language, with an in-app override.
+
+## The closet (`src/closet/`)
+
+- **`ClosetProvider`** (`useCloset`): the garments, signed thumbnail URLs, an offline copy in kv
+  `closet.v1.<userId>`, and `usePendingPolling`, a 5 s refresh while an extraction is pending. It
+  also refreshes on foreground and reconnect.
+- **`UploadQueueProvider`** (`useUploadQueue`): enqueue, counts, retry/discard, and
+  `pause`/`clear`/`resume` for account deletion. It runs the queue on mount, enqueue, foreground,
+  reconnect and at the next backoff, never while the user's account deletion is unconfirmed
+  (`account.deleting.<userId>`); then, on mount, foreground and reconnect it only verifies the
+  deletion with `confirmPendingDeletion`, never deleting without a tap. On mount it also clears
+  every other account's queue that has a `queue.purge.<id>` request (`upload/queuePurge.ts`).
+- Both providers wrap the signed-in navigator in `src/app/_layout.tsx`, keyed by user. Both drop
+  late results once their user is gone, and the queue steps refuse to upload or commit an item under
+  another account's session (a retryable `SessionMismatchError`).
+- **`closetSelectors.ts`**: the pure derivations: active vs donated garments, stale pending, the
+  review queue, the fields review asks about, slot and category counts, and the grid cells with the
+  slot, category and color filters (a category chip row appears when the slot holds more than one
+  category).
+- **The Closet tab's segments** (`SegmentTabs.tsx`): Items (the grid, with `GoalCard`'s first-10
+  goal), Stats (`StatsSegment.tsx`: period chips, KPI tiles, most worn, colors, balance and the
+  unused-for-6-months list with Suggest tomorrow and Donate, computed by `src/stats/`) and Diary
+  (`DiarySegment.tsx`: a Monday-first month calendar with each worn day's thumbnail; a tapped day's
+  wears with their pieces, occasion and score, and Delete).
+- **`GarmentFields.tsx`**: the per-field chip editors (`FieldEditor`, which can be disabled), the
+  read-only `ConfirmedRow` and `changedFields` (the save patch: only the fields that differ), used by
+  the review queue (`src/app/review.tsx`) and the garment detail (`src/app/garment/[id].tsx`).
+- **`GarmentPhoto.tsx`**: the full photo over a checkerboard, signed on demand and again whenever
+  `photo_version` changes. **`leaveToCloset.ts`**: the shared back action (back, or the closet when a
+  deep link left no history). **`useNow`**: the clock for render-time derivations such as a pending
+  garment turning stale after 10 minutes.
+- **Capture:** `src/app/camera.tsx` is the burst camera, with `ShotStrip` showing the latest shots;
+  `useGalleryImport` picks up to 30 photos and hands them to the queue (the camera and the Closet
+  share it).
+- **`garmentRepository.ts`**: the garment data layer: list, signed photo URLs, photo uploads,
+  insert, edits, review confirmation, and delete (photos before the row).
+
+### The upload queue (`src/closet/upload/`)
+
+- `queueStore.ts`: SQLite persistence, schema version 1 in `PRAGMA user_version`, with CHECKs on the
+  stage and flags. New garments and photo replacements; a burst is stamped one millisecond apart so
+  it uploads in order; a photo that can't be copied is reported while the rest still queue;
+  `clearQueue` drops one user's rows and copies.
+- `queuePurge.ts`: the kv requests `queue.purge.<id>` to clear a forgotten account's queue. Unlike
+  the account's other per-user keys, a request outlives `forgetAccountOnDevice` until the provider
+  has carried it out.
+- `runQueue.ts`: the stages, backoff, concurrency 2 and 8 attempts. `pauseQueue` lets a stage in
+  flight finish and starts nothing more for that user until `resumeQueue`; a stopped item keeps its
+  attempts and is due at once.
+- `cutout.ts`: the only caller of `modules/garment-cutout` ([its README](../modules/garment-cutout/README.md)).
+- `preparePhoto.ts`: the cut-out, one decode capped at 784 px saved as WebP 0.8, and a 256 px WebP
+  0.7 thumbnail built from that image.
+- `queueSteps.ts`: the real prepare, upload and commit steps; `permanentUploadError.ts`: a rejected
+  upload that retrying can't fix.
+
+## Auth (`src/auth/`)
+
+- `authService.ts`: a barrel over `emailAuth.ts` and `socialAuth.ts`. Both default their `client`
+  parameter to `src/lib/supabase.ts`'s singleton; the `integration` Jest project maps that import to
+  a stub (`integration/lib-supabase.stub.ts`).
+- `AuthProvider` (`useAuth`): the session, the signed-in email, the device language reconciled with
+  `profile.language` once per sign-in, an offline launch kept signed in from the stored session,
+  and, when a session ends or another user signs in, `forgetInterruptedDeletions` for any account
+  whose deletion was under way (which also records its `queue.purge.<id>` request).
+- `deviceState.ts`: per-account facts for offline launches: the last known onboarding status and a
+  language choice still waiting to be saved; `forgetAccount` drops both.
+- `useSignOut`: sign-out with a visible failure message; offline it falls back to a local sign-out;
+  a successful one drops the display caches (`forgetDisplayCaches`), keeping the upload and wear
+  queues and Logged ✓.
+- `emailAuth.ts`'s `signOutLocally` is the sign-out after an account deletion: local scope, never
+  failing, clearing the stored session directly when supabase-js can't finish;
+  `storedSessionUserId` (no request) lets the deletion check it is still that user's session.
+- `socialAuth.ts`: Sign in with Apple (with a nonce, then the fire-and-forget `apple-token` call)
+  and Google (no nonce; see [`red-team.md`](red-team.md#parked)). The two Google client ids are
+  read as literal `process.env.EXPO_PUBLIC_*` members and `GoogleSignin.configure` runs lazily on
+  first use; without them Google sign-in answers `auth.error.unknown`.
+
+## The profile (`src/profile/`)
+
+`profileRepository.ts` (`getProfile`; `saveProfile`, an update of only the changed columns, never an
+upsert; `completeOnboarding`, stamped by the server clock), `validation.ts` (the same ranges as the
+database CHECKs), `bodyType.ts`, `useCurrentCity` (expo-location, when-in-use only),
+`useClothingType` (the profile's clothing type for garment editors, `everything` until read),
+`OnboardingProvider` (re-reads the profile before any onboarding step renders, so a failed launch
+read can't overwrite a finished profile with defaults), and the shared form: `profileDraft.ts` (the
+state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx` (`ClothingSection`,
+`BodySection`, `StyleSection`), used by onboarding and the Profile tab.
+
+## Supabase client and storage (`src/lib/`)
+
+- `supabase.ts`: SQLite-backed session storage, the request timeouts from `fetchWithTimeout.ts`
+  (12 s, 45 s for functions, 60 s for uploads) and `readStoredSession`. It throws on a missing URL or
+  anon key.
+- `database.types.ts`: generated by `pnpm db:types`.
+- `requestResult.ts`: `runRequest` maps a write's outcome to `network` / `invalid` / `unknown`.
+- `kv.ts`: the only `expo-sqlite/kv-store` caller. `kvKeys` lists every key for the deletion
+  cleanup; once an account's data is dropped, `kvSet` refuses keys with its id as a segment until
+  that account signs in again.
+- `e2eLaunch.ts`: `quietDevToastsForE2e` hides LogBox's toasts in a dev build Maestro launched with
+  `-e2e 1`.
+
+## Outfits (`src/outfits/`)
+
+- `aiClient.ts`: `rateOutfit`, `fetchLuckyList` and `fetchForYou` with their `AiError` mapping, and
+  `localDate`, the device's calendar day sent with each call ([`api.md`](api.md#how-the-app-maps-errors)).
+- `outfitRepository.ts`: `logWear` (the idempotent `log_wear` RPC with a client wear id reused on
+  retry) and `saveOutfit`.
+- `outfitDisplay.ts`: the pieces' display order, `pieceLabel` ("Blusa · Negro") and Today's weather
+  line.
+- `buildSelection.ts`: Build's selection: one garment per slot, a one-piece and top/bottom exclude
+  each other, one bag, hat or accessory, so a built outfit has at most five pieces against
+  `rate-outfit`'s six; `canRate`, `selectionIds` and `retainSelection`.
+- `useLuckyList.ts` and `storedLucky.ts`: Today's list with debounced closet-driven refetches, the
+  last good list per occasion for the day in kv `today.lucky.<userId>`, and `useTodayOccasion`.
+- `useForYou.ts` and `storedForYou.ts`: For you's ideas in the app's language, fetched on focus one
+  request at a time, with the last good answer per language in kv `forYou.ideas.<userId>`.
+- `wearQueue.ts`: "I'll wear it" offline. `logWearOrQueue` logs the wear or, on a network failure,
+  queues it in kv `wear.queue.<userId>` and reports it logged; `flushWearQueue` sends the queue in
+  order, one flush per user, only under that user's stored session, drops a wear the server refuses
+  as `invalid` and stops at any other failure; `withQueuedWears` adds unsent wears to Stats and
+  Diary. `WearQueueFlusher.tsx` flushes on mount, foreground and reconnect.
+- `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
+  Today and the rating screen; Diary's Delete calls `unmarkWornToday`.
+- `OutfitStack.tsx`, `ScoreRing.tsx`, and `types.ts` (the functions' response types, re-exported
+  from their `handler.ts`).
+
+## Stats and Diary (`src/stats/`)
+
+All computed on the device. `periods.ts` (local `YYYY-MM-DD` day math anchored in UTC, the period
+ranges and the Monday-first month grid), `statsModel.ts` (the KPIs, most worn, color shares, slot
+balance, the unused list and the diary by day), `wearsRepository.ts` (`listWears` in pages of 1000,
+at most 20, and `deleteWear`; the trigger lowers the counts), `storedWears.ts` (the last fetched
+wears in kv `wears.v1.<userId>` with the range they cover, read when a fetch fails) and
+`useWearHistory.ts` (Stats' year of wears).
+
+## Account privacy (`src/account/`)
+
+- `accountClient.ts`: `deleteAccount`, `verifyAccount` (Auth's view of the session token; no
+  function call) and `exportData`, plus `exportFileName` (`dressing-room-export-YYYY-MM-DD.json`).
+- `deletionMarker.ts`: the kv marker `account.deleting.<id>` (`deleting:<ms>` or `reauth:<ms>`) and
+  `forgetInterruptedDeletions`.
+- `deletionFlow.ts`: `runDeletion` (only from the user's tap) and `confirmPendingDeletion` (the
+  provider's check); one run per user at a time. `DELETION_SETTLE_MS` is 10 minutes.
+- `forgetAccount.ts`: `forgetAccountOnDevice` removes every kv key with the user's id as a
+  dot-separated segment, plus `deviceState`'s entries, after refusing that user's later kv writes.
+  New per-user kv keys must keep the `<name>.<id>[.<more>]` shape to be cleared and refused;
+  `queue.purge.<id>` is the one key it keeps.
+- `deviceFiles.ts`: `removeExports` and `forgetDeviceFiles` (the exports plus expo-image's caches).
+- `usePrivacyActions.ts`: one flow at a time. Export checks the share sheet, replaces earlier exports
+  and shares as `public.json`; delete asks twice, then runs `runDeletion`. Profile's Sign out stays
+  disabled while either runs.
+
+### Account deletion on the device
+
+The server side is in [`database.md`](database.md#account-deletion-and-data-export-plan-5).
+
+The app first writes the kv marker `account.deleting.<uid>`, then pauses its upload queue (a stage in
+flight finishes), so no photo lands after the function's listing, and sends the session's access
+token explicitly. It reports the account deleted only on `{ outcome: 'deleted' }`, or on a 401 for
+which Auth's `GET /user` with that same token answers `user_not_found` (a retry after a lost 200).
+Any other 401 (an expired token, `session_not_found`, a refresh token that's gone) or no session at
+all doesn't prove the account is gone, so the app tells the user to sign in again and delete the
+account again (`reauth`), and signs out locally, keeping the queue and the kv entries (the marker
+turns `reauth`). Signing in doesn't finish anything by itself: the check below sees the account
+still there and removes the marker, and the user taps "Delete account" again.
+
+On a deletion the app clears the queue, signs out locally, clears every kv key under the user's id
+(the marker included) and refuses that user's later kv writes for the rest of the process; then it
+removes the data exports and clears expo-image's memory and disk caches. Either sign-out happens only
+while the stored session is still that user's (or there is none). Any other failure (network, a 500,
+a gateway 502/504) may come after the server already deleted the user, so the marker stays: the user
+stays signed in, is told the deletion couldn't be confirmed and that photo uploads are paused, and
+can tap again.
+
+While the marker exists that user's queue never runs. Any value whose state is `deleting` or `reauth`
+counts, whatever its time; a missing or malformed time, or one more than the settle window in the
+future, is stamped anew at the next check. A launch, sign-in, return to the foreground or reconnect
+with the marker present only asks Auth whether the account still exists: `user_not_found` gets the
+same local cleanup and sign-out; the same user, more than 10 minutes after the marker (the function
+may still be sweeping storage after the app's 45 s timeout), removes the marker and lets the queue
+run; anything else keeps the marker.
+
+A session that ends while the marker says `deleting` (supabase-js signs out by itself once the
+account is gone) drops that account's kv data and records `queue.purge.<uid>`. The next upload queue
+provider to mount, for whichever user signs in next, clears that account's queued rows and photo
+copies and drops the request; a failed clear keeps it. If that same account signs in again first,
+its session shows the account still exists, so the request is only dropped.
+
+## Other folders
+
+- `src/perf/`: the on-device frame-stats harness (UI-thread frame callback, stats, HUD), shown in
+  fixture mode ([`performance-gate.md`](performance-gate.md)).
+- `src/test/`: shared Jest helpers and mocks; never imported by app code.

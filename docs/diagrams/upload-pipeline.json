@@ -201,7 +201,7 @@
       "items": [
         "Structured output limited to catalog enums",
         "The parser drops anything else and marks it doubtful",
-        "Write-back only while pending and not reviewed"
+        "Write-back only while pending, unreviewed and unedited (updated_at guard)"
       ]
     },
     {

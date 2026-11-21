@@ -1,5 +1,5 @@
 // `node scripts/calibrate.ts <export | collect | eval>`: the Jev calibration workflow (see
-// `docs/ai.md`'s "Calibration"). `export` turns a user's saved outfits into unlabeled entries in
+// `docs/owner-runbook.md`'s "6. Calibration"; the math is in `docs/ai.md`'s "Calibration"). `export` turns a user's saved outfits into unlabeled entries in
 // `calibration/labels.local.json`, `collect` asks Jev once for every labeled outfit without an
 // answer and saves the answers to `calibration/answers.local.json`, and `eval` prints the agreement
 // report with suggested weights. Both `.local.json` files hold personal data and are gitignored;

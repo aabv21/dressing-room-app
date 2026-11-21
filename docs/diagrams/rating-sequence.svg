@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 1700 972" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase" style="" width="1700" height="972" xmlns="http://www.w3.org/2000/svg"><style>
+<svg viewBox="0 0 1700 1002" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase" style="" width="1700" height="1002" xmlns="http://www.w3.org/2000/svg"><style>
 /*
 JetBrains Mono variable WOFF2 subsets from Google Fonts service revision v24.
 These fixed bytes are shared by the viewer and its SVG/raster exports.
@@ -451,19 +451,19 @@ rect.c-bg-rect { fill: var(--bg); }
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="4" x="48" y="516" width="1604" height="65" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="5" x="48" y="605" width="1604" height="65" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="5" x="48" y="605" width="1604" height="95" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="6" x="48" y="694" width="1604" height="95" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="6" x="48" y="724" width="1604" height="95" rx="10" class="c-lane" stroke-width="1"/>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="7" x="48" y="813" width="1604" height="65" rx="10" class="c-lane" stroke-width="1"/>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="segment" data-composition-frame-id="7" x="48" y="843" width="1604" height="65" rx="10" class="c-lane" stroke-width="1"/>
 
         <!-- Lifelines -->
-        <path d="M 157 142 L 157 907" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 438.6 142 L 438.6 907" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 720.2 142 L 720.2 907" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 1001.8000000000001 142 L 1001.8000000000001 907" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 1283.4 142 L 1283.4 907" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
-        <path d="M 1565 142 L 1565 907" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 157 142 L 157 937" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 438.6 142 L 438.6 937" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 720.2 142 L 720.2 937" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 1001.8000000000001 142 L 1001.8000000000001 937" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 1283.4 142 L 1283.4 937" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
+        <path d="M 1565 142 L 1565 937" class="a-default" stroke-width="0.8" stroke-dasharray="3,7"/>
 
         <!-- Activations -->
 
@@ -569,45 +569,53 @@ rect.c-bg-rect { fill: var(--bg); }
         </g>
         </g>
 
-        <g data-edge-from="fn" data-edge-to="db" data-edge-label="the closet (RLS), weakest slot only" data-edge-key="12">
-          <path data-composition-edge-from="fn" data-composition-edge-to="db" data-composition-points="445.6,709;713.2,709" d="M 445.6 709 L 713.2 709" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="fn" data-edge-to="app" data-edge-label="both failed: 503 rating_unavailable" data-edge-key="12">
+          <path data-composition-edge-from="fn" data-composition-edge-to="app" data-composition-points="431.6,680;164,680" d="M 431.6 680 L 164 680" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="482.4000000000001" y="689" width="194" height="16" rx="3" class="c-mask"/>
-          <text x="579.4000000000001" y="699" class="t-backend" font-size="9" text-anchor="middle">the closet (RLS), weakest slot only</text>
+          <rect x="200.8" y="660" width="194" height="16" rx="3" class="c-mask"/>
+          <text x="297.8" y="670" class="t-muted" font-size="9" text-anchor="middle">both failed: 503 rating_unavailable</text>
         </g>
         </g>
 
-        <g data-edge-from="fn" data-edge-to="jev" data-edge-label="up to 8 candidates, 5 at once" data-edge-key="13">
-          <path data-composition-edge-from="fn" data-composition-edge-to="jev" data-composition-points="445.6,739;1276.4,739" d="M 445.6 739 L 1276.4 739" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <g data-edge-from="fn" data-edge-to="db" data-edge-label="the closet (RLS), weakest slot only" data-edge-key="13">
+          <path data-composition-edge-from="fn" data-composition-edge-to="db" data-composition-points="445.6,739;713.2,739" d="M 445.6 739 L 713.2 739" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="779.6" y="719" width="162.8" height="16" rx="3" class="c-mask"/>
-          <text x="861" y="729" class="t-backend" font-size="9" text-anchor="middle">up to 8 candidates, 5 at once</text>
-        </g>
-        <text x="457.6" y="757" class="t-dim" font-size="7">below 70 · none after 15 s</text>
-        </g>
-
-        <g data-edge-from="jev" data-edge-to="fn" data-edge-label="answers per candidate" data-edge-key="14">
-          <path data-composition-edge-from="jev" data-composition-edge-to="fn" data-composition-points="1276.4,769;445.6,769" d="M 1276.4 769 L 445.6 769" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
-        <g>
-          <rect x="800.4" y="749" width="121.2" height="16" rx="3" class="c-mask"/>
-          <text x="861" y="759" class="t-muted" font-size="9" text-anchor="middle">answers per candidate</text>
-        </g>
-        <text x="457.6" y="787" class="t-dim" font-size="7">code offers a swap 5+ points better</text>
-        </g>
-
-        <g data-edge-from="fn" data-edge-to="db" data-edge-label="cache result (degraded: 1 h)" data-edge-key="15">
-          <path data-composition-edge-from="fn" data-composition-edge-to="db" data-composition-points="445.6,828;713.2,828" d="M 445.6 828 L 713.2 828" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <g>
-          <rect x="500.6000000000001" y="808" width="157.6" height="16" rx="3" class="c-mask"/>
-          <text x="579.4000000000001" y="818" class="t-backend" font-size="9" text-anchor="middle">cache result (degraded: 1 h)</text>
+          <rect x="482.4000000000001" y="719" width="194" height="16" rx="3" class="c-mask"/>
+          <text x="579.4000000000001" y="729" class="t-backend" font-size="9" text-anchor="middle">the closet (RLS), weakest slot only</text>
         </g>
         </g>
 
-        <g data-edge-from="fn" data-edge-to="app" data-edge-label="score, label, reasons, swap" data-edge-key="16">
-          <path data-composition-edge-from="fn" data-composition-edge-to="app" data-composition-points="431.6,858;164,858" d="M 431.6 858 L 164 858" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <g data-edge-from="fn" data-edge-to="jev" data-edge-label="up to 8 candidates, 5 at once" data-edge-key="14">
+          <path data-composition-edge-from="fn" data-composition-edge-to="jev" data-composition-points="445.6,769;1276.4,769" d="M 445.6 769 L 1276.4 769" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <g>
-          <rect x="221.60000000000002" y="838" width="152.4" height="16" rx="3" class="c-mask"/>
-          <text x="297.8" y="848" class="t-backend" font-size="9" text-anchor="middle">score, label, reasons, swap</text>
+          <rect x="779.6" y="749" width="162.8" height="16" rx="3" class="c-mask"/>
+          <text x="861" y="759" class="t-backend" font-size="9" text-anchor="middle">up to 8 candidates, 5 at once</text>
+        </g>
+        <text x="457.6" y="787" class="t-dim" font-size="7">below 70 · none after 15 s</text>
+        </g>
+
+        <g data-edge-from="jev" data-edge-to="fn" data-edge-label="answers per candidate" data-edge-key="15">
+          <path data-composition-edge-from="jev" data-composition-edge-to="fn" data-composition-points="1276.4,799;445.6,799" d="M 1276.4 799 L 445.6 799" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+        <g>
+          <rect x="800.4" y="779" width="121.2" height="16" rx="3" class="c-mask"/>
+          <text x="861" y="789" class="t-muted" font-size="9" text-anchor="middle">answers per candidate</text>
+        </g>
+        <text x="457.6" y="817" class="t-dim" font-size="7">code offers a swap 5+ points better</text>
+        </g>
+
+        <g data-edge-from="fn" data-edge-to="db" data-edge-label="cache result (degraded: 1 h)" data-edge-key="16">
+          <path data-composition-edge-from="fn" data-composition-edge-to="db" data-composition-points="445.6,858;713.2,858" d="M 445.6 858 L 713.2 858" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <g>
+          <rect x="500.6000000000001" y="838" width="157.6" height="16" rx="3" class="c-mask"/>
+          <text x="579.4000000000001" y="848" class="t-backend" font-size="9" text-anchor="middle">cache result (degraded: 1 h)</text>
+        </g>
+        </g>
+
+        <g data-edge-from="fn" data-edge-to="app" data-edge-label="score, label, reasons, swap" data-edge-key="17">
+          <path data-composition-edge-from="fn" data-composition-edge-to="app" data-composition-points="431.6,888;164,888" d="M 431.6 888 L 164 888" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <g>
+          <rect x="221.60000000000002" y="868" width="152.4" height="16" rx="3" class="c-mask"/>
+          <text x="297.8" y="878" class="t-backend" font-size="9" text-anchor="middle">score, label, reasons, swap</text>
         </g>
         </g>
 
@@ -637,12 +645,12 @@ rect.c-bg-rect { fill: var(--bg); }
           <text x="62" y="596" class="t-dim" font-size="9" font-weight="600">6 Claude fallback</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="6">
-          <rect x="56" y="672" width="81.60000000000001" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="685" class="t-dim" font-size="9" font-weight="600">7 Swap search</text>
+          <rect x="56" y="702" width="81.60000000000001" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="715" class="t-dim" font-size="9" font-weight="600">7 Swap search</text>
         </g>
         <g data-graph-role="segment-label" data-segment-id="7">
-          <rect x="56" y="791" width="107.60000000000001" height="18" rx="3" class="c-mask"/>
-          <text x="62" y="804" class="t-dim" font-size="9" font-weight="600">8 Cache and answer</text>
+          <rect x="56" y="821" width="107.60000000000001" height="18" rx="3" class="c-mask"/>
+          <text x="62" y="834" class="t-dim" font-size="9" font-weight="600">8 Cache and answer</text>
         </g>
 
         <!-- Participants -->
@@ -725,22 +733,22 @@ rect.c-bg-rect { fill: var(--bg); }
 
         <!-- Legend -->
         <g data-legend="">
-          <text x="40" y="898" class="t-primary" font-size="12" font-weight="650">Legend</text>
-          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="918" data-legend-width="78">
-            <path d="M 40 915 L 74 915" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-            <text x="83" y="918" class="t-muted" font-size="10" font-weight="500">request</text>
+          <text x="40" y="928" class="t-primary" font-size="12" font-weight="650">Legend</text>
+          <g data-legend-semantic-kind="emphasis" data-legend-x="40" data-legend-baseline="948" data-legend-width="78">
+            <path d="M 40 945 L 74 945" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+            <text x="83" y="948" class="t-muted" font-size="10" font-weight="500">request</text>
           </g>
-          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="918" data-legend-width="73">
-            <path d="M 140 915 L 174 915" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
-            <text x="183" y="918" class="t-muted" font-size="10" font-weight="500">return</text>
+          <g data-legend-semantic-kind="return" data-legend-x="140" data-legend-baseline="948" data-legend-width="73">
+            <path d="M 140 945 L 174 945" class="a-default" stroke-width="1.4" stroke-dasharray="3,5" marker-end="url(#arrowhead)"/>
+            <text x="183" y="948" class="t-muted" font-size="10" font-weight="500">return</text>
           </g>
-          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="918" data-legend-width="83">
-            <path d="M 235 915 L 269 915" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
-            <text x="278" y="918" class="t-muted" font-size="10" font-weight="500">security</text>
+          <g data-legend-semantic-kind="security" data-legend-x="235" data-legend-baseline="948" data-legend-width="83">
+            <path d="M 235 945 L 269 945" class="a-security" stroke-width="1.4" marker-end="url(#arrowhead-security)"/>
+            <text x="278" y="948" class="t-muted" font-size="10" font-weight="500">security</text>
           </g>
-          <g data-legend-semantic-kind="default" data-legend-x="340" data-legend-baseline="918" data-legend-width="118">
-            <path d="M 340 915 L 374 915" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-            <text x="383" y="918" class="t-muted" font-size="10" font-weight="500">default message</text>
+          <g data-legend-semantic-kind="default" data-legend-x="340" data-legend-baseline="948" data-legend-width="118">
+            <path d="M 340 945 L 374 945" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+            <text x="383" y="948" class="t-muted" font-size="10" font-weight="500">default message</text>
           </g>
         </g>
       </svg>

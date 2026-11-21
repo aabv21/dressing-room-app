@@ -2,7 +2,7 @@
 // `_layout.tsx`, without the tab bar) where the user shoots one garment per photo with no forms,
 // then hands every shot to the upload queue at once. The simulator has no camera, so this screen is exercised here
 // through its permission/denied states and its own logic (shutter debounce, the running shot list,
-// Close's confirmation) — the real capture flow is an owner-session check (see AGENTS.md).
+// Close's confirmation) — the real capture flow is an owner check (docs/owner-runbook.md).
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router, usePreventRemove } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';

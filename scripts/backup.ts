@@ -1,7 +1,7 @@
 // scripts/backup.ts
 //
 // `pnpm backup` (`node scripts/backup.ts`): a local export of the hosted project, run on the owner's
-// Mac by launchd (see `docs/database.md`'s "Hosted backups"). The free tier has no downloadable
+// Mac by launchd (see `docs/owner-runbook.md`'s "Backups"). The free tier has no downloadable
 // backups, so this script takes one:
 //
 //   1. `schema.sql` and `data.sql` from `pnpm exec supabase db dump --db-url $BACKUP_DB_URL` (the
