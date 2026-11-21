@@ -430,6 +430,20 @@ describe("I'll wear it", () => {
     expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
   });
 
+  test('a failed undo says so and keeps Undo for a retry', async () => {
+    const { deleteWear } = jest.requireMock<{ deleteWear: jest.Mock }>('../stats/wearsRepository');
+    deleteWear.mockResolvedValueOnce({ ok: false, error: 'network' });
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear.mockResolvedValue({ ok: true });
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Undo' }));
+
+    expect(await screen.findByText("Couldn't undo. You can delete it from your Diary.")).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  });
+
   test('logs the wear once on a double tap, then shows Logged ✓ and refreshes the closet', async () => {
     mockedFetch.mockReturnValue(ok(list()));
     let resolveWear: (value: { ok: true }) => void = () => undefined;

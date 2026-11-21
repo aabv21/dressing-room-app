@@ -63,6 +63,7 @@ import { renderRouter } from 'expo-router/testing-library';
 import { signOut } from '../auth/authService';
 import { translate } from '../i18n';
 import { kvGet, kvRemove, kvSet } from '../lib/kv';
+import { SAVED_NOTE_MS } from '../app/(tabs)/profile';
 import { saveProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
 import { currentAuth, resetAuth, setAuth } from '../test/authMock';
@@ -404,4 +405,37 @@ test('household mode is listed as coming soon, with what it will do, and is not 
   expect(screen.getByText("A parent manages the kids' closets from one account.")).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Household/ })).toBeNull();
   expect(screen.getByLabelText("Household mode, coming soon. A parent manages the kids' closets from one account.")).toBeTruthy();
+});
+
+test('"Saved" goes away after a moment, leaving no button for an unchanged form', async () => {
+  await openProfile();
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Urban' }));
+  jest.useFakeTimers();
+  try {
+    await fireEvent.press(saveButton());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('button', { name: 'Saved' })).toBeDisabled();
+
+    await act(async () => {
+      jest.advanceTimersByTime(SAVED_NOTE_MS);
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('button', { name: SAVE_NAME })).toBeNull();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('editing after a failed save clears its error', async () => {
+  mockedSaveProfile.mockResolvedValueOnce({ ok: false, error: 'profile.error.network' });
+  await openProfile();
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Urban' }));
+  await fireEvent.press(saveButton());
+  await screen.findByRole('alert');
+
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Elegant' }));
+
+  expect(screen.queryByRole('alert')).toBeNull();
 });

@@ -1,5 +1,5 @@
 import { Check, Download, LogOut, Trash2, Users } from 'lucide-react-native';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { usePrivacyActions } from '../../account/usePrivacyActions';
@@ -20,6 +20,9 @@ import { ActionNotice } from '../../ui/ActionNotice';
 import { Screen } from '../../ui/Screen';
 import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 import { LanguageToggle } from '../../ui/LanguageToggle';
+
+/** How long "Saved" stays on the button after a save. */
+export const SAVED_NOTE_MS = 2000;
 
 function SectionHeading({ children }: { children: string }): React.JSX.Element {
   return (
@@ -221,9 +224,20 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         Object.entries(validation.errors).filter(([field]) => showAllErrors || touched.has(field as BodyField)),
       );
 
+  useEffect(() => {
+    if (!justSaved) return undefined;
+    const timer = setTimeout(() => {
+      setJustSaved(false);
+    }, SAVED_NOTE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [justSaved]);
+
   function edit(patch: Partial<ProfileDraft>): void {
     setDraft((previous) => ({ ...previous, ...patch }));
     setJustSaved(false);
+    setSaveError(undefined);
   }
 
   async function handleSave(): Promise<void> {

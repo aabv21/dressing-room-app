@@ -97,3 +97,10 @@ test('the body-type warning suggests, kindly, instead of judging', () => {
   expect(en['rating.reason.body_flattery.warn']).toBe('Another cut may suit you better (from your profile)');
   expect(es['rating.reason.body_flattery.warn']).toBe('Otro corte podría quedarte mejor (según tu perfil)');
 });
+
+test('the queued note and the button name a logged wear with the same word', () => {
+  expect(en['outfit.queued'].startsWith('Logged')).toBe(true);
+  expect(en['outfit.logged'].startsWith('Logged')).toBe(true);
+  expect(es['outfit.queued'].startsWith('Anotado')).toBe(true);
+  expect(es['outfit.logged'].startsWith('Anotado')).toBe(true);
+});

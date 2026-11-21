@@ -312,7 +312,8 @@ function RateOutfit({
   }, []);
 
   // Shared with Today, so an outfit logged on either screen (or before a restart) stays logged here.
-  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued, canUndo, undo } = useWearLog(localDate());
+  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued, canUndo, undo, undoFailedFor } =
+    useWearLog(localDate());
   const logged = isLogged(ids);
   // Save, one at a time and never during a wear. The ref locks a second tap before the re-render lands.
   const saving = useRef(false);
@@ -375,11 +376,13 @@ function RateOutfit({
   if (actionError !== null) {
     notice = <ActionNotice tone="error">{t(`outfit.error.${actionError}`)}</ActionNotice>;
   } else if (canUndo(ids)) {
+    const undoFailed = undoFailedFor(ids);
     const queued = isQueued(ids);
-    noticeRows = queued ? 2 : 1;
+    noticeRows = undoFailed || queued ? 2 : 1;
     notice = (
       <View style={styles.notices}>
-        {queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
+        {undoFailed ? <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice> : null}
+        {!undoFailed && queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
         <UndoNotice
           label={t('outfit.undo')}
           hint={t('outfit.undo.hint')}
@@ -389,6 +392,8 @@ function RateOutfit({
         />
       </View>
     );
+  } else if (undoFailedFor(ids)) {
+    notice = <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice>;
   } else if (logged && isQueued(ids)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
@@ -416,13 +421,13 @@ function RateOutfit({
     if (retryable) {
       primary = { label: t('rate.retry'), tone: 'commit', icon: RotateCw, onPress: retry };
     } else if (error === 'over_quota') {
-      // Unwinds to the Build tab under this screen, or opens it when the rating came from Today.
+      // Back down to the tabs under this screen, on Build; `navigate` would stack another tab navigator.
       primary = {
         label: t('rate.buildOwn'),
         tone: 'commit',
         icon: Layers,
         onPress: () => {
-          router.navigate('/build');
+          router.dismissTo('/build');
         },
       };
     }

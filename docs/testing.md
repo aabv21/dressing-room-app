@@ -156,7 +156,8 @@ Accounts, onboarding and the profile:
   and errors, the body-type helper and height slider, a relaunch mid-onboarding, never overwriting
   a finished profile, and landing on the Closet after the last step.
 - `src/__tests__/profile.test.tsx` — the Profile tab: prefilled sections, Save shown only for a
-  change and sending only the changed fields, its error by the button, inline validation, the
+  change and sending only the changed fields, "Saved" fading after 2 seconds, its error by the
+  button until the next edit, inline validation, the
   language switch and its saves, household mode as a coming-soon row, another account signing in,
   and sign-out.
 - `src/__tests__/city.test.tsx` — Today's city sheet: a typed city, the current location (or a
@@ -199,7 +200,8 @@ Outfits, Stats and Diary:
   worn and refreshing the closet; a failure kept for its outfit and announced, with the retry
   reusing the wear id; the offline queue and its note; a late answer after unmount still
   marking the outfit worn; and the undo (a sent wear deleted, a queued one dequeued, offered for
-  5 seconds, a failure keeping the wear).
+  5 seconds or 15 with a screen reader, a failure keeping the wear and offering Undo again, and a
+  wear a flush is sending found on the retry).
 - `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
   and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at

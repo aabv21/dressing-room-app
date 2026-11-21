@@ -6,9 +6,9 @@ import { kvRemove } from '../../lib/kv';
 import type { RequestResult } from '../../lib/requestResult';
 import { deleteWear } from '../../stats/wearsRepository';
 import { logWear } from '../outfitRepository';
-import { queuedWears, wearQueueKey } from '../wearQueue';
+import { flushWearQueue, queuedWears, wearQueueKey } from '../wearQueue';
 import { isWornToday, wornTodayKey } from '../wornToday';
-import { UNDO_WINDOW_MS, useWearLog } from '../useWearLog';
+import { SCREEN_READER_UNDO_WINDOW_MS, UNDO_WINDOW_MS, useWearLog } from '../useWearLog';
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
 jest.mock('../outfitRepository', () => ({ logWear: jest.fn() }));
@@ -25,13 +25,16 @@ const remove = jest.mocked(deleteWear);
 const uuid = jest.mocked(randomUUID);
 
 let announce: jest.SpyInstance;
+let screenReader: jest.SpyInstance;
 beforeEach(() => {
   jest.clearAllMocks();
+  remove.mockReset();
   let n = 0;
   uuid.mockImplementation(() => `wear-${String(++n)}`);
   kvRemove(wearQueueKey(USER));
   kvRemove(wornTodayKey(USER));
   announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+  screenReader = jest.spyOn(AccessibilityInfo, 'isScreenReaderEnabled').mockResolvedValue(false);
 });
 
 afterEach(() => {
@@ -56,6 +59,8 @@ test('logs the wear once, marks the outfit logged and refreshes the closet', asy
   expect(result.current.isLogged(OUTFIT)).toBe(true);
   expect(result.current.busy).toBe(false);
   expect(mockRefresh).toHaveBeenCalledTimes(1);
+  // A screen reader user hears that Undo is there, or would miss it.
+  expect(announce).toHaveBeenCalledWith('Logged. Undo available.');
 });
 
 test('a second tap while one wear is sending is ignored', async () => {
@@ -198,7 +203,7 @@ describe('undo', () => {
     expect(isWornToday(USER, DAY, OUTFIT)).toBe(false);
     expect(result.current.canUndo(OUTFIT)).toBe(false);
     expect(mockRefresh).toHaveBeenCalledTimes(2);
-    expect(announce).toHaveBeenLastCalledWith('Removed from your diary.');
+    expect(announce).toHaveBeenLastCalledWith('Removed from your Diary.');
   });
 
   test('undoes a queued wear by taking it out of the queue, with no request', async () => {
@@ -243,12 +248,17 @@ describe('undo', () => {
     expect(UNDO_WINDOW_MS).toBe(5000);
   });
 
-  test('a failed undo keeps the wear logged and shows the error for that outfit', async () => {
+  test('a failed undo keeps the wear, says so, and offers Undo again for a new window', async () => {
+    jest.useFakeTimers();
     send.mockResolvedValue({ ok: true });
-    remove.mockResolvedValue({ ok: false, error: 'network' });
+    remove.mockResolvedValueOnce({ ok: false, error: 'network' }).mockResolvedValueOnce({ ok: true });
     const { result } = await setup();
     await act(async () => {
       await result.current.log(OUTFIT, null);
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(UNDO_WINDOW_MS - 1000);
+      await Promise.resolve();
     });
 
     await act(async () => {
@@ -256,7 +266,78 @@ describe('undo', () => {
     });
 
     expect(result.current.isLogged(OUTFIT)).toBe(true);
-    expect(result.current.errorFor(OUTFIT)).toBe('network');
+    expect(result.current.undoFailedFor(OUTFIT)).toBe(true);
+    expect(result.current.errorFor(OUTFIT)).toBeNull();
+    expect(announce).toHaveBeenLastCalledWith("Couldn't undo. You can delete it from your Diary.");
+    // The window starts over, so the retry isn't cut short.
+    await act(async () => {
+      jest.advanceTimersByTime(UNDO_WINDOW_MS - 1);
+      await Promise.resolve();
+    });
+    expect(result.current.canUndo(OUTFIT)).toBe(true);
+    await act(async () => {
+      expect(await result.current.undo(OUTFIT)).toBe('undone');
+    });
+    expect(result.current.undoFailedFor(OUTFIT)).toBe(false);
+  });
+
+  test('a queued wear a flush is sending right now: the delete finds no row yet, so Undo stays for a retry', async () => {
+    send.mockResolvedValueOnce({ ok: false, error: 'network' });
+    const { result } = await setup();
+    await act(async () => {
+      await result.current.log(OUTFIT, null);
+    });
+    // The flush takes the wear: dequeueWear now refuses it, and the server doesn't have it yet.
+    let landed: (outcome: RequestResult) => void = () => undefined;
+    const flush = flushWearQueue(USER, {
+      send: () =>
+        new Promise((resolve) => {
+          landed = resolve;
+        }),
+      sessionUserId: () => USER,
+    });
+    remove.mockResolvedValueOnce({ ok: false, error: 'unknown' });
+
+    await act(async () => {
+      expect(await result.current.undo(OUTFIT)).toBe('failed');
+    });
+    expect(remove).toHaveBeenCalledWith('wear-1');
+    expect(result.current.canUndo(OUTFIT)).toBe(true);
+    expect(result.current.isLogged(OUTFIT)).toBe(true);
+
+    await act(async () => {
+      landed({ ok: true });
+      await flush;
+    });
+    remove.mockResolvedValueOnce({ ok: true });
+    await act(async () => {
+      expect(await result.current.undo(OUTFIT)).toBe('undone');
+    });
+    expect(result.current.isLogged(OUTFIT)).toBe(false);
+  });
+
+  test('with a screen reader on, Undo stays for 15 seconds', async () => {
+    jest.useFakeTimers();
+    screenReader.mockResolvedValue(true);
+    send.mockResolvedValue({ ok: true });
+    const { result } = await setup();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await result.current.log(OUTFIT, null);
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(UNDO_WINDOW_MS);
+      await Promise.resolve();
+    });
+    expect(result.current.canUndo(OUTFIT)).toBe(true);
+    await act(async () => {
+      jest.advanceTimersByTime(SCREEN_READER_UNDO_WINDOW_MS - UNDO_WINDOW_MS);
+      await Promise.resolve();
+    });
     expect(result.current.canUndo(OUTFIT)).toBe(false);
+    expect(SCREEN_READER_UNDO_WINDOW_MS).toBe(15000);
   });
 });

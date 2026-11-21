@@ -197,11 +197,13 @@ export default function TodayScreen(): React.JSX.Element {
     notice = <ActionNotice tone="error">{t(`outfit.error.${wearError}`)}</ActionNotice>;
   } else if (outfit !== undefined && wearLog.canUndo(outfit.garmentIds)) {
     const { garmentIds } = outfit;
+    const undoFailed = wearLog.undoFailedFor(garmentIds);
     const queued = wearLog.isQueued(garmentIds);
-    noticeRows = queued ? 2 : 1;
+    noticeRows = undoFailed || queued ? 2 : 1;
     notice = (
       <View style={styles.notices}>
-        {queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
+        {undoFailed ? <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice> : null}
+        {!undoFailed && queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
         <UndoNotice
           label={t('outfit.undo')}
           hint={t('outfit.undo.hint')}
@@ -211,6 +213,8 @@ export default function TodayScreen(): React.JSX.Element {
         />
       </View>
     );
+  } else if (outfit !== undefined && wearLog.undoFailedFor(outfit.garmentIds)) {
+    notice = <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice>;
   } else if (outfit !== undefined && wearLog.isQueued(outfit.garmentIds)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }

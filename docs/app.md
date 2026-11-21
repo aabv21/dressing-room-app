@@ -132,8 +132,8 @@ known), `OnboardingProvider` (re-reads the profile itself before any onboarding 
 failed launch read can't overwrite a finished profile with defaults), and the shared form: `profileDraft.ts` (the
 state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx` (`ClothingSection`,
 `BodySection`, `StyleSection`), used by onboarding and the Profile tab. The tab shows "Save changes"
-only while there's a change (or a save, its error or "Saved" to show), with a failed save in the
-button's notice slot, and lists household mode as "Coming soon", a row with no action.
+only while there's a change (or a save, its error, or "Saved" for 2 seconds), with a failed save in
+the button's notice slot until the next edit, and lists household mode as "Coming soon", a row with no action.
 
 ## Supabase client and storage (`src/lib/`)
 
@@ -180,9 +180,11 @@ button's notice slot, and lists household mode as "Coming soon", a row with no a
   Diary. `WearQueueFlusher.tsx` flushes on mount, foreground and reconnect.
 - `useWearLog.ts`: "I'll wear it" for Today and the rating screen: one wear at a time, one wear id
   per outfit until it succeeds, logged or queued, marked worn, announced, and the failed or queued
-  note kept with the outfit it was for. For 5 seconds after, `undo` takes the wear back: out of the
-  queue if it's still there, else `deleteWear` (the trigger lowers the counts), then
-  `unmarkWornToday` and a closet refresh.
+  note kept with the outfit it was for. A logged wear is announced with "Undo available", and for 5
+  seconds after (15 with a screen reader on) `undo` takes it back: out of the queue if it's still
+  there, else `deleteWear` (the trigger lowers the counts), then `unmarkWornToday` and a closet
+  refresh. A failed undo, including one whose wear a flush is still sending (no row to delete yet),
+  says "Couldn't undo" and offers Undo again for a new window.
 - `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
   Today and the rating screen; Diary's Delete and the undo call `unmarkWornToday`.
 - `OutfitStack.tsx`, `ScoreRing.tsx` (the number and arc count up to the score, or show it at once

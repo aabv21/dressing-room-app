@@ -26,7 +26,7 @@ const BOOTS = '00000000-0000-4000-8000-000000000004';
 
 const mockParams: { ids?: string; occasion?: string } = {};
 jest.mock('expo-router', () => ({
-  router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), navigate: jest.fn(), canGoBack: jest.fn(() => true) },
+  router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), dismissTo: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
 }));
 
@@ -110,7 +110,7 @@ beforeEach(() => {
   jest.mocked(router.back).mockClear();
   jest.mocked(router.replace).mockClear();
   jest.mocked(router.push).mockClear();
-  jest.mocked(router.navigate).mockClear();
+  jest.mocked(router.dismissTo).mockClear();
   mockRefresh.mockClear();
   kvRemove('outfit.worn.user-1');
   kvRemove(wearQueueKey('user-1'));
@@ -527,7 +527,8 @@ test('a 429 says when the quota renews and offers Build instead of a retry', asy
   expect(await screen.findByText("You've used today's AI ratings. Try again tomorrow.")).toBeOnTheScreen();
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
   await fireEvent.press(screen.getByRole('button', { name: 'Build your own' }));
-  expect(router.navigate).toHaveBeenCalledWith('/build');
+  // Back down to the tabs, on Build, instead of stacking a second tab navigator over the rating.
+  expect(router.dismissTo).toHaveBeenCalledWith('/build');
 });
 
 test('a long rating says so in stages', async () => {
@@ -734,4 +735,19 @@ test('Undo shows after the wear and brings "I\'ll wear it" back, with the swap',
 
   expect(await screen.findByRole('button', { name: "I'll wear it" })).toBeEnabled();
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('a failed undo says so and keeps Undo for a retry', async () => {
+  const { deleteWear } = jest.requireMock<{ deleteWear: jest.Mock }>('../stats/wearsRepository');
+  deleteWear.mockResolvedValueOnce({ ok: false, error: 'network' });
+  mockedRate.mockReturnValue(ok(result()));
+  mockedLogWear.mockResolvedValue({ ok: true });
+  await render(<RateScreen />);
+
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Undo' }));
+
+  expect(await screen.findByText("Couldn't undo. You can delete it from your Diary.")).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Logged ✓' })).toBeDisabled();
 });

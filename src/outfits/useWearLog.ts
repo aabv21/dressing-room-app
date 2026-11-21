@@ -2,6 +2,7 @@
 // with an undo for a few seconds after.
 import { randomUUID } from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
 import type { Occasion } from '../closet/catalog';
@@ -14,8 +15,26 @@ import { logWear } from './outfitRepository';
 import { dequeueWear, logWearOrQueue, queuedWears } from './wearQueue';
 import { outfitIdentity, unmarkWornToday, useWornToday } from './wornToday';
 
-/** How long "Undo" stays offered after a wear. */
+/** How long "Undo" stays offered after a wear; longer with a screen reader, which takes time to reach it. */
 export const UNDO_WINDOW_MS = 5000;
+export const SCREEN_READER_UNDO_WINDOW_MS = 15000;
+
+/** Whether a screen reader is on, kept current while mounted; false until the first answer. */
+function useScreenReader(): boolean {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void AccessibilityInfo.isScreenReaderEnabled().then((value) => {
+      if (current) setEnabled(value);
+    });
+    const subscription = AccessibilityInfo.addEventListener('screenReaderChanged', setEnabled);
+    return () => {
+      current = false;
+      subscription.remove();
+    };
+  }, []);
+  return enabled;
+}
 
 /** `ignored`: a wear was already sending, so this tap did nothing. */
 export type WearLogStatus = 'logged' | 'queued' | 'failed' | 'ignored';
@@ -34,6 +53,8 @@ export type WearLog = {
   /** Whether "Undo" is offered: for `UNDO_WINDOW_MS` after this outfit's wear was logged or queued. */
   canUndo: (garmentIds: readonly string[]) => boolean;
   undo: (garmentIds: readonly string[]) => Promise<UndoStatus>;
+  /** The last undo of this outfit failed; Undo is offered again while its window lasts. */
+  undoFailedFor: (garmentIds: readonly string[]) => boolean;
 };
 
 /** Logs wears on `day`. Each outfit keeps one wear id until it succeeds, so a lost answer can't log it twice. */
@@ -50,6 +71,9 @@ export function useWearLog(day: string): WearLog {
   const [error, setError] = useState<{ key: string; error: RequestError } | null>(null);
   const [queued, setQueued] = useState<{ key: string; wearId: string } | null>(null);
   const [undoable, setUndoable] = useState<{ key: string; wearId: string } | null>(null);
+  const [undoFailed, setUndoFailed] = useState<string | null>(null);
+  const screenReader = useScreenReader();
+  const undoWindow = screenReader ? SCREEN_READER_UNDO_WINDOW_MS : UNDO_WINDOW_MS;
   const wearIds = useRef(new Map<string, string>());
   const mounted = useRef(true);
   useEffect(() => {
@@ -62,11 +86,11 @@ export function useWearLog(day: string): WearLog {
     if (undoable === null) return undefined;
     const timer = setTimeout(() => {
       setUndoable(null);
-    }, UNDO_WINDOW_MS);
+    }, undoWindow);
     return () => {
       clearTimeout(timer);
     };
-  }, [undoable]);
+  }, [undoable, undoWindow]);
 
   const log = useCallback(
     async (garmentIds: readonly string[], occasion: Occasion | null, score: number | null = null): Promise<WearLogStatus> => {
@@ -74,6 +98,7 @@ export function useWearLog(day: string): WearLog {
       sending.current = true;
       setBusy(true);
       setError(null);
+      setUndoFailed(null);
       const key = keyOf(garmentIds);
       let wearId = wearIds.current.get(key);
       if (wearId === undefined) {
@@ -99,6 +124,8 @@ export function useWearLog(day: string): WearLog {
       } else if (outcome.status === 'queued') {
         setQueued({ key, wearId });
         announceForAccessibility(t('outfit.queued'));
+      } else {
+        announceForAccessibility(t('outfit.logged.undoAvailable'));
       }
       return outcome.status;
     },
@@ -111,6 +138,7 @@ export function useWearLog(day: string): WearLog {
   );
   const clearError = useCallback(() => {
     setError(null);
+    setUndoFailed(null);
   }, []);
   // Read on every call: the flusher's closet refresh re-renders the screen once the wear is sent.
   const isQueued = useCallback(
@@ -131,12 +159,15 @@ export function useWearLog(day: string): WearLog {
     async (garmentIds: readonly string[]): Promise<UndoStatus> => {
       const key = keyOf(garmentIds);
       if (sending.current || userId === null || undoable === null || undoable.key !== key) return 'ignored';
+      const target = undoable;
       sending.current = true;
       setBusy(true);
       setError(null);
+      setUndoFailed(null);
       setUndoable(null);
-      // A queued wear never reached the server; one a flush is sending right now is deleted there (Diary's rule).
-      const result = dequeueWear(userId, undoable.wearId) ? { ok: true as const } : await deleteWear(undoable.wearId);
+      // A queued wear never reached the server. Otherwise it's deleted there; one a flush is still sending
+      // isn't there yet, so the delete finds no row and fails, and Undo comes back for a retry.
+      const result = dequeueWear(userId, target.wearId) ? { ok: true as const } : await deleteWear(target.wearId);
       sending.current = false;
       if (result.ok) {
         unmarkWornToday(userId, garmentIds);
@@ -145,8 +176,10 @@ export function useWearLog(day: string): WearLog {
       if (!mounted.current) return result.ok ? 'undone' : 'failed';
       setBusy(false);
       if (!result.ok) {
-        setError({ key, error: result.error });
-        announceForAccessibility(t(`outfit.error.${result.error}`));
+        // A fresh object restarts the window, so the retry isn't cut short.
+        setUndoable({ ...target });
+        setUndoFailed(key);
+        announceForAccessibility(t('outfit.undoFailed'));
         return 'failed';
       }
       setQueued(null);
@@ -156,5 +189,7 @@ export function useWearLog(day: string): WearLog {
     [keyOf, refresh, t, undoable, userId],
   );
 
-  return { log, busy, isLogged: isWorn, errorFor, clearError, isQueued, canUndo, undo };
+  const undoFailedFor = useCallback((garmentIds: readonly string[]) => undoFailed === keyOf(garmentIds), [undoFailed, keyOf]);
+
+  return { log, busy, isLogged: isWorn, errorFor, clearError, isQueued, canUndo, undo, undoFailedFor };
 }
