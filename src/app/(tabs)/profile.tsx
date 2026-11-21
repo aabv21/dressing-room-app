@@ -1,5 +1,5 @@
 import { Check, Download, LogOut, Trash2 } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { usePrivacyActions } from '../../account/usePrivacyActions';
@@ -12,7 +12,7 @@ import { useLocalePreference } from '../../i18n/I18nProvider';
 import { changedFields, draftFromProfile, draftToPatch } from '../../profile/profileDraft';
 import type { BodyErrors, ProfileDraft } from '../../profile/profileDraft';
 import { BodySection, ClothingSection, StyleSection } from '../../profile/ProfileForm';
-import { getProfile, saveProfile } from '../../profile/profileRepository';
+import { saveProfile } from '../../profile/profileRepository';
 import type { ProfilePatch, Result } from '../../profile/profileRepository';
 import type { BodyField } from '../../profile/validation';
 import { announceForAccessibility } from '../../ui/a11y';
@@ -185,6 +185,7 @@ function LanguageSection({ onSave }: { onSave: (language: 'en' | 'es' | null) =>
 
 function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePatch }): React.JSX.Element {
   const { t } = useI18n();
+  const { replaceProfileLocal } = useAuth();
   const [saved, setSaved] = useState<ProfilePatch>(initial);
   const [draft, setDraft] = useState<ProfileDraft>(() => draftFromProfile(initial));
   const [saving, setSaving] = useState(false);
@@ -239,6 +240,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
     }
     const next = { ...saved, ...changes };
     setSaved(next);
+    replaceProfileLocal(changes);
     // Show the saved (normalized) values, e.g. a trimmed size, unless the user kept editing.
     setDraft((current) => (current === draftAtSave ? draftFromProfile(next) : current));
     setTouched(new Set());
@@ -265,6 +267,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
     }
     clearLanguageSavePending(userId);
     setSaved((previous) => ({ ...previous, language }));
+    replaceProfileLocal({ language });
     return undefined;
   }
 
@@ -309,44 +312,12 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
   );
 }
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'error'; userId: string }
-  | { status: 'ready'; userId: string; profile: ProfilePatch };
-
 export default function ProfileScreen() {
   const { t } = useI18n();
-  const { userId } = useAuth();
-  const [stored, setLoad] = useState<LoadState>({ status: 'loading' });
-  // A result only counts for the account it was read for: another sign-in shows loading, never the
-  // previous account's form.
-  const load: LoadState = stored.status !== 'loading' && stored.userId === userId ? stored : { status: 'loading' };
-  const [attempt, setAttempt] = useState(0);
+  const { userId, profile, profileStatus, refreshProfile } = useAuth();
 
-  useEffect(() => {
-    if (userId === null) {
-      return undefined;
-    }
-    let current = true;
-    getProfile(userId).then(
-      (profile) => {
-        if (current) {
-          setLoad({ status: 'ready', userId, profile: profile ?? {} });
-        }
-      },
-      () => {
-        if (current) {
-          setLoad({ status: 'error', userId });
-        }
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [userId, attempt]);
-
-  if (load.status === 'ready' && userId !== null) {
-    return <ProfileEditor key={userId} userId={userId} initial={load.profile} />;
+  if (profileStatus === 'ready' && profile !== null && userId !== null) {
+    return <ProfileEditor key={userId} userId={userId} initial={profile} />;
   }
 
   // Without the saved profile the form would show defaults (and saving them would overwrite real
@@ -354,22 +325,21 @@ export default function ProfileScreen() {
   return (
     <Screen
       title={t('screen.profile')}
-      {...(load.status === 'error'
+      {...(profileStatus === 'error'
         ? {
             cta: {
               primary: {
                 label: t('onboarding.retry'),
                 tone: 'commit' as const,
                 onPress: () => {
-                  setLoad({ status: 'loading' });
-                  setAttempt((previous) => previous + 1);
+                  void refreshProfile();
                 },
               },
             },
           }
         : {})}
     >
-      {load.status === 'error' ? (
+      {profileStatus === 'error' ? (
         <Text style={styles.message} accessibilityLiveRegion="polite">
           {t('onboarding.loadError')}
         </Text>

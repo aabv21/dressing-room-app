@@ -9,10 +9,8 @@ jest.mock('../outfits/WearQueueFlusher', () => ({ WearQueueFlusher: () => null }
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
 jest.mock('../closet/UploadQueueProvider', () => require('../test/closetProvidersMock'));
 
-jest.mock('../auth/AuthProvider', () => ({
-  AuthProvider: ({ children }: { children?: React.ReactNode }) => children,
-  useAuth: jest.fn(),
-}));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../auth/AuthProvider', () => require('../test/authMock'));
 
 jest.mock('../profile/profileRepository', () => ({
   getProfile: jest.fn(),
@@ -62,15 +60,13 @@ import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { AccessibilityInfo } from 'react-native';
 import { renderRouter } from 'expo-router/testing-library';
 
-import { useAuth } from '../auth/AuthProvider';
 import { signOut } from '../auth/authService';
 import { translate } from '../i18n';
 import { kvGet, kvRemove, kvSet } from '../lib/kv';
-import { getProfile, saveProfile } from '../profile/profileRepository';
+import { saveProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
+import { currentAuth, resetAuth, setAuth } from '../test/authMock';
 
-const mockedUseAuth = jest.mocked(useAuth);
-const mockedGetProfile = jest.mocked(getProfile);
 const mockedSaveProfile = jest.mocked(saveProfile);
 
 const USER_ID = 'user-1';
@@ -104,7 +100,7 @@ function profileRow(overrides: Partial<Profile> = {}): Profile {
 }
 
 async function openProfile(profile: Profile | null = profileRow()) {
-  mockedGetProfile.mockResolvedValue(profile);
+  setAuth({ profile: profile ?? {} });
   const router = await renderRouter({ appDir: 'src/app', overrides: {} }, { initialUrl: '/profile' });
   await screen.findByTestId('profile-form');
   return router;
@@ -118,13 +114,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   kvRemove(LOCALE_PREFERENCE_KEY);
   kvRemove(LANGUAGE_PENDING_KEY);
-  mockedUseAuth.mockReturnValue({
-    status: 'signedIn',
-    userId: USER_ID,
-    email: 'ana@example.com',
-    onboardingComplete: true,
-    refreshProfile: jest.fn(() => Promise.resolve(true)),
-  });
+  resetAuth({ userId: USER_ID, email: 'ana@example.com' });
   mockedSaveProfile.mockResolvedValue({ ok: true });
 });
 
@@ -161,6 +151,16 @@ test('edits enable Save, and Save sends only the changed fields', async () => {
   expect(await screen.findByRole('button', { name: 'Saved' })).toBeDisabled();
   // The saved values become the new baseline: the trimmed size shows, and nothing is dirty.
   expect(screen.getByTestId('body-top-size').props.value).toBe('L');
+});
+
+test('a saved edit reaches the shared profile, so other screens show it without another read', async () => {
+  await openProfile();
+
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Urban' }));
+  await fireEvent.press(saveButton());
+
+  expect(await screen.findByRole('button', { name: 'Saved' })).toBeDisabled();
+  expect(jest.mocked(currentAuth().replaceProfileLocal)).toHaveBeenCalledWith({ styles: ['casual', 'urban'] });
 });
 
 test('a height never saved shows as not set (not the slider default) until the slider moves', async () => {
@@ -345,21 +345,15 @@ test('another account signing in reloads the form instead of showing the previou
   await openProfile(profileRow({ height_cm: 168 }));
   expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.68 m');
 
-  mockedGetProfile.mockResolvedValue(profileRow({ user_id: 'user-2', height_cm: 190 }));
-  mockedUseAuth.mockReturnValue({
-    status: 'signedIn',
-    userId: 'user-2',
-    email: 'ben@example.com',
-    onboardingComplete: true,
-    refreshProfile: jest.fn(() => Promise.resolve(true)),
+  await act(async () => {
+    setAuth({ userId: 'user-2', email: 'ben@example.com', profile: profileRow({ user_id: 'user-2', height_cm: 190 }) });
+    await Promise.resolve();
   });
-  // Any context change re-renders the screen; a language switch is one available without touch.
   await fireEvent.press(screen.getByRole('tab', { name: 'Español' }));
 
   await waitFor(() => {
     expect(screen.getByTestId('body-height-value')).toHaveTextContent('1,90 m');
   });
-  expect(mockedGetProfile).toHaveBeenLastCalledWith('user-2');
   expect(screen.getByText('ben@example.com')).toBeTruthy();
 });
 
@@ -381,14 +375,17 @@ test('a failed sign-out is shown', async () => {
 });
 
 test('a failed profile read shows a retry (and sign-out) instead of an empty form', async () => {
-  mockedGetProfile.mockRejectedValueOnce(new TypeError('Network request failed'));
+  const refreshProfile = jest.fn(() => {
+    setAuth({ profile: profileRow({ height_cm: 190 }), profileStatus: 'ready' });
+    return Promise.resolve(true);
+  });
+  setAuth({ profile: null, profileStatus: 'error', refreshProfile });
   await renderRouter({ appDir: 'src/app', overrides: {} }, { initialUrl: '/profile' });
 
   expect(await screen.findByText(translate('en', 'onboarding.loadError'))).toBeTruthy();
   expect(screen.queryByTestId('profile-form')).toBeNull();
   expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy();
 
-  mockedGetProfile.mockResolvedValueOnce(profileRow({ height_cm: 190 }));
   await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
 
   expect(await screen.findByTestId('profile-form')).toBeTruthy();

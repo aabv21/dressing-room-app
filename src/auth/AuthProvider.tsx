@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { forgetInterruptedDeletions } from '../account/deletionMarker';
@@ -7,7 +7,7 @@ import type { LocalePreference } from '../i18n/I18nProvider';
 import { allowUserKeys } from '../lib/kv';
 import { readStoredSession, startAuthAutoRefresh, supabase } from '../lib/supabase';
 import { getProfile, saveProfile } from '../profile/profileRepository';
-import type { Profile } from '../profile/profileRepository';
+import type { Profile, ProfilePatch } from '../profile/profileRepository';
 import {
   cacheOnboarding,
   cachedOnboarding,
@@ -19,15 +19,22 @@ import {
 } from './deviceState';
 
 export type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
+/** `ready` once a read succeeded for this account; `error` when none has yet. */
+export type ProfileStatus = 'loading' | 'ready' | 'error';
 
-interface AuthContextValue {
+export interface AuthContextValue {
   status: AuthStatus;
   userId: string | null;
   /** The signed-in account's email (null when signed out, or for a provider that shares none). */
   email: string | null;
   onboardingComplete: boolean;
-  /** Re-reads the profile; resolves false when that read failed (the last known flag is kept). */
+  /** The signed-in account's profile as last read (no row reads as `{}`); null until one succeeds. */
+  profile: ProfilePatch | null;
+  profileStatus: ProfileStatus;
+  /** Re-reads the profile; resolves false when that read failed (the last known values are kept). */
   refreshProfile: () => Promise<boolean>;
+  /** Merges a patch a screen just saved, so every screen shows it without another read. */
+  replaceProfileLocal: (patch: ProfilePatch) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -86,6 +93,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const [profile, setProfile] = useState<ProfilePatch | null>(null);
+  const [profileStatus, setProfileStatus] = useState<ProfileStatus>('loading');
   // Guards against a slow `getProfile` resolving after the user has signed out or switched
   // accounts, which would otherwise overwrite state with a stale profile.
   const currentUserIdRef = useRef<string | null>(null);
@@ -104,30 +113,34 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const profileLoadedForRef = useRef<string | null>(null);
 
   async function loadProfile(nextUserId: string): Promise<boolean> {
-    let profile: Profile | null | undefined;
+    let row: Profile | null | undefined;
     try {
-      profile = await getProfile(nextUserId);
+      row = await getProfile(nextUserId);
     } catch {
-      profile = undefined;
+      row = undefined;
     }
     // The signup trigger creates every account's row, so finding none while the session is still
     // unconfirmed means the request went out without a valid token (RLS hid the row), not that
     // onboarding is incomplete: it counts as a failed read.
-    const loaded = profile !== undefined && !(profile === null && unconfirmedSessionRef.current);
+    const loaded = row !== undefined && !(row === null && unconfirmedSessionRef.current);
     if (currentUserIdRef.current !== nextUserId) {
       return false;
     }
     let onboarding: boolean;
     if (loaded) {
       profileLoadedForRef.current = nextUserId;
-      onboarding = profile?.onboarding_completed_at !== null && profile?.onboarding_completed_at !== undefined;
+      onboarding = row?.onboarding_completed_at !== null && row?.onboarding_completed_at !== undefined;
       cacheOnboarding(nextUserId, onboarding);
-      syncLanguage(nextUserId, profile?.language ?? null, localeRef.current, languageSyncedForRef);
+      syncLanguage(nextUserId, row?.language ?? null, localeRef.current, languageSyncedForRef);
+      setProfile(row ?? {});
+      setProfileStatus('ready');
     } else {
       // A failed read (e.g. offline) must not leave the app stuck on a loading screen, nor send a
       // finished user back into onboarding: fall back to this account's last known status on this
       // device, or false for an account never loaded here.
       onboarding = cachedOnboarding(nextUserId) ?? false;
+      // A failed re-read keeps the profile already shown.
+      setProfileStatus((previous) => (previous === 'ready' ? previous : 'error'));
     }
     setOnboardingComplete(onboarding);
     setStatus('signedIn');
@@ -166,6 +179,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         setUserId(null);
         setEmail(null);
         setOnboardingComplete(false);
+        setProfile(null);
+        setProfileStatus('loading');
         setStatus('signedOut');
         return;
       }
@@ -195,6 +210,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         // Clear any previous user's onboarding flag immediately, so a slow `loadProfile` for the
         // new user can't leave the old user's value on screen in the meantime.
         setOnboardingComplete(false);
+        setProfile(null);
+        setProfileStatus('loading');
         setStatus('loading');
       }
       // A token refresh changes nothing in the profile; it still loads one that never loaded (an
@@ -217,14 +234,19 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       if (activeUserId === null) {
         return false;
       }
+      setProfileStatus((previous) => (previous === 'error' ? 'loading' : previous));
       return loadProfile(activeUserId);
     },
     [],
   );
 
+  const replaceProfileLocal = useCallback((patch: ProfilePatch) => {
+    setProfile((previous) => (previous === null ? previous : { ...previous, ...patch }));
+  }, []);
+
   const value = useMemo(
-    () => ({ status, userId, email, onboardingComplete, refreshProfile }),
-    [status, userId, email, onboardingComplete, refreshProfile],
+    () => ({ status, userId, email, onboardingComplete, profile, profileStatus, refreshProfile, replaceProfileLocal }),
+    [status, userId, email, onboardingComplete, profile, profileStatus, refreshProfile, replaceProfileLocal],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -137,6 +137,11 @@ Accounts, onboarding and the profile:
   before any call, the social buttons (no Apple on Android, cancel shows nothing, disabled while one
   runs), service errors, and the reset code's two steps (format, invalid code, resend, change
   email).
+- `src/auth/__tests__/AuthProvider.test.tsx` — the session, an offline launch, the language sync,
+  and the shared profile: read at sign-in (no row as `{}`), an error until a retry succeeds (loading
+  while it runs), a failed refresh keeping the last good profile, `replaceProfileLocal` merging a
+  saved patch, and another account or a sign-out dropping it. Screen suites stand it in with
+  `src/test/authMock.ts`, a store that re-renders on `setAuth`.
 - `src/auth/__tests__/authService.test.ts` — sign-up, sign-in, sign-out (offline falls back to a
   local sign-out), the password-reset request (no account and the email rate limit both answer
   ok) and its confirmation, against a fake client. `errors.test.ts` maps Auth and native errors to
@@ -157,7 +162,8 @@ Accounts, onboarding and the profile:
 - `src/profile/__tests__/` — `profileRepository.test.ts` (updates of only the patch, an update that
   reaches no row as an error, the server-stamped onboarding time, error mapping),
   `profileDraft.test.ts` (the form state, its patch and the changed fields), `validation.test.ts`
-  (the measurement ranges), `bodyType.test.ts` (the body-type table), `useCurrentCity.test.tsx`
+  (the measurement ranges), `bodyType.test.ts` (the body-type table), `useClothingType.test.tsx`
+  (every category until the shared profile is known), `useCurrentCity.test.tsx`
   (city-level precision only) and `ProfileForm.test.tsx` (the body-type grid and the height row at
   a large text size).
 

@@ -20,6 +20,9 @@ jest.mock('../auth/AuthProvider', () => ({
     onboardingComplete: false,
     email: null,
     refreshProfile: jest.fn(() => Promise.resolve(true)),
+    profile: null,
+    profileStatus: 'loading',
+    replaceProfileLocal: jest.fn(),
   })),
 }));
 
@@ -62,6 +65,9 @@ test('a loading transition after the first settle keeps (auth) mounted instead o
     onboardingComplete: false,
     email: null,
     refreshProfile: jest.fn(() => Promise.resolve(true)),
+    profile: null,
+    profileStatus: 'loading',
+    replaceProfileLocal: jest.fn(),
   });
   const view = await render(<RootLayout />);
 
@@ -76,6 +82,9 @@ test('a loading transition after the first settle keeps (auth) mounted instead o
     onboardingComplete: false,
     email: null,
     refreshProfile: jest.fn(() => Promise.resolve(true)),
+    profile: null,
+    profileStatus: 'loading',
+    replaceProfileLocal: jest.fn(),
   });
   await view.rerender(<RootLayout />);
 
@@ -90,6 +99,9 @@ test('the first-ever render (never settled) renders no screen name', async () =>
     onboardingComplete: false,
     email: null,
     refreshProfile: jest.fn(() => Promise.resolve(true)),
+    profile: null,
+    profileStatus: 'loading',
+    replaceProfileLocal: jest.fn(),
   });
   await render(<RootLayout />);
 

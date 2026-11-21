@@ -106,7 +106,16 @@ afterEach(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedUseAuth.mockReturnValue({ status: 'signedIn', userId: USER_ID, email: 'ana@example.com', onboardingComplete: false, refreshProfile });
+  mockedUseAuth.mockReturnValue({
+    status: 'signedIn',
+    userId: USER_ID,
+    email: 'ana@example.com',
+    onboardingComplete: false,
+    profile: null,
+    profileStatus: 'loading',
+    refreshProfile,
+    replaceProfileLocal: jest.fn(),
+  });
   mockedSaveProfile.mockResolvedValue({ ok: true });
   mockedCompleteOnboarding.mockResolvedValue({ ok: true });
 });

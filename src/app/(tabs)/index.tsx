@@ -1,9 +1,9 @@
 // Today (mockup 01 screen 1): the day's weather, an optional occasion, and the "feeling lucky"
 // outfit with "Another" and "I'll wear it". The weather line opens the city modal; the card's
 // "How does it look?" chip opens the rating.
-import { router, useIsFocused } from 'expo-router';
+import { router } from 'expo-router';
 import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../../auth/AuthProvider';
@@ -14,7 +14,6 @@ import { formatWeather, formatWeekday } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
 import { useWearLog } from '../../outfits/useWearLog';
-import { getProfile } from '../../profile/profileRepository';
 import { ActionNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
@@ -66,31 +65,14 @@ function WeatherLine({
 }
 
 /**
- * The profile's city name (null when there's none), read only while `needed` (the list came back
- * without weather) and again when the screen regains focus, e.g. after the city modal; `undefined`
- * until read. A failed read counts as no city, so the line still offers to set one.
+ * The profile's city name (null when there's none), `undefined` while the profile loads. A failed
+ * read counts as no city, so the line still offers to set one.
  */
-function useProfileCity(needed: boolean): string | null | undefined {
-  const { userId } = useAuth();
-  const focused = useIsFocused();
-  const [city, setCity] = useState<{ userId: string; name: string | null } | null>(null);
-  useEffect(() => {
-    if (!needed || !focused || userId === null) return undefined;
-    let current = true;
-    getProfile(userId).then(
-      (profile) => {
-        const name = profile?.city_name?.trim() ?? '';
-        if (current) setCity({ userId, name: name === '' ? null : name });
-      },
-      () => {
-        if (current) setCity({ userId, name: null });
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [needed, focused, userId]);
-  return city !== null && city.userId === userId ? city.name : undefined;
+function useProfileCity(): string | null | undefined {
+  const { profile, profileStatus } = useAuth();
+  if (profileStatus === 'loading') return undefined;
+  const name = profile?.city_name?.trim() ?? '';
+  return name === '' ? null : name;
 }
 
 function CardHeader({ onRate }: { onRate?: () => void }): React.JSX.Element {
@@ -168,7 +150,7 @@ export default function TodayScreen(): React.JSX.Element {
   const wearLog = useWearLog(lucky.day);
 
   const weatherResolved = lucky.state === 'ready' || lucky.state === 'too_small';
-  const cityWithoutWeather = useProfileCity(weatherResolved && lucky.weather === null);
+  const cityWithoutWeather = useProfileCity();
   // Noon of the list's day, so the weekday is the day's whatever the time zone.
   const dayDate = new Date(`${lucky.day}T12:00:00`);
   const weekday = formatWeekday(locale, dayDate);

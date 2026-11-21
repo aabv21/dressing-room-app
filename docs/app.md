@@ -93,8 +93,10 @@ garment hexes, each segment and legend entry tappable).
 - `authService.ts`: a barrel over `emailAuth.ts` and `socialAuth.ts`. Both default their `client`
   parameter to `src/lib/supabase.ts`'s singleton; the `integration` Jest project maps that import to
   a stub (`integration/lib-supabase.stub.ts`).
-- `AuthProvider` (`useAuth`): the session, the signed-in email, the device language reconciled with
-  `profile.language` once per sign-in, an offline launch kept signed in from the stored session,
+- `AuthProvider` (`useAuth`): the session, the signed-in email, the profile read once per sign-in
+  and shared by every screen (`profile`, `profileStatus`, `refreshProfile`, and
+  `replaceProfileLocal` for a patch a screen just saved; a failed re-read keeps the last good one),
+  the device language reconciled with `profile.language` once per sign-in, an offline launch kept signed in from the stored session,
   and, when a session ends or another user signs in, `forgetInterruptedDeletions` for any account
   whose deletion was under way (which also records its `queue.purge.<id>` request).
 - `deviceState.ts`: per-account facts for offline launches: the last known onboarding status and a
@@ -115,9 +117,9 @@ garment hexes, each segment and legend entry tappable).
 `profileRepository.ts` (`getProfile`; `saveProfile`, an update of only the changed columns, never an
 upsert; `completeOnboarding`, stamped by the server clock), `validation.ts` (the same ranges as the
 database CHECKs), `bodyType.ts`, `useCurrentCity` (expo-location, when-in-use only),
-`useClothingType` (the profile's clothing type for garment editors, `everything` until read),
-`OnboardingProvider` (re-reads the profile before any onboarding step renders, so a failed launch
-read can't overwrite a finished profile with defaults), and the shared form: `profileDraft.ts` (the
+`useClothingType` (the shared profile's clothing type for garment editors, `everything` until
+known), `OnboardingProvider` (re-reads the profile itself before any onboarding step renders, so a
+failed launch read can't overwrite a finished profile with defaults), and the shared form: `profileDraft.ts` (the
 state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx` (`ClothingSection`,
 `BodySection`, `StyleSection`), used by onboarding and the Profile tab.
 

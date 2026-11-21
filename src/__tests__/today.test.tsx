@@ -14,7 +14,7 @@ import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
 import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
-import { getProfile, type Profile } from '../profile/profileRepository';
+import { getProfile, type Profile, type ProfilePatch } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
 import { garment } from '../test/garmentFixture';
 
@@ -30,7 +30,11 @@ jest.mock('expo-router', () => ({
   useIsFocused: () => mockFocus.focused,
 }));
 
-const mockAuth = { userId: 'user-1' };
+const mockAuth: { userId: string; profile: ProfilePatch; profileStatus: 'ready' } = {
+  userId: 'user-1',
+  profile: { city_name: null },
+  profileStatus: 'ready',
+};
 jest.mock('../auth/AuthProvider', () => ({
   useAuth: () => mockAuth,
 }));
@@ -94,6 +98,7 @@ let appStateListeners: ((state: AppStateStatus) => void)[] = [];
 
 beforeEach(() => {
   mockAuth.userId = 'user-1';
+  mockAuth.profile = { city_name: null };
   mockFocus.focused = true;
   mockCloset.garments = CLOSET;
   mockCloset.status = 'ready';
@@ -547,7 +552,7 @@ describe('other states', () => {
 
   test('a city that gave no weather says so, and tapping it opens the city modal', async () => {
     mockedFetch.mockReturnValue(ok(list(undefined, null)));
-    mockedGetProfile.mockResolvedValue({ city_name: 'Atlantis' } as Profile);
+    mockAuth.profile = { city_name: 'Atlantis' };
     await render(<TodayScreen />);
 
     await fireEvent.press(await screen.findByRole('button', { name: 'Sunday · Weather unavailable for Atlantis' }));

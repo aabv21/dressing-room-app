@@ -35,7 +35,7 @@ const OnboardingContext = createContext<OnboardingContextValue | undefined>(unde
  * complete hands straight back to `AuthProvider` without rendering any step.
  */
 export function OnboardingProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const { userId, refreshProfile } = useAuth();
+  const { userId, refreshProfile, replaceProfileLocal } = useAuth();
   const [status, setStatus] = useState<OnboardingStatus>('loading');
   const [values, setValues] = useState<ProfilePatch>({});
   const [attempt, setAttempt] = useState(0);
@@ -92,6 +92,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }): React
         const result = await saveProfile(userId, patch);
         if (result.ok) {
           setValues((previous) => ({ ...previous, ...patch }));
+          replaceProfileLocal(patch);
         }
         return result;
       },
@@ -107,7 +108,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }): React
         return refreshed ? { ok: true } : { ok: false, error: 'onboarding.error.continue' };
       },
     }),
-    [status, values, userId, refreshProfile],
+    [status, values, userId, refreshProfile, replaceProfileLocal],
   );
 
   return <OnboardingContext.Provider value={value}>{children}</OnboardingContext.Provider>;
