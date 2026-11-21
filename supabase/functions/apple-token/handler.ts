@@ -15,7 +15,7 @@
 
 import { type AppleTokens, exchangeCode, revokeToken } from '../_shared/apple.ts';
 import type { AppleEnv, SupabaseEnv } from '../_shared/env.ts';
-import { isRecord } from '../_shared/extraction.ts';
+import { isRecord } from '../_shared/guards.ts';
 import { callerOf, readJson, reply } from '../_shared/http.ts';
 import { restJson, serviceHeaders, upsert } from '../_shared/userContext.ts';
 

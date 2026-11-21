@@ -10,9 +10,8 @@
 
 import { OCCASIONS, type Occasion, type Season, type Slot, slotOf } from '../_shared/catalog.ts';
 import type { FnEnv } from '../_shared/env.ts';
-import { isRecord } from '../_shared/extraction.ts';
 import { buildFallbackRequest, parseFallback } from '../_shared/fallbackRater.ts';
-import { UUID } from '../_shared/guards.ts';
+import { isRecord, UUID } from '../_shared/guards.ts';
 import { callerOf, readJson, reply } from '../_shared/http.ts';
 import {
   garmentFingerprint,

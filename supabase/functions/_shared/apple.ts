@@ -7,7 +7,7 @@
 // `fetch` only, so Jest drives it under Node and the Edge Functions run it under Deno.
 
 import type { AppleEnv } from './env.ts';
-import { isRecord } from './extraction.ts';
+import { isRecord } from './guards.ts';
 import { fetchWithDeadline } from './http.ts';
 
 /** The client secret's `aud`: always Apple, whichever host the calls go to. */

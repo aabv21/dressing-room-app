@@ -13,8 +13,7 @@ import { parseArgs } from 'node:util';
 import { isCompleteOutfit, seasonOf } from '../supabase/functions/_shared/outfitRules.ts';
 import { type GarmentCategory, SLOTS, slotOf } from '../supabase/functions/_shared/catalog.ts';
 import { readEnv } from '../supabase/functions/_shared/env.ts';
-import { isRecord } from '../supabase/functions/_shared/extraction.ts';
-import { UUID } from '../supabase/functions/_shared/guards.ts';
+import { isRecord, UUID } from '../supabase/functions/_shared/guards.ts';
 import {
   buildJevRequest,
   parseJevAnswers,

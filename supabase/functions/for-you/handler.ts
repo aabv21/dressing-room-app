@@ -23,7 +23,7 @@ import {
   type Season,
 } from '../_shared/catalog.ts';
 import type { ClaudeEnv, GeocodingEnv, JevEnv, SupabaseEnv } from '../_shared/env.ts';
-import { isRecord } from '../_shared/extraction.ts';
+import { isRecord } from '../_shared/guards.ts';
 import {
   buildFitRequest,
   buildLinesRequest,

@@ -1,5 +1,4 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 import { AuthError, AuthRetryableFetchError } from '@supabase/supabase-js';
 
@@ -31,12 +30,10 @@ import {
   requestPasswordReset,
   signInWithApple,
   signInWithEmail,
-  signInWithGoogle,
   signOut,
   signUpWithEmail,
 } from '../authService';
 import type { Client } from '../authService';
-import { resetGoogleConfiguredForTests } from '../socialAuth';
 import { supabase as mockedDefaultClient } from '../../lib/supabase';
 
 type FakeAuth = {
@@ -474,6 +471,11 @@ describe('signInWithApple', () => {
 });
 
 describe('signInWithGoogle', () => {
+  // `socialAuth` configures GoogleSignin once per process, so each test loads a fresh copy of it
+  // (and of the mocked library it configures).
+  let signInWithGoogle: typeof import('../socialAuth').signInWithGoogle;
+  let GoogleSignin: { signIn: jest.Mock; configure: jest.Mock };
+
   // Mutates `process.env` in place (not `process.env = {...}`) because Expo's babel preset
   // rewrites `process.env.EXPO_PUBLIC_*` reads in non-production builds to go through
   // `expo/virtual/env`'s `export const env = process.env` — a reference captured once. Reassigning
@@ -482,7 +484,12 @@ describe('signInWithGoogle', () => {
   beforeEach(() => {
     process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID = 'web-client-id';
     process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID = 'ios-client-id';
-    resetGoogleConfiguredForTests();
+    jest.isolateModules(() => {
+      /* eslint-disable @typescript-eslint/no-require-imports -- a fresh module registry per test, see above */
+      ({ signInWithGoogle } = require('../socialAuth') as typeof import('../socialAuth'));
+      ({ GoogleSignin } = require('@react-native-google-signin/google-signin') as { GoogleSignin: typeof GoogleSignin });
+      /* eslint-enable @typescript-eslint/no-require-imports */
+    });
   });
 
   afterEach(() => {
@@ -491,7 +498,7 @@ describe('signInWithGoogle', () => {
   });
 
   function mockSuccess(): void {
-    (GoogleSignin.signIn as jest.Mock).mockResolvedValue({
+    GoogleSignin.signIn.mockResolvedValue({
       type: 'success',
       data: {
         idToken: 'google-id-token',
@@ -519,7 +526,7 @@ describe('signInWithGoogle', () => {
 
   test('maps a cancelled Google sign-in to cancelled without calling signInWithIdToken', async () => {
     const client = fakeClient();
-    (GoogleSignin.signIn as jest.Mock).mockResolvedValue({ type: 'cancelled', data: null });
+    GoogleSignin.signIn.mockResolvedValue({ type: 'cancelled', data: null });
 
     const result = await signInWithGoogle(asClient(client));
 

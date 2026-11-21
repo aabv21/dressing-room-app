@@ -1,8 +1,7 @@
 // What every function does over HTTP: answering JSON with a logged outcome word, reading the body
 // and the caller, and calling out with a deadline. Runtime-neutral, like the rest of `_shared`.
 
-import { isRecord } from './extraction.ts';
-import { UUID } from './guards.ts';
+import { isRecord, UUID } from './guards.ts';
 
 export function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });

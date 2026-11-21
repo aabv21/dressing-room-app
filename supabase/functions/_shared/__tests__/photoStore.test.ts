@@ -12,7 +12,6 @@ import {
   REMOVE_CHUNK,
   removeObjects,
   SIGN_CHUNK,
-  signedUrl,
   signedUrls,
   type StorageEnv,
 } from '../photoStore.ts';
@@ -229,45 +228,6 @@ describe('removeObjects', () => {
 
     await expect(removeObjects(ENV, fetchFn, paths)).rejects.toThrow();
     expect(calls).toHaveLength(1);
-  });
-});
-
-describe('signedUrl', () => {
-  const path = photoPath(USER_ID, GARMENT_ID, 'full');
-
-  test('signs one path for the given time and answers the full URL', async () => {
-    const { fetch: fetchFn, calls } = fakeFetch(() => json(200, { signedURL: `/object/sign/garments/${path}?token=t-1` }));
-
-    const url = await signedUrl(ENV, fetchFn, path, 600);
-
-    expect(url).toBe(`${ENV.supabaseUrl}/storage/v1/object/sign/garments/${path}?token=t-1`);
-    expectServiceRole(calls);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.method).toBe('POST');
-    expect(calls[0]?.url.href).toBe(`${ENV.supabaseUrl}/storage/v1/object/sign/garments/${path}`);
-    expect(calls[0]?.headers.get('content-type')).toBe('application/json');
-    expect(JSON.parse(calls[0]?.body ?? '')).toEqual({ expiresIn: 600 });
-  });
-
-  test('answers null on a 404', async () => {
-    const { fetch: fetchFn } = fakeFetch(() => json(404, { statusCode: '404', error: 'not_found', message: 'Object not found' }));
-
-    expect(await signedUrl(ENV, fetchFn, path, 600)).toBeNull();
-  });
-
-  test('answers null when Storage reports a missing object as a 400 with a 404 status code', async () => {
-    const { fetch: fetchFn } = fakeFetch(() => json(400, { statusCode: '404', error: 'not_found', message: 'Object not found' }));
-
-    expect(await signedUrl(ENV, fetchFn, path, 600)).toBeNull();
-  });
-
-  test.each([
-    ['a 5xx', () => json(500, { error: 'boom' })],
-    ['an answer without a URL', () => json(200, { nope: true })],
-  ])('throws on %s', async (_name, answer) => {
-    const { fetch: fetchFn } = fakeFetch(answer);
-
-    await expect(signedUrl(ENV, fetchFn, path, 600)).rejects.toThrow();
   });
 });
 

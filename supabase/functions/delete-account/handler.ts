@@ -23,7 +23,7 @@
 
 import { revokeToken } from '../_shared/apple.ts';
 import type { AppleEnv, SupabaseEnv } from '../_shared/env.ts';
-import { isRecord } from '../_shared/extraction.ts';
+import { isRecord } from '../_shared/guards.ts';
 import { callerOf, fetchWithDeadline, reply } from '../_shared/http.ts';
 import { listUserObjects, removeObjects } from '../_shared/photoStore.ts';
 import { restRows, serviceHeaders, UpstreamError, userHeaders } from '../_shared/userContext.ts';

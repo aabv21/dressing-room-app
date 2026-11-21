@@ -19,8 +19,7 @@ import {
   slotOf,
 } from './catalog.ts';
 import type { ClaudeEnv, GeocodingEnv, JevEnv, ServiceEnv, SupabaseEnv, WeatherEnv } from './env.ts';
-import { isRecord } from './extraction.ts';
-import { UUID } from './guards.ts';
+import { isRecord, UUID } from './guards.ts';
 import { fetchWithDeadline, userIdFromJwt } from './http.ts';
 import type { GarmentStatus, RuleGarment } from './outfitRules.ts';
 import {
@@ -379,16 +378,6 @@ export async function getLocalWeather(
   }
 }
 
-/** `getLocalWeather` without the latitude. */
-export async function getWeather(
-  env: ServiceEnv & WeatherEnv,
-  fetchFn: FetchFn,
-  profile: WeatherProfile,
-  now: Date = new Date(),
-): Promise<WeatherSummary | null> {
-  return (await getLocalWeather(env, fetchFn, profile, now)).weather;
-}
-
 // --- Quota and result caches -------------------------------------------------------------------
 
 /**
@@ -479,21 +468,12 @@ export function cacheFresh(row: CacheRow, now: number, maxAgeMs: number = Number
 /**
  * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
  * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
- * unknown), so a better answer is tried again; any other result expires only after `maxAgeMs`
- * (never by default). The marker is returned as stored; callers strip it before
- * answering.
+ * unknown), so a better answer is tried again; any other result never expires. The marker is
+ * returned as stored; callers strip it before answering.
  */
-export async function cacheGet(
-  env: ServiceEnv,
-  fetchFn: FetchFn,
-  table: ResultCache,
-  userId: string,
-  key: string,
-  now: number = Date.now(),
-  maxAgeMs: number = Number.POSITIVE_INFINITY,
-): Promise<unknown> {
+export async function cacheGet(env: ServiceEnv, fetchFn: FetchFn, table: ResultCache, userId: string, key: string): Promise<unknown> {
   const row = await cacheRead(env, fetchFn, table, userId, key);
-  return row !== null && cacheFresh(row, now, maxAgeMs) ? row.result : null;
+  return row !== null && cacheFresh(row, Date.now()) ? row.result : null;
 }
 
 /**

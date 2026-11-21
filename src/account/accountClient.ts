@@ -9,7 +9,7 @@ import {
   type SupabaseClient,
 } from '@supabase/supabase-js';
 
-import { isRecord } from '../../supabase/functions/_shared/extraction.ts';
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import type { DataExport } from '../../supabase/functions/export-data/handler.ts';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';

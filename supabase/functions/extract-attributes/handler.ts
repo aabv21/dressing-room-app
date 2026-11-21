@@ -9,8 +9,8 @@
 
 import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
 import type { ClaudeEnv, ServiceEnv, WebhookEnv } from '../_shared/env.ts';
-import { buildExtractionRequest, isRecord, parseExtraction } from '../_shared/extraction.ts';
-import { UUID } from '../_shared/guards.ts';
+import { buildExtractionRequest, parseExtraction } from '../_shared/extraction.ts';
+import { isRecord, UUID } from '../_shared/guards.ts';
 import { json, readJson } from '../_shared/http.ts';
 import { downloadObject, photoPath } from '../_shared/photoStore.ts';
 import { consumeQuota, restJson, restRows, runClaude, serviceHeaders, UpstreamError } from '../_shared/userContext.ts';

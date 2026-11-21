@@ -1,12 +1,12 @@
 /** @jest-environment node */
 // supabase/functions/_shared/__tests__/userContext.test.ts
 import {
+  cacheFresh,
   cacheGet,
   cachePut,
   cacheRead,
   consumeQuota,
   getLocalWeather,
-  getWeather,
   loadGarments,
   loadProfile,
   mapLimit,
@@ -300,7 +300,7 @@ describe('loadProfile and loadGarments', () => {
   });
 });
 
-describe('getWeather', () => {
+describe('getLocalWeather', () => {
   const MADRID = { city_name: 'Madrid', city_lat: 40.4168, city_lon: -3.7038 };
 
   test('a cache hit for the current UTC hour makes no Open-Meteo call', async () => {
@@ -310,7 +310,7 @@ describe('getWeather', () => {
       }
       throw new Error(`unexpected ${call.url.href}`);
     });
-    expect(await getWeather(ENV, fetch, MADRID, NOW)).toEqual(RAINY_COLD);
+    expect((await getLocalWeather(ENV, fetch, MADRID, NOW)).weather).toEqual(RAINY_COLD);
     expect(calls.some(isOpenMeteo)).toBe(false);
     const [read] = calls;
     expect(read?.url.searchParams.get('location_key')).toBe('eq.40.42,-3.70');
@@ -326,7 +326,7 @@ describe('getWeather', () => {
       if (call.url.origin === ENV.openMeteoUrl && call.url.pathname === '/v1/forecast') return json(200, FORECAST);
       throw new Error(`unexpected ${call.url.href}`);
     });
-    expect(await getWeather(ENV, fetch, MADRID, NOW)).toEqual(RAINY_COLD);
+    expect((await getLocalWeather(ENV, fetch, MADRID, NOW)).weather).toEqual(RAINY_COLD);
     const forecast = calls.find((call) => call.url.pathname === '/v1/forecast');
     expect(forecast?.url.searchParams.get('latitude')).toBe('40.4168');
     const upsert = calls.find((call) => call.method === 'POST');
@@ -363,7 +363,7 @@ describe('getWeather', () => {
       if (call.url.pathname === '/v1/search') return json(200, { results: [] });
       throw new Error(`unexpected ${call.url.href}`);
     });
-    await expect(getWeather(ENV, fetch, { city_name: 'Nowhere', city_lat: null, city_lon: null }, NOW)).resolves.toBeNull();
+    expect((await getLocalWeather(ENV, fetch, { city_name: 'Nowhere', city_lat: null, city_lon: null }, NOW)).weather).toBeNull();
     expect(calls.some((call) => call.url.pathname === '/v1/forecast')).toBe(false);
   });
 
@@ -388,7 +388,7 @@ describe('getWeather', () => {
       if (call.url.pathname === '/v1/forecast') return forecast();
       throw new Error(`unexpected ${call.url.href}`);
     });
-    expect(await getWeather(ENV, fetch, MADRID, NOW)).toBeNull();
+    expect((await getLocalWeather(ENV, fetch, MADRID, NOW)).weather).toBeNull();
     expect(calls.some((call) => call.method === 'POST')).toBe(false);
   });
 
@@ -398,7 +398,7 @@ describe('getWeather', () => {
       if (call.url.pathname === '/v1/forecast') return json(200, FORECAST);
       throw new Error(`unexpected ${call.url.href}`);
     });
-    expect(await getWeather(ENV, fetch, MADRID, NOW)).toEqual(RAINY_COLD);
+    expect((await getLocalWeather(ENV, fetch, MADRID, NOW)).weather).toEqual(RAINY_COLD);
   });
 
   test('a malformed cached payload counts as a miss', async () => {
@@ -409,12 +409,16 @@ describe('getWeather', () => {
       if (call.url.pathname === '/v1/forecast') return json(200, FORECAST);
       throw new Error(`unexpected ${call.url.href}`);
     });
-    expect(await getWeather(ENV, fetch, MADRID, NOW)).toEqual(RAINY_COLD);
+    expect((await getLocalWeather(ENV, fetch, MADRID, NOW)).weather).toEqual(RAINY_COLD);
     expect(calls.some((call) => call.url.pathname === '/v1/forecast')).toBe(true);
   });
 });
 
 describe('consumeQuota and the caches', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('consumeQuota calls the rpc with the service role', async () => {
     const { fetch, calls } = fakeFetch(() => json(200, false));
     expect(await consumeQuota(ENV, fetch, USER_ID, 'rating', 50, '2026-11-08')).toBe(false);
@@ -454,35 +458,37 @@ describe('consumeQuota and the caches', () => {
 
   test('a degraded entry is a hit for an hour, then a miss; any other entry never expires', async () => {
     const now = Date.parse('2026-11-08T10:00:00Z');
+    jest.useFakeTimers({ now, doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
     const minutesAgo = (minutes: number): string => new Date(now - minutes * 60_000).toISOString();
     const entry = (result: unknown, createdAt: unknown) =>
       fakeFetch(() => json(200, [{ result, created_at: createdAt }])).fetch;
     const degraded = { score: 70, degraded: true };
 
-    expect(await cacheGet(ENV, entry(degraded, minutesAgo(59)), 'rating_cache', USER_ID, 'k', now)).toEqual(degraded);
-    expect(await cacheGet(ENV, entry(degraded, minutesAgo(61)), 'rating_cache', USER_ID, 'k', now)).toBeNull();
-    expect(await cacheGet(ENV, entry(degraded, null), 'lucky_cache', USER_ID, 'k', now)).toBeNull();
+    expect(await cacheGet(ENV, entry(degraded, minutesAgo(59)), 'rating_cache', USER_ID, 'k')).toEqual(degraded);
+    expect(await cacheGet(ENV, entry(degraded, minutesAgo(61)), 'rating_cache', USER_ID, 'k')).toBeNull();
+    expect(await cacheGet(ENV, entry(degraded, null), 'lucky_cache', USER_ID, 'k')).toBeNull();
     const fine = { score: 80, degraded: false };
-    expect(await cacheGet(ENV, entry(fine, minutesAgo(5 * 24 * 60)), 'rating_cache', USER_ID, 'k', now)).toEqual(fine);
-    expect(await cacheGet(ENV, entry({ score: 80 }, minutesAgo(5 * 24 * 60)), 'rating_cache', USER_ID, 'k', now)).toEqual({
+    expect(await cacheGet(ENV, entry(fine, minutesAgo(5 * 24 * 60)), 'rating_cache', USER_ID, 'k')).toEqual(fine);
+    expect(await cacheGet(ENV, entry({ score: 80 }, minutesAgo(5 * 24 * 60)), 'rating_cache', USER_ID, 'k')).toEqual({
       score: 80,
     });
   });
 
-  test('with a max age, any entry older than it (or of unknown age) is a miss', async () => {
+  test('with a max age (For you\'s read), any entry older than it (or of unknown age) is stale', async () => {
     const now = Date.parse('2026-11-08T10:00:00Z');
     const daysAgo = (days: number): string => new Date(now - days * 86_400_000).toISOString();
-    const entry = (result: unknown, createdAt: unknown) =>
-      fakeFetch(() => json(200, [{ result, created_at: createdAt }])).fetch;
     const week = 7 * 86_400_000;
+    const fresh = async (result: unknown, createdAt: unknown): Promise<unknown> => {
+      const row = await cacheRead(ENV, fakeFetch(() => json(200, [{ result, created_at: createdAt }])).fetch, 'for_you_cache', USER_ID, 'k');
+      return row !== null && cacheFresh(row, now, week) ? row.result : null;
+    };
     const fine = { ideas: [], degraded: false };
 
-    expect(await cacheGet(ENV, entry(fine, daysAgo(6.9)), 'for_you_cache', USER_ID, 'k', now, week)).toEqual(fine);
-    expect(await cacheGet(ENV, entry(fine, daysAgo(7.1)), 'for_you_cache', USER_ID, 'k', now, week)).toBeNull();
-    expect(await cacheGet(ENV, entry(fine, null), 'for_you_cache', USER_ID, 'k', now, week)).toBeNull();
+    expect(await fresh(fine, daysAgo(6.9))).toEqual(fine);
+    expect(await fresh(fine, daysAgo(7.1))).toBeNull();
+    expect(await fresh(fine, null)).toBeNull();
     // The degraded hour still applies inside the max age.
-    const degraded = { ideas: [], degraded: true };
-    expect(await cacheGet(ENV, entry(degraded, daysAgo(0.5)), 'for_you_cache', USER_ID, 'k', now, week)).toBeNull();
+    expect(await fresh({ ideas: [], degraded: true }, daysAgo(0.5))).toBeNull();
   });
 
   test('cacheRead returns the stored row with its age whatever it is, null on a miss or an error', async () => {

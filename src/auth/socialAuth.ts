@@ -126,11 +126,6 @@ function ensureGoogleConfigured(): boolean {
   return true;
 }
 
-/** Test-only: clears the "configured" flag so each test can exercise `ensureGoogleConfigured` fresh. */
-export function resetGoogleConfiguredForTests(): void {
-  googleConfigured = false;
-}
-
 /**
  * `@react-native-google-signin/google-signin` v17's free `signIn()` sends no nonce on Android, and
  * on iOS the native SDK injects its own hidden nonce that this library doesn't expose — so a

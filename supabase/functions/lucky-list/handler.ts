@@ -14,7 +14,7 @@
 
 import { OCCASIONS, type Occasion, type Slot, slotOf } from '../_shared/catalog.ts';
 import type { JevEnv, SupabaseEnv, WeatherEnv } from '../_shared/env.ts';
-import { isRecord } from '../_shared/extraction.ts';
+import { isRecord } from '../_shared/guards.ts';
 import { callerOf, readJson, reply } from '../_shared/http.ts';
 import {
   basePieces,
@@ -74,24 +74,24 @@ type CachedLucky = OkResponse & { degraded: boolean };
 
 type Outcome = 'cached' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_quota' | 'invalid' | 'error';
 
-export const LUCKY_DAILY_LIMIT = 10;
+const LUCKY_DAILY_LIMIT = 10;
 /** How many of the best pre-scored candidates are rated with Jev. */
-export const MAX_RANKED = 30;
+const MAX_RANKED = 30;
 /**
  * At most this many of the ranked outfits share the same base (the same pieces but the extra), so
  * the list spreads.
  */
-export const MAX_PER_BASE = 2;
+const MAX_PER_BASE = 2;
 /**
  * The floor of the per-garment cap among the ranked outfits (raised for a slot with few
  * garments; see `selectForRanking`), applied while enough other candidates remain.
  */
-export const MAX_PER_PIECE = 4;
+const MAX_PER_PIECE = 4;
 /**
  * No Jev ranking call starts once this long has passed since the request arrived, so the answer
  * lands inside the app's function deadline.
  */
-export const RANK_BUDGET_MS = 15_000;
+const RANK_BUDGET_MS = 15_000;
 const CACHE_VERSION = 2;
 
 type LuckyInput = { date: string; occasion: Occasion | null };
@@ -245,9 +245,9 @@ function capSlotOf(garment: RuleGarment): Slot | null {
  * lone top beside several dresses is not unavoidable. The few freshest pieces can't fill the
  * whole list, while a garment with no alternative (the one coat on a cold day, the one pair of
  * shoes) is never capped. A second pass fills what's left without that cap. Returned in
- * pre-score order. Exported for tests and probes.
+ * pre-score order.
  */
-export function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
+function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
   const sorted = candidates
     .map((outfit, index) => ({ outfit, index, pre: preScore(outfit, date), base: basePieces(outfit) }))
     .sort((a, b) => b.pre - a.pre || a.index - b.index);

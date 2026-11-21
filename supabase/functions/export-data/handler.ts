@@ -12,8 +12,7 @@
 // links only open after swapping in the local API URL. Upgrade path: a public-URL function secret.
 
 import type { SupabaseEnv } from '../_shared/env.ts';
-import { isRecord } from '../_shared/extraction.ts';
-import { UUID } from '../_shared/guards.ts';
+import { isRecord, UUID } from '../_shared/guards.ts';
 import { callerOf, reply } from '../_shared/http.ts';
 import { PHOTO_KINDS, photoPath, signedUrls } from '../_shared/photoStore.ts';
 import { restRows, userHeaders } from '../_shared/userContext.ts';

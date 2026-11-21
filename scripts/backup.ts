@@ -34,7 +34,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { isRecord } from '../supabase/functions/_shared/extraction.ts';
+import { isRecord } from '../supabase/functions/_shared/guards.ts';
 import { mapLimit, serviceHeaders } from '../supabase/functions/_shared/userContext.ts';
 
 const REPO_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));

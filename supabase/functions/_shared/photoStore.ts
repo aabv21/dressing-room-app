@@ -11,8 +11,7 @@
 // the Edge Functions run it under Deno.
 
 import type { ServiceEnv } from './env.ts';
-import { isRecord } from './extraction.ts';
-import { UUID } from './guards.ts';
+import { isRecord, UUID } from './guards.ts';
 import { fetchWithDeadline } from './http.ts';
 import { mapLimit, restJson, serviceHeaders, UpstreamError } from './userContext.ts';
 
@@ -131,32 +130,6 @@ export async function removeObjects(env: StorageEnv, fetchFn: typeof fetch, path
 
 /** Storage's relative `signedURL` (`/object/sign/…?token=…`) as an absolute URL. */
 const absoluteSignedUrl = (env: StorageEnv, signedURL: string): string => encodeURI(`${env.supabaseUrl}/storage/v1${signedURL}`);
-
-/** A URL that reads `path` for `expiresInSeconds`; null when the object doesn't exist. */
-export async function signedUrl(
-  env: StorageEnv,
-  fetchFn: typeof fetch,
-  path: string,
-  expiresInSeconds: number,
-): Promise<string | null> {
-  const response = await fetchWithDeadline(
-    fetchFn,
-    storageUrl(env, `object/sign/${BUCKET}/${encodePath(path)}`),
-    {
-      method: 'POST',
-      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-      body: JSON.stringify({ expiresIn: expiresInSeconds }),
-    },
-    STORAGE_TIMEOUT_MS,
-  );
-  if (!response.ok) {
-    if (await isNotFound(response)) return null;
-    throw new UpstreamError(`storage sign: HTTP ${String(response.status)}`);
-  }
-  const body: unknown = await response.json();
-  if (!isRecord(body) || typeof body.signedURL !== 'string') throw new UpstreamError('storage sign: no URL');
-  return absoluteSignedUrl(env, body.signedURL);
-}
 
 /**
  * The signed URL of every path in `paths` that exists (by path), `SIGN_CHUNK` paths per call. A

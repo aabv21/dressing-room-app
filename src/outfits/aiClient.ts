@@ -6,7 +6,7 @@
 
 import { FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
 
-import { isRecord } from '../../supabase/functions/_shared/extraction.ts';
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { type Occasion, SLOTS } from '../closet/catalog';
 import type { Locale } from '../i18n';
 import type { Database } from '../lib/database.types';
