@@ -34,6 +34,7 @@ function garment(overrides: Partial<RuleGarment> = {}): RuleGarment {
     status: 'available',
     last_worn_at: null,
     wear_count: 0,
+    suggest: true,
     updated_at: '2026-01-01T00:00:00Z',
     pinned_on: null,
     ...overrides,

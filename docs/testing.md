@@ -350,11 +350,12 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   request (a JSON schema of level indices, two booleans and the weakest slot; no measurement) and
   its parser.
 - `supabase/functions/_shared/__tests__/outfitRules.test.ts` — seasons by hemisphere, complete
-  outfits, missing slots, the occasions' formality ranges, the weather rules, the pre-score, this
-  week's wears, pinned garments and candidate generation.
+  outfits, missing slots, the occasions' formality ranges, the weather rules, the pre-score (with
+  the rotation bonus ranking the less-worn of two otherwise-equal candidates first), this week's wears, pinned garments and candidate generation.
 - `supabase/functions/_shared/__tests__/forYou.test.ts` — the archetypes per clothing type (valid
   enums, no repeats), owning one, the combinatorial gain (formality, season, color and pattern
-  rules, one-pieces, outerwear, the cap on a large closet), the ranking, the Jev fit, the Claude
+  rules, one-pieces, outerwear, the cap on a large closet), the ranking (an unsuggested garment
+  still owns its archetype but adds no gain), the Jev fit, the Claude
   lines and their template fallbacks, and the store-search query.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs, weather bands and
   conditions, and the forecast and geocoding parsers.
@@ -396,13 +397,16 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   search, and no measurement reaching Jev or Claude.
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
-  deterministic candidate order, the cache per occasion and date, and a garment edit recomputing it.
+  deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
+  and "Not for me": no dismissed combination or unsuggested garment in the list, unsuggested shoes
+  still counting as owned, and either change making a new cache key.
 - `supabase/functions/for-you/__tests__/handler.test.ts` — too small, the 3–5 ideas in gain × fit
   order with Claude lines and store queries (Spanish too), what Jev and Claude see, each model
-  failing (template lines or gain-only order, cached degraded), and laundry or donated garments.
+  failing (template lines or gain-only order, cached degraded), laundry or donated garments, and
+  an unsuggested garment changing the key while still owning its archetype.
 - `supabase/functions/apple-token/__tests__/handler.test.ts` — the code exchange stored with the
   service role and never returned, an identity mismatch, no Apple env (`skipped`), 401 and 405.
-- `supabase/functions/export-data/__tests__/handler.test.ts` — every section, rows read with the
+- `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits included), rows read with the
   caller's token and only the caller's paths signed for 7 days, another user's rows dropped, paging
   until an empty page (also when the server caps a page below 1000 rows), a brand-new account, a
   failed read or signing answering 500, and a log of only an outcome word.
@@ -423,7 +427,7 @@ Supabase stack:
 - `account.int.test.ts` — the account functions end to end through the gateway: `apple-token`
   exchanges a code with the mock Apple and stores the refresh token (and stores nothing for a code
   whose Apple user isn't the caller's); `export-data` returns the
-  caller's rows and signed photo URLs; `delete-account` removes the caller's photos, revokes the
+  caller's rows (dismissed outfits included) and signed photo URLs; `delete-account` removes the caller's photos, revokes the
   Apple token with the mock and deletes the auth user, whose rows cascade, and a retry with the
   same token answers `deleted` without calling Apple again. A second user is untouched throughout.
 - `rls.int.test.ts` — the cross-user RLS boundary: user A can never read, update, list or delete
@@ -459,7 +463,8 @@ Supabase stack:
   pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`
   with the service role) and stored city coordinates; B has none. `lucky-list` answers `kind: 'ok'`
   with complete outfits (one top, one bottom, one pair of shoes each) rated by the mock Jev, and a
-  second call is served from `lucky_cache` with no Jev call; the forecast lands in `weather_cache`
+  second call is served from `lucky_cache` with no Jev call; a dismissed combination leaves the
+  next list, recomputed for the new key; the forecast lands in `weather_cache`
   for the hour (fetched once, no geocoding for stored coordinates). `rate-outfit` answers Jev's
   score; a call without a session gets 401 (the anon key passes the gateway, and the function finds
   no user in it); B rating A's garment ids gets 404 `garment_not_found` (RLS hides them) with no Jev

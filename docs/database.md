@@ -701,8 +701,8 @@ inside them, never in `src/`.
 
   What the app does around the call (the marker, the paused queue, `reauth`, the local cleanup and
   the later checks) is in [`app.md`](app.md#account-deletion-on-the-device).
-- **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
-  and `wears` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
+- **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`),
+  `wears` and `dismissed_outfits` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
   caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still
   reads every row. Photo URLs are signed with the service role for 7 days,

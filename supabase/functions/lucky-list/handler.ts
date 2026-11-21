@@ -24,6 +24,7 @@ import {
   getLocalWeather,
   isIsoDate,
   jevRating,
+  loadDismissed,
   loadGarments,
   loadProfile,
   mapLimit,
@@ -67,7 +68,7 @@ const MAX_PER_BASE = 2;
 const MAX_PER_PIECE = 4;
 /** No Jev call starts this long after the request arrived, so the answer beats the app's deadline. */
 const RANK_BUDGET_MS = 15_000;
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 
 type LuckyInput = { date: string; occasion: Occasion | null };
 
@@ -89,14 +90,20 @@ const locationOf = (profile: ProfileRow | null): string | null =>
 /**
  * Wearing an outfit doesn't change the key (`freshThisWeek` is recomputed on a hit instead). It
  * carries whether `pinned_on` equals *this request's* date, not the raw value: "Wear it" pins for
- * tomorrow and must not re-rank (and spend quota on) today's list.
+ * tomorrow and must not re-rank (and spend quota on) today's list. "Not for me" (a dismissed
+ * combination, an unsuggested piece) does change it.
  */
-function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, input: LuckyInput): Promise<string> {
+function cacheKey(
+  garments: readonly RuleGarment[],
+  profile: ProfileRow | null,
+  input: LuckyInput,
+  dismissed: ReadonlySet<string>,
+): Promise<string> {
   // Only garments that can be candidates count (not uncategorized, in the laundry or lent).
   const fingerprint = garments
     .filter((g) => g.category !== null && g.status === 'available')
     .sort(byId)
-    .map((g) => [...garmentFingerprint(g), g.status, g.pinned_on === input.date]);
+    .map((g) => [...garmentFingerprint(g), g.status, g.pinned_on === input.date, g.suggest]);
   return sha256Hex(
     JSON.stringify({
       v: CACHE_VERSION,
@@ -104,10 +111,18 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
       occasion: input.occasion,
       location: locationOf(profile),
       fingerprint,
+      dismissed: [...dismissed].sort(),
       profile: profileIdentity(profile),
     }),
   );
 }
+
+/** The app's outfit identity: the garment ids sorted and joined, as `dismissed_outfits` stores them. */
+const outfitKey = (outfit: Outfit): string =>
+  outfit
+    .map((g) => g.id)
+    .sort()
+    .join(',');
 
 /** Garments pinned for the request's date that `generateCandidates` can place (available, categorized). */
 function pinnedFor(garments: readonly RuleGarment[], date: string): RuleGarment[] {
@@ -249,7 +264,11 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
 
   const { env, fetch: fetchFn } = deps;
   try {
-    const [garments, profile] = await Promise.all([loadGarments(env, fetchFn, auth), loadProfile(env, fetchFn, auth)]);
+    const [garments, profile, dismissed] = await Promise.all([
+      loadGarments(env, fetchFn, auth),
+      loadProfile(env, fetchFn, auth),
+      loadDismissed(env, fetchFn, auth),
+    ]);
     // Fetched before the size check: the Today screen shows the weather even for a small closet.
     const { weather, lat } = await getLocalWeather(env, fetchFn, {
       city_name: profile?.city_name ?? null,
@@ -260,7 +279,7 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
     const missing = missingSlots(garments);
     if (missing.length > 0) return reply('too_small', 200, { kind: 'too_small', missing, weather } satisfies LuckyResponse);
 
-    const key = await cacheKey(garments, profile, input);
+    const key = await cacheKey(garments, profile, input, dismissed);
     const closet = new Map(garments.map((garment) => [garment.id, garment]));
     const hit = fromCache(await cacheGet(env, fetchFn, 'lucky_cache', userId, key), closet, input.date, weather);
     if (hit !== null) return reply('cached', 200, hit);
@@ -270,14 +289,16 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
     }
 
     const rules: RuleContext = { occasion: input.occasion, season: seasonOf(input.date, lat), weather, today: input.date };
-    const pinned = pinnedFor(garments, input.date);
+    // An unsuggested piece still fills its slot for `missingSlots` above, but joins no candidate.
+    const suggestable = garments.filter((g) => g.suggest);
+    const pinned = pinnedFor(suggestable, input.date);
     const generated = generateCandidates(
-      garments,
+      suggestable,
       rules,
       userId + input.date,
       undefined,
       pinned.map((g) => g.id),
-    );
+    ).filter((outfit) => !dismissed.has(outfitKey(outfit)));
     const candidates = selectForRanking(keepPinned(generated, pinned), input.date);
     const { ranked, complete } = await rank(
       { env, fetch: fetchFn, rand: deps.rand ?? Math.random, profile, occasion: input.occasion, weather, rules, startedAt },

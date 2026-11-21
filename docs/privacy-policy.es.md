@@ -2,7 +2,7 @@
 
 [English](privacy-policy.md)
 
-Última actualización: 9 de noviembre de 2026
+Última actualización: 21 de noviembre de 2026
 
 Dressing Room es una app de clóset digital: fotografías tu ropa y la app te sugiere outfits,
 califica los outfits que armas y lleva la cuenta de lo que usas. Esta página explica qué datos
@@ -30,9 +30,11 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   lee de ella más que las fotos que eliges.
 - **Tu clóset.** Los atributos de cada prenda (categoría, colores, estampado, material, formalidad,
   temporadas, abrigo, corte, ocasiones), su estado (disponible, en la lavandería, en préstamo o
-  donada) y cuántas veces la usas.
+  donada), cuántas veces la usas y si la sacaste de las sugerencias.
 - **Lo que usas.** Los outfits que guardas o registras como usados, con el día, la ocasión y el
   puntaje.
+- **Lo que no quieres que te sugiera.** Las combinaciones de outfit que marcaste con "No es para
+  mí", para no sugerirlas de nuevo.
 - **Conteos de uso.** Cuántas solicitudes de IA de cada tipo hiciste cada día, para aplicar los
   límites diarios, y los resultados de solicitudes recientes, para que repetir una no cueste nada.
 
@@ -47,8 +49,8 @@ correo configurado para el proyecto. Cada fila y cada foto pertenecen a tu cuent
 seguridad de la base de datos solo permiten que tu cuenta, con tu sesión iniciada, las lea o las
 cambie. La app se comunica con Supabase por conexiones cifradas y no guarda ninguna otra clave.
 
-Tu teléfono guarda además una copia de tu clóset, las sugerencias de outfit del día, tus últimas
-ideas de "Para ti" y fotos en caché, para que la app funcione sin conexión. Una foto que espera para
+Tu teléfono guarda además una copia de tu clóset, las sugerencias de outfit del día, tus outfits
+guardados, tus últimas ideas de "Para ti" y fotos en caché, para que la app funcione sin conexión. Una foto que espera para
 subirse se guarda en la carpeta propia de la app hasta que se sube.
 
 ## Quién los procesa
@@ -72,7 +74,8 @@ privacidad de Google.
 ## Cuánto tiempo se guardan
 
 Tus datos se guardan hasta que los eliminas o eliminas tu cuenta. Puedes eliminar cualquier prenda
-(sus fotos también se borran) o cualquier uso registrado cuando quieras. El dueño de la app guarda
+(sus fotos también se borran), cualquier uso registrado o cualquier outfit guardado cuando quieras,
+y volver a incluir una prenda en las sugerencias desde su detalle. El dueño de la app guarda
 cada noche una copia de seguridad de la base de datos y las fotos en su propia computadora, solo para
 recuperación, y conserva las 14 más recientes; los datos que eliminas desaparecen de las copias de
 seguridad después de las 14 copias nocturnas siguientes (unas dos semanas cuando se hacen todas las
@@ -83,7 +86,8 @@ Cada proveedor de arriba aplica sus propias reglas de conservación a lo que rec
 ## Tus opciones: exportar y eliminar
 
 - **Exportar.** Perfil → Privacidad → "Exportar mis datos" te da un archivo con tu perfil, tus
-  prendas, tus outfits y tus usos, más enlaces a tus fotos que funcionan durante 7 días.
+  prendas, tus outfits, tus usos y las combinaciones que marcaste con "No es para mí", más enlaces a
+  tus fotos que funcionan durante 7 días.
 - **Eliminar tu cuenta.** Perfil → Privacidad → "Eliminar cuenta", confirmado dos veces, borra tus
   fotos, revoca Iniciar sesión con Apple si lo usaste, y elimina tu cuenta y cada fila que le
   pertenece. Después la app borra su copia de tus datos en ese teléfono y cierra tu sesión.

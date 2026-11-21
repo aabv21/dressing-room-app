@@ -155,6 +155,7 @@ const EXPORT: DataExport = {
   garments: [],
   outfits: [],
   wears: [],
+  dismissedOutfits: [],
   photos: [],
 };
 

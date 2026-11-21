@@ -147,6 +147,8 @@ async function userWithCloset(label: string): Promise<SignedInUser> {
     p_score: 80,
   });
   expect(wear.error).toBeNull();
+  const dismissed = await client.from('dismissed_outfits').insert({ outfit_key: [...garmentIds].sort().join(',') });
+  expect(dismissed.error).toBeNull();
   return { ...user, garmentIds };
 }
 
@@ -167,7 +169,7 @@ async function objectsOf(userId: string): Promise<string[]> {
 const photoPathsOf = (user: SignedInUser): string[] =>
   user.garmentIds.flatMap((id) => [garmentPhotoPath(user.id, id, 'full'), garmentPhotoPath(user.id, id, 'thumb')]).sort();
 
-type UserTable = 'profiles' | 'garments' | 'outfits' | 'wears' | 'apple_tokens' | 'usage_counters';
+type UserTable = 'profiles' | 'garments' | 'outfits' | 'wears' | 'dismissed_outfits' | 'apple_tokens' | 'usage_counters';
 
 /** How many rows `table` holds for `userId`, read with the service role. */
 async function rowCount(table: UserTable, userId: string): Promise<number> {
@@ -251,7 +253,7 @@ test('apple-token stores nothing for a code whose Apple user isn’t the caller�
   expect(revokes.map((form) => form.get('token'))).toEqual([mockAppleRefreshToken(code)]);
 }, FUNCTION_TIMEOUT_MS);
 
-test('export-data holds the caller’s profile, garments, outfits with items, wears and photo URLs, and nothing of B', async () => {
+test('export-data holds the caller’s profile, garments, outfits with items, wears, dismissed outfits and photo URLs, and nothing of B', async () => {
   const { status, body } = await invoke(userA.client, 'export-data', {});
 
   expect(status).toBe(200);
@@ -261,6 +263,7 @@ test('export-data holds the caller’s profile, garments, outfits with items, we
     garments: { id: string; user_id: string }[];
     outfits: { id: string; user_id: string; items: { garment_id: string }[] }[];
     wears: { outfit_id: string; user_id: string; occasion: string | null; score: number | null }[];
+    dismissedOutfits: { user_id: string; outfit_key: string }[];
     photos: { garmentId: string; full: string | null; thumb: string | null }[];
   };
   expect(Number.isNaN(Date.parse(data.exportedAt))).toBe(false);
@@ -270,6 +273,9 @@ test('export-data holds the caller’s profile, garments, outfits with items, we
   expect(data.outfits[0]?.items.map((item) => item.garment_id).sort()).toEqual([...userA.garmentIds].sort());
   expect(data.wears).toHaveLength(1);
   expect(data.wears[0]).toMatchObject({ outfit_id: data.outfits[0]?.id, user_id: userA.id, occasion: 'office', score: 80 });
+  expect(data.dismissedOutfits).toEqual([
+    expect.objectContaining({ user_id: userA.id, outfit_key: [...userA.garmentIds].sort().join(',') }),
+  ]);
 
   expect(data.photos.map((photo) => photo.garmentId).sort()).toEqual([...userA.garmentIds].sort());
   for (const photo of data.photos) {
@@ -306,7 +312,7 @@ test('delete-account removes A’s photos, revokes the Apple token, deletes the 
   expect(revokes[0]?.get('client_id')).toBe(APPLE.clientId);
 
   expect(await objectsOf(userA.id)).toEqual([]);
-  for (const table of ['profiles', 'garments', 'outfits', 'wears', 'apple_tokens', 'usage_counters'] as const) {
+  for (const table of ['profiles', 'garments', 'outfits', 'wears', 'dismissed_outfits', 'apple_tokens', 'usage_counters'] as const) {
     expect(await rowCount(table, userA.id)).toBe(0);
   }
   const { data: outfitItems } = await serviceClient().from('outfit_items').select('garment_id').in('garment_id', userA.garmentIds);
@@ -332,6 +338,7 @@ test('B is unaffected: the account, rows and photos are all still there', async 
   expect(await rowCount('garments', userB.id)).toBe(2);
   expect(await rowCount('outfits', userB.id)).toBe(1);
   expect(await rowCount('wears', userB.id)).toBe(1);
+  expect(await rowCount('dismissed_outfits', userB.id)).toBe(1);
   expect(await objectsOf(userB.id)).toEqual(photoPathsOf(userB));
 
   const own = await userB.client.from('garments').select('id');

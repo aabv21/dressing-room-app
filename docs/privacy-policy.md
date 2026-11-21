@@ -2,7 +2,7 @@
 
 [Español](privacy-policy.es.md)
 
-Last updated: November 9, 2026
+Last updated: November 21, 2026
 
 Dressing Room is a digital closet app: you photograph your clothes, and it suggests outfits, rates
 the outfits you build and keeps track of what you wear. This page explains what the app collects,
@@ -29,9 +29,11 @@ where it is kept, who processes it and how you can export or delete it. Question
   thumbnail. Only those two versions are uploaded. The app never saves to or reads from your photo
   library beyond the photos you pick.
 - **Your closet.** Each garment's attributes (category, colors, pattern, material, formality,
-  seasons, warmth, fit, occasions), its status (available, in the laundry, lent or donated) and how
-  often you wear it.
+  seasons, warmth, fit, occasions), its status (available, in the laundry, lent or donated), how
+  often you wear it, and whether you took it out of suggestions.
 - **What you wear.** The outfits you save or log as worn, with the day, the occasion and the score.
+- **What you don't want suggested.** The outfit combinations you marked "Not for me", so they
+  aren't suggested again.
 - **Usage counts.** How many AI requests of each kind you made each day, to enforce the daily
   limits, and the results of recent AI requests, so repeating one costs nothing.
 
@@ -46,8 +48,8 @@ the project. Each row and each photo belongs to your account, and the database's
 let only your signed-in account read or change it. The app talks to Supabase over encrypted
 connections and holds no other key.
 
-Your phone also keeps a copy of your closet, today's outfit suggestions, your last "For you" ideas
-and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
+Your phone also keeps a copy of your closet, today's outfit suggestions, your saved outfits, your
+last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
 folder until it is uploaded.
 
 ## Who processes it
@@ -70,7 +72,8 @@ words such as "camel blazer women"; Google's own privacy policy applies to that 
 ## How long it is kept
 
 Your data stays until you delete it or delete your account. You can delete any garment (its photos
-are removed too) or any logged wear at any time. The owner keeps a nightly backup of the database
+are removed too), any logged wear or any saved outfit at any time, and put a piece back into
+suggestions from its detail screen. The owner keeps a nightly backup of the database
 and photos on their own computer, for recovery only, and keeps the 14 most recent ones; data you
 delete disappears from the backups after the next 14 nightly backups (about two weeks when they run
 every night).
@@ -80,7 +83,8 @@ Each processor above applies its own retention rules to what it receives from th
 ## Your choices: export and deletion
 
 - **Export.** Profile → Privacy → "Export my data" gives you a file with your profile, garments,
-  outfits and wears, plus links to your photos that work for 7 days.
+  outfits, wears and the combinations you marked "Not for me", plus links to your photos that work
+  for 7 days.
 - **Delete your account.** Profile → Privacy → "Delete account", confirmed twice, removes your
   photos, revokes Sign in with Apple if you used it, and deletes your account and every row that
   belongs to it. The app then clears its copy of your data on that phone and signs you out.

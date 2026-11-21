@@ -197,6 +197,7 @@ describe('exportData', () => {
     garments: [],
     outfits: [],
     wears: [],
+    dismissedOutfits: [],
     photos: [],
   };
 
@@ -213,6 +214,7 @@ describe('exportData', () => {
     ['an empty body', { data: null, error: null }, 'unknown'],
     ['a body of another shape (a newer function)', { data: { kind: 'surprise' }, error: null }, 'unknown'],
     ['a document missing its rows', { data: { ...EXPORT, garments: undefined }, error: null }, 'unknown'],
+    ['a document without its dismissed outfits', { data: { ...EXPORT, dismissedOutfits: undefined }, error: null }, 'unknown'],
   ] as const)('%s is a failure', async (_label, answer, expected) => {
     const { client } = fakeClient(() => Promise.resolve(answer));
 

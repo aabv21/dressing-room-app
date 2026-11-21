@@ -155,6 +155,9 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 - Response: `LuckyResponse` (`lucky-list/handler.ts`): `{ kind: 'too_small', missing, weather }` or
   `{ kind: 'ok', weather, outfits: { garmentIds, score, freshThisWeek }[] }`, where `score` is null
   for an outfit whose rating failed or was skipped.
+- Reads the caller's garments, profile and `dismissed_outfits` with the user's token. No outfit is a
+  dismissed combination or holds a garment with `suggest = false`; dismissing one or turning a
+  piece off changes the cache key, so the next call is a miss ([`ai.md`](ai.md#the-lucky-list-function)).
 
 | Status | Body | Logged | When |
 | --- | --- | --- | --- |
@@ -163,7 +166,7 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | 200 | cached list | `cached` | Cache hit, with this hour's weather |
 | 429 | `{ error: 'over_quota' }` | `over_quota` | 10 misses already today |
 | 200 | list | `ranked` / `degraded` / `empty` | Ranked; a rating or the forecast failed; no candidate passes the rules (`outfits: []`) |
-| 500 | `{ error: 'internal' }` | `error` | Loading garments or the profile, or the quota RPC, failed |
+| 500 | `{ error: 'internal' }` | `error` | Loading garments, the profile or the dismissed outfits, or the quota RPC, failed |
 
 ### `for-you`
 
@@ -173,7 +176,8 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
   (`geocodedLatitude`, 5 s); without one there is no season rule.
 - Response: `ForYouResponse` (`for-you/handler.ts`): `{ kind: 'too_small' }` or
   `{ kind: 'ok', ideas: ForYouCard[] }`, each card `{ id, category, colors, newOutfits,
-  combinesWith, line, lineKey, lineParams, searchQuery }`.
+  combinesWith, line, lineKey, lineParams, searchQuery }`. A garment with `suggest = false` still
+  owns its archetype but counts in no idea's outfits.
 
 | Status | Body | Logged | When |
 | --- | --- | --- | --- |
@@ -212,7 +216,9 @@ never waits for it.
 
 - Request: `POST {}`.
 - Response: `DataExport` (`export-data/handler.ts`): `{ exportedAt, profile, garments, outfits (each
-  with items: [{ garment_id }]), wears, photos: [{ garmentId, full, thumb }] }`. Rows are read with
+  with items: [{ garment_id }]), wears, dismissedOutfits, photos: [{ garmentId, full, thumb }] }`.
+  The app refuses a document without `dismissedOutfits` (`isDataExport`), so the function ships
+  before or with an app that reads it. Rows are read with
   the caller's token in pages of 1000 (`PAGE`); photo URLs are signed for 7 days
   (`SIGNED_URL_TTL_S`).
 - 405 and 401 as above; 500 `{ error: 'internal' }` when a read or the signing fails.

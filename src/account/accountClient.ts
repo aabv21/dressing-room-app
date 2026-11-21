@@ -130,6 +130,7 @@ function isDataExport(value: unknown): value is DataExport {
     isRows(value.garments) &&
     isRows(value.outfits) &&
     isRows(value.wears) &&
+    isRows(value.dismissedOutfits) &&
     Array.isArray(value.photos) &&
     value.photos.every(isPhoto)
   );

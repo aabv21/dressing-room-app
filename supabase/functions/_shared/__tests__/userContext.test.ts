@@ -230,6 +230,7 @@ describe('loadProfile and loadGarments', () => {
       status: 'available',
       last_worn_at: null,
       wear_count: 4,
+      suggest: false,
       updated_at: '2026-11-02T00:00:00Z',
       pinned_on: null,
       name: 'my jeans',

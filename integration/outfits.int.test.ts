@@ -211,6 +211,26 @@ describe('lucky-list', () => {
     expect(mock.calls('/v1/systemone')).toBe(jevCalls);
   }, FUNCTION_TIMEOUT_MS);
 
+  test('a dismissed combination leaves the next list, which is recomputed for the new key', async () => {
+    const outfits = firstOutfits as { garmentIds: string[] }[];
+    const [first] = outfits;
+    if (first === undefined) throw new Error('no outfit to dismiss');
+    const key = [...first.garmentIds].sort().join(',');
+    const insert = await userA.client.from('dismissed_outfits').insert({ outfit_key: key });
+    expect(insert.error).toBeNull();
+    const jevCalls = mock.calls('/v1/systemone');
+
+    const { status, body } = await invoke(userA.client, 'lucky-list', { date: today(), occasion: null });
+
+    expect(status).toBe(200);
+    const next = (body as { outfits: { garmentIds: string[] }[] }).outfits;
+    expect(next.length).toBe(outfits.length - 1);
+    expect(next.map((outfit) => [...outfit.garmentIds].sort().join(','))).not.toContain(key);
+    expect(mock.calls('/v1/systemone')).toBeGreaterThan(jevCalls);
+    const removed = await userA.client.from('dismissed_outfits').delete().eq('outfit_key', key);
+    expect(removed.error).toBeNull();
+  }, FUNCTION_TIMEOUT_MS);
+
   test("the forecast lands in weather_cache for the hour, and later calls don't fetch it again", async () => {
     const hourAfter = utcHour(new Date());
 

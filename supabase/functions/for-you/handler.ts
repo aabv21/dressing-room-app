@@ -91,7 +91,7 @@ export const LINES_DEADLINE_MS = 38_000;
 /** With no more than this left before `LINES_DEADLINE_MS`, Claude is skipped and every idea gets its template. */
 export const MIN_LINES_TIMEOUT_MS = 2_000;
 // Bump whenever the archetypes, the gain rules or the response shape change: it's what invalidates the stored entries.
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 
 const LANGUAGES = ['en', 'es'] as const satisfies readonly Language[];
 
@@ -123,7 +123,7 @@ function cacheKey(
   const fingerprint = wardrobe
     .filter((g) => g.category !== null)
     .sort(byId)
-    .map(garmentFingerprint);
+    .map((g) => [...garmentFingerprint(g), g.suggest]);
   return sha256Hex(
     JSON.stringify({ v: CACHE_VERSION, fingerprint, profile: profileIdentity(profile), language, season }),
   );

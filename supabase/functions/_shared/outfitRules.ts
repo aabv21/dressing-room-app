@@ -29,6 +29,8 @@ export type RuleGarment = {
   last_worn_at: string | null;
   /** Kept by the wears trigger; feeds only `preScore`'s rotation bonus, never a cache key. */
   wear_count: number;
+  /** False when the user took the piece out of suggestions: lucky-list and for-you build no outfit with it. */
+  suggest: boolean;
   updated_at: string;
   /** Set by Unused-for-6-months' "Wear it" to tomorrow's local date; null otherwise. */
   pinned_on: string | null;
