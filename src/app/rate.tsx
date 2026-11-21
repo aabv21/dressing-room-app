@@ -17,6 +17,7 @@ import {
   type Occasion,
   type Slot,
 } from '../closet/catalog';
+import { isSuggestable } from '../closet/closetSelectors';
 import { useCloset } from '../closet/ClosetProvider';
 import type { Garment } from '../closet/garmentRepository';
 import { isMessageKey, useI18n, type Locale } from '../i18n';
@@ -223,7 +224,8 @@ function ResultBody({
   const { swap } = result;
   const from = swap === null ? undefined : byId.get(swap.fromId);
   const to = swap === null ? undefined : byId.get(swap.toId);
-  const swapShown = swap !== null && from !== undefined && to !== undefined;
+  // A cached rating can name a target the user has since taken out of suggestions.
+  const swapShown = swap !== null && from !== undefined && to !== undefined && isSuggestable(to);
   // A swap to a garment the local closet lacks (added elsewhere or since the last refresh) would stay
   // hidden: refresh the closet once per swap target.
   const { refresh } = useCloset();

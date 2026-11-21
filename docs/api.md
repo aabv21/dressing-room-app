@@ -156,8 +156,10 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
   `{ kind: 'ok', weather, outfits: { garmentIds, score, freshThisWeek }[] }`, where `score` is null
   for an outfit whose rating failed or was skipped.
 - Reads the caller's garments, profile and `dismissed_outfits` with the user's token. No outfit is a
-  dismissed combination or holds a garment with `suggest = false`; dismissing one or turning a
-  piece off changes the cache key, so the next call is a miss ([`ai.md`](ai.md#the-lucky-list-function)).
+  dismissed combination or holds a garment with `suggest = false`. Neither is in the cache key: a
+  hit drops those outfits (logged `cached`, no quota), and only a hit left with fewer than 3 of
+  more is ranked again ([`ai.md`](ai.md#the-lucky-list-function)). `rate-outfit` never proposes a
+  swap to a garment with `suggest = false`.
 
 | Status | Body | Logged | When |
 | --- | --- | --- | --- |
@@ -246,7 +248,7 @@ All through PostgREST with the user's JWT; RLS limits every row to the caller's 
 | `garments` | select all own, newest first; upsert `{ id, user_id }` ignoring duplicates; update attributes, status, `pinned_on`, `suggest`, `photo_version`, `reviewed_at`; delete | Insert only `id`, `user_id`; update only the attribute columns, `status`, `photo_version`, `reviewed_at`, `pinned_on`, `suggest` | `src/closet/garmentRepository.ts`, `src/closet/upload/queueSteps.ts` |
 | `wears` | select by `worn_on` range with `outfits(outfit_items(garment_id))`, pages of 1000, at most 20; delete own | No update; insert only through `log_wear` in practice | `src/stats/wearsRepository.ts` |
 | `outfits`, `outfit_items` | select saved outfits with `outfit_items(garment_id)`, newest first; delete a saved one (its items cascade); otherwise through the RPCs and inside `wears` selects | No update; delete only on `outfits`, and only a saved outfit no wear points at | `src/outfits/savedOutfits.ts` |
-| `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates (upsert on `user_id,outfit_key`) | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` (which also sets `garments.suggest = false`) |
+| `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates (upsert on `user_id,outfit_key`); delete one by key (Today's Undo) or all own (Profile's restore); count own (head) | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` (which also sets `garments.suggest` false, or true for the Undo) |
 
 The caches, `usage_counters` and `apple_tokens` have no client grants at all.
 

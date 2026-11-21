@@ -12,7 +12,9 @@ import { OutfitStack } from '../outfits/OutfitStack';
 import { deleteSavedOutfit, type SavedOutfit } from '../outfits/savedOutfits';
 import { useSavedOutfits } from '../outfits/useSavedOutfits';
 import { useWearLog, type WearLog } from '../outfits/useWearLog';
+import { isCompleteOutfit } from '../../supabase/functions/_shared/outfitRules.ts';
 import { colors, fontSizes, layout, radii, spacing } from '../ui/theme';
+import { slotOf } from './catalog';
 import { useCloset } from './ClosetProvider';
 import type { Garment } from './garmentRepository';
 
@@ -73,10 +75,15 @@ function SavedCard({
   onDelete: (outfit: SavedOutfit) => void;
 }): React.JSX.Element {
   const { t, locale } = useI18n();
-  const { garmentIds } = outfit;
-  const pieces = useMemo(() => garmentIds.flatMap((id) => byId.get(id) ?? []), [garmentIds, byId]);
-  // A saved outfit can lose a deleted piece (its item cascades); wearing or rating it then needs two.
-  const usable = pieces.length >= 2;
+  const pieces = useMemo(() => outfit.garmentIds.flatMap((id) => byId.get(id) ?? []), [outfit.garmentIds, byId]);
+  // A deleted piece leaves the outfit (its item cascades) or isn't in the closet yet: rate what's there.
+  const presentIds = useMemo(() => pieces.map((g) => g.id), [pieces]);
+  // Only pieces that are there and available are worn; the rest of the outfit must still be complete.
+  const garmentIds = useMemo(() => pieces.filter((g) => g.status === 'available').map((g) => g.id), [pieces]);
+  const wearable = useMemo(
+    () => isCompleteOutfit(pieces.flatMap((g) => (g.status === 'available' && g.category !== null ? [slotOf(g.category)] : []))),
+    [pieces],
+  );
   const logged = wearLog.isLogged(garmentIds);
   const wearError = wearLog.errorFor(garmentIds);
   const message = error === null ? (wearError === null ? null : t(`outfit.error.${wearError}`)) : t(`saved.deleteError.${error}`);
@@ -94,12 +101,13 @@ function SavedCard({
           {message}
         </Text>
       )}
+      {wearable || logged ? null : <Text style={styles.muted}>{t('saved.unavailable')}</Text>}
       <View style={styles.footer}>
         <MiniButton
           label={t('saved.rate')}
-          disabled={!usable}
+          disabled={presentIds.length < 2}
           onPress={() => {
-            router.push({ pathname: '/rate', params: { ids: garmentIds.join(',') } });
+            router.push({ pathname: '/rate', params: { ids: presentIds.join(',') } });
           }}
         />
         {wearLog.canUndo(garmentIds) ? (
@@ -115,7 +123,7 @@ function SavedCard({
         <MiniButton
           label={logged ? t('outfit.logged') : t('outfit.wear')}
           tone="accent"
-          disabled={logged || wearLog.busy || !usable}
+          disabled={logged || wearLog.busy || !wearable}
           onPress={() => {
             void wearLog.log(garmentIds, null, outfit.score);
           }}

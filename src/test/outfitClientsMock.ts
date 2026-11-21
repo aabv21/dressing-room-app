@@ -16,3 +16,7 @@ export const logWear = jest.fn(() => Promise.resolve({ ok: true as const }));
 export const saveOutfit = jest.fn(() => Promise.resolve({ ok: true as const }));
 export const dismissOutfit = jest.fn(() => Promise.resolve({ ok: true as const }));
 export const stopSuggesting = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const undismissOutfit = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const resumeSuggesting = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const countDismissed = jest.fn(() => Promise.resolve(0));
+export const restoreDismissed = jest.fn(() => Promise.resolve({ ok: true as const }));

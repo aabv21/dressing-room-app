@@ -66,7 +66,7 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   the caught-up button goes back (or to the closet with no history).
 - `src/__tests__/garment-detail.test.tsx` — the garment detail: a save sends only the changed field
   and is disabled until something changed, a network error keeps the edit, the status and the "Use
-  in suggestions" switch save at once and revert on error, delete confirms first and goes back (or to the closet with no history), a
+  in suggestions" switch save at once and revert on error (a row without `suggest` shows it on), delete confirms first and goes back (or to the closet with no history), a
   failed delete keeps the screen, Replace photo queues the picked photo, editors are disabled while
   the AI is still reading, and an unknown id shows "not found".
 
@@ -158,8 +158,9 @@ Accounts, onboarding and the profile:
 - `src/__tests__/profile.test.tsx` — the Profile tab: prefilled sections, Save shown only for a
   change and sending only the changed fields, "Saved" fading after 2 seconds, its error by the
   button until the next edit, inline validation, the
-  language switch and its saves, household mode as a coming-soon row, another account signing in,
-  and sign-out.
+  language switch and its saves, household mode as a coming-soon row, "Restore hidden suggestions"
+  (the count, the confirm, the restore clearing the device's copy, and a failure keeping the count),
+  another account signing in, and sign-out.
 - `src/__tests__/city.test.tsx` — Today's city sheet: a typed city, the current location (or a
   denied permission), an unchanged city, a failed save or profile read.
 - `src/profile/__tests__/` — `profileRepository.test.ts` (updates of only the patch, an update that
@@ -175,14 +176,16 @@ Outfits, Stats and Diary:
 - `src/__tests__/today.test.tsx` — Today's lucky list: the occasion chips, debounced refetches on
   closet changes (a piece taken out of suggestions too), one fetch at a time, "I'll wear it" with a
   reused wear id and its Undo, "Not for me" (the combination dismissed or one piece turned off, the
-  next outfit shown, a refetch after the debounce, a failure keeping the outfit), the too-small, weather,
+  next outfit shown, a refetch only with fewer than 3 left, a dismissal surviving a restart, the
+  5-second Undo, a failure keeping the outfit), a closet row cached without `suggest` still shown,
+  the too-small, weather,
   quota and error states (over quota opens Build, a missing piece the closet), the staged loading
   copy, and the stored list offline (its note wraps at a large text size).
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
   row, a pick moving on to the next empty slot, the disabled button naming what's missing,
   unavailable garments left out, and a slot row at a large text size.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
-  the confidence line only when low or estimated, the success haptic, the swap, Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
+  the confidence line only when low or estimated, the success haptic, the swap (hidden when its target is out of suggestions), Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, and one request at a time.
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
@@ -220,7 +223,8 @@ Outfits, Stats and Diary:
   numbers that stay inside their cells at a large text size, where the thumbnail shrinks), a day's
   wears, deleting a wear (today's too), and the empty and Spanish months.
 - `src/__tests__/closet-saved.test.tsx` — the Saved segment: saved outfits newest first with the
-  date, the score when known and the pieces; Rate, "I'll wear it" with Undo, Delete after a confirm
+  date, the score when known and the pieces; Rate, "I'll wear it" with Undo (only the pieces still
+  there and available; disabled with a reason when they no longer make an outfit), Delete after a confirm
   (and a failed delete keeping the outfit); the stored list offline; the empty state; and
   `?segment=saved` opening it.
 - `src/stats/__tests__/` — `periods.test.ts` (the period ranges and the Monday-first month grid),
@@ -402,12 +406,14 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
 - `supabase/functions/rate-outfit/__tests__/handler.test.ts` — the Jev score and its cache (keyed by
   the garments, occasion and profile, not by a logged wear), the quota (fails closed), Jev and
   Claude both failing (503), unknown weather, a foreign garment id (404 before any quota), the swap
-  search, and no measurement reaching Jev or Claude.
+  search (never a garment out of suggestions), and no measurement reaching Jev or Claude.
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
   deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
   and "Not for me": no dismissed combination or unsuggested garment in the list, unsuggested shoes
-  still counting as owned, and either change making a new cache key.
+  still counting as owned, a dismissal or a piece turned off answered from the cache minus those
+  outfits with no quota, a re-rank only when fewer than 3 are left, and a list short to begin
+  with staying a hit.
 - `supabase/functions/for-you/__tests__/handler.test.ts` — too small, the 3–5 ideas in gain × fit
   order with Claude lines and store queries (Spanish too), what Jev and Claude see, each model
   failing (template lines or gain-only order, cached degraded), laundry or donated garments, and
@@ -472,7 +478,7 @@ Supabase stack:
   with the service role) and stored city coordinates; B has none. `lucky-list` answers `kind: 'ok'`
   with complete outfits (one top, one bottom, one pair of shoes each) rated by the mock Jev, and a
   second call is served from `lucky_cache` with no Jev call; a dismissed combination leaves the
-  next list, recomputed for the new key; the forecast lands in `weather_cache`
+  next list, served from the same cache entry with no quota or Jev call; the forecast lands in `weather_cache`
   for the hour (fetched once, no geocoding for stored coordinates). `rate-outfit` answers Jev's
   score; a call without a session gets 401 (the anon key passes the gateway, and the function finds
   no user in it); B rating A's garment ids gets 404 `garment_not_found` (RLS hides them) with no Jev
@@ -486,7 +492,8 @@ Supabase stack:
   `garments` select shows. The Saved list's repository lists A's saved outfits newest first with
   their score (none for B), deletes one only for its owner (its items cascade), and never deletes a
   worn outfit. `dismissOutfit` stores the sorted key once (a repeat is a no-op) and `stopSuggesting`
-  turns off only the caller's piece. Needs the Edge Runtime.
+  turns off only the caller's piece; Undo deletes one dismissal and the restore deletes only the
+  caller's. Needs the Edge Runtime.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with

@@ -942,16 +942,51 @@ describe('suggestion feedback', () => {
     expect(count(calls, 'jev')).toBe(0);
   });
 
-  test('dismissing a combination or unsuggesting a garment changes the cache key', async () => {
+  test('a dismissal followed by a refetch is a cache hit without the dismissed outfit: no quota, no Jev', async () => {
     const w = world();
     const first = (await lucky(w)).body as OkBody;
     const [top] = first.outfits;
     if (top === undefined) throw new Error('no outfit');
     w.dismissed = [keyOf(top)];
-    expect(count((await lucky(w)).calls, 'quota')).toBe(1);
-    w.garments = unsuggest(w.garments, idOf(5));
-    expect(count((await lucky(w)).calls, 'quota')).toBe(1);
-    expect(w.luckyCache.size).toBe(3);
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(0);
+    expect(count(calls, 'jev')).toBe(0);
+    expect((body as OkBody).outfits.map(keyOf)).toEqual(first.outfits.slice(1).map(keyOf));
+    expect(outcomes().at(-1)).toEqual({ outcome: 'cached' });
+  });
+
+  test('unsuggesting a garment after the list was ranked drops its outfits from the hit, with no quota', async () => {
+    const w = world();
+    const first = (await lucky(w)).body as OkBody;
+    const piece = first.outfits[0]?.garmentIds[0];
+    if (piece === undefined) throw new Error('no piece');
+    w.garments = unsuggest(w.garments, piece);
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(0);
+    const kept = first.outfits.filter((outfit) => !outfit.garmentIds.includes(piece));
+    expect(kept.length).toBeGreaterThanOrEqual(3);
+    expect((body as OkBody).outfits.map(keyOf)).toEqual(kept.map(keyOf));
+  });
+
+  test('when filtering a hit leaves fewer than 3 outfits, the list is ranked again without them', async () => {
+    const w = world();
+    const first = (await lucky(w)).body as OkBody;
+    w.dismissed = first.outfits.slice(2).map(keyOf);
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(1);
+    expect(count(calls, 'jev')).toBeGreaterThan(0);
+    const keys = (body as OkBody).outfits.map(keyOf);
+    expect(keys.length).toBeGreaterThanOrEqual(3);
+    for (const key of w.dismissed) expect(keys).not.toContain(key);
+    // The same key, rewritten.
+    expect(w.luckyCache.size).toBe(1);
+  });
+
+  test('a hit that was short to begin with stays a hit when nothing is filtered out', async () => {
+    const w = world({ garments: smallCloset() });
+    await lucky(w);
+    const { calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(0);
   });
 
   test('a database error reading the dismissed combinations → 500 with no quota or Jev call', async () => {
@@ -1066,7 +1101,7 @@ describe('the cache key', () => {
     const garments = bigCloset().map((row, index) => (index === 0 ? { ...row, pinned_on: DATE } : row));
     const { calls } = await lucky(world({ garments }));
     expect(calls.find((call) => call.route === 'cacheGet')?.url.searchParams.get('cache_key')).toBe(
-      'eq.857a5696a2a8a7017b7371150bfb0b55179944048e3e0e90dadceb82fa8c18eb',
+      'eq.23074292106397c61c12a2cca0aba848115a4009da42b2e6923e118cb58908c5',
     );
   });
 });

@@ -82,6 +82,8 @@ export type PluralBase =
   | 'stats.kpi.streak'
   | 'diary.outfits'
   | 'saved.count'
+  | 'profile.hidden.count'
+  | 'profile.hidden.confirmTitle'
   | 'forYou.outfits';
 
 /** `{base}.one` for exactly 1, otherwise `{base}.other` — the same en/es rule as `formatWearCount`. */

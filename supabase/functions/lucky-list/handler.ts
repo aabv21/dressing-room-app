@@ -68,6 +68,8 @@ const MAX_PER_BASE = 2;
 const MAX_PER_PIECE = 4;
 /** No Jev call starts this long after the request arrived, so the answer beats the app's deadline. */
 const RANK_BUDGET_MS = 15_000;
+/** "Not for me" filters a cached list; only when fewer than this many outfits are left is it ranked again. */
+const MIN_FILTERED_OUTFITS = 3;
 const CACHE_VERSION = 3;
 
 type LuckyInput = { date: string; occasion: Occasion | null };
@@ -91,19 +93,14 @@ const locationOf = (profile: ProfileRow | null): string | null =>
  * Wearing an outfit doesn't change the key (`freshThisWeek` is recomputed on a hit instead). It
  * carries whether `pinned_on` equals *this request's* date, not the raw value: "Wear it" pins for
  * tomorrow and must not re-rank (and spend quota on) today's list. "Not for me" (a dismissed
- * combination, an unsuggested piece) does change it.
+ * combination, an unsuggested piece) isn't in it either: `filterFeedback` drops those from a hit.
  */
-function cacheKey(
-  garments: readonly RuleGarment[],
-  profile: ProfileRow | null,
-  input: LuckyInput,
-  dismissed: ReadonlySet<string>,
-): Promise<string> {
+function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, input: LuckyInput): Promise<string> {
   // Only garments that can be candidates count (not uncategorized, in the laundry or lent).
   const fingerprint = garments
     .filter((g) => g.category !== null && g.status === 'available')
     .sort(byId)
-    .map((g) => [...garmentFingerprint(g), g.status, g.pinned_on === input.date, g.suggest]);
+    .map((g) => [...garmentFingerprint(g), g.status, g.pinned_on === input.date]);
   return sha256Hex(
     JSON.stringify({
       v: CACHE_VERSION,
@@ -111,7 +108,6 @@ function cacheKey(
       occasion: input.occasion,
       location: locationOf(profile),
       fingerprint,
-      dismissed: [...dismissed].sort(),
       profile: profileIdentity(profile),
     }),
   );
@@ -123,6 +119,20 @@ const outfitKey = (outfit: Outfit): string =>
     .map((g) => g.id)
     .sort()
     .join(',');
+
+/** The hit's outfits minus dismissed combinations and outfits with an unsuggested piece. */
+function filterFeedback(
+  hit: OkResponse,
+  closet: ReadonlyMap<string, RuleGarment>,
+  dismissed: ReadonlySet<string>,
+): OkResponse {
+  const outfits = hit.outfits.filter(
+    (outfit) =>
+      !dismissed.has([...outfit.garmentIds].sort().join(',')) &&
+      outfit.garmentIds.every((id) => closet.get(id)?.suggest === true),
+  );
+  return { ...hit, outfits };
+}
 
 /** Garments pinned for the request's date that `generateCandidates` can place (available, categorized). */
 function pinnedFor(garments: readonly RuleGarment[], date: string): RuleGarment[] {
@@ -279,10 +289,16 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
     const missing = missingSlots(garments);
     if (missing.length > 0) return reply('too_small', 200, { kind: 'too_small', missing, weather } satisfies LuckyResponse);
 
-    const key = await cacheKey(garments, profile, input, dismissed);
+    const key = await cacheKey(garments, profile, input);
     const closet = new Map(garments.map((garment) => [garment.id, garment]));
     const hit = fromCache(await cacheGet(env, fetchFn, 'lucky_cache', userId, key), closet, input.date, weather);
-    if (hit !== null) return reply('cached', 200, hit);
+    if (hit !== null) {
+      const filtered = filterFeedback(hit, closet, dismissed);
+      // A list short to begin with (a small closet) stays a hit; only "Not for me" thinning it re-ranks.
+      if (filtered.outfits.length >= MIN_FILTERED_OUTFITS || filtered.outfits.length === hit.outfits.length) {
+        return reply('cached', 200, filtered);
+      }
+    }
 
     if (!(await consumeQuota(env, fetchFn, userId, 'lucky', LUCKY_DAILY_LIMIT, input.date))) {
       return reply('over_quota', 429, { error: 'over_quota' });

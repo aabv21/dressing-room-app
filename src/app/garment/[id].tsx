@@ -9,7 +9,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Te
 
 import { GARMENT_FIELDS } from '../../closet/catalog';
 import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
-import { isLivePending } from '../../closet/closetSelectors';
+import { isLivePending, isSuggestable } from '../../closet/closetSelectors';
 import { changedFields, FieldEditor, fieldValuesOf, type FieldValues } from '../../closet/GarmentFields';
 import { GarmentPhoto } from '../../closet/GarmentPhoto';
 import { deleteGarment, updateGarment, type Garment } from '../../closet/garmentRepository';
@@ -138,9 +138,10 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   );
   // "Use in suggestions" saves on toggle like the status, and reverts the same way on a failure.
   const [suggestSaving, setSuggestSaving] = useState<boolean | null>(null);
-  const [confirmedSuggest, setConfirmedSuggest] = useState({ stored: garment.suggest, value: garment.suggest });
-  if (confirmedSuggest.stored !== garment.suggest) {
-    setConfirmedSuggest({ stored: garment.suggest, value: garment.suggest });
+  const storedSuggest = isSuggestable(garment);
+  const [confirmedSuggest, setConfirmedSuggest] = useState({ stored: storedSuggest, value: storedSuggest });
+  if (confirmedSuggest.stored !== storedSuggest) {
+    setConfirmedSuggest({ stored: storedSuggest, value: storedSuggest });
   }
   const suggest = suggestSaving ?? confirmedSuggest.value;
   const changeSuggest = useCallback(

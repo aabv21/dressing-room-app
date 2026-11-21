@@ -253,6 +253,18 @@ test("a swap whose target isn't in the local closet refreshes the closet once an
   expect(mockRefresh).toHaveBeenCalledTimes(1);
 });
 
+test('a swap to a garment taken out of suggestions (a cached rating) is hidden', async () => {
+  mockCloset.garments = CLOSET.map((g) => (g.id === BOOTS ? { ...g, suggest: false } : g));
+  mockedRate.mockReturnValue(
+    ok(result({ score: 62, label: 'fair', weakestSlot: 'shoes', swap: { fromId: HEELS, toId: BOOTS, score: 81 } })),
+  );
+  await render(<RateScreen />);
+  await screen.findByText('62%');
+
+  expect(screen.queryByRole('button', { name: 'Try the swap' })).toBeNull();
+  expect(mockRefresh).not.toHaveBeenCalled();
+});
+
 test('"Try the swap" re-rates the outfit with the swapped id on the same screen', async () => {
   mockedRate
     .mockReturnValueOnce(

@@ -129,8 +129,8 @@ optional occasion:
 **Feeling lucky (Today).** Today calls `lucky-list` with the date and the day's optional occasion,
 on focus and after a closet change (debounced). A closet without a top and bottom or one-piece,
 and shoes, gets `too_small` with the missing slots and no model call. Otherwise a cache keyed by
-the date, occasion, place, profile, the dismissed combinations and a closet fingerprint answers,
-or, within 10 misses a day, the function draws up to 200 candidate outfits that pass the season,
+the date, occasion, place, profile and a closet fingerprint answers (minus any combination the user
+dismissed or piece they took out of suggestions since), or, within 10 misses a day, the function draws up to 200 candidate outfits that pass the season,
 formality and weather rules, avoiding pieces worn in the last 7 days, pieces the user took out of
 suggestions and combinations they dismissed ("Not for me"). It keeps the 30 best by a freshness
 and rotation pre-score, spread over

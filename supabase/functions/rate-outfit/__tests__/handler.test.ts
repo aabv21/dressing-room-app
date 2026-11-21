@@ -631,6 +631,16 @@ describe('swaps', () => {
     expect(cachedResults(w)).toEqual([{ ...(body as Row), degraded: false }]);
   });
 
+  test('a garment taken out of suggestions is never a swap candidate', async () => {
+    const w = world({ jev: lowWith({ boots: jevAt(0.44), loafers: jevAt(0.42) }) });
+    const boots = w.garments.get(BOOTS);
+    if (boots === undefined) throw new Error('no boots');
+    w.garments.set(BOOTS, { ...boots, suggest: false });
+    const { body, calls } = await rate(w);
+    expect(body).toMatchObject({ swap: { fromId: SHOES, toId: LOAFERS, score: 42 } });
+    expect(count(calls, 'jev')).toBe(2);
+  });
+
   test('when no candidate beats the score by 5, there is no swap and noBetterSwap is true', async () => {
     const w = world({ jev: lowWith({ boots: jevAt(0.38), loafers: jevAt(0.39) }) });
     const { body } = await rate(w);

@@ -67,7 +67,9 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
   (`DiarySegment.tsx`: a Monday-first month calendar with each worn day's thumbnail; a tapped day's
   wears with their pieces, occasion and score, and Delete) and Saved (`SavedSegment.tsx`: the saved
   outfits newest first with the saved date and score; Rate opens `/rate?ids=…`, "I'll wear it" goes
-  through `useWearLog` with its Undo, and Delete asks first; offline, the stored list with a note).
+  through `useWearLog` with its Undo, logging only the pieces still there and available, and
+  disabled with "Some pieces aren't available" when those no longer make a complete outfit; Delete
+  asks first; offline, the stored list with a note).
   `/closet?segment=saved` opens Saved (the rating's "See it in Saved") and then clears the param.
 - **`GarmentFields.tsx`**: the per-field chip editors (`FieldEditor`, which can be disabled), the
   read-only `ConfirmedRow` and `changedFields` (the save patch: only the fields that differ), used by
@@ -179,14 +181,21 @@ the button's notice slot until the next edit, and lists household mode as "Comin
 - `useLuckyList.ts` and `storedLucky.ts`: Today's list with debounced closet-driven refetches, the
   last good list per occasion for the day in kv `today.lucky.<userId>`, and `useTodayOccasion`.
   The list hides at once an outfit with a piece that's unavailable or out of suggestions
-  (`suggest = false`) or that was dismissed this session; `skip` and `dismiss` show the next one, and
-  the closet fingerprint (with `suggest` and the session's dismissals, mirroring `lucky-list`'s
-  key) refetches the list 3 s later.
+  (`isSuggestable`: only an explicit `suggest = false`, so a closet row cached by an older build
+  without the field counts as on) or that was dismissed; `skip` and `dismiss` show the next one.
+  A dismissal refetches only when fewer than 3 outfits are left; a piece turned off changes the
+  closet fingerprint, so the list refetches 3 s later, and `lucky-list` answers from its cache
+  minus those outfits.
+- `storedDismissed.ts`: the dismissed combinations on the device, in kv `outfits.dismissed.<userId>`
+  (the latest 500), read through `useDismissed`, so a stored or older list never shows one again,
+  also after a restart. Profile's restore clears it.
 - `suggestionFeedback.ts`: Today's "Not for me". `dismissOutfit` stores the outfit's sorted ids in
   `dismissed_outfits` (a repeat is a no-op) and `stopSuggesting` sets a garment's `suggest` to
-  false; the garment detail's "Use in suggestions" switch turns it back on through
-  `updateGarment`. Each costs the next lucky list a cache miss, one of the day's 10
-  ([`ai.md`](ai.md#the-lucky-list-function)). `outfitIdentity.ts` is the shared outfit key.
+  false. For 5 seconds after either, Today offers Undo (`undismissOutfit`, `resumeSuggesting`) in
+  the CTA notice slot. The garment detail's "Use in suggestions" switch turns a piece back on
+  through `updateGarment`, and Profile's "Restore hidden suggestions" (`countDismissed`,
+  `restoreDismissed`, after a confirm with the count) deletes every dismissed combination.
+  `outfitIdentity.ts` is the shared outfit key.
 - `useForYou.ts` and `storedForYou.ts`: For you's ideas in the app's language, fetched on focus one
   request at a time, with the last good answer per language in kv `forYou.ideas.<userId>`.
 - `wearQueue.ts`: "I'll wear it" offline. `logWearOrQueue` logs the wear or, on a network failure,

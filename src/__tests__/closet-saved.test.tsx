@@ -66,6 +66,7 @@ const BLOUSE = '00000000-0000-4000-8000-000000000001';
 const JEANS = '00000000-0000-4000-8000-000000000002';
 const SNEAKERS = '00000000-0000-4000-8000-000000000003';
 const DRESS = '00000000-0000-4000-8000-000000000004';
+const BAG = '00000000-0000-4000-8000-000000000005';
 
 const done = { extraction_status: 'done', reviewed_at: '2026-09-01T12:00:00.000Z' } as const;
 const CLOSET: Garment[] = [
@@ -73,6 +74,7 @@ const CLOSET: Garment[] = [
   garment({ ...done, id: JEANS, category: 'jeans', colors: ['blue'] }),
   garment({ ...done, id: SNEAKERS, category: 'sneakers', colors: ['white'] }),
   garment({ ...done, id: DRESS, category: 'dress', colors: ['black'] }),
+  garment({ ...done, id: BAG, category: 'bag', colors: ['brown'], status: 'laundry' }),
 ];
 
 const NEWEST: SavedOutfit = { id: 'o-2', savedAt: '2026-11-20T15:00:00Z', score: 82, garmentIds: [JEANS, BLOUSE, SNEAKERS] };
@@ -143,6 +145,24 @@ test("I'll wear it logs the outfit with its score, then offers Undo", async () =
   expect(within(card('o-2')).getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
   // The other outfit is untouched.
   expect(within(card('o-1')).getByRole('button', { name: "I'll wear it" })).toBeEnabled();
+});
+
+test("I'll wear it logs only the pieces still there and available", async () => {
+  const withGone: SavedOutfit = { ...NEWEST, garmentIds: [...NEWEST.garmentIds, BAG, '00000000-0000-4000-8000-0000000000ff'] };
+  mockedList.mockResolvedValue([withGone, OLDER]);
+  await openSaved();
+
+  await fireEvent.press(within(card('o-2')).getByRole('button', { name: "I'll wear it" }));
+
+  expect(mockedLogWear).toHaveBeenCalledWith(expect.objectContaining({ garmentIds: NEWEST.garmentIds }));
+});
+
+test("an outfit left incomplete by an unavailable piece can't be worn, and says why", async () => {
+  mockCloset.garments = CLOSET.map((g) => (g.id === SNEAKERS ? { ...g, status: 'laundry' } : g));
+  await openSaved();
+
+  expect(within(card('o-2')).getByRole('button', { name: "I'll wear it" })).toBeDisabled();
+  expect(within(card('o-2')).getByText("Some pieces aren't available")).toBeOnTheScreen();
 });
 
 test('Delete asks first; Cancel keeps it, Delete removes it', async () => {

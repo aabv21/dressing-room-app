@@ -48,8 +48,8 @@ the project. Each row and each photo belongs to your account, and the database's
 let only your signed-in account read or change it. The app talks to Supabase over encrypted
 connections and holds no other key.
 
-Your phone also keeps a copy of your closet, today's outfit suggestions, your saved outfits, your
-last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
+Your phone also keeps a copy of your closet, today's outfit suggestions, your saved outfits, the
+combinations you marked "Not for me", your last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
 folder until it is uploaded.
 
 ## Who processes it
@@ -72,8 +72,8 @@ words such as "camel blazer women"; Google's own privacy policy applies to that 
 ## How long it is kept
 
 Your data stays until you delete it or delete your account. You can delete any garment (its photos
-are removed too), any logged wear or any saved outfit at any time, and put a piece back into
-suggestions from its detail screen. The owner keeps a nightly backup of the database
+are removed too), any logged wear or any saved outfit at any time, put a piece back into
+suggestions from its detail screen, and restore every hidden combination from Profile. The owner keeps a nightly backup of the database
 and photos on their own computer, for recovery only, and keeps the 14 most recent ones; data you
 delete disappears from the backups after the next 14 nightly backups (about two weeks when they run
 every night).

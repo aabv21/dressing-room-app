@@ -18,7 +18,7 @@ import { signInWithEmail } from '../src/auth/emailAuth';
 import type { Database } from '../src/lib/database.types';
 import { logWear, saveOutfit } from '../src/outfits/outfitRepository';
 import { deleteSavedOutfit, listSavedOutfits } from '../src/outfits/savedOutfits';
-import { dismissOutfit, stopSuggesting } from '../src/outfits/suggestionFeedback';
+import { countDismissed, dismissOutfit, restoreDismissed, stopSuggesting, undismissOutfit } from '../src/outfits/suggestionFeedback';
 import { ARCHETYPES } from '../supabase/functions/_shared/archetypes.ts';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, serviceClient, uniqueEmail } from './helpers';
 import { type MockAnthropic, startMockAnthropic } from './mockAnthropic';
@@ -214,7 +214,7 @@ describe('lucky-list', () => {
     expect(mock.calls('/v1/systemone')).toBe(jevCalls);
   }, FUNCTION_TIMEOUT_MS);
 
-  test('a dismissed combination leaves the next list, which is recomputed for the new key', async () => {
+  test('a dismissed combination leaves the next list, served from the same cache entry with no quota or Jev', async () => {
     const outfits = firstOutfits as { garmentIds: string[] }[];
     const [first] = outfits;
     if (first === undefined) throw new Error('no outfit to dismiss');
@@ -229,7 +229,9 @@ describe('lucky-list', () => {
     const next = (body as { outfits: { garmentIds: string[] }[] }).outfits;
     expect(next.length).toBe(outfits.length - 1);
     expect(next.map((outfit) => [...outfit.garmentIds].sort().join(','))).not.toContain(key);
-    expect(mock.calls('/v1/systemone')).toBeGreaterThan(jevCalls);
+    expect(mock.calls('/v1/systemone')).toBe(jevCalls);
+    const counter = await serviceClient().from('usage_counters').select('count').eq('user_id', userA.id).eq('kind', 'lucky');
+    expect(counter.data).toEqual([{ count: 1 }]);
     const removed = await userA.client.from('dismissed_outfits').delete().eq('outfit_key', key);
     expect(removed.error).toBeNull();
   }, FUNCTION_TIMEOUT_MS);
@@ -418,5 +420,14 @@ test('"Not for me": dismissOutfit stores the sorted key once, and stopSuggesting
   const piece = await serviceClient().from('garments').select('suggest').eq('id', closet.blackLoafers).single();
   expect(piece.data?.suggest).toBe(false);
   await serviceClient().from('garments').update({ suggest: true }).eq('id', closet.blackLoafers);
-  await userA.client.from('dismissed_outfits').delete().eq('outfit_key', [...ids].sort().join(','));
+
+  // Undo takes one back; Profile's restore clears the rest, only the caller's.
+  expect(await dismissOutfit([closet.grayShirt, closet.blackPants, closet.blackLoafers], userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(2);
+  expect(await undismissOutfit([closet.blackLoafers, closet.blackPants, closet.grayShirt], userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(1);
+  expect(await restoreDismissed(userB.id, userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(1);
+  expect(await restoreDismissed(userA.id, userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(0);
 });

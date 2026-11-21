@@ -22,3 +22,24 @@ export function dismissOutfit(garmentIds: readonly string[], client: Client = su
 export function stopSuggesting(garmentId: string, client: Client = supabase): Promise<RequestResult> {
   return runRequest(() => client.from('garments').update({ suggest: false }).eq('id', garmentId).select('id'), reachedRow);
 }
+
+/** The 5-second Undo after "Don't suggest this combination". */
+export function undismissOutfit(garmentIds: readonly string[], client: Client = supabase): Promise<RequestResult> {
+  return runRequest(() => client.from('dismissed_outfits').delete().eq('outfit_key', outfitIdentity(garmentIds)));
+}
+
+/** The 5-second Undo after "Don't suggest this piece". */
+export function resumeSuggesting(garmentId: string, client: Client = supabase): Promise<RequestResult> {
+  return runRequest(() => client.from('garments').update({ suggest: true }).eq('id', garmentId).select('id'), reachedRow);
+}
+
+/** How many combinations the caller has dismissed; null when the count can't be read. */
+export async function countDismissed(client: Client = supabase): Promise<number | null> {
+  const { count, error } = await client.from('dismissed_outfits').select('outfit_key', { count: 'exact', head: true });
+  return error === null ? count : null;
+}
+
+/** Profile's "Restore hidden suggestions": every dismissed combination of the caller goes. */
+export function restoreDismissed(userId: string, client: Client = supabase): Promise<RequestResult> {
+  return runRequest(() => client.from('dismissed_outfits').delete().eq('user_id', userId));
+}

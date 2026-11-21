@@ -12,7 +12,8 @@ import { kvGet, kvRemove } from '../lib/kv';
 import { storeLucky } from '../outfits/storedLucky';
 import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
-import { dismissOutfit, stopSuggesting } from '../outfits/suggestionFeedback';
+import { dismissOutfit, stopSuggesting, undismissOutfit } from '../outfits/suggestionFeedback';
+import { storedDismissedKey } from '../outfits/storedDismissed';
 import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
 import { getProfile, type Profile, type ProfilePatch } from '../profile/profileRepository';
@@ -53,7 +54,12 @@ jest.mock('../closet/ClosetProvider', () => ({
     removeLocal: jest.fn(),
   }),
 }));
-jest.mock('../outfits/suggestionFeedback', () => ({ dismissOutfit: jest.fn(), stopSuggesting: jest.fn() }));
+jest.mock('../outfits/suggestionFeedback', () => ({
+  dismissOutfit: jest.fn(),
+  stopSuggesting: jest.fn(),
+  undismissOutfit: jest.fn(),
+  resumeSuggesting: jest.fn(),
+}));
 
 jest.mock('../outfits/aiClient', () => ({
   fetchLuckyList: jest.fn(),
@@ -564,7 +570,13 @@ describe('Not for me', () => {
   const mockedDismiss = jest.mocked(dismissOutfit);
   const mockedStopSuggesting = jest.mocked(stopSuggesting);
 
+  const mockedUndismiss = jest.mocked(undismissOutfit);
+  const THIRD: LuckyOutfit = { garmentIds: [TOP, JEANS, SNEAKERS], score: 76, freshThisWeek: false };
+  const FOURTH: LuckyOutfit = { garmentIds: [TOP, SKIRT, SNEAKERS, BAG], score: 70, freshThisWeek: false };
+
   beforeEach(() => {
+    kvRemove(storedDismissedKey('user-1'));
+    mockedUndismiss.mockReset();
     mockedDismiss.mockReset();
     mockedStopSuggesting.mockReset();
     mockReplaceLocal.mockClear();
@@ -586,8 +598,7 @@ describe('Not for me', () => {
     expect(mockedDismiss).not.toHaveBeenCalled();
   });
 
-  test("Don't suggest this combination dismisses it, shows the next outfit and refetches after the debounce", async () => {
-    jest.useFakeTimers();
+  test("Don't suggest this combination dismisses it, shows the next outfit, and refetches when fewer than 3 are left", async () => {
     mockedFetch.mockReturnValue(ok(list()));
     mockedDismiss.mockResolvedValue({ ok: true });
     await render(<TodayScreen />);
@@ -603,10 +614,65 @@ describe('Not for me', () => {
     // The one left can't be swapped for another.
     expect(screen.getByRole('button', { name: 'Another' })).toBeDisabled();
 
-    mockedFetch.mockReturnValue(ok(list([SECOND])));
-    await advance(CLOSET_REFETCH_DELAY_MS);
     expect(mockedFetch).toHaveBeenCalledTimes(2);
     expect(screen.getByText('Skirt · Camel')).toBeOnTheScreen();
+  });
+
+  test('with 3 or more left, a dismissal refetches nothing, even after the debounce', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(ok(list([FIRST, SECOND, THIRD, FOURTH])));
+    mockedDismiss.mockResolvedValue({ ok: true });
+    await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Not for me' }));
+    await fireEvent.press(screen.getByRole('button', { name: "Don't suggest this combination" }));
+    await advance(CLOSET_REFETCH_DELAY_MS);
+
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Skirt · Camel')).toBeOnTheScreen();
+  });
+
+  test('a dismissal survives a restart: the stored list never shows it again', async () => {
+    mockedFetch.mockReturnValue(ok(list([FIRST, SECOND, THIRD, FOURTH])));
+    mockedDismiss.mockResolvedValue({ ok: true });
+    const first = await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+    await fireEvent.press(screen.getByRole('button', { name: 'Not for me' }));
+    await fireEvent.press(screen.getByRole('button', { name: "Don't suggest this combination" }));
+    await first.unmount();
+
+    expect(kvGet(storedDismissedKey('user-1'))).toContain([...FIRST.garmentIds].sort().join(','));
+    await render(<TodayScreen />);
+    expect(await screen.findByText('Skirt · Camel')).toBeOnTheScreen();
+    expect(screen.queryByTestId(`outfit-piece-${BAG}`)).toBeNull();
+  });
+
+  test('Undo right after a dismissal brings the combination back', async () => {
+    mockedFetch.mockReturnValue(ok(list([FIRST, SECOND, THIRD, FOURTH])));
+    mockedDismiss.mockResolvedValue({ ok: true });
+    mockedUndismiss.mockResolvedValue({ ok: true });
+    await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+    await fireEvent.press(screen.getByRole('button', { name: 'Not for me' }));
+    await fireEvent.press(screen.getByRole('button', { name: "Don't suggest this combination" }));
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Undo' }));
+
+    expect(mockedUndismiss).toHaveBeenCalledWith(FIRST.garmentIds);
+    expect(kvGet(storedDismissedKey('user-1')) ?? '').not.toContain([...FIRST.garmentIds].sort().join(','));
+    await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
+    expect(screen.getByTestId(`outfit-piece-${BAG}`)).toBeOnTheScreen();
+  });
+
+  test('a closet row cached by an older build (no suggest field) still shows its outfits', async () => {
+    mockCloset.garments = CLOSET.map((g) => ({ ...g, suggest: undefined }) as unknown as Garment);
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    expect(await screen.findByText('Jeans · Blue')).toBeOnTheScreen();
   });
 
   test("Don't suggest a piece turns it off, hides its outfits and shows the next", async () => {

@@ -324,7 +324,9 @@ Swaps are not looked for after a fallback rating: Jev has just failed, and a Jev
 can't be compared with a Claude-estimated score. Candidates are checked one by one against the
 occasion, season and weather rules (`passesRules` on the single piece, without the whole-outfit
 "cold needs outerwear" rule) and taken in the order of the lucky list's `preScore` of the single piece
-(days since worn, a neutral color, the rotation bonus), so the least recently and least worn come first. When the weakest slot holds two
+(days since worn, a neutral color, the rotation bonus), so the least recently and least worn come first.
+A garment the user took out of suggestions (`suggest = false`) is never a candidate; the app also
+hides a cached rating's swap to such a piece. When the weakest slot holds two
 pieces (two accessories), the first is swapped.
 
 ### Unknown weather
@@ -377,13 +379,16 @@ The day's "feeling lucky" outfits for the Today screen (request, response and st
    isn't too small), but joins no candidate and claims no pin in step 5, so a closet whose only
    shoes are turned off answers `outfits: []`.
 3. The cache key (`CACHE_VERSION` 3) hashes the date, the occasion, `locationKey(profile)`,
-   `profileIdentity(profile)` (not `updated_at`, so a language toggle keeps the list), the
-   caller's `dismissed_outfits` keys, sorted, and a closet fingerprint: each garment's id and
-   rating-relevant columns (category, colors, pattern, formality, fit, seasons, warmth, status,
-   `suggest`, and whether `pinned_on` equals *this request's* date; not `updated_at`,
-   `last_worn_at` or `wear_count`, which logging a wear bumps). So "Not for me" (a dismissed
-   combination or a piece taken out of suggestions) recomputes the list, at the cost of one of the
-   day's 10 misses, so an "I'll wear it" tap
+   `profileIdentity(profile)` (not `updated_at`, so a language toggle keeps the list) and a
+   closet fingerprint: each garment's id and rating-relevant columns (category, colors, pattern,
+   formality, fit, seasons, warmth, status, and whether `pinned_on` equals *this request's* date;
+   not `updated_at`, `last_worn_at` or `wear_count`, which logging a wear bumps, nor `suggest`).
+   "Not for me" isn't in the key either: a hit drops every dismissed combination and every outfit
+   with a piece whose `suggest` is false, so a dismissal costs no quota. Only when that leaves fewer
+   than 3 outfits (`MIN_FILTERED_OUTFITS`) of a list that had more is the list ranked again under
+   the same key, spending one of the day's 10 misses; a list short to begin with (a small closet)
+   stays a hit. A piece turned back on reappears at the next recompute (the next day, occasion or
+   closet edit). So an "I'll wear it" tap
    doesn't reshuffle the day's list, but a new "Suggest tomorrow" pin for today does recompute it — a pin
    for tomorrow (what "Suggest tomorrow" actually sets, per "Unused for 6 months" above) leaves today's
    fingerprint, and so today's cached list, untouched. A hit keeps the list as ranked but

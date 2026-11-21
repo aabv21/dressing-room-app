@@ -220,6 +220,13 @@ test('the "Use in suggestions" switch is on by default and saves suggest at once
   expect(screen.getByRole('switch', { name: 'Use in suggestions' })).not.toBeChecked();
 });
 
+test('a row cached by an older build (no suggest field) shows the switch on', async () => {
+  mockCloset.garments = [{ ...jeans(), suggest: undefined } as unknown as Garment];
+  await renderDetail();
+
+  expect(screen.getByRole('switch', { name: 'Use in suggestions' })).toBeChecked();
+});
+
 test('a garment taken out of suggestions can be put back', async () => {
   mockCloset.garments = [jeans({ suggest: false })];
   mockedUpdateGarment.mockResolvedValue({ ok: true });

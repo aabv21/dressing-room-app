@@ -50,7 +50,8 @@ seguridad de la base de datos solo permiten que tu cuenta, con tu sesión inicia
 cambie. La app se comunica con Supabase por conexiones cifradas y no guarda ninguna otra clave.
 
 Tu teléfono guarda además una copia de tu clóset, las sugerencias de outfit del día, tus outfits
-guardados, tus últimas ideas de "Para ti" y fotos en caché, para que la app funcione sin conexión. Una foto que espera para
+guardados, las combinaciones que marcaste con "No es para mí", tus últimas ideas de "Para ti" y
+fotos en caché, para que la app funcione sin conexión. Una foto que espera para
 subirse se guarda en la carpeta propia de la app hasta que se sube.
 
 ## Quién los procesa
@@ -75,7 +76,8 @@ privacidad de Google.
 
 Tus datos se guardan hasta que los eliminas o eliminas tu cuenta. Puedes eliminar cualquier prenda
 (sus fotos también se borran), cualquier uso registrado o cualquier outfit guardado cuando quieras,
-y volver a incluir una prenda en las sugerencias desde su detalle. El dueño de la app guarda
+volver a incluir una prenda en las sugerencias desde su detalle y restaurar todas las combinaciones
+ocultas desde Perfil. El dueño de la app guarda
 cada noche una copia de seguridad de la base de datos y las fotos en su propia computadora, solo para
 recuperación, y conserva las 14 más recientes; los datos que eliminas desaparecen de las copias de
 seguridad después de las 14 copias nocturnas siguientes (unas dos semanas cuando se hacen todas las

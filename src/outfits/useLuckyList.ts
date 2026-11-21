@@ -6,6 +6,7 @@ import { AppState } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
 import { OCCASIONS, type Occasion, type Slot } from '../closet/catalog';
+import { isSuggestable } from '../closet/closetSelectors';
 import { useCloset } from '../closet/ClosetProvider';
 import type { Garment } from '../closet/garmentRepository';
 import { kvGet, kvRemove, kvSet } from '../lib/kv';
@@ -14,7 +15,8 @@ import { fetchLuckyList, type AiError } from './aiClient';
 import { readStoredLucky, storeLucky } from './storedLucky';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from './types';
 import { useStoredQuery } from './useStoredQuery';
-import { outfitIdentity } from './wornToday';
+import { addDismissed, removeDismissed, useDismissed } from './storedDismissed';
+import { outfitIdentity } from './outfitIdentity';
 
 export type LuckyState = 'loading' | 'ready' | 'too_small' | 'error';
 
@@ -28,8 +30,10 @@ export type LuckyList = {
   next: () => void;
   /** Shows the first outfit after the current one that `hidden` doesn't match ("Not for me"). */
   skip: (hidden: (outfit: LuckyOutfit) => boolean) => void;
-  /** Hides a dismissed combination at once and shows the next; the closet fingerprint then refetches. */
+  /** Hides a dismissed combination at once (kept on the device) and shows the next; refetches below 3 left. */
   dismiss: (garmentIds: readonly string[]) => void;
+  /** Takes a dismissal back (Today's Undo). */
+  undismiss: (garmentIds: readonly string[]) => void;
   weather: WeatherSummary | null;
   /** The slots a `too_small` closet lacks; empty otherwise. */
   missing: Slot[];
@@ -93,19 +97,21 @@ export function useTodayOccasion(): [Occasion | null, (next: Occasion | null) =>
 /** How long closet changes settle before they refetch the list: an upload burst is one call. */
 export const CLOSET_REFETCH_DELAY_MS = 3_000;
 
+/** Below this many outfits left after "Not for me", Today asks for a new list (`lucky-list` re-ranks too). */
+const MIN_LEFT = 3;
+
 /**
- * Mirrors `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): candidate garments with their rating
- * columns and `suggest`, plus this session's dismissed combinations; not wear counts or `last_worn_at`
- * (wearing an outfit mustn't reshuffle today's list).
+ * Mirrors `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): candidate garments and their rating
+ * columns, not wear counts or `last_worn_at` (wearing an outfit mustn't reshuffle today's list). `suggest`
+ * is here too, so a piece turned off refetches: the server drops its outfits from the cached list.
  */
-function closetFingerprint(garments: readonly Garment[], dismissed: ReadonlySet<string>): string {
-  return JSON.stringify([
+function closetFingerprint(garments: readonly Garment[]): string {
+  return JSON.stringify(
     garments
       .filter((g) => g.category !== null && g.status === 'available')
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-      .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status, g.suggest]),
-    [...dismissed].sort(),
-  ]);
+      .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status, isSuggestable(g)]),
+  );
 }
 
 const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
@@ -121,9 +127,9 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
   const focused = useIsFocused();
   const { garments, status: closetStatus } = useCloset();
   const closetReady = closetStatus !== 'loading';
-  // Combinations dismissed this session, hidden before the refetch that leaves them out lands.
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
-  const fingerprint = useMemo(() => closetFingerprint(garments, dismissed), [garments, dismissed]);
+  // Dismissed combinations stay hidden from a stored or older list, also after a restart.
+  const dismissed = useDismissed(userId);
+  const fingerprint = useMemo(() => closetFingerprint(garments), [garments]);
   const query = `${userId ?? ''}|${day}|${occasion ?? ''}`;
 
   // The closet fingerprint of the last request started; a newer one schedules a refetch.
@@ -173,7 +179,7 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
         !dismissed.has(outfitIdentity(outfit.garmentIds)) &&
         outfit.garmentIds.every((id) => {
           const piece = byId.get(id);
-          return piece?.status === 'available' && piece.suggest;
+          return piece?.status === 'available' && isSuggestable(piece);
         }),
     );
   }, [response, garments, dismissed]);
@@ -203,11 +209,20 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
 
   const dismiss = useCallback(
     (garmentIds: readonly string[]) => {
+      if (userId === null) return;
       const identity = outfitIdentity(garmentIds);
       skip((outfit) => outfitIdentity(outfit.garmentIds) === identity);
-      setDismissed((current) => new Set([...current, identity]));
+      addDismissed(userId, identity);
+      if (outfits.filter((outfit) => outfitIdentity(outfit.garmentIds) !== identity).length < MIN_LEFT) refetch();
     },
-    [skip],
+    [skip, userId, outfits, refetch],
+  );
+
+  const undismiss = useCallback(
+    (garmentIds: readonly string[]) => {
+      if (userId !== null) removeDismissed(userId, outfitIdentity(garmentIds));
+    },
+    [userId],
   );
 
   let state: LuckyState;
@@ -221,6 +236,7 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     next,
     skip,
     dismiss,
+    undismiss,
     weather: lastResponse?.weather ?? null,
     missing: response?.kind === 'too_small' ? response.missing : [],
     error: response === null ? error : null,

@@ -54,6 +54,22 @@ init`, the OAuth clients and the store records.
   `supabase/seed.sql` is local only.
 - **Done.** Wave 1 (#45) is deployed: its migration `20261120120000_quota_local_day.sql` and the
   functions that send the local day to `consume_quota`.
+- **Pending (after merge).** Wave 5a-2 (saved outfits and suggestion feedback), in this order:
+  1. `pnpm exec supabase db push` for `20261121120000_suggestion_feedback.sql`
+     (`dismissed_outfits`, `garments.suggest`, `outfits.score`, the new `save_outfit` signature and
+     the saved-outfit delete policy);
+  2. `pnpm exec supabase functions deploy lucky-list for-you rate-outfit export-data`;
+  3. then the app build.
+
+  Incompatible combinations:
+  - New functions on the old schema: every garment read selects `wear_count` and `suggest`, so
+    lucky-list, for-you and rate-outfit answer 500, and lucky-list also reads `dismissed_outfits`.
+  - The new app before the new `export-data`: the app refuses an export without `dismissedOutfits`
+    ("Export my data" fails).
+  - The new app on the old schema: Saved, "Not for me", the suggestions switch, Profile's restore
+    and Save with a score all fail.
+  - An old app on the new schema and functions works: `save_outfit` still takes the garment ids
+    alone, and old builds never send `suggest`.
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
   manual `gh workflow run keepalive.yml` answers the server time from `public.keep_alive()`. GitHub

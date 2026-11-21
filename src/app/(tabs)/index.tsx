@@ -2,7 +2,7 @@
 // "Another", "I'll wear it" and "How does it look?" (the rating).
 import { router } from 'expo-router';
 import { Check, Dices, Layers, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../../auth/AuthProvider';
@@ -14,8 +14,8 @@ import type { RequestError } from '../../lib/requestResult';
 import { formatWeather, formatWeekday, orderPieces, pieceLabel } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
-import { useWearLog } from '../../outfits/useWearLog';
-import { dismissOutfit, stopSuggesting } from '../../outfits/suggestionFeedback';
+import { UNDO_WINDOW_MS, useWearLog } from '../../outfits/useWearLog';
+import { dismissOutfit, resumeSuggesting, stopSuggesting, undismissOutfit } from '../../outfits/suggestionFeedback';
 import { outfitIdentity } from '../../outfits/wornToday';
 import { announceForAccessibility } from '../../ui/a11y';
 import type { AiError } from '../../outfits/aiClient';
@@ -258,6 +258,19 @@ export default function TodayScreen(): React.JSX.Element {
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [feedbackError, setFeedbackError] = useState<RequestError | null>(null);
   const [feedbackDone, setFeedbackDone] = useState<string | null>(null);
+  // The last "Not for me", which Undo takes back for `UNDO_WINDOW_MS`.
+  const [feedbackUndo, setFeedbackUndo] = useState<
+    { kind: 'combination'; garmentIds: readonly string[] } | { kind: 'piece'; piece: Garment } | null
+  >(null);
+  useEffect(() => {
+    if (feedbackUndo === null) return undefined;
+    const timer = setTimeout(() => {
+      setFeedbackUndo(null);
+    }, UNDO_WINDOW_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [feedbackUndo]);
   const openFeedback = useCallback((garmentIds: readonly string[]) => {
     setFeedbackFor(outfitIdentity(garmentIds));
     setFeedbackError(null);
@@ -284,6 +297,7 @@ export default function TodayScreen(): React.JSX.Element {
       }
       lucky.dismiss(garmentIds);
       finishFeedback(t('today.notForMe.doneCombination'));
+      setFeedbackUndo({ kind: 'combination', garmentIds });
     },
     [lucky, finishFeedback, t],
   );
@@ -300,9 +314,25 @@ export default function TodayScreen(): React.JSX.Element {
       lucky.skip((candidate) => candidate.garmentIds.includes(piece.id));
       replaceLocal({ ...piece, suggest: false });
       finishFeedback(t('today.notForMe.donePiece', { piece: pieceLabel(piece, t) }));
+      setFeedbackUndo({ kind: 'piece', piece });
     },
     [lucky, replaceLocal, finishFeedback, t],
   );
+  const undoFeedback = useCallback(async () => {
+    const target = feedbackUndo;
+    if (target === null) return;
+    setFeedbackUndo(null);
+    const result =
+      target.kind === 'combination' ? await undismissOutfit(target.garmentIds) : await resumeSuggesting(target.piece.id);
+    if (!result.ok) {
+      setFeedbackDone(t('today.notForMe.undoFailed'));
+      return;
+    }
+    if (target.kind === 'combination') lucky.undismiss(target.garmentIds);
+    else replaceLocal({ ...target.piece, suggest: true });
+    setFeedbackDone(null);
+    announceForAccessibility(t('today.notForMe.undone'));
+  }, [feedbackUndo, lucky, replaceLocal, t]);
 
   const weatherResolved = lucky.state === 'ready' || lucky.state === 'too_small';
   const cityWithoutWeather = useProfileCity();
@@ -346,6 +376,16 @@ export default function TodayScreen(): React.JSX.Element {
     notice = <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice>;
   } else if (outfit !== undefined && wearLog.isQueued(outfit.garmentIds)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
+  } else if (feedbackUndo !== null) {
+    notice = (
+      <UndoNotice
+        label={t('outfit.undo')}
+        hint={t('today.notForMe.undo.hint')}
+        onPress={() => {
+          void undoFeedback();
+        }}
+      />
+    );
   }
 
   let body: React.ReactNode;
