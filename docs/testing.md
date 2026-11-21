@@ -450,7 +450,7 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   rules, one-pieces, outerwear, the cap on a large closet), the ranking (an unsuggested garment
   still owns its archetype but adds no gain), the Jev fit, the Claude
   lines and their template fallbacks, and the store-search query.
-- `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs, weather bands and
+- `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs (the daily forecast's included), the daily forecast's and the place's parsing, weather bands and
   conditions, and the forecast and geocoding parsers.
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
   0000), `mapLimit`, the profile and garments read with the user's token (enums checked, non-uuid
@@ -488,6 +488,21 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   the garments, occasion and profile, not by a logged wear), the quota (fails closed), Jev and
   Claude both failing (503), unknown weather, a foreign garment id (404 before any quota), the swap
   search (never a garment out of suggestions), and no measurement reaching Jev or Claude.
+- `supabase/functions/_shared/__tests__/tripPlan.test.ts` — `tripDates` across a year end;
+  `planTrip` packs the fewest new pieces (three tops, two bottoms, one pair of shoes over three days
+  pack five pieces with three different outfits), repeats an outfit only when nothing else passes,
+  follows each day's weather band (a coat on a cold day, none on a hot one) and, with no forecast,
+  the season rule for the date and latitude; a day nothing fits has no outfit; dismissed
+  combinations and unsuggested pieces stay out; the packing list holds each piece once by slot with
+  its days, most-worn first; the same input plans the same way.
+- `supabase/functions/trip-plan/__tests__/handler.test.ts` — 401/405 before any fetch, every 400
+  (city, dates, 10-day limit, start window, occasion, language, no local day); the plan with each
+  day's weather and a packing list matching the days; no request beyond the database and Open-Meteo;
+  the `trip` quota (5, the local day) before the geocoder; a day past the forecast and a failed
+  forecast (degraded, marker stripped); `too_small` with no quota; 404, 503, 429 and 500; the cache:
+  a hit within 6 hours spends nothing, a miss after it, a degraded answer for 1 hour, a miss for
+  another city, language, dates, occasion or closet, and the city matched regardless of case and
+  spaces.
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
   deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
@@ -501,7 +516,7 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   an unsuggested garment changing the key while still owning its archetype.
 - `supabase/functions/apple-token/__tests__/handler.test.ts` — the code exchange stored with the
   service role and never returned, an identity mismatch, no Apple env (`skipped`), 401 and 405.
-- `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits included), rows read with the
+- `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits, plans and saved trips included), rows read with the
   caller's token and only the caller's paths signed for 7 days, another user's rows dropped, paging
   until an empty page (also when the server caps a page below 1000 rows), a brand-new account, a
   failed read or signing answering 500, and a log of only an outcome word.
@@ -522,7 +537,7 @@ Supabase stack:
 - `account.int.test.ts` — the account functions end to end through the gateway: `apple-token`
   exchanges a code with the mock Apple and stores the refresh token (and stores nothing for a code
   whose Apple user isn't the caller's); `export-data` returns the
-  caller's rows (dismissed outfits and garment prices included) and signed photo URLs; `delete-account` removes the caller's photos, revokes the
+  caller's rows (dismissed outfits, plans, saved trips and garment prices included) and signed photo URLs; `delete-account` removes the caller's photos, revokes the
   Apple token with the mock and deletes the auth user, whose rows cascade, and a retry with the
   same token answers `deleted` without calling Apple again. A second user is untouched throughout.
 - `rls.int.test.ts` — the cross-user RLS boundary: user A can never read, update, list or delete
@@ -554,6 +569,11 @@ Supabase stack:
   and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
+- `trip.int.test.ts` — `trip-plan` through the real gateway with the mock geocoder and daily
+  forecast: the days and packing list from the user's closet with one `trip` quota and one
+  `trip_cache` row, a hit for the same trip (city spelled differently) with no quota or forecast
+  call, days past the forecast without weather, 404 for an unknown city, and 429 on the sixth trip of
+  the day.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
   Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two
   pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`

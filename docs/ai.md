@@ -7,8 +7,10 @@ per call and never photos, the profile, garments, prompts or model output: `extr
 logs the garment id and an outcome word; `rate-outfit`, `lucky-list` and `for-you` log only an
 outcome word. The outcome words are `cached`, `rated`, `fallback`, `over_quota`, `unavailable`,
 `invalid` and `error` for `rate-outfit`; `cached`, `too_small`, `ranked`, `degraded`, `empty`,
-`over_quota`, `invalid` and `error` for `lucky-list`; and the same plus `stale` for `for-you` (each
-function's table below says when). Locally, every Claude, Jev and Open-Meteo call goes to a mock on
+`over_quota`, `invalid` and `error` for `lucky-list`; the same plus `stale` for `for-you`; and
+`cached`, `too_small`, `planned`, `degraded`, `over_quota`, `not_found`, `unavailable`, `invalid` and
+`error` for `trip-plan`, which calls no model ([Trip packing](#trip-packing)). Each function's table
+below says when. Locally, every Claude, Jev and Open-Meteo call goes to a mock on
 the host (`docs/testing.md`'s `integration`).
 
 ## Garment attribute extraction
@@ -634,6 +636,55 @@ value; upgrade path: label outfits rated with known weather, then let the search
 NOTE: about 50 labels is a small sample and the search fits it closely; ceiling: treat the
 suggestion as a hint and apply it only when ρ and accuracy improve by a clear margin; upgrade path:
 label more outfits, or hold some out to check the suggestion before applying it.
+
+## Trip packing
+
+`trip-plan` (`supabase/functions/trip-plan/handler.ts`, the ranking in `_shared/tripPlan.ts`)
+answers a trip's day-by-day outfits and a packing list. It uses **no model**: no Jev, no Claude, so a
+trip costs nothing per request beyond Open-Meteo's free API. The request and statuses are in
+[`api.md`](api.md#trip-plan).
+
+1. Reads the caller's garments and `dismissed_outfits` under RLS. A closet missing a required slot
+   answers `too_small` (`missingSlots`), with no quota and no outbound call.
+2. The cache key: the trip (the city lowercased with its spaces collapsed, start, end, occasion,
+   language), the candidate garments' `garmentFingerprint` plus `suggest`, and the dismissed keys.
+   Wear dates aren't in it (a wear would spend the quota again). A row is a hit for 6 hours
+   (`TRIP_TTL_MS`), a degraded one (the forecast failed) for 1 hour.
+3. On a miss, `consume_quota(user, 'trip', 5, date)` on the app's local day, before any outbound
+   call; 429 over it. A city the geocoder doesn't find still spends one.
+4. Geocodes the city with Open-Meteo (`count=1`, names in the request's language): no result is 404
+   `city_not_found`, a failure 503 `geocoding_unavailable`.
+5. Reads Open-Meteo's daily forecast for the place (`forecast_days=16`, its maximum, in the place's
+   own time zone): each day's high is `tempC`, the band comes from the day's high and low
+   (`bandOf`), `rain` from a chance of 50% or more or a rain or storm code. A trip day the forecast
+   doesn't reach has `weather: null` (the app says "Forecast unavailable") and is planned with the
+   season rule alone (`seasonOf(date, place latitude)`; none in the tropics). A failed forecast
+   plans every day that way and marks the answer degraded.
+6. Day by day, in order: `generateCandidates` over the suggestable garments (the lucky list's rules,
+   pool and 7-day fallback, seeded with the user id and the date, the date as "today"), minus
+   dismissed combinations. Of those, the outfit that adds the **fewest new pieces** to what's
+   already packed wins; among equals, one whose base (the outfit without bag, hat or accessory)
+   wasn't chosen on an earlier day comes first, then the higher `preScore`, then generation order.
+   A repeated outfit is chosen only when nothing else passes. No candidate leaves the day's
+   `garmentIds` null.
+7. The packing list holds each chosen garment once, grouped by slot in `SLOTS` order (top, bottom,
+   one-piece, outerwear, shoes, bag, headwear, accessory), each with the number of days it's worn,
+   most-worn first.
+
+The fewest-new-pieces rule is a greedy capsule: the first day packs a full outfit (the one with the
+fewest pieces wins, so a one-piece beats top and bottom), later days mix those pieces before adding
+any, and shoes are reused whenever the weather allows. Because the draw is seeded, the same closet
+and trip plan the same way.
+
+| Outcome | Status | When |
+| --- | --- | --- |
+| `invalid` | 400 / 401 / 405 | Malformed body, no user, another method |
+| `too_small` | 200 | A required slot has no available garment |
+| `cached` | 200 | A fresh row for the key |
+| `over_quota` | 429 | 5 misses already today |
+| `not_found` / `unavailable` | 404 / 503 | The geocoder found nothing / failed |
+| `planned` / `degraded` | 200 | Planned; the forecast failed (every day without weather) |
+| `error` | 500 | Loading garments or dismissed outfits, or the quota RPC, failed |
 
 ## For you
 

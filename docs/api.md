@@ -66,7 +66,7 @@ insert is `on conflict do nothing`.
 | pg_net, trigger → `extract-attributes` | 5 s | the trigger's `timeout_milliseconds`; the function keeps running after pg_net stops waiting |
 
 **Quotas and caches.** Quotas count cache misses only, through `consume_quota`, before any paid
-call. Rating, the lucky list and For you count the user's local day sent in the request, accepted
+call (or, for `trip-plan`, any outbound call). Rating, the lucky list, For you and trips count the user's local day sent in the request, accepted
 when it is within one day of the server's UTC date (else the UTC day); extraction, started by a
 trigger with no client day, counts the UTC day.
 
@@ -76,6 +76,7 @@ trigger with no client day, counts the UTC day.
 | `rate-outfit` | 50 (`rating`) | `rating_cache`; no age limit, a degraded result 1 hour |
 | `lucky-list` | 10 (`lucky`) | `lucky_cache`; no age limit, a degraded list 1 hour |
 | `for-you` | 1 (`for_you`) | `for_you_cache`; 7 days, a degraded answer 1 hour; one entry per user |
+| `trip-plan` | 5 (`trip`) | `trip_cache`; 6 hours, a degraded answer 1 hour |
 | any weather read | none | `weather_cache`, shared by place and UTC hour |
 
 A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-work)).
@@ -88,6 +89,7 @@ A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-w
 | `POST /functions/v1/rate-outfit` | `src/outfits/aiClient.ts` `rateOutfit` | User JWT | `{ garment_ids, occasion, date }` | 200 `RatingResult` | 400, 401, 404, 405, 422, 429, 500, 503 |
 | `POST /functions/v1/lucky-list` | `aiClient.ts` `fetchLuckyList` | User JWT | `{ date, occasion }` | 200 `LuckyResponse` | 400, 401, 405, 429, 500 |
 | `POST /functions/v1/for-you` | `aiClient.ts` `fetchForYou` | User JWT | `{ language, date? }` | 200 `ForYouResponse` | 400, 401, 405, 429, 500 |
+| `POST /functions/v1/trip-plan` | `aiClient.ts` `planTripRequest` | User JWT | `{ city, start, end, occasion?, language, date }` | 200 `TripResponse` | 400, 401, 404, 405, 429, 500, 503 |
 | `POST /functions/v1/apple-token` | `src/auth/socialAuth.ts` (fire-and-forget) | User JWT | `{ code }` | 200 `{ outcome }` | 401, 405 |
 | `POST /functions/v1/delete-account` | `src/account/accountClient.ts` `deleteAccount` | User JWT (sent explicitly) | `{}` | 200 `{ outcome: 'deleted' }` | 401, 405, 500 |
 | `POST /functions/v1/export-data` | `accountClient.ts` `exportData` | User JWT | `{}` | 200 `DataExport` | 401, 405, 500 |
@@ -192,6 +194,34 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | 429 | `{ error: 'over_quota' }` | `over_quota` | Over the quota with nothing left to show |
 | 200 | ideas | `ranked` / `degraded` / `empty` | Computed; a fit or line fell back; no archetype with gain |
 | 500 | `{ error: 'internal' }` | `error` | Loading garments or the profile, or the quota RPC, failed |
+
+### `trip-plan`
+
+- Request: `POST { "city": string, "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "occasion"?: <Occasion> |
+  null, "language": "en" | "es", "date": "YYYY-MM-DD" }`. The city is trimmed, 1–100 characters; the
+  trip is 1 to 10 days, starting at most one day before the server's UTC date and at most 365 days
+  after it; `occasion` may be left out; `date` is the app's local day (the quota's day);
+  `language` names the place in that language.
+- Response: `TripResponse` (`trip-plan/handler.ts`): `{ kind: 'too_small', missing }` or
+  `{ kind: 'ok', city, days: { date, weather, garmentIds }[], packing: { slot, items: { garmentId,
+  days }[] }[] }`. `city` is the geocoder's name for the place; `weather` is null for a day past the
+  16-day forecast (or every day when the forecast failed); `garmentIds` is null for a day no outfit
+  passes. Nothing is stored for the user: the app writes `saved_trips` only on Save.
+- Reads the caller's garments and `dismissed_outfits` with the user's token; geocoding and the daily
+  forecast come from Open-Meteo (5 s each). No Jev or Claude call. Algorithm:
+  [`ai.md`](ai.md#trip-packing).
+
+| Status | Body | Logged | When |
+| --- | --- | --- | --- |
+| 405 / 401 | as in `rate-outfit` | `invalid` | Method, token |
+| 400 | `{ error: 'invalid_input' }` | `invalid` | Malformed body, a trip over 10 days or outside the start window, another language |
+| 200 | `too_small` | `too_small` | A required slot has no available garment; no cache, quota or Open-Meteo |
+| 200 | the cached answer | `cached` | The same trip and closet within 6 hours (1 hour when degraded) |
+| 429 | `{ error: 'over_quota' }` | `over_quota` | 5 misses already today |
+| 404 | `{ error: 'city_not_found' }` | `not_found` | The geocoder has no match (the quota is spent) |
+| 503 | `{ error: 'geocoding_unavailable' }` | `unavailable` | The geocoder failed or timed out |
+| 200 | the plan | `planned` / `degraded` | Planned; the forecast failed, so every day has no weather |
+| 500 | `{ error: 'internal' }` | `error` | Loading garments or the dismissed outfits, or the quota RPC, failed |
 
 ### `apple-token`
 
@@ -309,7 +339,7 @@ hosted, the URLs stay unset and default to the real hosts.
 | --- | --- | --- | --- |
 | Anthropic (Claude Haiku 5.5) | `POST /v1/messages` | `https://api.anthropic.com` | `integration/mockAnthropic.ts`, port 54499 |
 | TypeSafe (Jev) | `POST /v1/systemone` | `https://api.typesafe.ai` | `integration/mockServices.ts`, port 54498 |
-| Open-Meteo forecast | `GET /v1/forecast` | `https://api.open-meteo.com` | `mockServices.ts`, 54498 |
+| Open-Meteo forecast (current and daily) | `GET /v1/forecast` | `https://api.open-meteo.com` | `mockServices.ts`, 54498 |
 | Open-Meteo geocoding | `GET /v1/search` | `https://geocoding-api.open-meteo.com` | `mockServices.ts`, 54498 |
 | Apple | `POST /auth/token`, `POST /auth/revoke` | `https://appleid.apple.com` | `mockServices.ts`, 54498 |
 | Brevo (Auth's SMTP) | SMTP `smtp-relay.brevo.com:587` | hosted Auth only | Mailpit, port 54424 |

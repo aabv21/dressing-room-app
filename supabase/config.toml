@@ -464,6 +464,10 @@ verify_jwt = true
 [functions.apple-token]
 verify_jwt = true
 
+# Called by signed-in users like lucky-list; reads the closet with that token, and Open-Meteo for the trip.
+[functions.trip-plan]
+verify_jwt = true
+
 # Called by signed-in users; removes their photos, revokes Apple, then deletes the auth user (service role).
 [functions.delete-account]
 verify_jwt = true

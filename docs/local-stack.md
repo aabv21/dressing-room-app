@@ -106,7 +106,9 @@ placeholder. `jev(next)`, `forecast(next)` and `geocode(next)` set each route's 
 well-formed answer to every question (each Score at `level` of its range, so the composite is
 `round(100 · level)`; each Noul at 0.02; each Choice `none`). `calls(path)` counts calls. Until set,
 Jev answers every Score at its best level, the forecast is `MILD_FORECAST` (a dry 19 °C day) and
-geocoding finds Madrid. With no mock running, `rate-outfit` falls back to Claude and the weather is
+geocoding finds Madrid. `MILD_FORECAST` has no daily dates, so `trip-plan` reads it as no forecast
+(every day without weather); `dailyForecast(from, days, max?, min?)` builds the daily block it reads
+(`trip.int.test.ts` sets it). With no mock running, `rate-outfit` falls back to Claude and the weather is
 unknown. For a manual check:
 
 ```bash

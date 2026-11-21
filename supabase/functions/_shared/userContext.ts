@@ -39,6 +39,7 @@ import {
   locationKey,
   parseForecast,
   parseGeocode,
+  parsePlace,
   type WeatherBand,
   type WeatherCondition,
   type WeatherSummary,
@@ -321,6 +322,23 @@ export async function geocodedLatitude(env: GeocodingEnv, fetchFn: FetchFn, city
   }
 }
 
+export type Place = { lat: number; lon: number; name: string; country: string | null };
+
+/**
+ * A typed city's best match with its name in `language`: `not_found` when the geocoder answers with
+ * no result, `failed` on an error status, a network error or the timeout.
+ */
+export async function geocodePlace(
+  env: GeocodingEnv,
+  fetchFn: FetchFn,
+  cityName: string,
+  language: string,
+): Promise<Place | 'not_found' | 'failed'> {
+  const body = await fetchJson(fetchFn, geocodeUrl(`${env.geocodingUrl}/v1/search`, cityName.trim(), language), {}, WEATHER_TIMEOUT_MS);
+  if (body === null) return 'failed';
+  return parsePlace(body) ?? 'not_found';
+}
+
 /**
  * Today's weather plus the season's latitude (the profile's, else geocoded), via `weather_cache`
  * for the UTC hour (a failed cache write still returns the weather). No city, no geocode or any
@@ -384,7 +402,7 @@ export async function consumeQuota(
   env: ServiceEnv,
   fetchFn: FetchFn,
   userId: string,
-  kind: 'rating' | 'lucky' | 'for_you' | 'extraction',
+  kind: 'rating' | 'lucky' | 'for_you' | 'trip' | 'extraction',
   limit: number,
   day?: string,
 ): Promise<boolean> {
@@ -396,7 +414,7 @@ export async function consumeQuota(
   return allowed === true;
 }
 
-export type ResultCache = 'rating_cache' | 'lucky_cache' | 'for_you_cache';
+export type ResultCache = 'rating_cache' | 'lucky_cache' | 'for_you_cache' | 'trip_cache';
 
 /** How long a `degraded: true` result (a fallback, a skipped or failed step) is served from the cache. */
 export const DEGRADED_TTL_MS = 60 * 60 * 1000;

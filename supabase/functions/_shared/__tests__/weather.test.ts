@@ -3,11 +3,15 @@
 import {
   bandOf,
   conditionOf,
+  dailyForecastUrl,
+  FORECAST_DAYS,
   forecastUrl,
   geocodeUrl,
   locationKey,
+  parseDailyForecast,
   parseForecast,
   parseGeocode,
+  parsePlace,
 } from '../weather.ts';
 
 describe('forecastUrl', () => {
@@ -178,5 +182,68 @@ describe('locationKey', () => {
 
   test('only one coordinate present falls back to name', () => {
     expect(locationKey({ name: 'Buenos Aires', lat: -34.6037, lon: null })).toBe('city:buenos aires');
+  });
+});
+
+describe('dailyForecastUrl', () => {
+  test('asks for the daily range, rain chance and weather code over the 16 days Open-Meteo forecasts', () => {
+    const url = dailyForecastUrl('https://api.open-meteo.com/v1/forecast', 38.72, -9.14);
+    expect(url).toBe(
+      'https://api.open-meteo.com/v1/forecast?latitude=38.72&longitude=-9.14&daily=temperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_probability_max%2Cweather_code&timezone=auto&forecast_days=16',
+    );
+    expect(FORECAST_DAYS).toBe(16);
+  });
+});
+
+describe('geocodeUrl with a language', () => {
+  test('asks for the place names in that language', () => {
+    expect(geocodeUrl('https://g.test/v1/search', 'Lisboa', 'es')).toBe('https://g.test/v1/search?name=Lisboa&count=1&format=json&language=es');
+  });
+});
+
+describe('parseDailyForecast', () => {
+  const body = {
+    daily: {
+      time: ['2026-12-01', '2026-12-02', '2026-12-03'],
+      temperature_2m_max: [16, 30, null],
+      temperature_2m_min: [6, 22, 10],
+      precipitation_probability_max: [70, 0, 10],
+      weather_code: [3, 0, 1],
+    },
+  };
+
+  test('maps each day to its summary: the high as the temperature, the band from the range, rain from the chance', () => {
+    const days = parseDailyForecast(body);
+    expect(days?.get('2026-12-01')).toEqual({ tempC: 16, condition: 'cloudy', band: 'cold', rain: true });
+    expect(days?.get('2026-12-02')).toEqual({ tempC: 30, condition: 'clear', band: 'hot', rain: false });
+  });
+
+  test('leaves out a day with a missing value (Open-Meteo answers null past its data)', () => {
+    expect(parseDailyForecast(body)?.has('2026-12-03')).toBe(false);
+  });
+
+  test.each([
+    ['no daily block', {}],
+    ['not an object', 'nope'],
+    ['no time array', { daily: { temperature_2m_max: [1] } }],
+  ])('%s is null', (_label, value) => {
+    expect(parseDailyForecast(value)).toBeNull();
+  });
+});
+
+describe('parsePlace', () => {
+  test('the first result with its name and country', () => {
+    expect(parsePlace({ results: [{ name: 'Lisboa', country: 'Portugal', latitude: 38.72, longitude: -9.14 }] })).toEqual({
+      lat: 38.72,
+      lon: -9.14,
+      name: 'Lisboa',
+      country: 'Portugal',
+    });
+  });
+
+  test('no country is null; no results is null', () => {
+    expect(parsePlace({ results: [{ name: 'X', latitude: 1, longitude: 2 }] })).toEqual({ lat: 1, lon: 2, name: 'X', country: null });
+    expect(parsePlace({ results: [] })).toBeNull();
+    expect(parsePlace({})).toBeNull();
   });
 });
