@@ -637,6 +637,13 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   defaults to true and is client-writable on the caller's own garments only; `save_outfit` stores
   its score; a saved outfit is deleted only by its owner, only while no wear points at it, with its
   items cascading, while `outfit_items` keeps delete revoked.
+- `planned_outfits.test.sql` — `planned_outfits` and `plan_outfit()`: one plan per user and day (a
+  second replaces the first, same row), own garments only, 2 to 6 distinct ids, a day inside the
+  window (UTC date − 1 to + 14), the same rules on a direct insert or update through the policies,
+  own rows only between two users, no anon access, and the cascade on user delete.
+- `saved_trips.test.sql` — `saved_trips`: own rows only, no update, no anon access, the city, the
+  10-day and the object-snapshot checks, the list's index; `trip_cache` is server-only; the `trip`
+  quota kind; both cascade on user delete.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
   `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
   on the caller's own garments only, and not writable by anon.
@@ -647,7 +654,7 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
   queueing the request fails.
 - `cache_cleanup.test.sql` — `prune_expired_caches()` deletes cache rows past each lifetime and
-  keeps fresh ones and each user's newest For you row; the daily `pg_cron` job exists once; no
+  keeps fresh ones and each user's newest For you row (`trip_cache` after 7 hours); the daily `pg_cron` job exists once; no
   client role can call the function.
 - `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
   is executable by a client role, and no index is made redundant by another that starts with the

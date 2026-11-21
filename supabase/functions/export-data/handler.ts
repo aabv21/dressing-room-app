@@ -24,6 +24,10 @@ export type DataExport = {
   wears: Row[];
   /** The combinations the user asked Today not to suggest again. */
   dismissedOutfits: Row[];
+  /** One planned outfit per day (`garment_ids` may name a garment deleted since). */
+  plannedOutfits: Row[];
+  /** Saved trips with the plan's snapshot (`result`). */
+  savedTrips: Row[];
   photos: ExportPhoto[];
 };
 
@@ -83,12 +87,14 @@ export async function handleExportData(request: Request, deps: ExportDataDeps): 
 
   const { env, fetch: fetchFn } = deps;
   try {
-    const [profiles, garments, outfits, wears, dismissedOutfits] = await Promise.all([
+    const [profiles, garments, outfits, wears, dismissedOutfits, plannedOutfits, savedTrips] = await Promise.all([
       readAll(env, fetchFn, auth, userId, 'profiles', '*', 'user_id'),
       readAll(env, fetchFn, auth, userId, 'garments', '*', 'created_at,id'),
       readAll(env, fetchFn, auth, userId, 'outfits', '*,items:outfit_items(garment_id)', 'created_at,id'),
       readAll(env, fetchFn, auth, userId, 'wears', '*', 'worn_on,created_at,id'),
       readAll(env, fetchFn, auth, userId, 'dismissed_outfits', '*', 'created_at,outfit_key'),
+      readAll(env, fetchFn, auth, userId, 'planned_outfits', '*', 'planned_on,id'),
+      readAll(env, fetchFn, auth, userId, 'saved_trips', '*', 'created_at,id'),
     ]);
     const body: DataExport = {
       exportedAt: new Date(now()).toISOString(),
@@ -97,6 +103,8 @@ export async function handleExportData(request: Request, deps: ExportDataDeps): 
       outfits,
       wears,
       dismissedOutfits,
+      plannedOutfits,
+      savedTrips,
       photos: await photosOf(env, fetchFn, userId, garments),
     };
     return reply('exported', 200, body);

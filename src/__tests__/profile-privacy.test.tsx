@@ -158,6 +158,8 @@ const EXPORT: DataExport = {
   outfits: [],
   wears: [],
   dismissedOutfits: [],
+  plannedOutfits: [],
+  savedTrips: [],
   photos: [],
 };
 
