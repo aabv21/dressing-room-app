@@ -62,7 +62,7 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
   slot, category and color filters (a category chip row appears when the slot holds more than one
   category).
 - **The Closet tab's segments** (`SegmentTabs.tsx`): Items (the grid, with `GoalCard`'s first-10
-  goal), Stats (`StatsSegment.tsx`: period chips, KPI tiles, most worn, colors, balance and the
+  goal), Stats (`StatsSegment.tsx`: period chips, KPI tiles, most worn, colors, balance, cost per wear and the
   unused-for-6-months list with Suggest tomorrow and Donate, computed by `src/stats/`) and Diary
   (`DiarySegment.tsx`: a Monday-first month calendar with each worn day's thumbnail; a tapped day's
   wears with their pieces, occasion and score, and Delete) and Saved (`SavedSegment.tsx`: the saved
@@ -231,11 +231,18 @@ the button's notice slot until the next edit, and lists household mode as "Comin
 
 All computed on the device. `periods.ts` (local `YYYY-MM-DD` day math anchored in UTC, the period
 ranges and the Monday-first month grid), `statsModel.ts` (the KPIs, most worn, color shares, slot
-balance, the unused list and the diary by day), `wearsRepository.ts` (`listWears` in pages of 1000,
+balance, the unused list, `costPerWearByCurrency` and the diary by day), `wearsRepository.ts` (`listWears` in pages of 1000,
 at most 20, and `deleteWear`; the trigger lowers the counts), `storedWears.ts` (the last fetched
 wears in kv `wears.v1.<userId>` with the range they cover, read when a fetch fails) and
 `useWears.ts` (a range's wears for Stats' year and Diary's month, fetched on focus with the queued
 ones added, stored, and served from the stored copy offline).
+
+Stats' "Cost per wear" card (`costPerWearByCurrency`) groups the active priced garments by
+currency, the groups with the most priced pieces first, and shows each group's best value (the
+lowest cost per wear among worn pieces) and its "forgotten and priced" piece (the most expensive one
+never worn); a never-worn piece is never the best value, since its cost per wear is its whole
+price. With several currencies each group is headed by its code; amounts are never summed or
+compared across them. Each line opens the garment, and the card is hidden with no priced garment.
 
 ## Account privacy (`src/account/`)
 

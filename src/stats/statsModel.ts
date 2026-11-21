@@ -3,6 +3,7 @@
 import { PALETTE_HEX, slotOf, type GarmentColor } from '../closet/catalog';
 import { COUNTED_COLORS, isActive } from '../closet/closetSelectors';
 import type { Garment } from '../closet/garmentRepository';
+import { costPerWear, priceOf } from '../closet/price';
 import { addDays, periodRange, type Period } from './periods';
 import type { WearWithItems } from './wearsRepository';
 
@@ -209,6 +210,50 @@ export function unusedSixMonths(garments: readonly Garment[], today: string): Ga
     const neverOrLongAgo = g.last_worn_at === null || g.last_worn_at.slice(0, 10) < cutoff;
     return createdOldEnough && neverOrLongAgo;
   });
+}
+
+export type CurrencyValue = {
+  currency: string;
+  /** The worn piece with the lowest cost per wear. */
+  best: { garment: Garment; costPerWear: number } | null;
+  /** The most expensive piece never worn. */
+  forgotten: { garment: Garment; price: number } | null;
+};
+
+/**
+ * Stats' cost per wear card, one group per currency so amounts are never mixed, the groups with
+ * the most priced pieces first. A never-worn piece can't be the best value (its cost per wear is
+ * its whole price); it's the forgotten one instead.
+ */
+export function costPerWearByCurrency(garments: readonly Garment[]): CurrencyValue[] {
+  const groups = new Map<string, { count: number; value: CurrencyValue }>();
+  const byName = (a: Garment, b: Garment): number => sortKey(a).localeCompare(sortKey(b));
+  for (const g of activeGarments(garments)) {
+    const priced = priceOf(g);
+    if (priced === null) continue;
+    let group = groups.get(priced.currency);
+    if (group === undefined) {
+      group = { count: 0, value: { currency: priced.currency, best: null, forgotten: null } };
+      groups.set(priced.currency, group);
+    }
+    group.count += 1;
+    const { value } = group;
+    if (g.wear_count > 0) {
+      const cost = costPerWear(priced.price, g.wear_count);
+      if (value.best === null || cost < value.best.costPerWear || (cost === value.best.costPerWear && byName(g, value.best.garment) < 0)) {
+        value.best = { garment: g, costPerWear: cost };
+      }
+    } else if (
+      value.forgotten === null ||
+      priced.price > value.forgotten.price ||
+      (priced.price === value.forgotten.price && byName(g, value.forgotten.garment) < 0)
+    ) {
+      value.forgotten = { garment: g, price: priced.price };
+    }
+  }
+  return [...groups.values()]
+    .sort((a, b) => b.count - a.count || a.value.currency.localeCompare(b.value.currency))
+    .map((group) => group.value);
 }
 
 /** Groups wears by local day, each day's list kept in the input's (newest-first) order. */

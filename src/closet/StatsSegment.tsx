@@ -10,7 +10,15 @@ import type { RequestError } from '../lib/requestResult';
 import { localDate } from '../lib/localDate';
 import { pieceLabel } from '../outfits/outfitDisplay';
 import { addDays, daysBetween, periodRange, STREAK_HISTORY_DAYS, type Period } from '../stats/periods';
-import { colorShares, kpis, mostWorn, slotBalance, unusedSixMonths } from '../stats/statsModel';
+import {
+  colorShares,
+  costPerWearByCurrency,
+  kpis,
+  mostWorn,
+  slotBalance,
+  unusedSixMonths,
+  type CurrencyValue,
+} from '../stats/statsModel';
 import { useWears } from '../stats/useWears';
 import type { WearWithItems } from '../stats/wearsRepository';
 import { HorizontalBars } from '../ui/charts/HorizontalBars';
@@ -24,6 +32,7 @@ import { useCloset } from './ClosetProvider';
 import { formatMonthDay } from './DiarySegment';
 import { COUNTED_COLORS, isActive, type ColorFilter } from './closetSelectors';
 import { updateGarment, type Garment } from './garmentRepository';
+import { formatMoney } from './price';
 
 const PERIODS: readonly Period[] = ['week', 'month', 'sixMonths'];
 // Room for "100 wears" / "100 usos" at the bars' 12 pt.
@@ -85,6 +94,50 @@ function Card({ title, aside, children }: { title: string; aside?: string; child
         {aside === undefined ? null : <Text style={styles.cardAside}>{aside}</Text>}
       </View>
       {children}
+    </View>
+  );
+}
+
+function GarmentLink({ garmentId, text }: { garmentId: string; text: string }): React.JSX.Element {
+  return (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={text}
+      onPress={() => {
+        router.push(`/garment/${garmentId}`);
+      }}
+      style={styles.costRow}
+    >
+      <Text style={styles.costText}>{text}</Text>
+    </Pressable>
+  );
+}
+
+/** One currency's best value and forgotten piece; the code heads it only when there are several. */
+function CurrencyBlock({ value, labeled }: { value: CurrencyValue; labeled: boolean }): React.JSX.Element {
+  const { t, locale } = useI18n();
+  const { best, forgotten, currency } = value;
+  return (
+    <View style={styles.costBlock}>
+      {labeled ? <Text style={styles.costCurrency}>{currency}</Text> : null}
+      {best === null ? null : (
+        <GarmentLink
+          garmentId={best.garment.id}
+          text={t('stats.cost.best', {
+            piece: pieceLabel(best.garment, t),
+            amount: formatMoney(best.costPerWear, currency, locale),
+          })}
+        />
+      )}
+      {forgotten === null ? null : (
+        <GarmentLink
+          garmentId={forgotten.garment.id}
+          text={t('stats.cost.forgotten', {
+            piece: pieceLabel(forgotten.garment, t),
+            amount: formatMoney(forgotten.price, currency, locale),
+          })}
+        />
+      )}
     </View>
   );
 }
@@ -291,6 +344,8 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
     [balance, t],
   );
 
+  const costGroups = useMemo(() => costPerWearByCurrency(garments), [garments]);
+
   const tomorrow = addDays(today, 1);
   const unused = useMemo(() => unusedSixMonths(garments, today), [garments, today]);
 
@@ -463,6 +518,14 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
         )}
       </Card>
 
+      {costGroups.length === 0 ? null : (
+        <Card title={t('stats.cost.title')}>
+          {costGroups.map((value) => (
+            <CurrencyBlock key={value.currency} value={value} labeled={costGroups.length > 1} />
+          ))}
+        </Card>
+      )}
+
       {unused.length === 0 ? null : (
         <Card title={t('stats.unused.title')} aside={String(unused.length)}>
           {unused.map((g) => (
@@ -584,6 +647,23 @@ const styles = StyleSheet.create({
   link: {
     fontWeight: '700',
     color: colors.accentText,
+  },
+  costBlock: {
+    gap: 2,
+  },
+  costCurrency: {
+    fontSize: fontSizes.caption,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  costRow: {
+    minHeight: layout.minHitTarget,
+    justifyContent: 'center',
+  },
+  costText: {
+    fontSize: fontSizes.bodySmall,
+    lineHeight: 18,
+    color: colors.ink,
   },
   unusedRow: {
     flexDirection: 'row',
