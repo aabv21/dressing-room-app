@@ -14,6 +14,7 @@ import { fetchLuckyList, type AiError } from './aiClient';
 import { readStoredLucky, storeLucky } from './storedLucky';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from './types';
 import { useStoredQuery } from './useStoredQuery';
+import { outfitIdentity } from './wornToday';
 
 export type LuckyState = 'loading' | 'ready' | 'too_small' | 'error';
 
@@ -25,6 +26,10 @@ export type LuckyList = {
   index: number;
   /** Wraps after the last. */
   next: () => void;
+  /** Shows the first outfit after the current one that `hidden` doesn't match ("Not for me"). */
+  skip: (hidden: (outfit: LuckyOutfit) => boolean) => void;
+  /** Hides a dismissed combination at once and shows the next; the closet fingerprint then refetches. */
+  dismiss: (garmentIds: readonly string[]) => void;
   weather: WeatherSummary | null;
   /** The slots a `too_small` closet lacks; empty otherwise. */
   missing: Slot[];
@@ -89,16 +94,18 @@ export function useTodayOccasion(): [Occasion | null, (next: Occasion | null) =>
 export const CLOSET_REFETCH_DELAY_MS = 3_000;
 
 /**
- * Mirrors `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): candidate garments and their rating
- * columns, not wear counts or `last_worn_at` (wearing an outfit mustn't reshuffle today's list).
+ * Mirrors `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): candidate garments with their rating
+ * columns and `suggest`, plus this session's dismissed combinations; not wear counts or `last_worn_at`
+ * (wearing an outfit mustn't reshuffle today's list).
  */
-function closetFingerprint(garments: readonly Garment[]): string {
-  return JSON.stringify(
+function closetFingerprint(garments: readonly Garment[], dismissed: ReadonlySet<string>): string {
+  return JSON.stringify([
     garments
       .filter((g) => g.category !== null && g.status === 'available')
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-      .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status]),
-  );
+      .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status, g.suggest]),
+    [...dismissed].sort(),
+  ]);
 }
 
 const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
@@ -114,7 +121,9 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
   const focused = useIsFocused();
   const { garments, status: closetStatus } = useCloset();
   const closetReady = closetStatus !== 'loading';
-  const fingerprint = useMemo(() => closetFingerprint(garments), [garments]);
+  // Combinations dismissed this session, hidden before the refetch that leaves them out lands.
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
+  const fingerprint = useMemo(() => closetFingerprint(garments, dismissed), [garments, dismissed]);
   const query = `${userId ?? ''}|${day}|${occasion ?? ''}`;
 
   // The closet fingerprint of the last request started; a newer one schedules a refetch.
@@ -159,8 +168,15 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
   const outfits = useMemo(() => {
     if (response?.kind !== 'ok') return [];
     const byId = new Map(garments.map((g) => [g.id, g]));
-    return response.outfits.filter((outfit) => outfit.garmentIds.every((id) => byId.get(id)?.status === 'available'));
-  }, [response, garments]);
+    return response.outfits.filter(
+      (outfit) =>
+        !dismissed.has(outfitIdentity(outfit.garmentIds)) &&
+        outfit.garmentIds.every((id) => {
+          const piece = byId.get(id);
+          return piece?.status === 'available' && piece.suggest;
+        }),
+    );
+  }, [response, garments, dismissed]);
 
   // The shown outfit, by its ids, so a refetch that still lists it keeps it on screen.
   const [shown, setShown] = useState<{ query: string; key: string } | null>(null);
@@ -172,6 +188,28 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     if (following !== undefined) setShown({ query, key: outfitKey(following) });
   }, [outfits, index, query]);
 
+  const skip = useCallback(
+    (hidden: (outfit: LuckyOutfit) => boolean) => {
+      for (let step = 1; step < outfits.length; step += 1) {
+        const candidate = outfits[(index + step) % outfits.length];
+        if (candidate !== undefined && !hidden(candidate)) {
+          setShown({ query, key: outfitKey(candidate) });
+          return;
+        }
+      }
+    },
+    [outfits, index, query],
+  );
+
+  const dismiss = useCallback(
+    (garmentIds: readonly string[]) => {
+      const identity = outfitIdentity(garmentIds);
+      skip((outfit) => outfitIdentity(outfit.garmentIds) === identity);
+      setDismissed((current) => new Set([...current, identity]));
+    },
+    [skip],
+  );
+
   let state: LuckyState;
   if (response !== null) state = response.kind === 'too_small' ? 'too_small' : 'ready';
   else state = status === 'loading' ? 'loading' : 'error';
@@ -181,6 +219,8 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     outfits,
     index,
     next,
+    skip,
+    dismiss,
     weather: lastResponse?.weather ?? null,
     missing: response?.kind === 'too_small' ? response.missing : [],
     error: response === null ? error : null,

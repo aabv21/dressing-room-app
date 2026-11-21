@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { Check, ImageIcon, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { GARMENT_FIELDS } from '../../closet/catalog';
 import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
@@ -136,10 +136,35 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     },
     [garment.id, replaceLocal, report],
   );
+  // "Use in suggestions" saves on toggle like the status, and reverts the same way on a failure.
+  const [suggestSaving, setSuggestSaving] = useState<boolean | null>(null);
+  const [confirmedSuggest, setConfirmedSuggest] = useState({ stored: garment.suggest, value: garment.suggest });
+  if (confirmedSuggest.stored !== garment.suggest) {
+    setConfirmedSuggest({ stored: garment.suggest, value: garment.suggest });
+  }
+  const suggest = suggestSaving ?? confirmedSuggest.value;
+  const changeSuggest = useCallback(
+    async (next: boolean) => {
+      setSuggestSaving(next);
+      setFailure(null);
+      const result = await updateGarment(garment.id, { suggest: next });
+      if (!active.current) {
+        return;
+      }
+      setSuggestSaving(null);
+      if (result.ok) {
+        setConfirmedSuggest((current) => ({ ...current, value: next }));
+        replaceLocal({ ...latest.current, suggest: next });
+      } else {
+        report({ action: 'save', error: result.error });
+      }
+    },
+    [garment.id, replaceLocal, report],
+  );
   const [deleting, setDeleting] = useState(false);
-  // One write at a time (field save, status save, delete), so no two `replaceLocal` calls race from
-  // different snapshots and a late save can't re-add a deleted garment.
-  const busy = saving || statusSaving !== null;
+  // One write at a time (field save, status save, suggest save, delete), so no two `replaceLocal` calls
+  // race from different snapshots and a late save can't re-add a deleted garment.
+  const busy = saving || statusSaving !== null || suggestSaving !== null;
   // While the AI reads the photo the status waits too: any write moves `updated_at`, and the
   // extraction's guarded write-back would then skip.
   const statusLocked = busy || deleting || reading;
@@ -278,6 +303,22 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
             />
           )}
         </View>
+        <View style={styles.suggestRow}>
+          <View style={styles.suggestText}>
+            <Text style={styles.label}>{t('garment.suggest')}</Text>
+            <Text style={styles.suggestHint}>{t('garment.suggest.hint')}</Text>
+          </View>
+          <Switch
+            accessibilityLabel={t('garment.suggest')}
+            accessibilityHint={t('garment.suggest.hint')}
+            value={suggest}
+            disabled={statusLocked}
+            trackColor={{ true: colors.accent, false: colors.track }}
+            onValueChange={(next) => {
+              void changeSuggest(next);
+            }}
+          />
+        </View>
         {reading ? <Text style={styles.notice}>{t('garment.reading')}</Text> : null}
         {GARMENT_FIELDS.map((field) => (
           <View key={field} style={styles.section}>
@@ -413,6 +454,23 @@ const styles = StyleSheet.create({
   label: {
     color: colors.muted,
     fontSize: fontSizes.body,
+  },
+  // The switch sits beside its label and hint; the text wraps at a large text size instead of pushing it off.
+  suggestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth * 2,
+    borderBottomColor: colors.divider,
+  },
+  suggestText: {
+    flex: 1,
+    gap: 2,
+  },
+  suggestHint: {
+    color: colors.muted,
+    fontSize: fontSizes.bodySmall,
   },
   donated: {
     color: colors.ink,

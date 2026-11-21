@@ -82,6 +82,7 @@ const USER_VOICE: ReadonlySet<string> = new Set([
   'auth.haveAccount',
   'onboarding.style.useLocation',
   'profile.privacy.export',
+  'today.notForMe',
 ]);
 
 test('the app speaks in the second person, never as I or we', () => {

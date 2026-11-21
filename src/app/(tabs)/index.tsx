@@ -2,17 +2,22 @@
 // "Another", "I'll wear it" and "How does it look?" (the rating).
 import { router } from 'expo-router';
 import { Check, Dices, Layers, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
-import { useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { OCCASIONS, type Occasion } from '../../closet/catalog';
 import { useCloset } from '../../closet/ClosetProvider';
+import type { Garment } from '../../closet/garmentRepository';
 import { useI18n } from '../../i18n';
-import { formatWeather, formatWeekday } from '../../outfits/outfitDisplay';
+import type { RequestError } from '../../lib/requestResult';
+import { formatWeather, formatWeekday, orderPieces, pieceLabel } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
 import { useWearLog } from '../../outfits/useWearLog';
+import { dismissOutfit, stopSuggesting } from '../../outfits/suggestionFeedback';
+import { outfitIdentity } from '../../outfits/wornToday';
+import { announceForAccessibility } from '../../ui/a11y';
 import type { AiError } from '../../outfits/aiClient';
 import { ActionNotice, UndoNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
@@ -134,6 +139,79 @@ function Message({ children }: { children: string }): React.JSX.Element {
   );
 }
 
+const NOT_FOR_ME_HEIGHT = 28;
+const NOT_FOR_ME_SLOP = (layout.minHitTarget - NOT_FOR_ME_HEIGHT) / 2;
+
+/** "Not for me": don't suggest the combination, or one of its pieces (docs/app.md#outfits-srcoutfits). */
+function NotForMePanel({
+  pieces,
+  busy,
+  error,
+  onCombination,
+  onPiece,
+  onCancel,
+}: {
+  pieces: readonly Garment[];
+  busy: boolean;
+  error: RequestError | null;
+  onCombination: () => void;
+  onPiece: (piece: Garment) => void;
+  onCancel: () => void;
+}): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <View style={styles.panel} testID="not-for-me">
+      <Text style={styles.panelTitle} accessibilityRole="header">
+        {t('today.notForMe.title')}
+      </Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ disabled: busy }}
+        disabled={busy}
+        onPress={onCombination}
+        style={[styles.panelButton, busy ? styles.dimmed : null]}
+      >
+        <Text style={styles.panelButtonText}>{t('today.notForMe.combination')}</Text>
+      </Pressable>
+      <Text style={styles.muted}>{t('today.notForMe.piece')}</Text>
+      <View style={styles.panelPieces}>
+        {orderPieces(pieces).map((piece) => {
+          const label = pieceLabel(piece, t);
+          return (
+            <Pressable
+              key={piece.id}
+              accessibilityRole="button"
+              accessibilityLabel={t('today.notForMe.pieceLabel', { piece: label })}
+              accessibilityState={{ disabled: busy }}
+              disabled={busy}
+              hitSlop={NOT_FOR_ME_SLOP}
+              onPress={() => {
+                onPiece(piece);
+              }}
+              style={[styles.pieceChip, busy ? styles.dimmed : null]}
+            >
+              <Text style={styles.pieceChipText}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {error === null ? null : (
+        <Text style={styles.panelError} accessibilityRole="alert">
+          {t(`today.notForMe.error.${error}`)}
+        </Text>
+      )}
+      <Pressable
+        accessibilityRole="button"
+        hitSlop={NOT_FOR_ME_SLOP}
+        onPress={onCancel}
+        style={styles.notForMe}
+      >
+        <Text style={styles.notForMeText}>{t('today.notForMe.cancel')}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /**
  * The way out of an error. Over quota can't succeed again today and a missing piece won't come back
  * on a retry, so those lead to Build and the closet instead.
@@ -166,7 +244,7 @@ export default function TodayScreen(): React.JSX.Element {
   const { t, locale } = useI18n();
   const [occasion, setOccasion] = useTodayOccasion();
   const lucky = useLuckyList(occasion);
-  const { garments, thumbUrls } = useCloset();
+  const { garments, thumbUrls, replaceLocal } = useCloset();
   const byId = useMemo(() => new Map(garments.map((garment) => [garment.id, garment])), [garments]);
 
   const outfit = lucky.state === 'ready' ? lucky.outfits[lucky.index] : undefined;
@@ -174,6 +252,57 @@ export default function TodayScreen(): React.JSX.Element {
 
   // Keyed by outfit: a failed or queued wear's note stays with the outfit it was for.
   const wearLog = useWearLog(lucky.day);
+
+  // "Not for me" is open for one outfit at a time; its confirmation outlives the outfit it hid.
+  const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<RequestError | null>(null);
+  const [feedbackDone, setFeedbackDone] = useState<string | null>(null);
+  const openFeedback = useCallback((garmentIds: readonly string[]) => {
+    setFeedbackFor(outfitIdentity(garmentIds));
+    setFeedbackError(null);
+    setFeedbackDone(null);
+  }, []);
+  const closeFeedback = useCallback(() => {
+    setFeedbackFor(null);
+    setFeedbackError(null);
+  }, []);
+  const finishFeedback = useCallback((message: string) => {
+    setFeedbackFor(null);
+    setFeedbackDone(message);
+    announceForAccessibility(message);
+  }, []);
+  const dismissCombination = useCallback(
+    async (garmentIds: readonly string[]) => {
+      setFeedbackBusy(true);
+      setFeedbackError(null);
+      const result = await dismissOutfit(garmentIds);
+      setFeedbackBusy(false);
+      if (!result.ok) {
+        setFeedbackError(result.error);
+        return;
+      }
+      lucky.dismiss(garmentIds);
+      finishFeedback(t('today.notForMe.doneCombination'));
+    },
+    [lucky, finishFeedback, t],
+  );
+  const unsuggestPiece = useCallback(
+    async (piece: Garment) => {
+      setFeedbackBusy(true);
+      setFeedbackError(null);
+      const result = await stopSuggesting(piece.id);
+      setFeedbackBusy(false);
+      if (!result.ok) {
+        setFeedbackError(result.error);
+        return;
+      }
+      lucky.skip((candidate) => candidate.garmentIds.includes(piece.id));
+      replaceLocal({ ...piece, suggest: false });
+      finishFeedback(t('today.notForMe.donePiece', { piece: pieceLabel(piece, t) }));
+    },
+    [lucky, replaceLocal, finishFeedback, t],
+  );
 
   const weatherResolved = lucky.state === 'ready' || lucky.state === 'too_small';
   const cityWithoutWeather = useProfileCity();
@@ -248,6 +377,8 @@ export default function TodayScreen(): React.JSX.Element {
     body = <Message>{occasion === null ? t('today.empty') : t('today.empty.occasion')}</Message>;
   } else {
     const logged = wearLog.isLogged(outfit.garmentIds);
+    const { garmentIds } = outfit;
+    const feedbackOpen = feedbackFor === outfitIdentity(garmentIds);
     body = (
       <View style={styles.card}>
         <CardHeader
@@ -259,7 +390,40 @@ export default function TodayScreen(): React.JSX.Element {
           }}
         />
         <OutfitStack garments={pieces} thumbUrls={thumbUrls} />
-        {outfit.freshThisWeek ? <Text style={[styles.muted, styles.fresh]}>{t('today.fresh')}</Text> : null}
+        <View style={styles.cardFooter}>
+          {outfit.freshThisWeek ? <Text style={[styles.muted, styles.fresh]}>{t('today.fresh')}</Text> : <View />}
+          {feedbackOpen ? null : (
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={NOT_FOR_ME_SLOP}
+              onPress={() => {
+                openFeedback(garmentIds);
+              }}
+              style={styles.notForMe}
+            >
+              <Text style={styles.notForMeText}>{t('today.notForMe')}</Text>
+            </Pressable>
+          )}
+        </View>
+        {feedbackOpen ? (
+          <NotForMePanel
+            pieces={pieces}
+            busy={feedbackBusy}
+            error={feedbackError}
+            onCombination={() => {
+              void dismissCombination(garmentIds);
+            }}
+            onPiece={(piece) => {
+              void unsuggestPiece(piece);
+            }}
+            onCancel={closeFeedback}
+          />
+        ) : null}
+        {feedbackDone === null || feedbackOpen ? null : (
+          <Text style={[styles.muted, styles.fresh]} accessibilityLiveRegion="polite">
+            {feedbackDone}
+          </Text>
+        )}
       </View>
     );
     secondary = {
@@ -269,6 +433,8 @@ export default function TodayScreen(): React.JSX.Element {
       disabled: wearLog.busy || lucky.outfits.length < 2,
       onPress: () => {
         wearLog.clearError();
+        closeFeedback();
+        setFeedbackDone(null);
         lucky.next();
       },
     };
@@ -407,8 +573,83 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   fresh: {
+    flexShrink: 1,
     marginTop: 2,
     paddingHorizontal: 2,
+  },
+  // Wraps "Not for me" under the fresh line when a large text size leaves no room for both.
+  cardFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
+  notForMe: {
+    minHeight: NOT_FOR_ME_HEIGHT,
+    justifyContent: 'center',
+    alignSelf: 'flex-end',
+    paddingHorizontal: spacing.sm,
+  },
+  notForMeText: {
+    color: colors.accentText,
+    fontSize: fontSizes.bodySmall,
+    fontWeight: '700',
+  },
+  panel: {
+    gap: spacing.sm,
+    padding: spacing.sm + 2,
+    borderRadius: radii.cell,
+    borderWidth: 1,
+    borderColor: colors.tintBorder,
+    backgroundColor: colors.tint,
+  },
+  panelTitle: {
+    color: colors.ink,
+    fontSize: fontSizes.body,
+    fontWeight: '800',
+  },
+  panelButton: {
+    minHeight: layout.minHitTarget,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.surface,
+  },
+  panelButtonText: {
+    color: colors.accentText,
+    fontSize: fontSizes.body,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  panelPieces: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  pieceChip: {
+    minHeight: NOT_FOR_ME_HEIGHT,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm + 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.surface,
+  },
+  pieceChipText: {
+    color: colors.ink,
+    fontSize: fontSizes.caption,
+    fontWeight: '700',
+  },
+  panelError: {
+    color: colors.error,
+    fontSize: fontSizes.bodySmall,
+  },
+  dimmed: {
+    opacity: 0.4,
   },
   placeholderRow: {
     flexDirection: 'row',

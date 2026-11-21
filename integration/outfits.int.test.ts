@@ -6,7 +6,7 @@
 // spend the daily quota, fill `lucky_cache`/`rating_cache`/`weather_cache`/`for_you_cache`, and
 // call Jev and Open-Meteo, here `mockServices.ts` on the host, and Claude, here `mockAnthropic.ts`.
 // Also: `log_wear` from supabase-js bumps the garments' wear count, and the Saved list's repository
-// lists, scores and deletes saved outfits.
+// lists, scores and deletes saved outfits; "Not for me" stores a dismissal and turns a piece off.
 //
 // Needs the Edge Runtime: `pnpm db:start` (or `db:start:ci`, which keeps it) and `pnpm env:local`.
 
@@ -18,6 +18,7 @@ import { signInWithEmail } from '../src/auth/emailAuth';
 import type { Database } from '../src/lib/database.types';
 import { logWear, saveOutfit } from '../src/outfits/outfitRepository';
 import { deleteSavedOutfit, listSavedOutfits } from '../src/outfits/savedOutfits';
+import { dismissOutfit, stopSuggesting } from '../src/outfits/suggestionFeedback';
 import { ARCHETYPES } from '../supabase/functions/_shared/archetypes.ts';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, serviceClient, uniqueEmail } from './helpers';
 import { type MockAnthropic, startMockAnthropic } from './mockAnthropic';
@@ -400,4 +401,22 @@ test('saved outfits: listed newest first with their score, deleted by their owne
   const worn = await serviceClient().from('wears').select('outfit_id').eq('user_id', userA.id).limit(1).single();
   expect(worn.error).toBeNull();
   expect(await deleteSavedOutfit(String(worn.data?.outfit_id), userA.client)).toEqual({ ok: false, error: 'unknown' });
+});
+
+test('"Not for me": dismissOutfit stores the sorted key once, and stopSuggesting turns only the caller’s piece off', async () => {
+  const ids = [closet.whiteSneakers, closet.whiteTee, closet.navyJeans];
+  expect(await dismissOutfit(ids, userA.client)).toEqual({ ok: true });
+  // A second tap is a no-op, not a conflict error.
+  expect(await dismissOutfit([...ids].reverse(), userA.client)).toEqual({ ok: true });
+  const rows = await userA.client.from('dismissed_outfits').select('outfit_key');
+  expect(rows.error).toBeNull();
+  expect(rows.data).toContainEqual({ outfit_key: [...ids].sort().join(',') });
+  expect(rows.data?.filter((row) => row.outfit_key === [...ids].sort().join(','))).toHaveLength(1);
+
+  expect(await stopSuggesting(closet.blackLoafers, userB.client)).toEqual({ ok: false, error: 'unknown' });
+  expect(await stopSuggesting(closet.blackLoafers, userA.client)).toEqual({ ok: true });
+  const piece = await serviceClient().from('garments').select('suggest').eq('id', closet.blackLoafers).single();
+  expect(piece.data?.suggest).toBe(false);
+  await serviceClient().from('garments').update({ suggest: true }).eq('id', closet.blackLoafers);
+  await userA.client.from('dismissed_outfits').delete().eq('outfit_key', [...ids].sort().join(','));
 });

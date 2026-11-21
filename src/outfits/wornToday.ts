@@ -5,16 +5,15 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { kvGet, kvGetJson, kvSet, parseJson } from '../lib/kv';
+import { outfitIdentity } from './outfitIdentity';
 
 /** The record's kv key: one per user, holding only the latest day's outfits. */
 export function wornTodayKey(userId: string): string {
   return `outfit.worn.${userId}`;
 }
 
-/** An outfit's identity whatever order its pieces come in (Today's list and a swap's ids differ). */
-export function outfitIdentity(garmentIds: readonly string[]): string {
-  return [...garmentIds].sort().join(',');
-}
+// Also `dismissed_outfits.outfit_key`; its own module so the plain-Node integration tests can load it.
+export { outfitIdentity } from './outfitIdentity';
 
 type WornRecord = { day: string; outfits: string[] };
 

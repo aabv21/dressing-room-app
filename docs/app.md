@@ -178,6 +178,15 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   connect); Today's list and For you are built on it.
 - `useLuckyList.ts` and `storedLucky.ts`: Today's list with debounced closet-driven refetches, the
   last good list per occasion for the day in kv `today.lucky.<userId>`, and `useTodayOccasion`.
+  The list hides at once an outfit with a piece that's unavailable or out of suggestions
+  (`suggest = false`) or that was dismissed this session; `skip` and `dismiss` show the next one, and
+  the closet fingerprint (with `suggest` and the session's dismissals, mirroring `lucky-list`'s
+  key) refetches the list 3 s later.
+- `suggestionFeedback.ts`: Today's "Not for me". `dismissOutfit` stores the outfit's sorted ids in
+  `dismissed_outfits` (a repeat is a no-op) and `stopSuggesting` sets a garment's `suggest` to
+  false; the garment detail's "Use in suggestions" switch turns it back on through
+  `updateGarment`. Each costs the next lucky list a cache miss, one of the day's 10
+  ([`ai.md`](ai.md#the-lucky-list-function)). `outfitIdentity.ts` is the shared outfit key.
 - `useForYou.ts` and `storedForYou.ts`: For you's ideas in the app's language, fetched on focus one
   request at a time, with the last good answer per language in kv `forYou.ideas.<userId>`.
 - `wearQueue.ts`: "I'll wear it" offline. `logWearOrQueue` logs the wear or, on a network failure,

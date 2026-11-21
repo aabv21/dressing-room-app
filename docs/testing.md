@@ -65,8 +65,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   Confirm, the card stays pinned while polling reorders the queue, a save error by the buttons, and
   the caught-up button goes back (or to the closet with no history).
 - `src/__tests__/garment-detail.test.tsx` — the garment detail: a save sends only the changed field
-  and is disabled until something changed, a network error keeps the edit, the status saves at once
-  and reverts on error, delete confirms first and goes back (or to the closet with no history), a
+  and is disabled until something changed, a network error keeps the edit, the status and the "Use
+  in suggestions" switch save at once and revert on error, delete confirms first and goes back (or to the closet with no history), a
   failed delete keeps the screen, Replace photo queues the picked photo, editors are disabled while
   the AI is still reading, and an unknown id shows "not found".
 
@@ -173,7 +173,9 @@ Accounts, onboarding and the profile:
 Outfits, Stats and Diary:
 
 - `src/__tests__/today.test.tsx` — Today's lucky list: the occasion chips, debounced refetches on
-  closet changes, one fetch at a time, "I'll wear it" with a reused wear id and its Undo, the too-small, weather,
+  closet changes (a piece taken out of suggestions too), one fetch at a time, "I'll wear it" with a
+  reused wear id and its Undo, "Not for me" (the combination dismissed or one piece turned off, the
+  next outfit shown, a refetch after the debounce, a failure keeping the outfit), the too-small, weather,
   quota and error states (over quota opens Build, a missing piece the closet), the staged loading
   copy, and the stored list offline (its note wraps at a large text size).
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
@@ -204,7 +206,8 @@ Outfits, Stats and Diary:
   wear a flush is sending found on the retry).
 - `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit` with its score),
-  `savedOutfits.test.ts` (the Saved list's query and its delete), `storedLucky.test.ts`,
+  `savedOutfits.test.ts` (the Saved list's query and its delete), `suggestionFeedback.test.ts`
+  (the dismissed key stored once, a piece's `suggest` turned off), `storedLucky.test.ts`,
   `storedForYou.test.ts` and `storedSaved.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
   a large text size, a thumbnail's neutral fill and border) and `ScoreRing.test.tsx` (one progressbar named "Score" valued at the final
   score, the number counting up to it, the number and caption capped for large text with the ring
@@ -482,7 +485,8 @@ Supabase stack:
   `log_wear` called from supabase-js bumps `wear_count` on exactly the worn garments, as A's own
   `garments` select shows. The Saved list's repository lists A's saved outfits newest first with
   their score (none for B), deletes one only for its owner (its items cascade), and never deletes a
-  worn outfit. Needs the Edge Runtime.
+  worn outfit. `dismissOutfit` stores the sorted key once (a repeat is a no-op) and `stopSuggesting`
+  turns off only the caller's piece. Needs the Edge Runtime.
 
 Not part of `pnpm test` or CI's `quality`/`security`/`actions` jobs — only the `database` job runs
 it, after starting Supabase. Run it manually with

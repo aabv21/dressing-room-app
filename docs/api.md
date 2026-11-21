@@ -246,7 +246,7 @@ All through PostgREST with the user's JWT; RLS limits every row to the caller's 
 | `garments` | select all own, newest first; upsert `{ id, user_id }` ignoring duplicates; update attributes, status, `pinned_on`, `suggest`, `photo_version`, `reviewed_at`; delete | Insert only `id`, `user_id`; update only the attribute columns, `status`, `photo_version`, `reviewed_at`, `pinned_on`, `suggest` | `src/closet/garmentRepository.ts`, `src/closet/upload/queueSteps.ts` |
 | `wears` | select by `worn_on` range with `outfits(outfit_items(garment_id))`, pages of 1000, at most 20; delete own | No update; insert only through `log_wear` in practice | `src/stats/wearsRepository.ts` |
 | `outfits`, `outfit_items` | select saved outfits with `outfit_items(garment_id)`, newest first; delete a saved one (its items cascade); otherwise through the RPCs and inside `wears` selects | No update; delete only on `outfits`, and only a saved outfit no wear points at | `src/outfits/savedOutfits.ts` |
-| `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` |
+| `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates (upsert on `user_id,outfit_key`) | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` (which also sets `garments.suggest = false`) |
 
 The caches, `usage_counters` and `apple_tokens` have no client grants at all.
 
