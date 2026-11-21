@@ -50,6 +50,7 @@ jest.mock('../outfits/aiClient', () => ({
 jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-08' }));
 
 jest.mock('../outfits/outfitRepository', () => ({ logWear: jest.fn(), saveOutfit: jest.fn() }));
+jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn() }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
 

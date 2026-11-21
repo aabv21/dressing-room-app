@@ -62,6 +62,7 @@ jest.mock('../outfits/outfitRepository', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn(() => Promise.resolve({ ok: true })) }));
 
 jest.mock('../profile/profileRepository', () => ({ getProfile: jest.fn() }));
 
@@ -417,6 +418,18 @@ describe('the lucky list', () => {
 });
 
 describe("I'll wear it", () => {
+  test('Undo shows after the wear and brings "I\'ll wear it" back', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear.mockResolvedValue({ ok: true });
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Undo' }));
+
+    expect(await screen.findByRole('button', { name: "I'll wear it" })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  });
+
   test('logs the wear once on a double tap, then shows Logged ✓ and refreshes the closet', async () => {
     mockedFetch.mockReturnValue(ok(list()));
     let resolveWear: (value: { ok: true }) => void = () => undefined;

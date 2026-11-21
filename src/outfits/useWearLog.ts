@@ -1,4 +1,5 @@
-// "I'll wear it" for Today and the rating: one wear at a time, logged or queued, then marked worn today.
+// "I'll wear it" for Today and the rating: one wear at a time, logged or queued, then marked worn today,
+// with an undo for a few seconds after.
 import { randomUUID } from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -7,13 +8,19 @@ import type { Occasion } from '../closet/catalog';
 import { useCloset } from '../closet/ClosetProvider';
 import { useI18n } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
+import { deleteWear } from '../stats/wearsRepository';
 import { announceForAccessibility } from '../ui/a11y';
 import { logWear } from './outfitRepository';
-import { logWearOrQueue, queuedWears } from './wearQueue';
-import { outfitIdentity, useWornToday } from './wornToday';
+import { dequeueWear, logWearOrQueue, queuedWears } from './wearQueue';
+import { outfitIdentity, unmarkWornToday, useWornToday } from './wornToday';
+
+/** How long "Undo" stays offered after a wear. */
+export const UNDO_WINDOW_MS = 5000;
 
 /** `ignored`: a wear was already sending, so this tap did nothing. */
 export type WearLogStatus = 'logged' | 'queued' | 'failed' | 'ignored';
+/** `ignored`: nothing to undo for that outfit (the window closed), or a wear or undo was running. */
+export type UndoStatus = 'undone' | 'failed' | 'ignored';
 
 export type WearLog = {
   log: (garmentIds: readonly string[], occasion: Occasion | null, score?: number | null) => Promise<WearLogStatus>;
@@ -24,6 +31,9 @@ export type WearLog = {
   clearError: () => void;
   /** Whether this outfit's wear still waits in the offline queue. */
   isQueued: (garmentIds: readonly string[]) => boolean;
+  /** Whether "Undo" is offered: for `UNDO_WINDOW_MS` after this outfit's wear was logged or queued. */
+  canUndo: (garmentIds: readonly string[]) => boolean;
+  undo: (garmentIds: readonly string[]) => Promise<UndoStatus>;
 };
 
 /** Logs wears on `day`. Each outfit keeps one wear id until it succeeds, so a lost answer can't log it twice. */
@@ -39,6 +49,7 @@ export function useWearLog(day: string): WearLog {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ key: string; error: RequestError } | null>(null);
   const [queued, setQueued] = useState<{ key: string; wearId: string } | null>(null);
+  const [undoable, setUndoable] = useState<{ key: string; wearId: string } | null>(null);
   const wearIds = useRef(new Map<string, string>());
   const mounted = useRef(true);
   useEffect(() => {
@@ -47,6 +58,15 @@ export function useWearLog(day: string): WearLog {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (undoable === null) return undefined;
+    const timer = setTimeout(() => {
+      setUndoable(null);
+    }, UNDO_WINDOW_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [undoable]);
 
   const log = useCallback(
     async (garmentIds: readonly string[], occasion: Occasion | null, score: number | null = null): Promise<WearLogStatus> => {
@@ -72,6 +92,7 @@ export function useWearLog(day: string): WearLog {
       }
       if (!mounted.current) return outcome.status;
       setBusy(false);
+      if (outcome.status !== 'failed') setUndoable({ key, wearId });
       if (outcome.status === 'failed') {
         setError({ key, error: outcome.error });
         announceForAccessibility(t(`outfit.error.${outcome.error}`));
@@ -101,5 +122,39 @@ export function useWearLog(day: string): WearLog {
     [queued, keyOf, userId],
   );
 
-  return { log, busy, isLogged: isWorn, errorFor, clearError, isQueued };
+  const canUndo = useCallback(
+    (garmentIds: readonly string[]) => undoable !== null && undoable.key === keyOf(garmentIds),
+    [undoable, keyOf],
+  );
+
+  const undo = useCallback(
+    async (garmentIds: readonly string[]): Promise<UndoStatus> => {
+      const key = keyOf(garmentIds);
+      if (sending.current || userId === null || undoable === null || undoable.key !== key) return 'ignored';
+      sending.current = true;
+      setBusy(true);
+      setError(null);
+      setUndoable(null);
+      // A queued wear never reached the server; one a flush is sending right now is deleted there (Diary's rule).
+      const result = dequeueWear(userId, undoable.wearId) ? { ok: true as const } : await deleteWear(undoable.wearId);
+      sending.current = false;
+      if (result.ok) {
+        unmarkWornToday(userId, garmentIds);
+        void refresh();
+      }
+      if (!mounted.current) return result.ok ? 'undone' : 'failed';
+      setBusy(false);
+      if (!result.ok) {
+        setError({ key, error: result.error });
+        announceForAccessibility(t(`outfit.error.${result.error}`));
+        return 'failed';
+      }
+      setQueued(null);
+      announceForAccessibility(t('outfit.undone'));
+      return 'undone';
+    },
+    [keyOf, refresh, t, undoable, userId],
+  );
+
+  return { log, busy, isLogged: isWorn, errorFor, clearError, isQueued, canUndo, undo };
 }

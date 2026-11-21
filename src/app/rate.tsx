@@ -31,7 +31,7 @@ import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
 import type { RatingReason, RatingResult } from '../outfits/types';
 import { useWearLog } from '../outfits/useWearLog';
 import { announceForAccessibility } from '../ui/a11y';
-import { ActionNotice } from '../ui/ActionNotice';
+import { ActionNotice, UndoNotice } from '../ui/ActionNotice';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
@@ -305,7 +305,7 @@ function RateOutfit({
   }, []);
 
   // Shared with Today, so an outfit logged on either screen (or before a restart) stays logged here.
-  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued } = useWearLog(localDate());
+  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued, canUndo, undo } = useWearLog(localDate());
   const logged = isLogged(ids);
   // Save, one at a time and never during a wear. The ref locks a second tap before the re-render lands.
   const saving = useRef(false);
@@ -360,9 +360,26 @@ function RateOutfit({
   }, []);
 
   let notice: React.ReactNode = undefined;
+  // The queued note and Undo stack for the first seconds after an offline wear.
+  let noticeRows = 1;
   const actionError = saveError ?? errorFor(ids);
   if (actionError !== null) {
     notice = <ActionNotice tone="error">{t(`outfit.error.${actionError}`)}</ActionNotice>;
+  } else if (canUndo(ids)) {
+    const queued = isQueued(ids);
+    noticeRows = queued ? 2 : 1;
+    notice = (
+      <View style={styles.notices}>
+        {queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
+        <UndoNotice
+          label={t('outfit.undo')}
+          hint={t('outfit.undo.hint')}
+          onPress={() => {
+            void undo(ids);
+          }}
+        />
+      </View>
+    );
   } else if (logged && isQueued(ids)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
@@ -440,7 +457,7 @@ function RateOutfit({
         style={styles.fill}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top, paddingBottom: insets.bottom + (notice === undefined ? 0 : NOTICE_ROOM) },
+          { paddingTop: insets.top, paddingBottom: insets.bottom + (notice === undefined ? 0 : NOTICE_ROOM * noticeRows) },
         ]}
       >
         <View style={styles.header}>
@@ -509,6 +526,9 @@ const styles = StyleSheet.create({
   },
   reasons: {
     gap: spacing.sm - 2,
+  },
+  notices: {
+    gap: spacing.sm,
   },
   reason: {
     flexDirection: 'row',

@@ -13,7 +13,7 @@ import { formatWeather, formatWeekday } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
 import { useWearLog } from '../../outfits/useWearLog';
-import { ActionNotice } from '../../ui/ActionNotice';
+import { ActionNotice, UndoNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
@@ -157,9 +157,27 @@ export default function TodayScreen(): React.JSX.Element {
   }
 
   let notice: React.ReactNode = undefined;
+  // The queued note and Undo stack for the first seconds after an offline wear.
+  let noticeRows = 1;
   const wearError = outfit === undefined ? null : wearLog.errorFor(outfit.garmentIds);
   if (wearError !== null) {
     notice = <ActionNotice tone="error">{t(`outfit.error.${wearError}`)}</ActionNotice>;
+  } else if (outfit !== undefined && wearLog.canUndo(outfit.garmentIds)) {
+    const { garmentIds } = outfit;
+    const queued = wearLog.isQueued(garmentIds);
+    noticeRows = queued ? 2 : 1;
+    notice = (
+      <View style={styles.notices}>
+        {queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
+        <UndoNotice
+          label={t('outfit.undo')}
+          hint={t('outfit.undo.hint')}
+          onPress={() => {
+            void wearLog.undo(garmentIds);
+          }}
+        />
+      </View>
+    );
   } else if (outfit !== undefined && wearLog.isQueued(outfit.garmentIds)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
@@ -267,7 +285,7 @@ export default function TodayScreen(): React.JSX.Element {
       </ScrollView>
       {lucky.offline ? <OfflineNote /> : null}
       {body}
-      {notice === undefined ? null : <View style={styles.noticeRoom} />}
+      {notice === undefined ? null : <View style={{ height: NOTICE_ROOM * noticeRows }} />}
     </Screen>
   );
 }
@@ -394,7 +412,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingHorizontal: spacing.sm,
   },
-  noticeRoom: {
-    height: NOTICE_ROOM,
+  notices: {
+    gap: spacing.sm,
   },
 });

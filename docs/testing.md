@@ -171,12 +171,12 @@ Accounts, onboarding and the profile:
 Outfits, Stats and Diary:
 
 - `src/__tests__/today.test.tsx` — Today's lucky list: the occasion chips, debounced refetches on
-  closet changes, one fetch at a time, "I'll wear it" with a reused wear id, the too-small, weather,
+  closet changes, one fetch at a time, "I'll wear it" with a reused wear id and its Undo, the too-small, weather,
   quota and error states, and the stored list offline (its note wraps at a large text size).
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
   row, unavailable garments left out, and a slot row at a large text size.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
-  the swap, Save, "I'll wear it", the quota and error states, and the ring named in Spanish too.
+  the swap, Save, "I'll wear it" and its Undo, the quota and error states, and the ring named in Spanish too.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, and one request at a time.
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
@@ -194,8 +194,9 @@ Outfits, Stats and Diary:
   query's answer kept only as the last one, and nothing set or stored after unmount.
 - `src/outfits/__tests__/useWearLog.test.tsx` — a wear logged once (a second tap ignored), marked
   worn and refreshing the closet; a failure kept for its outfit and announced, with the retry
-  reusing the wear id; the offline queue and its note; and a late answer after unmount still
-  marking the outfit worn.
+  reusing the wear id; the offline queue and its note; a late answer after unmount still
+  marking the outfit worn; and the undo (a sent wear deleted, a queued one dequeued, offered for
+  5 seconds, a failure keeping the wear).
 - `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
   and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
@@ -220,7 +221,7 @@ Outfits, Stats and Diary:
 Shared UI, the app shell and helpers:
 
 - `src/ui/__tests__/` — `AnchoredCta.test.tsx` and `ChipGroup.test.tsx` (roles, states and the CTA
-  label's cap), `ActionNotice.test.tsx` (an error is an alert, both notes are live regions), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection, the
+  label's cap), `ActionNotice.test.tsx` (an error is an alert, both notes are live regions, Undo is a named button), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection, the
   large content viewer and the violet selected style, shared with the chips), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
   (`useBottomChrome` and `useLargeText`), `theme.test.ts` (text contrast, including the selected label), `themeUsage.test.ts` (no component
   hard-codes a font size or a color, and the type scale stays at 11 pt or more), `Screen.test.tsx`

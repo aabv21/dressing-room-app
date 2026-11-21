@@ -565,6 +565,9 @@ export const en = {
   'outfit.error.invalid': "Some of these pieces couldn't be used. Check your closet and try again.",
   'outfit.error.unknown': 'Something went wrong. Try again.',
   'outfit.queued': "Logged — it syncs when you're back online.",
+  'outfit.undo': 'Undo',
+  'outfit.undo.hint': 'Removes this wear from your diary',
+  'outfit.undone': 'Removed from your diary.',
 
   'today.weather.add': 'Add your city for the weather',
   'today.weather.unavailable': 'Weather unavailable for {city}',

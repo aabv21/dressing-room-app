@@ -25,7 +25,7 @@ code (components, hooks, utils) stays outside `src/app/`.
 
 Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
 handling), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
-(`useBottomChrome`, `useLargeText`), `ActionNotice` (an action's error or queued note above the
+(`useBottomChrome`, `useLargeText`), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
 `theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
 `fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. A chosen chip or segment
@@ -173,9 +173,11 @@ state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx
   Diary. `WearQueueFlusher.tsx` flushes on mount, foreground and reconnect.
 - `useWearLog.ts`: "I'll wear it" for Today and the rating screen: one wear at a time, one wear id
   per outfit until it succeeds, logged or queued, marked worn, announced, and the failed or queued
-  note kept with the outfit it was for.
+  note kept with the outfit it was for. For 5 seconds after, `undo` takes the wear back: out of the
+  queue if it's still there, else `deleteWear` (the trigger lowers the counts), then
+  `unmarkWornToday` and a closet refresh.
 - `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
-  Today and the rating screen; Diary's Delete calls `unmarkWornToday`.
+  Today and the rating screen; Diary's Delete and the undo call `unmarkWornToday`.
 - `OutfitStack.tsx`, `ScoreRing.tsx`, and `types.ts` (the functions' response types, re-exported
   from their `handler.ts`).
 

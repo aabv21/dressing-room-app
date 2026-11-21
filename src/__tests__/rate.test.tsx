@@ -57,6 +57,7 @@ jest.mock('../outfits/outfitRepository', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn(() => Promise.resolve({ ok: true })) }));
 
 const mockedRate = jest.mocked(rateOutfit);
 const mockedLogWear = jest.mocked(logWear);
@@ -665,4 +666,16 @@ test('the ring is named in Spanish too', async () => {
   } finally {
     kvSet('locale-preference', 'system');
   }
+});
+
+test('Undo shows after the wear and brings "I\'ll wear it" back, with the swap', async () => {
+  mockedRate.mockReturnValue(ok(result()));
+  mockedLogWear.mockResolvedValue({ ok: true });
+  await render(<RateScreen />);
+
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Undo' }));
+
+  expect(await screen.findByRole('button', { name: "I'll wear it" })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
 });

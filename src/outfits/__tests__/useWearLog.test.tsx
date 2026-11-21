@@ -4,13 +4,15 @@ import { AccessibilityInfo } from 'react-native';
 
 import { kvRemove } from '../../lib/kv';
 import type { RequestResult } from '../../lib/requestResult';
+import { deleteWear } from '../../stats/wearsRepository';
 import { logWear } from '../outfitRepository';
 import { queuedWears, wearQueueKey } from '../wearQueue';
 import { isWornToday, wornTodayKey } from '../wornToday';
-import { useWearLog } from '../useWearLog';
+import { UNDO_WINDOW_MS, useWearLog } from '../useWearLog';
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
 jest.mock('../outfitRepository', () => ({ logWear: jest.fn() }));
+jest.mock('../../stats/wearsRepository', () => ({ deleteWear: jest.fn() }));
 jest.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
 const mockRefresh = jest.fn(() => Promise.resolve());
 jest.mock('../../closet/ClosetProvider', () => ({ useCloset: () => ({ refresh: mockRefresh }) }));
@@ -19,6 +21,7 @@ const USER = 'user-1';
 const DAY = '2026-11-08';
 const OUTFIT = ['g1', 'g2'];
 const send = jest.mocked(logWear);
+const remove = jest.mocked(deleteWear);
 const uuid = jest.mocked(randomUUID);
 
 let announce: jest.SpyInstance;
@@ -29,6 +32,10 @@ beforeEach(() => {
   kvRemove(wearQueueKey(USER));
   kvRemove(wornTodayKey(USER));
   announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+});
+
+afterEach(() => {
+  jest.useRealTimers();
 });
 
 async function setup() {
@@ -167,4 +174,89 @@ test('a wear that lands after unmount still marks the outfit logged, without set
   expect(isWornToday(USER, DAY, OUTFIT)).toBe(true);
   expect(errors).not.toHaveBeenCalled();
   errors.mockRestore();
+});
+
+describe('undo', () => {
+  test('undoes a sent wear: deletes it on the server, unmarks the outfit and refreshes the closet', async () => {
+    send.mockResolvedValue({ ok: true });
+    remove.mockResolvedValue({ ok: true });
+    const { result } = await setup();
+    await act(async () => {
+      await result.current.log(OUTFIT, null, 82);
+    });
+    expect(result.current.canUndo(OUTFIT)).toBe(true);
+    expect(result.current.canUndo(['g3'])).toBe(false);
+
+    let status: string | undefined;
+    await act(async () => {
+      status = await result.current.undo(OUTFIT);
+    });
+
+    expect(status).toBe('undone');
+    expect(remove).toHaveBeenCalledWith('wear-1');
+    expect(result.current.isLogged(OUTFIT)).toBe(false);
+    expect(isWornToday(USER, DAY, OUTFIT)).toBe(false);
+    expect(result.current.canUndo(OUTFIT)).toBe(false);
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+    expect(announce).toHaveBeenLastCalledWith('Removed from your diary.');
+  });
+
+  test('undoes a queued wear by taking it out of the queue, with no request', async () => {
+    send.mockResolvedValue({ ok: false, error: 'network' });
+    const { result } = await setup();
+    await act(async () => {
+      await result.current.log(OUTFIT, null);
+    });
+
+    await act(async () => {
+      expect(await result.current.undo(OUTFIT)).toBe('undone');
+    });
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(queuedWears(USER)).toEqual([]);
+    expect(result.current.isLogged(OUTFIT)).toBe(false);
+    expect(result.current.isQueued(OUTFIT)).toBe(false);
+  });
+
+  test('is offered for five seconds after the wear, then no longer', async () => {
+    jest.useFakeTimers();
+    send.mockResolvedValue({ ok: true });
+    const { result } = await setup();
+    await act(async () => {
+      await result.current.log(OUTFIT, null);
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(UNDO_WINDOW_MS - 1);
+      await Promise.resolve();
+    });
+    expect(result.current.canUndo(OUTFIT)).toBe(true);
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+    expect(result.current.canUndo(OUTFIT)).toBe(false);
+    await act(async () => {
+      expect(await result.current.undo(OUTFIT)).toBe('ignored');
+    });
+    expect(remove).not.toHaveBeenCalled();
+    expect(UNDO_WINDOW_MS).toBe(5000);
+  });
+
+  test('a failed undo keeps the wear logged and shows the error for that outfit', async () => {
+    send.mockResolvedValue({ ok: true });
+    remove.mockResolvedValue({ ok: false, error: 'network' });
+    const { result } = await setup();
+    await act(async () => {
+      await result.current.log(OUTFIT, null);
+    });
+
+    await act(async () => {
+      expect(await result.current.undo(OUTFIT)).toBe('failed');
+    });
+
+    expect(result.current.isLogged(OUTFIT)).toBe(true);
+    expect(result.current.errorFor(OUTFIT)).toBe('network');
+    expect(result.current.canUndo(OUTFIT)).toBe(false);
+  });
 });
