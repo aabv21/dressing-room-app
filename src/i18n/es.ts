@@ -143,6 +143,7 @@ export const es: Record<MessageKey, string> = {
   'camera.title': 'TOMAR FOTOS',
   'camera.close': 'Cerrar',
   'camera.hint': 'Una prenda por foto',
+  'camera.removeLast': 'Quitar la última foto',
   'camera.shutter': 'Tomar foto',
   'camera.caption': 'Dispara y pasa a la siguiente. No hay nada que llenar.',
   'camera.count.one': '{count} foto',

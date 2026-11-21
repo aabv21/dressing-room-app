@@ -1,7 +1,9 @@
 import { Image } from 'expo-image';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors } from '../ui/theme';
+import { useI18n } from '../i18n';
+
+import { colors, layout } from '../ui/theme';
 
 const TILE_SIZE = 34;
 const OVERLAP = -10;
@@ -13,10 +15,11 @@ const VISIBLE_SHOTS = 5;
  * paint order). Only the last 5 are kept on screen — older shots still count toward the total, just
  * not shown — since the strip has no scroll affordance in the mockup.
  */
-export function ShotStrip({ uris }: { uris: readonly string[] }): React.JSX.Element {
+export function ShotStrip({ uris, onRemoveLast }: { uris: readonly string[]; onRemoveLast?: () => void }): React.JSX.Element {
+  const { t } = useI18n();
   const firstVisibleIndex = Math.max(0, uris.length - VISIBLE_SHOTS);
   const visible = uris.slice(firstVisibleIndex);
-  return (
+  const strip = (
     // Decorative: the camera's shot counter already says how many photos there are, and the tiles
     // have nothing to name, so screen readers skip them.
     <View
@@ -40,6 +43,20 @@ export function ShotStrip({ uris }: { uris: readonly string[] }): React.JSX.Elem
       })}
     </View>
   );
+  if (onRemoveLast === undefined || uris.length === 0) return strip;
+  // The newest tile doubles as an undo: a blurry or double shot comes off before it becomes a garment.
+  return (
+    <View>
+      {strip}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('camera.removeLast')}
+        onPress={onRemoveLast}
+        hitSlop={(layout.minHitTarget - TILE_SIZE) / 2}
+        style={styles.removeLast}
+      />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -58,6 +75,13 @@ const styles = StyleSheet.create({
   },
   firstTile: {
     marginLeft: 0,
+  },
+  removeLast: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    width: TILE_SIZE,
+    height: TILE_SIZE,
   },
   image: {
     width: '100%',

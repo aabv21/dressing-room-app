@@ -8,7 +8,7 @@ import { router, usePreventRemove } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Check, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, Animated, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ShotStrip } from '../closet/ShotStrip';
@@ -16,6 +16,7 @@ import { useGalleryImport } from '../closet/useGalleryImport';
 import { useUploadQueue } from '../closet/UploadQueueProvider';
 import { pluralKey, useI18n } from '../i18n';
 import { AnchoredCta } from '../ui/AnchoredCta';
+import { tapHaptic } from '../ui/feedback';
 import { layout } from '../ui/theme';
 
 const JPEG_QUALITY = 0.8;
@@ -86,6 +87,14 @@ function BurstCamera(): React.JSX.Element {
   const cameraRef = useRef<CameraView>(null);
   const [uris, setUris] = useState<readonly string[]>([]);
   const capturing = useRef(false);
+  const [flash] = useState(() => new Animated.Value(0));
+  const reduceMotion = useRef(false);
+
+  useEffect(() => {
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      reduceMotion.current = enabled;
+    });
+  }, []);
 
   /**
    * The Discard / Keep shooting choice, shared by the Close button and `usePreventRemove`'s
@@ -132,6 +141,11 @@ function BurstCamera(): React.JSX.Element {
     try {
       const picture = await cameraRef.current.takePictureAsync({ quality: JPEG_QUALITY });
       setUris((current) => [...current, picture.uri]);
+      tapHaptic('commit');
+      if (!reduceMotion.current) {
+        flash.setValue(0.6);
+        Animated.timing(flash, { toValue: 0, duration: 150, useNativeDriver: true }).start();
+      }
     } catch {
       // Hardware/session error, or the device ran out of storage: keep the shots already taken
       // and leave the shutter usable for the next attempt.
@@ -139,7 +153,7 @@ function BurstCamera(): React.JSX.Element {
     } finally {
       capturing.current = false;
     }
-  }, [t]);
+  }, [t, flash]);
 
   const done = useCallback(() => {
     // Disables prevention first: `uris` is still non-empty at this instant, and without this the
@@ -177,6 +191,7 @@ function BurstCamera(): React.JSX.Element {
           <Text style={styles.hintText}>{t('camera.hint')}</Text>
         </View>
         <CameraView ref={cameraRef} style={styles.cameraFill} facing="back" />
+        <Animated.View pointerEvents="none" style={[styles.flash, { opacity: flash }]} testID="camera-flash" />
         <View style={[styles.corner, styles.cornerTopLeft]} />
         <View style={[styles.corner, styles.cornerTopRight]} />
         <View style={[styles.corner, styles.cornerBottomLeft]} />
@@ -184,7 +199,12 @@ function BurstCamera(): React.JSX.Element {
       </View>
 
       <View style={styles.shotsRow}>
-        <ShotStrip uris={uris} />
+        <ShotStrip
+          uris={uris}
+          onRemoveLast={() => {
+            setUris((current) => current.slice(0, -1));
+          }}
+        />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('camera.shutter')}
@@ -197,7 +217,9 @@ function BurstCamera(): React.JSX.Element {
           <View style={styles.shutterDisc} />
         </Pressable>
         <View style={styles.countPill}>
-          <Text style={styles.countText}>{countLabel}</Text>
+          <Text style={styles.countText} accessibilityLiveRegion="polite">
+            {countLabel}
+          </Text>
         </View>
       </View>
 
@@ -276,6 +298,10 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: '700',
     fontSize: 14,
+  },
+  flash: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: '#ffffff',
   },
   closeButton: {
     width: layout.minHitTarget,

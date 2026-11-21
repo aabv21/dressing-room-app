@@ -141,6 +141,7 @@ export const en = {
   'camera.title': 'TAKE PHOTOS',
   'camera.close': 'Close',
   'camera.hint': 'One garment per shot',
+  'camera.removeLast': 'Remove the last photo',
   'camera.shutter': 'Take photo',
   'camera.caption': 'Shoot and move on to the next. Nothing to fill in.',
   'camera.count.one': '{count} photo',
