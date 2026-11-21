@@ -74,9 +74,11 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   the device's currency or a picked one, clearing it clears the currency, a currency with no price
   saves nothing, an invalid price disables Save with a hint, cost per wear shows for a priced
   garment (also never worn, in Spanish, and nothing for a row cached without the columns).
-- `src/closet/__tests__/price.test.ts` — `parsePrice` in both decimal styles with grouping, junk
-  and the `numeric(10,2)` ceiling; `priceText` round-trips; `costPerWear` with 0, 1 and 12 wears;
-  `formatMoney` per locale and currency; `deviceCurrency`'s USD fallback; `currencyChoices`;
+- `src/closet/__tests__/price.test.ts` — `parsePrice` in both decimal styles with grouping, junk,
+  a leading-zero group refused ("0.001", "0,500", "00.500") and the `numeric(10,2)` ceiling;
+  `priceText` round-trips; `costPerWear` with 0, 1 and 12 wears; `moneyFormatOptions`' explicit
+  fraction digits (0 for COP, CLP and VES, 2 for the other common codes, the standard otherwise)
+  and `formatMoney` passing them to `Intl.NumberFormat`; `deviceCurrency`'s USD fallback; `currencyChoices`;
   `priceOf` for a cached row.
 
 The Profile tab's Privacy section (data export and account deletion):
@@ -201,9 +203,15 @@ Outfits, Stats and Diary:
   sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, and a browser
   that won't open.
 - `src/outfits/__tests__/storeLinks.test.ts` — `storeLinksFor`: each region's stores and exact
-  URLs, a lower-case or missing region, every query URL-encoded, and Mercado Libre's hyphens.
+  URLs, a lower-case or missing region, every query and the `gl` region URL-encoded, and Mercado
+  Libre's hyphens.
 - `src/outfits/__tests__/shareOutfit.test.ts` — the captured PNG shared with its MIME type, no
-  capture when the device can't share, and a capture or share-sheet failure answering `failed`.
+  capture when the device can't share, a capture or share-sheet failure answering `failed`, and
+  the temporary file released after the share sheet (also when it fails, never without a capture).
+- `src/outfits/__tests__/ShareOutfitSheet.test.tsx` — "Share image" disabled until every
+  thumbnail has loaded or failed (a piece with no thumbnail waits for nothing, no thumbnails is
+  ready at once, 3 s is enough without them), and the card inside the sheet's scroll view.
+- `src/ui/__tests__/BottomSheet.test.tsx` — the sheet slides up, or fades in with Reduce Motion on.
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
   shared by Today and the rating per user and day, also after a restart, and cleared for a deleted
   wear.

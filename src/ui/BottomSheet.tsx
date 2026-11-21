@@ -1,6 +1,7 @@
 // A sheet over the bottom of the screen (React Native's `Modal`): a title, the caller's content, and
 // a tap outside, the back button or the caller's own button to close it.
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, fontSizes, radii, spacing } from './theme';
@@ -21,8 +22,16 @@ export function BottomSheet({
   children: React.ReactNode;
 }): React.JSX.Element {
   const { bottom } = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Modal
+      visible={visible}
+      transparent
+      animationType={reduceMotion ? 'fade' : 'slide'}
+      onRequestClose={onClose}
+      statusBarTranslucent
+      {...(testID === undefined ? {} : { testID: `${testID}-modal` })}
+    >
       <View style={styles.fill}>
         {/* The scrim closes on a tap; screen readers use the sheet's own Cancel or Close button. */}
         <Pressable style={styles.scrim} onPress={onClose} accessible={false} importantForAccessibility="no" />
@@ -51,7 +60,9 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     backgroundColor: colors.scrim,
   },
+  // A tall sheet stops short of the status bar; its content scrolls instead (ShareOutfitSheet).
   sheet: {
+    maxHeight: '90%',
     gap: spacing.sm,
     paddingTop: spacing.md + 4,
     paddingHorizontal: spacing.md,

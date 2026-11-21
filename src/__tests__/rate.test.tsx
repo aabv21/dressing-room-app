@@ -778,6 +778,13 @@ test('a failed undo says so and keeps Undo for a retry', async () => {
   expect(screen.getByRole('button', { name: 'Logged ✓' })).toBeDisabled();
 });
 
+/** The card's one thumbnail (TOP's) has drawn, so "Share image" is enabled. */
+async function thumbnailLoaded(): Promise<void> {
+  await fireEvent(screen.getByTestId(`share-image-${TOP}`), 'load', {
+    nativeEvent: { source: { url: '', width: 1, height: 1, mediaType: null } },
+  });
+}
+
 describe('sharing the outfit as an image', () => {
   beforeEach(() => {
     jest.mocked(captureRef).mockClear();
@@ -796,7 +803,9 @@ describe('sharing the outfit as an image', () => {
     expect(within(card).getByText('82')).toBeOnTheScreen();
     expect(within(card).getByText('Dressing Room')).toBeOnTheScreen();
     expect(within(card).getAllByTestId(/^share-piece-/)).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Share image' })).toBeDisabled();
 
+    await thumbnailLoaded();
     await fireEvent.press(screen.getByRole('button', { name: 'Share image' }));
 
     expect(captureRef).toHaveBeenCalledTimes(1);
@@ -811,6 +820,7 @@ describe('sharing the outfit as an image', () => {
     await screen.findByText('78%');
 
     await fireEvent.press(screen.getByRole('button', { name: 'Share' }));
+    await thumbnailLoaded();
     await fireEvent.press(screen.getByRole('button', { name: 'Share image' }));
 
     expect(await screen.findByText("Couldn't create the image. Try again.")).toBeOnTheScreen();

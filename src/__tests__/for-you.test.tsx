@@ -25,6 +25,8 @@ jest.mock('../outfits/aiClient', () => ({
   fetchForYou: jest.fn(),
 }));
 jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-20' }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- the share and store sheets read Reduce Motion; see src/test/reanimatedMock.ts's module doc
+jest.mock('react-native-reanimated', () => require('../test/reanimatedMock'));
 const mockRegion: { code: string | null } = { code: 'US' };
 jest.mock('expo-localization', () => ({
   getLocales: () => [{ languageTag: 'en-US', languageCode: 'en', regionCode: mockRegion.code, currencyCode: 'USD' }],

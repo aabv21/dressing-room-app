@@ -7,6 +7,7 @@ import {
   deviceCurrency,
   formatMoney,
   MAX_PRICE,
+  moneyFormatOptions,
   parsePrice,
   priceOf,
   priceText,
@@ -15,9 +16,6 @@ import {
 jest.mock('expo-localization', () => ({ getLocales: jest.fn() }));
 
 const mockedGetLocales = jest.mocked(getLocales);
-
-/** Intl puts non-breaking spaces between amount and code; compare with plain ones. */
-const plain = (text: string): string => text.replace(/\s/g, ' ');
 
 function deviceWith(currencyCode: string | null): void {
   mockedGetLocales.mockReturnValue([
@@ -47,8 +45,14 @@ describe('parsePrice', () => {
     expect(parsePrice('   ')).toBeNull();
   });
 
-  test.each(['abc', '12a', '-5', '1.2.3,4,5', '12.', ',5', '12.345.6', '1,2345'])('%j is invalid', (text) => {
+  test.each(['abc', '12a', '-5', '1.2.3,4,5', '12.', ',5', '12.345.6', '1,2345', '0.001', '0,500', '00.500', '0.500,25', '012.345'])('%j is invalid', (text) => {
     expect(parsePrice(text)).toBe('invalid');
+  });
+
+  test('a leading zero only ever starts a decimal, never a thousands group', () => {
+    expect(parsePrice('0.50')).toBe(0.5);
+    expect(parsePrice('0,5')).toBe(0.5);
+    expect(parsePrice('0')).toBe(0);
   });
 
   test('a price over what numeric(10,2) holds is invalid', () => {
@@ -82,10 +86,40 @@ describe('costPerWear', () => {
 });
 
 describe('formatMoney', () => {
-  test('formats in the app locale and the garment currency', () => {
-    expect(plain(formatMoney(2.5, 'USD', 'en'))).toBe('$2.50');
-    expect(plain(formatMoney(250000, 'COP', 'es'))).toBe('250.000 COP');
-    expect(plain(formatMoney(3.33, 'EUR', 'es'))).toBe('3,33 €');
+  test('sets the fraction digits itself, not leaving them to the device: none for COP, CLP and VES', () => {
+    for (const currency of ['COP', 'CLP', 'VES']) {
+      expect(moneyFormatOptions(currency)).toEqual({
+        style: 'currency',
+        currency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      });
+    }
+  });
+
+  test('two for the other common currencies', () => {
+    for (const currency of ['USD', 'MXN', 'EUR', 'ARS', 'PEN', 'BRL']) {
+      expect(moneyFormatOptions(currency)).toEqual({
+        style: 'currency',
+        currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+    }
+  });
+
+  test("a code outside the list keeps the currency's own standard", () => {
+    expect(moneyFormatOptions('JPY')).toEqual({ style: 'currency', currency: 'JPY' });
+  });
+
+  test('formats with those options in the app locale', () => {
+    const NumberFormat = jest.spyOn(Intl, 'NumberFormat');
+    try {
+      formatMoney(16666.67, 'CLP', 'es');
+      expect(NumberFormat).toHaveBeenCalledWith('es', moneyFormatOptions('CLP'));
+    } finally {
+      NumberFormat.mockRestore();
+    }
   });
 });
 

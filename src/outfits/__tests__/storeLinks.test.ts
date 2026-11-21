@@ -80,4 +80,8 @@ describe('the search URLs', () => {
   test('Mercado Libre joins the words with hyphens, its own URL style', () => {
     expect(storeLinksFor('MX', '  white   sneakers ', 'en')[0]?.url).toBe('https://listado.mercadolibre.com.mx/white-sneakers');
   });
+
+  test("Google Shopping's region parameter is encoded too", () => {
+    expect(storeLinksFor('x&y=z', 'tee', 'en')[0]?.url).toBe('https://www.google.com/search?tbm=shop&q=tee&hl=en&gl=x%26y%3Dz');
+  });
 });

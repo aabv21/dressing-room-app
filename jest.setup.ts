@@ -15,6 +15,7 @@ jest.mock('expo-network', () => ({
 // react-native-view-shot's native capture is absent under Jest: a capture answers a fixed PNG file.
 jest.mock('react-native-view-shot', () => ({
   captureRef: jest.fn(() => Promise.resolve('file:///cache/outfit.png')),
+  releaseCapture: jest.fn(),
 }));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(() => Promise.resolve()),

@@ -57,7 +57,7 @@ function storeUrl(store: StoreId, region: string | null, query: string, language
     case 'mercadolivre':
       return `${MERCADO_LIVRE_SEARCH}${words}`;
     case 'google_shopping':
-      return `https://www.google.com/search?tbm=shop&q=${q}&hl=${language}${region === null ? '' : `&gl=${region.toLowerCase()}`}`;
+      return `https://www.google.com/search?tbm=shop&q=${q}&hl=${language}${region === null ? '' : `&gl=${encodeURIComponent(region.toLowerCase())}`}`;
     case 'google':
       return `https://www.google.com/search?q=${q}&hl=${language}`;
   }

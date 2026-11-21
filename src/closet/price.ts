@@ -40,13 +40,17 @@ export function currencyChoices(...extra: readonly (string | null)[]): string[] 
   return [...outside, ...common];
 }
 
-/** "1.200.000" or "1,200": a first group of 1–3 digits, then groups of exactly 3. */
+/**
+ * "1.200.000" or "1,200": a first group of 1–3 digits, then groups of exactly 3. The first group
+ * never starts with 0, so "0.500" and "00,500" are refused rather than read as 500.
+ */
 function isGrouped(groups: readonly string[]): boolean {
   const [head, ...rest] = groups;
   return (
     head !== undefined &&
     DIGITS.test(head) &&
     head.length <= 3 &&
+    !head.startsWith('0') &&
     rest.length > 0 &&
     rest.every((group) => DIGITS.test(group) && group.length === 3)
   );
@@ -104,13 +108,37 @@ export function costPerWear(price: number, wearCount: number): number {
   return price / Math.max(wearCount, 1);
 }
 
+/**
+ * The common currencies' fraction digits, set here because devices' ICU data disagree (COP and CLP
+ * come out with or without cents). COP, CLP and VES prices are whole amounts in practice; VES
+ * keeps céntimos on paper, but no price is quoted in them. Other codes keep their own standard.
+ */
+const FRACTION_DIGITS: ReadonlyMap<string, number> = new Map([
+  ['COP', 0],
+  ['CLP', 0],
+  ['VES', 0],
+  ['USD', 2],
+  ['MXN', 2],
+  ['EUR', 2],
+  ['ARS', 2],
+  ['PEN', 2],
+  ['BRL', 2],
+]);
+
+export function moneyFormatOptions(currency: string): Intl.NumberFormatOptions {
+  const digits = FRACTION_DIGITS.get(currency);
+  return digits === undefined
+    ? { style: 'currency', currency }
+    : { style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: digits };
+}
+
 const moneyFormats = new Map<string, Intl.NumberFormat>();
 
 export function formatMoney(amount: number, currency: string, locale: Locale): string {
   const key = `${locale}|${currency}`;
   let format = moneyFormats.get(key);
   if (format === undefined) {
-    format = new Intl.NumberFormat(locale, { style: 'currency', currency });
+    format = new Intl.NumberFormat(locale, moneyFormatOptions(currency));
     moneyFormats.set(key, format);
   }
   return format.format(amount);

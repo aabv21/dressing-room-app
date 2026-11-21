@@ -25,7 +25,7 @@ code (components, hooks, utils) stays outside `src/app/`.
 
 Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
 handling; `ScreenTitle` shows the title upper-cased but gives screen readers the words as written), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
-(`useBottomChrome`, `useLargeText`), `BottomSheet` (React Native's `Modal` sliding up with a title over a `scrim`; a tap outside or the back button closes it; For you's stores and the share sheet use it), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
+(`useBottomChrome`, `useLargeText`), `BottomSheet` (React Native's `Modal` sliding up, or fading in with Reduce Motion on, with a title over a `scrim`, at most 90% of the screen tall; a tap outside or the back button closes it; For you's stores and the share sheet use it), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
 `theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
 `fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. `useWaitStage` times an
@@ -83,12 +83,16 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
   share it).
 - **`price.ts`**: the optional price. `parsePrice` reads either decimal style ("12,50" and "12.50"
   are 12.5; one separator followed by exactly three digits groups thousands, so "250.000" is
-  250000) up to `numeric(10,2)`'s ceiling; `priceOf` pairs the price with its currency (null for an
+  250000, but a first group starting with 0 is refused, so "0.500" and "00,500" never read as 500)
+  up to `numeric(10,2)`'s ceiling; `priceOf` pairs the price with its currency (null for an
   unpriced row or one cached before the columns existed); `deviceCurrency` is expo-localization's
   `getLocales()[0].currencyCode` (USD when missing); `currencyChoices` is the picker's list
   (`COMMON_CURRENCIES`: USD, COP, MXN, EUR, VES, ARS, CLP, PEN, BRL, with the device's or the stored
   code first when it's another); `costPerWear` is `price / max(wear_count, 1)`; and `formatMoney`
-  uses `Intl.NumberFormat` in the app locale and the garment's own currency. Amounts in different
+  uses `Intl.NumberFormat` in the app locale and the garment's own currency, with the fraction
+  digits set by `moneyFormatOptions` rather than the device's ICU data (which disagree on COP and
+  CLP): 0 for COP, CLP and VES (VES keeps céntimos on paper, but prices aren't quoted in them), 2
+  for USD, MXN, EUR, ARS, PEN and BRL, and the currency's own standard for any other code. Amounts in different
   currencies are never summed or compared. The garment detail's Price field and currency chips join
   its Save (an invalid price disables it with a hint; clearing the price clears the currency), and
   the detail shows "Cost per wear: $2.50 after 12 wears" for a priced garment.
@@ -235,10 +239,13 @@ the button's notice slot until the next edit, and lists household mode as "Comin
 - `ShareCard.tsx`, `ShareOutfitSheet.tsx` and `shareOutfit.ts`: "Share" on the rating result (the
   header's share icon) and on Today's card opens a sheet with the card the outfit is shared as: the
   pieces' cut-out thumbnails stacked as a look on a light background, the score when known, and a
-  small "Dressing Room" footer. "Share image" calls `shareOutfitImage`, which checks
+  small "Dressing Room" footer. The card scrolls inside the sheet, and the capture targets the card's
+  own view, not the scroll viewport, so a tall look is captured whole. "Share image" is enabled once
+  every thumbnail has loaded or failed (or after `IMAGE_WAIT_MS`, 3 s), so a capture never shares an
+  empty card; the wait starts over each time the sheet opens. It calls `shareOutfitImage`, which checks
   `Sharing.isAvailableAsync()`, captures the card with `react-native-view-shot`'s `captureRef`
   (`format: 'png'`, `result: 'tmpfile'`) and opens `Sharing.shareAsync(uri, { mimeType: 'image/png',
-  UTI: 'public.png' })`; it never throws, so a capture or share-sheet failure (or no sharing on the
+  UTI: 'public.png' })`, then `releaseCapture(uri)` deletes the temporary PNG; it never throws, so a capture or share-sheet failure (or no sharing on the
   device) stays in the sheet as an announced message. The card's view has `collapsable={false}` so
   Android keeps it for the capture. `react-native-view-shot` is a native module (added with
   `pnpm expo install`; a new build is needed). Its `react-native` export is the raw `.tsx` source,

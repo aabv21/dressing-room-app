@@ -1,11 +1,12 @@
 import * as Sharing from 'expo-sharing';
-import { captureRef } from 'react-native-view-shot';
+import { captureRef, releaseCapture } from 'react-native-view-shot';
 
 import { shareOutfitImage } from '../shareOutfit';
 
 jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(), shareAsync: jest.fn() }));
 
 const mockedCapture = jest.mocked(captureRef);
+const mockedRelease = jest.mocked(releaseCapture);
 const mockedAvailable = jest.mocked(Sharing.isAvailableAsync);
 const mockedShare = jest.mocked(Sharing.shareAsync);
 const TARGET = { current: null };
@@ -17,6 +18,7 @@ beforeEach(() => {
   mockedAvailable.mockResolvedValue(true);
   mockedShare.mockReset();
   mockedShare.mockResolvedValue(undefined);
+  mockedRelease.mockClear();
 });
 
 test('captures the card as a PNG file and shares that file', async () => {
@@ -49,4 +51,26 @@ test('a failed share sheet answers failed', async () => {
   mockedShare.mockRejectedValue(new Error('sheet failed'));
 
   expect(await shareOutfitImage(TARGET, 'Share this outfit')).toBe('failed');
+});
+
+test('the captured file is released once the share sheet is done', async () => {
+  await shareOutfitImage(TARGET, 'Share this outfit');
+
+  expect(mockedRelease).toHaveBeenCalledWith('file:///cache/ReactNative-snapshot-image123.png');
+  expect(mockedRelease.mock.invocationCallOrder[0]).toBeGreaterThan(mockedShare.mock.invocationCallOrder[0] ?? Infinity);
+});
+
+test('the captured file is released when the share sheet fails too', async () => {
+  mockedShare.mockRejectedValue(new Error('sheet failed'));
+
+  expect(await shareOutfitImage(TARGET, 'Share this outfit')).toBe('failed');
+  expect(mockedRelease).toHaveBeenCalledWith('file:///cache/ReactNative-snapshot-image123.png');
+});
+
+test('nothing is released when there was no capture', async () => {
+  mockedCapture.mockRejectedValue(new Error('view not laid out'));
+
+  await shareOutfitImage(TARGET, 'Share this outfit');
+
+  expect(mockedRelease).not.toHaveBeenCalled();
 });

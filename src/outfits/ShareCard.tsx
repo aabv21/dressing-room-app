@@ -16,8 +16,16 @@ const SMALL_PIECE = 84;
 const LARGE_UP_TO = 3;
 
 /** `ref` is the view `captureRef` turns into the PNG; `collapsable={false}` keeps it on Android. */
-export const ShareCard = forwardRef<ViewInstance, { garments: readonly Garment[]; thumbUrls: Map<string, string>; score: number | null }>(
-  function ShareCard({ garments, thumbUrls, score }, ref) {
+type ShareCardProps = {
+  garments: readonly Garment[];
+  thumbUrls: Map<string, string>;
+  score: number | null;
+  /** Called once per thumbnail as it loads or fails, so the capture waits for real pixels. */
+  onImageSettled: (garmentId: string) => void;
+};
+
+export const ShareCard = forwardRef<ViewInstance, ShareCardProps>(
+  function ShareCard({ garments, thumbUrls, score, onImageSettled }, ref) {
     const { t } = useI18n();
     const ordered = useMemo(() => orderPieces(garments), [garments]);
     const size = ordered.length <= LARGE_UP_TO ? LARGE_PIECE : SMALL_PIECE;
@@ -41,6 +49,13 @@ export const ShareCard = forwardRef<ViewInstance, { garments: readonly Garment[]
                     cachePolicy="disk"
                     contentFit="contain"
                     accessibilityIgnoresInvertColors
+                    testID={`share-image-${garment.id}`}
+                    onLoad={() => {
+                      onImageSettled(garment.id);
+                    }}
+                    onError={() => {
+                      onImageSettled(garment.id);
+                    }}
                   />
                 )}
               </View>

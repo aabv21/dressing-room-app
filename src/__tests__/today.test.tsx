@@ -72,6 +72,8 @@ jest.mock('../outfits/outfitRepository', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- the share and store sheets read Reduce Motion; see src/test/reanimatedMock.ts's module doc
+jest.mock('react-native-reanimated', () => require('../test/reanimatedMock'));
 jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(() => Promise.resolve(true)), shareAsync: jest.fn() }));
 jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn(() => Promise.resolve({ ok: true })) }));
 
