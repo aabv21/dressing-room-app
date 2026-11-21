@@ -98,6 +98,21 @@ test('a failure is kept for that outfit and announced, and the retry reuses the 
   expect(result.current.errorFor(OUTFIT)).toBeNull();
 });
 
+test('the same outfit in another order is the same wear: its retry reuses the id and sees the error', async () => {
+  send.mockResolvedValueOnce({ ok: false, error: 'unknown' }).mockResolvedValueOnce({ ok: true });
+  const { result } = await setup();
+
+  await act(async () => {
+    await result.current.log(['g1', 'g2'], null);
+  });
+  expect(result.current.errorFor(['g2', 'g1'])).toBe('unknown');
+  await act(async () => {
+    await result.current.log(['g2', 'g1'], null);
+  });
+
+  expect(send.mock.calls.map(([input]) => input.wearId)).toEqual(['wear-1', 'wear-1']);
+});
+
 test('clearError hides the failure', async () => {
   send.mockResolvedValue({ ok: false, error: 'invalid' });
   const { result } = await setup();

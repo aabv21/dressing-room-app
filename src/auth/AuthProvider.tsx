@@ -5,6 +5,7 @@ import { forgetInterruptedDeletions } from '../account/deletionMarker';
 import { useLocalePreference } from '../i18n/I18nProvider';
 import type { LocalePreference } from '../i18n/I18nProvider';
 import { allowUserKeys } from '../lib/kv';
+import { useOnResume } from '../lib/useOnResume';
 import { readStoredSession, startAuthAutoRefresh, supabase } from '../lib/supabase';
 import { getProfile, saveProfile } from '../profile/profileRepository';
 import type { Profile, ProfilePatch } from '../profile/profileRepository';
@@ -226,6 +227,15 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     },
     [],
   );
+
+  // A launch read that failed offline would otherwise wait for the next token refresh (up to an hour).
+  const profileStatusRef = useRef(profileStatus);
+  useEffect(() => {
+    profileStatusRef.current = profileStatus;
+  });
+  useOnResume(() => {
+    if (profileStatusRef.current === 'error') void refreshProfile();
+  });
 
   const replaceProfileLocal = useCallback((patch: ProfilePatch) => {
     setProfile((previous) => (previous === null ? previous : { ...previous, ...patch }));

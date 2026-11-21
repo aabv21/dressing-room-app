@@ -139,8 +139,9 @@ Accounts, onboarding and the profile:
   (format, invalid code, resend, change email).
 - `src/auth/__tests__/AuthProvider.test.tsx` — the session, an offline launch, the language sync,
   and the shared profile: read at sign-in (no row as `{}`), an error until a retry succeeds (loading
-  while it runs), a failed refresh keeping the last good profile, `replaceProfileLocal` merging a
-  saved patch, and another account or a sign-out dropping it. Screen suites stand it in with
+  while it runs), a failed refresh keeping the last good profile, a foreground or reconnect after an
+  offline launch reading it again, `replaceProfileLocal` merging a saved patch, and another account
+  or a sign-out dropping it. Screen suites stand it in with
   `src/test/authMock.ts`, a store that re-renders on `setAuth`.
 - `src/auth/__tests__/authService.test.ts` — sign-up, sign-in, sign-out (offline falls back to a
   local sign-out), the password-reset request (no account and the email rate limit both answer

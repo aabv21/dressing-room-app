@@ -278,14 +278,13 @@ export default function ReviewScreen(): React.JSX.Element {
     for (const g of sure) {
       const values = fieldValuesOf(g);
       const result = await confirmReview(g.id, values);
-      // The closet takes a saved garment even once the screen is gone; the loop stops there.
-      if (result.ok) replaceLocal({ ...g, ...values, reviewed_at: new Date().toISOString() });
-      if (!mounted.current) break;
       if (!result.ok) {
-        setBatchFailed(true);
+        if (mounted.current) setBatchFailed(true);
         break;
       }
-      onConfirmed(g.id);
+      // Leaving Review doesn't stop the batch: the closet takes each one; only this screen's state waits.
+      replaceLocal({ ...g, ...values, reviewed_at: new Date().toISOString() });
+      if (mounted.current) onConfirmed(g.id);
       saved += 1;
     }
     batchLock.current = false;

@@ -10,7 +10,7 @@ import type { RequestError } from '../lib/requestResult';
 import { announceForAccessibility } from '../ui/a11y';
 import { logWear } from './outfitRepository';
 import { logWearOrQueue, queuedWears } from './wearQueue';
-import { useWornToday } from './wornToday';
+import { outfitIdentity, useWornToday } from './wornToday';
 
 /** `ignored`: a wear was already sending, so this tap did nothing. */
 export type WearLogStatus = 'logged' | 'queued' | 'failed' | 'ignored';
@@ -32,7 +32,7 @@ export function useWearLog(day: string): WearLog {
   const { userId } = useAuth();
   const { refresh } = useCloset();
   const { isWorn, markWorn } = useWornToday(day);
-  const keyOf = useCallback((garmentIds: readonly string[]) => `${day}|${garmentIds.join(',')}`, [day]);
+  const keyOf = useCallback((garmentIds: readonly string[]) => `${day}|${outfitIdentity(garmentIds)}`, [day]);
 
   // The ref locks a second tap before the re-render lands.
   const sending = useRef(false);

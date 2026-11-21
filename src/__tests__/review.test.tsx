@@ -365,6 +365,35 @@ describe('confirming the garments the AI was sure of', () => {
     announce.mockRestore();
   });
 
+  test('leaving mid-loop still confirms every garment, quietly', async () => {
+    mockCloset.garments = [sureOne('s-0', 0), sureOne('s-1', 1), sureOne('s-2', 2), sureOne('s-3', 3)];
+    let finish: (value: { ok: true }) => void = () => undefined;
+    mockedConfirmReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mockedConfirmReview.mockResolvedValue({ ok: true });
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    await renderReview();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Confirm the 3 the AI was sure of' }));
+    await screen.unmount();
+    await act(async () => {
+      finish({ ok: true });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockedConfirmReview.mock.calls.map((call) => call[0])).toEqual(['s-1', 's-2', 's-3']);
+    });
+    await waitFor(() => {
+      expect(mockReplaceLocal).toHaveBeenCalledTimes(3);
+    });
+    expect(announce).not.toHaveBeenCalled();
+    announce.mockRestore();
+  });
+
   test('one sure garment gets no bulk button', async () => {
     mockCloset.garments = [sureOne('s-1', 1), extracted('d-1', 2)];
     await renderReview();

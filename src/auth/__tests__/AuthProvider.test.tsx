@@ -26,6 +26,14 @@ jest.mock('../../profile/profileRepository', () => ({
   saveProfile: (userId: string, patch: { language: 'en' | 'es' | null }) => mockSaveProfile(userId, patch),
 }));
 
+// The latest callback AuthProvider passed to `useOnResume`; a test calls it as a foreground or reconnect.
+let mockOnResume: () => void = () => undefined;
+jest.mock('../../lib/useOnResume', () => ({
+  useOnResume: (callback: () => void) => {
+    mockOnResume = callback;
+  },
+}));
+
 import { I18nProvider, useLocalePreference } from '../../i18n/I18nProvider';
 import { allowUserKeys, kvGet, kvRemove, kvSet } from '../../lib/kv';
 import { AuthProvider, useAuth } from '../AuthProvider';
@@ -767,6 +775,41 @@ describe('the profile, read once for the app', () => {
     });
 
     expect(result.current.profileStatus).toBe('loading');
+  });
+
+  test('after an offline launch, returning to the foreground or reconnecting reads the profile again', async () => {
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('error');
+    });
+
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+    await act(async () => {
+      mockOnResume();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+    expect(result.current.profile).toEqual({ onboarding_completed_at: null, language: 'es' });
+  });
+
+  test('a resume with the profile already read reads nothing', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null });
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+    const reads = mockGetProfile.mock.calls.length;
+
+    await act(async () => {
+      mockOnResume();
+      await Promise.resolve();
+    });
+
+    expect(mockGetProfile.mock.calls.length).toBe(reads);
   });
 
   test('a failed refresh keeps the last good profile', async () => {

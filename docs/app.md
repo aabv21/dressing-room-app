@@ -95,7 +95,8 @@ garment hexes, each segment and legend entry tappable).
   a stub (`integration/lib-supabase.stub.ts`).
 - `AuthProvider` (`useAuth`): the session, the signed-in email, the profile read once per sign-in
   and shared by every screen (`profile`, `profileStatus`, `refreshProfile`, and
-  `replaceProfileLocal` for a patch a screen just saved; a failed re-read keeps the last good one),
+  `replaceProfileLocal` for a patch a screen just saved; a failed re-read keeps the last good one,
+  and a failed launch read is retried on foreground and reconnect),
   the device language reconciled with `profile.language` once per sign-in, an offline launch kept signed in from the stored session,
   and, when a session ends or another user signs in, `forgetInterruptedDeletions` for any account
   whose deletion was under way (which also records its `queue.purge.<id>` request).
