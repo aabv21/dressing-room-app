@@ -38,7 +38,7 @@ import {
   searchQuery,
   templateLine,
 } from '../_shared/forYou.ts';
-import { callerOf, readJson, reply } from '../_shared/http.ts';
+import { callerOf, readJson, reply as replyWith } from '../_shared/http.ts';
 import { garmentFingerprint, type RuleGarment, seasonOf } from '../_shared/outfitRules.ts';
 import type { Language } from '../_shared/searchTerms.ts';
 import {
@@ -62,6 +62,11 @@ import {
   sha256Hex,
   profileIdentity,
 } from '../_shared/userContext.ts';
+
+type Outcome = 'cached' | 'stale' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_quota' | 'invalid' | 'error';
+
+/** `reply`, limited to this function's outcome words. */
+const reply = (outcome: Outcome, status: number, body: unknown): Response => replyWith(outcome, status, body);
 
 export type ForYouEnv = SupabaseEnv & JevEnv & ClaudeEnv & GeocodingEnv;
 

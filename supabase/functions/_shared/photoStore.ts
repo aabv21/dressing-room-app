@@ -32,6 +32,8 @@ export const LIST_CONCURRENCY = 5;
 /** The most paths one batch-sign call takes. */
 export const SIGN_CHUNK = 500;
 /** Every Storage call, the body included. */
+// NOTE: a 1000-object remove can outlast this while Storage still finishes; the function then
+// answers 500 and a retry recovers (fewer objects, or already_deleted). Upgrade path: smaller batches.
 export const STORAGE_TIMEOUT_MS = 10_000;
 
 const storageUrl = (env: StorageEnv, route: string): string => `${env.supabaseUrl}/storage/v1/${route}`;
