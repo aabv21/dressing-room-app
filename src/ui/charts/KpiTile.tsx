@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { useLargeText } from '../layout';
-import { colors, radii, spacing } from '../theme';
+import { colors, fontSizes, radii, spacing } from '../theme';
 
 /** Two to a row; above `LARGE_TEXT_FONT_SCALE` a tile takes the whole row so words don't break mid-word. */
 export function KpiTile(props: { value: string; label: string }): React.JSX.Element {
@@ -24,9 +24,9 @@ const styles = StyleSheet.create({
   tile: {
     flexBasis: '48%',
     flexGrow: 1,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
     borderWidth: 1,
-    borderColor: '#ffffff',
+    borderColor: colors.surface,
     borderRadius: radii.cell + 2,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.sm,
@@ -35,13 +35,13 @@ const styles = StyleSheet.create({
     flexBasis: '100%',
   },
   value: {
-    fontSize: 20,
+    fontSize: fontSizes.headline,
     fontWeight: '900',
     lineHeight: 22,
     color: colors.ink,
   },
   label: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     color: colors.muted,
     marginTop: 2,
   },

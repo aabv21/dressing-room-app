@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from '
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
 import { useI18n } from '../i18n';
-import { colors, gradients, textScale } from '../ui/theme';
+import { colors, fontSizes, gradients, textScale } from '../ui/theme';
 
 const SIZE = 112;
 const STROKE = 10;
@@ -154,13 +154,13 @@ const styles = StyleSheet.create({
   },
   number: {
     color: colors.ink,
-    fontSize: 28,
+    fontSize: fontSizes.display,
     fontWeight: '900',
     lineHeight: NUMBER_LINE,
   },
   caption: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     lineHeight: CAPTION_LINE,
     textAlign: 'center',
   },

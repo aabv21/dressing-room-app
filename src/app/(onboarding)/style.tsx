@@ -10,7 +10,7 @@ import { StyleSection } from '../../profile/ProfileForm';
 import { announceForAccessibility } from '../../ui/a11y';
 import { Screen } from '../../ui/Screen';
 import { StepBar } from '../../ui/StepBar';
-import { colors } from '../../ui/theme';
+import { colors, fontSizes } from '../../ui/theme';
 
 function StyleStep() {
   const { t } = useI18n();
@@ -83,7 +83,7 @@ export default function StyleRoute() {
 const styles = StyleSheet.create({
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
 });

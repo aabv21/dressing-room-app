@@ -5,7 +5,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { androidRipple, pressedStyle, tapHaptic } from './feedback';
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
-import { colors, gradients, layout, radii, textScale } from './theme';
+import { colors, fontSizes, gradients, layout, radii, textScale } from './theme';
 
 export type CtaTone = 'ai' | 'commit' | 'ghost';
 
@@ -25,7 +25,7 @@ function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBas
   };
   const pressed = (state: { pressed: boolean }) => state.pressed && Platform.OS === 'ios' && pressedStyle;
   const textStyle = tone === 'ghost' ? styles.labelDark : styles.labelLight;
-  const iconColor = tone === 'ghost' ? colors.ink : '#ffffff';
+  const iconColor = tone === 'ghost' ? colors.ink : colors.onFill;
 
   const content = (
     <View style={styles.contentRow}>
@@ -96,7 +96,7 @@ export function AnchoredCta(props: {
       {/* NOTE: 0-alpha colors, not `transparent` (transparent BLACK, a grey blend); solid from 45% down
           (dark: 40%) so content scrolling under the buttons doesn't show through. */}
       <LinearGradient
-        colors={surface === 'dark' ? ['rgba(14,13,18,0)', '#0e0d12'] : ['rgba(235,227,255,0)', '#ebe3ff']}
+        colors={surface === 'dark' ? [colors.nightClear, colors.night] : [colors.fadeClear, gradients.background[2]]}
         locations={surface === 'dark' ? [0, 0.4] : [0, 0.45]}
         testID="cta-fade"
         style={StyleSheet.absoluteFill}
@@ -160,9 +160,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   ghostFill: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: colors.glass[75],
     borderWidth: 1,
-    borderColor: '#ffffff',
+    borderColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 12,
@@ -180,13 +180,13 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   labelLight: {
-    color: '#ffffff',
+    color: colors.onFill,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   labelDark: {
     color: colors.ink,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
 });

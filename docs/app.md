@@ -23,7 +23,9 @@ Components not tied to one route: `Screen` (the scrolling screen with its anchor
 handling), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
 (`useBottomChrome`, `useLargeText`), `ActionNotice` (an action's error or queued note above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
-`theme.ts`. `feedback.ts` holds `tapHaptic` (a light impact
+`theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
+`fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. A chosen chip or segment
+is filled with the `selected` violet, which Build's active slot row takes as its border. `feedback.ts` holds `tapHaptic` (a light impact
 for commit actions, a selection tick for choices, silent on a device without haptics) and the
 pressed styles. `charts/` holds the Stats charts: `KpiTile`, `HorizontalBars` (most worn; bars grow
 with reanimated unless reduced motion is on, rows tappable) and `ProportionBar` (the colors, real

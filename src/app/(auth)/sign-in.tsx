@@ -10,7 +10,7 @@ import { useI18n } from '../../i18n';
 import { announceForAccessibility } from '../../ui/a11y';
 import { LinkText } from '../../ui/LinkText';
 import { Screen } from '../../ui/Screen';
-import { colors } from '../../ui/theme';
+import { colors, fontSizes } from '../../ui/theme';
 import { TextField } from '../../ui/TextField';
 
 export default function SignInScreen() {
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   footerRow: {
     flexDirection: 'row',
@@ -168,10 +168,10 @@ const styles = StyleSheet.create({
   link: {
     color: colors.accent,
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   muted: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
 });

@@ -35,7 +35,7 @@ import { ActionNotice } from '../ui/ActionNotice';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
-import { colors, gradients, layout, radii, spacing } from '../ui/theme';
+import { colors, fontSizes, gradients, layout, radii, spacing } from '../ui/theme';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
@@ -154,7 +154,7 @@ function SwapCard({
         style={[styles.swapButton, disabled ? styles.dimmed : null]}
       >
         <LinearGradient colors={gradients.ai} style={styles.swapButtonFill}>
-          <Sparkles size={13} color="#ffffff" fill="#ffffff" />
+          <Sparkles size={13} color={colors.onFill} fill={colors.onFill} />
           <Text style={styles.swapButtonLabel}>{t('rate.swap.cta')}</Text>
         </LinearGradient>
       </Pressable>
@@ -513,12 +513,12 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
   confidence: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     textAlign: 'center',
   },
   reasons: {
@@ -535,7 +535,7 @@ const styles = StyleSheet.create({
   reasonText: {
     flex: 1,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     lineHeight: 19,
   },
   swapCard: {
@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
   },
   swapText: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     lineHeight: 19,
   },
   swapPrefix: {
@@ -568,8 +568,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   swapButtonLabel: {
-    color: '#ffffff',
-    fontSize: 13,
+    color: colors.onFill,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
   },
   dimmed: {
@@ -577,7 +577,7 @@ const styles = StyleSheet.create({
   },
   noBetterSwap: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     textAlign: 'center',
   },
   forYouLink: {
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
   },
   forYouText: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     textAlign: 'center',
   },
   forYouAccent: {
@@ -597,12 +597,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: colors.glass[75],
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.95)',
+    borderColor: colors.glass[95],
     borderRadius: radii.card,
     padding: 10,
-    shadowColor: '#3c1e78',
+    shadowColor: colors.shadow,
     shadowOpacity: 0.08,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
   },
   errorMessage: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: fontSizes.title,
     fontWeight: '600',
     lineHeight: 22,
     textAlign: 'center',

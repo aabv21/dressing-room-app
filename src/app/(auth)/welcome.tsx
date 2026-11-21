@@ -11,7 +11,7 @@ import { LanguageToggle } from '../../ui/LanguageToggle';
 import { LinkText } from '../../ui/LinkText';
 import { Screen } from '../../ui/Screen';
 import { SocialButton } from '../../ui/SocialButton';
-import { colors, spacing } from '../../ui/theme';
+import { colors, fontSizes, spacing } from '../../ui/theme';
 import { TextField } from '../../ui/TextField';
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   socialSection: {
     gap: spacing.sm,
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   },
   dividerLabel: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
   },
   footerRow: {
     flexDirection: 'row',
@@ -253,20 +253,20 @@ const styles = StyleSheet.create({
   link: {
     color: colors.accent,
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   muted: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   checkEmail: {
     color: colors.accent,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
   socialError: {
     color: colors.error,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '600',
   },
 });

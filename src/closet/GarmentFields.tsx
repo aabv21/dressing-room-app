@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useI18n, type MessageKey } from '../i18n';
 import { ChipGroup, type ChipOption } from '../ui/ChipGroup';
-import { colors, layout } from '../ui/theme';
+import { colors, fontSizes, layout } from '../ui/theme';
 import {
   categoriesFor,
   GARMENT_CATEGORIES,
@@ -347,11 +347,11 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 2,
     borderBottomWidth: StyleSheet.hairlineWidth * 2,
-    borderBottomColor: '#eee9f8',
+    borderBottomColor: colors.divider,
   },
   rowLabel: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   rowValue: {
     flexShrink: 1,
@@ -362,16 +362,16 @@ const styles = StyleSheet.create({
   value: {
     flexShrink: 1,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   unset: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   check: {
     color: colors.positiveText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '800',
   },
 });

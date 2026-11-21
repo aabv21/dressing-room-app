@@ -7,7 +7,7 @@ import { useI18n } from '../../i18n';
 import { OnboardingProvider, useOnboarding } from '../../profile/OnboardingProvider';
 import { AnchoredCta } from '../../ui/AnchoredCta';
 import { LinkText } from '../../ui/LinkText';
-import { colors, gradients, spacing } from '../../ui/theme';
+import { colors, fontSizes, gradients, spacing } from '../../ui/theme';
 
 /** Covers the steps until the profile has been (re-)read; see OnboardingProvider for why. */
 function ProfileGate(): React.JSX.Element | null {
@@ -71,17 +71,17 @@ const styles = StyleSheet.create({
   },
   message: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
   signOut: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
     textAlign: 'center',
   },

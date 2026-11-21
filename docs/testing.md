@@ -220,9 +220,10 @@ Outfits, Stats and Diary:
 Shared UI, the app shell and helpers:
 
 - `src/ui/__tests__/` — `AnchoredCta.test.tsx` and `ChipGroup.test.tsx` (roles, states and the CTA
-  label's cap), `ActionNotice.test.tsx` (an error is an alert, both notes are live regions), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection and the
-  large content viewer), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
-  (`useBottomChrome` and `useLargeText`), `theme.test.ts` (error text contrast), `Screen.test.tsx`
+  label's cap), `ActionNotice.test.tsx` (an error is an alert, both notes are live regions), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection, the
+  large content viewer and the violet selected style, shared with the chips), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
+  (`useBottomChrome` and `useLargeText`), `theme.test.ts` (text contrast, including the selected label), `themeUsage.test.ts` (no component
+  hard-codes a font size or a color, and the type scale stays at 11 pt or more), `Screen.test.tsx`
   (the status-bar scrim above scrolled content, the CTA backdrop with no chrome) and
   `feedback.test.ts` (`tapHaptic`: a light impact for a commit, a selection tick for a choice, and
   a device that rejects haptics neither throws nor leaves the rejection unhandled).

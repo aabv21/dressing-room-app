@@ -15,7 +15,7 @@ import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { TextField } from '../ui/TextField';
-import { colors, gradients, layout, spacing } from '../ui/theme';
+import { colors, fontSizes, gradients, layout, spacing } from '../ui/theme';
 
 type Load = { status: 'loading' } | { status: 'error' } | { status: 'ready'; saved: CityPatch };
 
@@ -250,11 +250,11 @@ const styles = StyleSheet.create({
   },
   intro: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   text: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
   },
   spinner: {
     marginVertical: spacing.lg,
@@ -265,16 +265,16 @@ const styles = StyleSheet.create({
   },
   locationLabel: {
     color: colors.accentText,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
   },
   message: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
 });

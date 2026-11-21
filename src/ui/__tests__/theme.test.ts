@@ -28,3 +28,7 @@ test.each([
 test('error text meets WCAG AA on its own tint', () => {
   expect(contrast(colors.error, colors.errorTint)).toBeGreaterThanOrEqual(4.5);
 });
+
+test('the selected label meets WCAG AA on the selected fill', () => {
+  expect(contrast(colors.onFill, colors.selected)).toBeGreaterThanOrEqual(4.5);
+});

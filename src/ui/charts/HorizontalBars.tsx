@@ -8,7 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { useLargeText } from '../layout';
-import { colors, layout, spacing } from '../theme';
+import { colors, fontSizes, layout, spacing } from '../theme';
 
 const GROW_DURATION_MS = 450;
 const LABEL_WIDTH = 92;
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     columnGap: spacing.sm,
   },
   label: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     color: colors.ink,
   },
   labelStacked: {
@@ -182,12 +182,12 @@ const styles = StyleSheet.create({
   },
   value: {
     textAlign: 'right',
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     color: colors.muted,
     fontVariant: ['tabular-nums'],
   },
   detail: {
-    fontSize: 11,
+    fontSize: fontSizes.micro,
     color: colors.muted,
     marginTop: -2,
     marginBottom: spacing.xs,

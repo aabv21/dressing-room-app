@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocalePreference } from '../i18n/I18nProvider';
 import type { Locale } from '../i18n';
 import { useI18n } from '../i18n';
-import { colors, layout, radii } from './theme';
+import { colors, fontSizes, layout, radii } from './theme';
 
 const SEGMENTS: readonly Locale[] = ['es', 'en'];
 
@@ -51,7 +51,7 @@ export function LanguageToggle(props: { onChange?: (locale: Locale) => void } = 
 const styles = StyleSheet.create({
   track: {
     flexDirection: 'row',
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: radii.pill,
@@ -69,11 +69,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.commit,
   },
   label: {
-    fontSize: 11,
+    fontSize: fontSizes.micro,
     fontWeight: '700',
     color: colors.muted,
   },
   labelOn: {
-    color: '#ffffff',
+    color: colors.onFill,
   },
 });

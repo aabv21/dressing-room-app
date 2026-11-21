@@ -14,7 +14,7 @@ import { useUploadQueue } from '../closet/UploadQueueProvider';
 import { pluralKey, useI18n } from '../i18n';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { tapHaptic } from '../ui/feedback';
-import { layout } from '../ui/theme';
+import { colors, fontSizes, layout } from '../ui/theme';
 
 const JPEG_QUALITY = 0.8;
 
@@ -47,7 +47,7 @@ function PermissionGate({ children }: { children: React.ReactNode }): React.JSX.
           }}
           style={[styles.closeButton, styles.deniedClose, { top: insets.top + 12 }]}
         >
-          <X size={20} color="#ffffff" />
+          <X size={20} color={colors.onFill} />
         </Pressable>
         <Text style={styles.deniedText}>{t('camera.permission.denied')}</Text>
         <Pressable
@@ -170,7 +170,7 @@ function BurstCamera(): React.JSX.Element {
     <View style={[styles.fill, { paddingTop: insets.top + 12 }]}>
       <View style={styles.titleRow}>
         <Pressable accessibilityRole="button" accessibilityLabel={t('camera.close')} onPress={close} style={styles.closeButton}>
-          <X size={20} color="#ffffff" />
+          <X size={20} color={colors.onFill} />
         </Pressable>
         <Text style={styles.title}>{t('camera.title')}</Text>
       </View>
@@ -234,7 +234,7 @@ export default function CameraScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#0e0d12',
+    backgroundColor: colors.night,
   },
   fill: {
     flex: 1,
@@ -248,8 +248,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   deniedText: {
-    color: '#ffffff',
-    fontSize: 15,
+    color: colors.onFill,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
   settingsButton: {
@@ -257,14 +257,14 @@ const styles = StyleSheet.create({
     minWidth: 160,
     paddingHorizontal: 20,
     borderRadius: 999,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   settingsLabel: {
-    color: '#0e0d12',
+    color: colors.night,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   titleRow: {
     flexDirection: 'row',
@@ -284,13 +284,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   galleryLabel: {
-    color: '#ffffff',
+    color: colors.onFill,
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   flash: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
   },
   closeButton: {
     width: layout.minHitTarget,
@@ -300,15 +300,15 @@ const styles = StyleSheet.create({
     marginLeft: -10,
   },
   title: {
-    color: '#ffffff',
+    color: colors.onFill,
     fontWeight: '900',
-    fontSize: 17,
+    fontSize: fontSizes.title,
     letterSpacing: 1,
   },
   viewfinder: {
     height: 330,
     borderRadius: 22,
-    backgroundColor: '#cfc4b2',
+    backgroundColor: colors.viewfinder,
     overflow: 'hidden',
   },
   cameraFill: {
@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 26,
     height: 26,
-    borderColor: '#ffffff',
+    borderColor: colors.onFill,
     borderWidth: 3,
   },
   cornerTopLeft: {
@@ -358,9 +358,9 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   hintText: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    color: '#ffffff',
-    fontSize: 12,
+    backgroundColor: colors.scrimDark,
+    color: colors.onFill,
+    fontSize: fontSizes.caption,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
     height: 66,
     borderRadius: 33,
     borderWidth: 4,
-    borderColor: '#ffffff',
+    borderColor: colors.onFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -387,22 +387,22 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.onFill,
   },
   countPill: {
-    backgroundColor: '#8b5cf6',
+    backgroundColor: colors.accentBright,
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   countText: {
-    color: '#ffffff',
+    color: colors.onFill,
     fontWeight: '800',
-    fontSize: 12,
+    fontSize: fontSizes.caption,
   },
   caption: {
-    color: '#bdbac6',
-    fontSize: 13,
+    color: colors.mutedOnDark,
+    fontSize: fontSizes.bodySmall,
     textAlign: 'center',
   },
 });

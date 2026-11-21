@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useI18n, type Locale } from '../i18n';
 import { inferRefreshRateHz, type FrameStats } from './frameStats';
+import { colors, fontSizes } from '../ui/theme';
 
 const LINE_HEIGHT = 14;
 const PADDING_VERTICAL = 6;
@@ -96,13 +97,13 @@ const styles = StyleSheet.create({
     height: PERF_HUD_HEIGHT,
     paddingHorizontal: 12,
     paddingVertical: PADDING_VERTICAL,
-    backgroundColor: 'rgba(20,19,23,0.85)',
+    backgroundColor: colors.hud,
     justifyContent: 'center',
     zIndex: 10,
   },
   text: {
-    color: '#ffffff',
-    fontSize: 11,
+    color: colors.onFill,
+    fontSize: fontSizes.micro,
     lineHeight: LINE_HEIGHT,
     fontWeight: '600',
     textAlign: 'center',

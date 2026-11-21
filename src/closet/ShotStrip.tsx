@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '../i18n';
 
 import { tapHaptic } from '../ui/feedback';
-import { colors, layout } from '../ui/theme';
+import { colors, fontSizes, layout } from '../ui/theme';
 
 const TILE_SIZE = 34;
 const OVERLAP = -10;
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     height: TILE_SIZE,
     borderRadius: 9,
     borderWidth: 2,
-    borderColor: '#0e0d12',
+    borderColor: colors.night,
     marginLeft: OVERLAP,
     overflow: 'hidden',
     backgroundColor: colors.commit,
@@ -95,13 +95,13 @@ const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   removeBadgeText: {
-    color: '#0e0d12',
-    fontSize: 13,
+    color: colors.night,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '800',
     lineHeight: 15,
   },

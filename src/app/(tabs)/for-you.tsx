@@ -12,7 +12,7 @@ import type { ForYouCard } from '../../outfits/types';
 import { useForYou } from '../../outfits/useForYou';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { Screen } from '../../ui/Screen';
-import { colors, layout, radii, spacing } from '../../ui/theme';
+import { colors, fontSizes, layout, radii, shadows, spacing } from '../../ui/theme';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
@@ -171,7 +171,7 @@ export default function ForYouScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   intro: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     lineHeight: 18,
     marginTop: -2,
   },
@@ -179,13 +179,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm + 2,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
     borderWidth: 1,
-    borderColor: '#ffffff',
+    borderColor: colors.surface,
     borderRadius: radii.cell + 4,
     padding: spacing.sm + 4,
     gap: spacing.sm - 2,
-    boxShadow: '0 6px 18px rgba(60, 30, 120, 0.06)',
+    boxShadow: shadows.card,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -197,18 +197,18 @@ const styles = StyleSheet.create({
     height: 30,
     borderRadius: 9,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.12)',
-    backgroundColor: '#ffffff',
+    borderColor: colors.swatchEdgeSoft,
+    backgroundColor: colors.surface,
   },
   name: {
     flex: 1,
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '800',
   },
   combines: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     lineHeight: 18,
   },
   gain: {
@@ -216,8 +216,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   line: {
-    color: '#4a4656',
-    fontSize: 14,
+    color: colors.inkSoft,
+    fontSize: fontSizes.body,
     lineHeight: 19,
   },
   search: {
@@ -229,15 +229,15 @@ const styles = StyleSheet.create({
     gap: 6,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: '#e3d8ff',
-    backgroundColor: '#ffffff',
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.surface,
   },
   pressed: {
     backgroundColor: colors.tint,
   },
   searchLabel: {
     color: colors.accentText,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
   },
   note: {
@@ -249,11 +249,11 @@ const styles = StyleSheet.create({
   noteText: {
     flex: 1,
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   message: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: fontSizes.title,
     fontWeight: '600',
     lineHeight: 22,
     textAlign: 'center',

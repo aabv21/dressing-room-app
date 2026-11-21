@@ -2,7 +2,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { androidRipple, pressedStyle, tapHaptic } from './feedback';
 
-import { colors, layout, selectionRing, textScale } from './theme';
+import { colors, fontSizes, layout, selectionRing, textScale } from './theme';
 
 /** A large single-choice card: emoji, bold title, muted subtitle. */
 export function OptionCard(props: {
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     minHeight: layout.minHitTarget,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 2,
     borderColor: colors.hairline,
     borderRadius: 16,
@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
     boxShadow: selectionRing,
   },
   emoji: {
-    fontSize: 28,
+    fontSize: fontSizes.display,
     lineHeight: 34,
   },
   text: {
@@ -70,11 +70,11 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   subtitle: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
 });

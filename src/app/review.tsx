@@ -20,7 +20,7 @@ import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
-import { colors, gradients, radii, spacing } from '../ui/theme';
+import { colors, fontSizes, gradients, radii, spacing } from '../ui/theme';
 
 const CLOCK_TICK_MS = 30_000;
 const ERROR_ROOM = 56;
@@ -345,19 +345,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1.5,
     borderColor: colors.accent,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.glass[80],
   },
   batchButtonDim: {
     opacity: 0.6,
   },
   batchLabel: {
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   progressText: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   track: {
@@ -378,18 +378,18 @@ const styles = StyleSheet.create({
     borderColor: colors.tintBorder,
     backgroundColor: colors.tint,
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   editingRow: {
     gap: spacing.sm,
     paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth * 2,
-    borderBottomColor: '#eee9f8',
+    borderBottomColor: colors.divider,
   },
   editingLabel: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   doubt: {
     gap: spacing.sm,
@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
   },
   doubtText: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   doubtLead: {
     fontWeight: '700',
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.errorTint,
     textAlign: 'center',
     color: colors.error,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   caughtUp: {
     marginTop: spacing.xl,
@@ -424,13 +424,13 @@ const styles = StyleSheet.create({
   },
   caughtUpTitle: {
     color: colors.ink,
-    fontSize: 20,
+    fontSize: fontSizes.headline,
     fontWeight: '800',
     textAlign: 'center',
   },
   caughtUpBody: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
 });

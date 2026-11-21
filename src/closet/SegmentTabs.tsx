@@ -1,7 +1,7 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { androidRipple, pressedStyle, tapHaptic } from '../ui/feedback';
-import { colors, layout, radii, textScale } from '../ui/theme';
+import { colors, fontSizes, layout, radii, textScale } from '../ui/theme';
 
 const SEGMENT_HEIGHT = 34;
 const PADDING = 3;
@@ -61,8 +61,8 @@ const styles = StyleSheet.create({
     padding: PADDING,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: '#ffffff',
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderColor: colors.surface,
+    backgroundColor: colors.glass[70],
   },
   segment: {
     flex: 1,
@@ -72,14 +72,14 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
   },
   segmentOn: {
-    backgroundColor: colors.commit,
+    backgroundColor: colors.selected,
   },
   label: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
     color: colors.muted,
   },
   labelOn: {
-    color: '#ffffff',
+    color: colors.onFill,
   },
 });

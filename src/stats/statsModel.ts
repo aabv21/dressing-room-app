@@ -90,7 +90,8 @@ export function mostWorn(
 
 export type ColorShare = { color: GarmentColor | 'other'; pct: number; hex: string };
 
-const OTHER_HEX = '#d4d0dc';
+/** The swatch for the colors grouped as "other". */
+export const OTHER_HEX = '#d4d0dc';
 
 /** Rounds shares to sum to 100 (largest remainder: floors, then leftovers to the biggest fractions). */
 function roundSharesTo100(counts: readonly number[], total: number): number[] {

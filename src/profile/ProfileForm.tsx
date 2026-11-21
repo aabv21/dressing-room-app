@@ -12,7 +12,7 @@ import { OptionCard } from '../ui/OptionCard';
 import { useLargeText } from '../ui/layout';
 import { Silhouette } from '../ui/Silhouette';
 import { TextField } from '../ui/TextField';
-import { colors, layout, selectionRing, spacing } from '../ui/theme';
+import { colors, fontSizes, layout, selectionRing, spacing } from '../ui/theme';
 import { silhouettesFor, suggestBodyType } from './bodyType';
 import type { BodyAnswers, ClothingType } from './bodyType';
 import { defaultHeightFor, withClothingType } from './profileDraft';
@@ -543,7 +543,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingTop: 8,
     paddingBottom: 7,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 2,
     borderColor: colors.hairline,
     borderRadius: 14,
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
   },
   cellLabel: {
     color: colors.ink,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '600',
     lineHeight: 14,
     textAlign: 'center',
@@ -567,13 +567,13 @@ const styles = StyleSheet.create({
   },
   helperLabel: {
     color: colors.accentText,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
     lineHeight: 15,
     textAlign: 'center',
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 14,
@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
   },
   question: {
     color: colors.ink,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '800',
   },
   spaced: {
@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
   },
   suggestion: {
     color: colors.accentText,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
   },
   // Wraps the value under the label when a large text size leaves no room for both.
@@ -604,11 +604,11 @@ const styles = StyleSheet.create({
   },
   muted: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   heightValue: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '800',
   },
   heightNotSet: {
@@ -619,7 +619,7 @@ const styles = StyleSheet.create({
   },
   note: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
   },
   accordion: {
     flexDirection: 'row',
@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
   accordionLabel: {
     flex: 1,
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   fieldRow: {
     flexDirection: 'row',
@@ -650,12 +650,12 @@ const styles = StyleSheet.create({
   },
   locationLabel: {
     color: colors.accentText,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
   },
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
 });

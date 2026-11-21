@@ -17,7 +17,7 @@ import type { ProfilePatch, Result } from '../../profile/profileRepository';
 import type { BodyField } from '../../profile/validation';
 import { announceForAccessibility } from '../../ui/a11y';
 import { Screen } from '../../ui/Screen';
-import { colors, layout, radii, spacing } from '../../ui/theme';
+import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 import { LanguageToggle } from '../../ui/LanguageToggle';
 
 function SectionHeading({ children }: { children: string }): React.JSX.Element {
@@ -161,7 +161,7 @@ function LanguageSection({ onSave }: { onSave: (language: 'en' | 'es' | null) =>
         >
           <Text style={styles.rowLabel}>{t('profile.language.device')}</Text>
           <View style={[styles.checkbox, followsDevice ? styles.checkboxOn : null]}>
-            {followsDevice ? <Check size={14} color="#ffffff" strokeWidth={3} /> : null}
+            {followsDevice ? <Check size={14} color={colors.onFill} strokeWidth={3} /> : null}
           </View>
         </Pressable>
         {error !== undefined ? (
@@ -345,12 +345,12 @@ const styles = StyleSheet.create({
   heading: {
     marginTop: spacing.md,
     color: colors.ink,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '900',
     letterSpacing: 1,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 14,
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
   rowLabel: {
     flex: 1,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   divider: {
     height: 1,
@@ -393,11 +393,11 @@ const styles = StyleSheet.create({
   },
   muted: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
   },
   email: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   signOut: {
@@ -410,11 +410,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.hairline,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
   },
   signOutLabel: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   disabled: {
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
   },
   privacyNote: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     lineHeight: 18,
     paddingTop: 8,
   },
@@ -436,14 +436,14 @@ const styles = StyleSheet.create({
   },
   message: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
   },
   spinner: {
     marginVertical: spacing.lg,
   },
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
     paddingBottom: 6,
   },

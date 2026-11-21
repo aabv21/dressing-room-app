@@ -25,7 +25,7 @@ import { AnchoredCta } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { CtaBackdrop } from '../../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
-import { colors, gradients, layout, radii, spacing } from '../../ui/theme';
+import { colors, fontSizes, gradients, layout, radii, spacing } from '../../ui/theme';
 
 type GarmentStatus = Garment['status'];
 
@@ -407,22 +407,22 @@ const styles = StyleSheet.create({
   },
   wears: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   section: {
     gap: spacing.sm,
     paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth * 2,
-    borderBottomColor: '#eee9f8',
+    borderBottomColor: colors.divider,
   },
   label: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   donated: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   notice: {
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
     borderColor: colors.tintBorder,
     backgroundColor: colors.tint,
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   hint: {
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.tint,
     textAlign: 'center',
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   error: {
     alignSelf: 'center',
@@ -456,7 +456,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.errorTint,
     textAlign: 'center',
     color: colors.error,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   notFound: {
     flex: 1,
@@ -466,13 +466,13 @@ const styles = StyleSheet.create({
   },
   notFoundTitle: {
     color: colors.ink,
-    fontSize: 20,
+    fontSize: fontSizes.headline,
     fontWeight: '800',
     textAlign: 'center',
   },
   notFoundBody: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
 });

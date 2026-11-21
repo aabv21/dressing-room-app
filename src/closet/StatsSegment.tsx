@@ -17,7 +17,7 @@ import { KpiTile } from '../ui/charts/KpiTile';
 import { ProportionBar } from '../ui/charts/ProportionBar';
 import { ChipGroup } from '../ui/ChipGroup';
 import { useLargeText } from '../ui/layout';
-import { colors, layout, radii, spacing } from '../ui/theme';
+import { colors, fontSizes, layout, radii, shadows, spacing } from '../ui/theme';
 import type { GarmentColor } from './catalog';
 import { useCloset } from './ClosetProvider';
 import { formatMonthDay } from './DiarySegment';
@@ -494,13 +494,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm - 2,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
     borderWidth: 1,
-    borderColor: '#ffffff',
+    borderColor: colors.surface,
     borderRadius: radii.cell + 4,
     padding: spacing.sm + 4,
     gap: spacing.sm,
-    boxShadow: '0 6px 18px rgba(60, 30, 120, 0.06)',
+    boxShadow: shadows.card,
   },
   // Wraps the aside under the title when a large text size leaves no room for both.
   cardHeader: {
@@ -512,25 +512,25 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flexShrink: 1,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '800',
     color: colors.ink,
   },
   cardAside: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '600',
     color: colors.muted,
   },
   muted: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     color: colors.muted,
   },
   error: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.error,
   },
   offline: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.muted,
   },
   insight: {
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   insightText: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     lineHeight: 18,
     color: colors.ink,
   },
@@ -576,9 +576,9 @@ const styles = StyleSheet.create({
     height: THUMB_SIZE,
     borderRadius: 9,
     overflow: 'hidden',
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#eee9f8',
+    borderColor: colors.divider,
   },
   thumbImage: {
     width: '100%',
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
   },
   unusedLabel: {
     flex: 1,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.ink,
   },
   minis: {
@@ -605,22 +605,22 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.hairline,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
   },
   miniText: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
     color: colors.ink,
   },
   pinned: {
     flexShrink: 1,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
     color: colors.positiveText,
   },
   statusNote: {
     flexShrink: 1,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '600',
     color: colors.muted,
   },

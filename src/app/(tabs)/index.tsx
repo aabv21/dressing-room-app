@@ -17,7 +17,7 @@ import { ActionNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
-import { colors, layout, radii, spacing } from '../../ui/theme';
+import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 
 // Room for a message shown above the buttons, so it never covers the card's last row.
 const NOTICE_ROOM = 56;
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   },
   weatherText: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   weatherAction: {
     color: colors.accentText,
@@ -296,13 +296,13 @@ const styles = StyleSheet.create({
     paddingVertical: (layout.minHitTarget - 36) / 2,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: colors.glass[75],
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.95)',
+    borderColor: colors.glass[95],
     borderRadius: radii.card,
     padding: 10,
     gap: spacing.sm - 2,
-    shadowColor: '#3c1e78',
+    shadowColor: colors.shadow,
     shadowOpacity: 0.08,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   },
   muted: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   chipAi: {
     minHeight: CHIP_AI_HEIGHT,
@@ -333,14 +333,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#e3d8ff',
+    borderColor: colors.accentBorder,
     borderRadius: radii.pill,
   },
   chipAiLabel: {
     color: colors.accentText,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
   },
   offline: {
@@ -361,7 +361,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderRadius: 13,
     paddingVertical: 7,
     paddingHorizontal: 9,
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
   },
   message: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: fontSizes.title,
     fontWeight: '600',
     lineHeight: 22,
     textAlign: 'center',

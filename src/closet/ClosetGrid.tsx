@@ -5,7 +5,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatWearCount, useI18n, type Locale } from '../i18n';
 import { androidRipple, pressedStyle, tapHaptic } from '../ui/feedback';
-import { colors, radii, selectionRing, spacing, textScale } from '../ui/theme';
+import { colors, fontSizes, radii, selectionRing, spacing, textScale } from '../ui/theme';
 
 export type GridItem = {
   id: string;
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   },
   cellInner: {
     aspectRatio: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderRadius: radii.cell,
     alignItems: 'center',
     justifyContent: 'center',
@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.tint,
     color: colors.accentText,
-    fontSize: 9,
+    fontSize: fontSizes.micro,
     fontWeight: '700',
   },
   leading: {
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
   },
   leadingText: {
     color: colors.accentText,
-    fontSize: 11,
+    fontSize: fontSizes.micro,
     fontWeight: '700',
     lineHeight: 13,
     textAlign: 'center',
@@ -286,9 +286,9 @@ const styles = StyleSheet.create({
     right: 4,
     paddingHorizontal: 4,
     borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
     overflow: 'hidden',
-    fontSize: 9,
+    fontSize: fontSizes.micro,
     color: colors.muted,
   },
   emptyScreen: {

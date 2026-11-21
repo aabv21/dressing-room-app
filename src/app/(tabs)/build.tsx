@@ -22,7 +22,7 @@ import type { AnchoredCta } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen, ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
 import { useLargeText } from '../../ui/layout';
-import { colors, layout, selectionRing, spacing } from '../../ui/theme';
+import { colors, fontSizes, layout, selectionRing, spacing } from '../../ui/theme';
 
 type RowKey = 'top' | 'bottom' | 'shoes' | 'extra';
 
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 13,
@@ -273,23 +273,23 @@ const styles = StyleSheet.create({
     borderColor: colors.dashed,
   },
   slotActive: {
-    borderColor: colors.accent,
+    borderColor: colors.selected,
     boxShadow: selectionRing,
   },
   slotLabel: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   slotValue: {
     flexShrink: 1,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   slotPlaceholder: {
     flexShrink: 1,
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   // Bleeds to the screen edges so chips scroll out under them (the Closet tab's chip row).
   chipRow: {

@@ -5,6 +5,7 @@ import Svg, { Defs, Path, Pattern, Rect } from 'react-native-svg';
 
 import { useI18n } from '../i18n';
 import { garmentPhotoPath, signedPhotoUrls, type Garment } from './garmentRepository';
+import { colors } from '../ui/theme';
 
 /**
  * Null until signed (or if signing failed). Re-signed on each `photo_version`: a replaced photo keeps its
@@ -51,8 +52,8 @@ export function GarmentPhoto({ garment }: { garment: Pick<Garment, 'id' | 'user_
       <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
         <Defs>
           <Pattern id="checker" width={16} height={16} patternUnits="userSpaceOnUse">
-            <Rect width={16} height={16} fill="#ffffff" />
-            <Path d="M0 0h8v8H0zM8 8h8v8H8z" fill="#f1eef7" />
+            <Rect width={16} height={16} fill={colors.surface} />
+            <Path d="M0 0h8v8H0zM8 8h8v8H8z" fill={colors.checker} />
           </Pattern>
         </Defs>
         <Rect width="100%" height="100%" fill="url(#checker)" />

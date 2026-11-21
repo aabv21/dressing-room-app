@@ -7,7 +7,7 @@ import { AnchoredCta } from './AnchoredCta';
 import { CtaBackdrop } from './CtaBackdrop';
 import { useBottomChrome } from './layout';
 import type { ScreenChrome } from './layout';
-import { colors, gradients, spacing, textScale } from './theme';
+import { colors, fontSizes, gradients, spacing, textScale } from './theme';
 
 type ScreenProps = {
   cta?: ComponentProps<typeof AnchoredCta>;
@@ -95,7 +95,7 @@ export function Screen(props: ScreenProps): React.JSX.Element {
       {props.scroll === false ? null : (
         // Scrolled content fades out under the status bar instead of running into its icons.
         <LinearGradient
-          colors={[gradients.background[0], 'rgba(255,255,255,0)']}
+          colors={[gradients.background[0], colors.glass[0]]}
           style={[styles.scrim, { height: statusBar }]}
           pointerEvents="none"
           testID="status-scrim"
@@ -124,14 +124,14 @@ const styles = StyleSheet.create({
   title: {
     color: colors.ink,
     fontWeight: '900',
-    fontSize: 17,
+    fontSize: fontSizes.title,
     letterSpacing: 1,
   },
   // No uppercase: the catalog's "\n" forces the two-line break. `letterSpacing` is 0.05em at 22pt.
   heroTitle: {
     color: colors.ink,
     fontWeight: '900',
-    fontSize: 22,
+    fontSize: fontSizes.headline,
     lineHeight: 26,
     letterSpacing: 1.1,
   },
