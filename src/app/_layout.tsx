@@ -88,6 +88,8 @@ function Guards() {
         <Stack.Screen name="garment/[id]" />
         {/* The rating, pushed from Today and Build with the outfit's garment ids. */}
         <Stack.Screen name="rate" />
+        {/* The planner, pushed from Today. */}
+        <Stack.Screen name="plan" />
         {/* Today's city: a sheet over the tabs, so closing it lands back on Today. */}
         <Stack.Screen name="city" options={{ presentation: 'modal' }} />
       </Stack.Protected>

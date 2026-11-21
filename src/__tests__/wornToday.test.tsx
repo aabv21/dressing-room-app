@@ -50,6 +50,8 @@ jest.mock('../outfits/aiClient', () => ({
 jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-08' }));
 
 jest.mock('../outfits/outfitRepository', () => ({ logWear: jest.fn(), saveOutfit: jest.fn() }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('../planner/plannedOutfits', () => require('../test/plannerClientsMock'));
 jest.mock('../outfits/suggestionFeedback', () => ({ dismissOutfit: jest.fn(), stopSuggesting: jest.fn() }));
 jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn() }));
 // Reduce Motion on, so the rating's ring shows its score at once.

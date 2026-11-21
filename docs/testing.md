@@ -147,7 +147,10 @@ The Profile tab's Privacy section (data export and account deletion):
 - `src/reminder/__tests__/dailyReminder.test.ts` — turning the reminder on: the Android channel
   before the permission request, iOS provisional counting as allowed, asking only when the system
   still can, one `DAILY` trigger at the chosen hour and minute on the reminder channel, the copy in
-  English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; denied and a
+  English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; with a plan in the
+  next seven firings, seven `WEEKLY` triggers (one per weekday, the planned day saying "You
+  planned: …" in English or Spanish, today's plan counting while today's time is ahead), and the one
+  `DAILY` trigger for a plan past them; `isReminderCurrent` against the texts the OS holds; denied and a
   scheduling failure store nothing; a re-schedule cancels the stored id first, and two at once never
   leave two notifications; off cancels and keeps the time; `forgetReminder`;
   `isReminderResponse` (only a default tap on the reminder). Against a fake of the OS's scheduled
@@ -161,8 +164,9 @@ The Profile tab's Privacy section (data export and account deletion):
   re-schedule that fails elsewhere turns the switch off.
 - `src/reminder/__tests__/DailyReminderSync.test.tsx` — a reminder tap that launched the app or
   arrives while it runs opens Today and is cleared, another notification's doesn't, the listener is
-  removed on unmount, a language change re-schedules an enabled reminder (never an off one), and
-  an enabled reminder the OS no longer holds is scheduled again on mount (one still there isn't).
+  removed on unmount, a language change re-schedules an enabled reminder (never an off one), an
+  enabled reminder the OS no longer holds is scheduled again on mount (one still there isn't), and a
+  plan for the coming week re-schedules it naming the pieces still in the closet.
 - `src/voice/__tests__/speech.test.ts` — `pickVoice`: Latin American Spanish before Spain, es-MX
   first, Android's underscore tags, any voice in the language as a fallback, en-US first, an
   enhanced voice within a tag, and null with no voice in the language.
@@ -248,9 +252,27 @@ Outfits, Stats and Diary:
   quota and error states (over quota opens Build, a missing piece the closet), the staged loading
   copy, the stored list offline (its note wraps at a large text size), and Share (the outfit's card
   with its score shared as a PNG, a failed share and a device that can't share shown in the sheet).
+  "Planned for today": the plan shown first (the stored one at once, then the window refreshed), no
+  wear until its own "I'll wear it" (the plan's occasion, its Undo), a piece gone or in the laundry
+  left out and the button disabled without a complete outfit, no card for another day's plan, and
+  "Plan ahead" opening the planner.
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
   row, a pick moving on to the next empty slot, the disabled button naming what's missing,
-  unavailable garments left out, and a slot row at a large text size.
+  unavailable garments left out, and a slot row at a large text size. Opened with `?planFor=`: the
+  "Planning for" line, "Plan this outfit" sending the ids to `/plan` (and leaving plan mode), Cancel,
+  and a day outside the window ignored.
+- `src/__tests__/plan.test.tsx` — the planner: 14 days from today with planned days marked, a Saved
+  outfit or one of Today's stored suggestions planned for the chosen day (stored and shown as the
+  day's plan), "Build one" opening Build for that day, an outfit sent back from Build preselected, a
+  link's day outside the window or unknown ids ignored, Remove, a failed save explained, and the
+  Spanish copy.
+- `src/planner/__tests__/plannedOutfits.test.ts` — `listPlans` (the window, by day), `planOutfit`
+  (the RPC's arguments, no occasion left out, its refusals as `invalid`, offline as `network`) and
+  `removePlan` (a plan already gone counts as removed).
+- `src/planner/__tests__/planStore.test.ts` — `planDays` across a month end; `refreshPlans` storing
+  the window in kv `plans.v1.<id>` and keeping the stored plans on a failure; an unreadable value as
+  none; `savePlan` and `deletePlan` touching the store only after the server; `usePlans` following
+  every write; account deletion and an explicit sign-out clearing the key.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
   the confidence line only when low or estimated, the success haptic, the swap (hidden when its target is out of suggestions), Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too. Share: the card with the pieces, score and footer, the captured PNG shared, a failed capture shown in the sheet, no Share while loading, and the Spanish copy.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
@@ -569,6 +591,9 @@ Supabase stack:
   and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
+- `planner.int.test.ts` — the planner's repository with supabase-js: a day's plan stored and
+  replaced (same id), listed by day; another user's garment, a past day and a day past the window
+  refused as `invalid`; another user lists none and can't remove one; the owner removes it.
 - `trip.int.test.ts` — `trip-plan` through the real gateway with the mock geocoder and daily
   forecast: the days and packing list from the user's closet with one `trip` quota and one
   `trip_cache` row, a hit for the same trip (city spelled differently) with no quota or forecast

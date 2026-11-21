@@ -1,7 +1,7 @@
-// Today: the weather (opens the city modal), an optional occasion, and the day's outfit with
-// "Another", "I'll wear it" and "How does it look?" (the rating).
-import { router } from 'expo-router';
-import { Check, Dices, Layers, RotateCw, Share2, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
+// Today: the weather (opens the city modal), the day's plan when there is one, an optional occasion,
+// and the day's outfit with "Another", "I'll wear it" and "How does it look?" (the rating).
+import { router, useIsFocused } from 'expo-router';
+import { CalendarDays, Check, Dices, Layers, RotateCw, Share2, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -26,6 +26,9 @@ import { ChipGroup } from '../../ui/ChipGroup';
 import { OpenSettingsLink } from '../../ui/OpenSettingsLink';
 import { Screen } from '../../ui/Screen';
 import { useWaitStage } from '../../ui/useWaitStage';
+import { PlannedTodayCard } from '../../planner/PlannedTodayCard';
+import { planFor, usePlans } from '../../planner/planCache';
+import { refreshPlans } from '../../planner/planStore';
 import { useDictation } from '../../voice/dictation';
 import { ListenButton } from '../../voice/ListenButton';
 import { MicButton } from '../../voice/MicButton';
@@ -162,6 +165,31 @@ function OfflineNote(): React.JSX.Element {
   );
 }
 
+/** "Plan ahead": the planner starts here. */
+function PlanLinks(): React.JSX.Element {
+  const { t } = useI18n();
+  const links = [
+    { label: t('today.planAhead'), icon: CalendarDays, path: '/plan' as const },
+  ];
+  return (
+    <View style={styles.planLinks}>
+      {links.map(({ label, icon: Icon, path }) => (
+        <Pressable
+          key={path}
+          accessibilityRole="button"
+          onPress={() => {
+            router.push(path);
+          }}
+          style={styles.planLink}
+        >
+          <Icon size={15} color={colors.accentText} />
+          <Text style={styles.planLinkText}>{label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 function Message({ children }: { children: string }): React.JSX.Element {
   return (
     <Text style={styles.message} accessibilityRole="alert">
@@ -285,6 +313,15 @@ export default function TodayScreen(): React.JSX.Element {
 
   // Keyed by outfit: a failed or queued wear's note stays with the outfit it was for.
   const wearLog = useWearLog(lucky.day);
+
+  // The stored plans show at once; each visit asks the server for the window again.
+  const { userId } = useAuth();
+  const focused = useIsFocused();
+  const plans = usePlans(userId);
+  const todayPlan = planFor(plans, lucky.day);
+  useEffect(() => {
+    if (focused && userId !== null) void refreshPlans(userId, lucky.day);
+  }, [focused, userId, lucky.day]);
 
   // "Say the occasion": the words that name no occasion leave the chips as they were.
   const [occasionMissed, setOccasionMissed] = useState(false);
@@ -571,6 +608,7 @@ export default function TodayScreen(): React.JSX.Element {
           })}
     >
       <WeatherLine weekday={weekday} text={weatherText} action={lucky.weather === null} />
+      {todayPlan === null ? null : <PlannedTodayCard plan={todayPlan} byId={byId} thumbUrls={thumbUrls} wearLog={wearLog} />}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -606,6 +644,7 @@ export default function TodayScreen(): React.JSX.Element {
       ) : null}
       {lucky.offline ? <OfflineNote /> : null}
       {body}
+      <PlanLinks />
       {notice === undefined ? null : <View style={{ height: NOTICE_ROOM * noticeRows }} />}
     </Screen>
   );
@@ -834,5 +873,27 @@ const styles = StyleSheet.create({
   },
   notices: {
     gap: spacing.sm,
+  },
+  planLinks: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  planLink: {
+    minHeight: layout.minHitTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.surface,
+  },
+  planLinkText: {
+    color: colors.accentText,
+    fontSize: fontSizes.bodySmall,
+    fontWeight: '700',
   },
 });

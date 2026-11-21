@@ -1,7 +1,7 @@
 // Build: pick an outfit piece by piece (slot rows, the active row's garments in a grid), then "How
-// does it look?". The selection lives in this tab's state, so it stays while the tab is mounted.
-import { router } from 'expo-router';
-import { Sparkles } from 'lucide-react-native';
+// does it look?", or, opened from the planner with `?planFor=`, send it back to be planned.
+import { router, useLocalSearchParams } from 'expo-router';
+import { CalendarCheck, Sparkles } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -10,6 +10,8 @@ import { useCloset } from '../../closet/ClosetProvider';
 import { toGridItems } from '../../closet/closetSelectors';
 import { GARMENT_CATEGORIES, slotOf, type GarmentCategory, type Slot } from '../../closet/catalog';
 import { useI18n } from '../../i18n';
+import { localDate } from '../../lib/localDate';
+import { formatPlanDay, planDays } from '../../planner/planCache';
 import {
   canRate,
   retainSelection,
@@ -99,7 +101,10 @@ function SlotRow({
 }
 
 export default function BuildScreen(): React.JSX.Element {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const params = useLocalSearchParams<{ planFor?: string }>();
+  // Only a day inside the planner's window plans; anything else (an old link) rates as usual.
+  const planFor = typeof params.planFor === 'string' && planDays(localDate()).includes(params.planFor) ? params.planFor : null;
   const insets = useScreenContentInsets();
   const { garments, thumbUrls } = useCloset();
   const [picked, setPicked] = useState<BuildSelection>({});
@@ -196,6 +201,21 @@ export default function BuildScreen(): React.JSX.Element {
   const header = (
     <View style={styles.header}>
       <ScreenTitle title={t('screen.build')} />
+      {planFor === null ? null : (
+        <View style={styles.planning}>
+          <Text style={styles.planningText}>{t('build.planning', { day: formatPlanDay(locale, planFor) })}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('build.planning.cancel.label')}
+            hitSlop={CHIP_SLOP}
+            onPress={() => {
+              router.setParams({ planFor: undefined });
+            }}
+          >
+            <Text style={styles.planningCancel}>{t('build.planning.cancel')}</Text>
+          </Pressable>
+        </View>
+      )}
       <View style={styles.rows}>
         {visibleRows.map((row) => {
           const { value, chosen: isChosen } = rowValue(row);
@@ -241,19 +261,34 @@ export default function BuildScreen(): React.JSX.Element {
     t('rate.and'),
   );
   const cta = useMemo<React.ComponentProps<typeof AnchoredCta>>(
-    () => ({
-      primary: {
-        // Disabled, it says what's missing instead of leaving the user to guess.
-        label: complete || missing === '' ? t('build.rate') : t('build.rate.missing', { slots: missing }),
-        tone: 'ai',
-        icon: Sparkles,
-        disabled: !complete,
-        onPress: () => {
-          router.push({ pathname: '/rate', params: { ids } });
-        },
-      },
-    }),
-    [t, complete, ids, missing],
+    () =>
+      planFor === null
+        ? {
+            primary: {
+              // Disabled, it says what's missing instead of leaving the user to guess.
+              label: complete || missing === '' ? t('build.rate') : t('build.rate.missing', { slots: missing }),
+              tone: 'ai',
+              icon: Sparkles,
+              disabled: !complete,
+              onPress: () => {
+                router.push({ pathname: '/rate', params: { ids } });
+              },
+            },
+          }
+        : {
+            primary: {
+              label: complete || missing === '' ? t('build.plan') : t('build.plan.missing', { slots: missing }),
+              tone: 'commit',
+              icon: CalendarCheck,
+              disabled: !complete,
+              onPress: () => {
+                // Back to rating once the outfit leaves, so the tab isn't left in plan mode.
+                router.setParams({ planFor: undefined });
+                router.push({ pathname: '/plan', params: { day: planFor, ids } });
+              },
+            },
+          },
+    [t, complete, ids, missing, planFor],
   );
 
   return (
@@ -273,6 +308,24 @@ export default function BuildScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
   header: {
     gap: spacing.sm + 2,
+  },
+  planning: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  planningText: {
+    flexShrink: 1,
+    color: colors.accentText,
+    fontSize: fontSizes.bodySmall,
+    fontWeight: '700',
+  },
+  planningCancel: {
+    color: colors.muted,
+    fontSize: fontSizes.bodySmall,
+    fontWeight: '700',
   },
   rows: {
     gap: 6,

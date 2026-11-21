@@ -21,6 +21,8 @@ import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
 import { getProfile, type Profile, type ProfilePatch } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
+import { listPlans, type PlannedOutfit } from '../planner/plannedOutfits';
+import { plansKey } from '../planner/planCache';
 import { hear, recognition } from '../test/dictation';
 import { garment } from '../test/garmentFixture';
 
@@ -81,12 +83,14 @@ jest.mock('expo-sharing', () => ({ isAvailableAsync: jest.fn(() => Promise.resol
 jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn(() => Promise.resolve({ ok: true })) }));
 
 jest.mock('../profile/profileRepository', () => ({ getProfile: jest.fn() }));
+jest.mock('../planner/plannedOutfits', () => ({ listPlans: jest.fn(), planOutfit: jest.fn(), removePlan: jest.fn() }));
 
 const mockedFetch = jest.mocked(fetchLuckyList);
 const mockedLogWear = jest.mocked(logWear);
 const mockedUuid = jest.mocked(randomUUID);
 const mockedPush = jest.mocked(router.push);
 const mockedGetProfile = jest.mocked(getProfile);
+const mockedListPlans = jest.mocked(listPlans);
 
 const CLOSET: Garment[] = [
   garment({ id: TOP, category: 'blouse', colors: ['white'], extraction_status: 'done', wear_count: 9 }),
@@ -131,6 +135,9 @@ beforeEach(() => {
   kvRemove(KV_KEY);
   kvRemove('outfit.worn.user-1');
   kvRemove('today.lucky.user-1');
+  kvRemove(plansKey('user-1'));
+  mockedListPlans.mockReset();
+  mockedListPlans.mockResolvedValue([]);
   appStateListeners = [];
   jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
     appStateListeners.push(listener);
@@ -1253,5 +1260,73 @@ describe('the voice features together', () => {
     ).toBeOnTheScreen();
     await fireEvent.press(screen.getByRole('link', { name: 'Open settings' }));
     expect(openSettings).toHaveBeenCalled();
+  });
+});
+
+describe('Planned for today', () => {
+  const PLAN: PlannedOutfit = { id: 'p-1', day: '2026-11-08', garmentIds: [TOP, SKIRT, SNEAKERS], occasion: 'going_out' };
+
+  test('a plan for today shows first, and nothing is logged until its "I\'ll wear it"', async () => {
+    mockedListPlans.mockResolvedValue([PLAN]);
+    mockedFetch.mockReturnValue(ok(list()));
+    mockedLogWear.mockResolvedValue({ ok: true });
+    await render(<TodayScreen />);
+
+    const card = await screen.findByTestId('planned-today');
+    expect(within(card).getByText('Planned for today')).toBeOnTheScreen();
+    expect(within(card).getByText('Skirt · Camel')).toBeOnTheScreen();
+    expect(mockedListPlans).toHaveBeenCalledWith('2026-11-08', '2026-11-21');
+    expect(mockedLogWear).not.toHaveBeenCalled();
+
+    await fireEvent.press(within(card).getByRole('button', { name: "I'll wear it" }));
+
+    expect(mockedLogWear).toHaveBeenCalledWith({
+      wearId: 'wear-1',
+      garmentIds: [TOP, SKIRT, SNEAKERS],
+      wornOn: '2026-11-08',
+      occasion: 'going_out',
+      score: null,
+    });
+    expect(await within(card).findByRole('button', { name: 'Logged ✓' })).toBeDisabled();
+    expect(within(card).getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  });
+
+  test('the stored plan shows at once, before the refresh answers', async () => {
+    kvSet(plansKey('user-1'), JSON.stringify([PLAN]));
+    mockedListPlans.mockReturnValue(new Promise<never>(() => undefined));
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    expect(await screen.findByTestId('planned-today')).toBeOnTheScreen();
+  });
+
+  test('a planned piece that is gone or in the laundry is left out; without a complete outfit it can’t be worn', async () => {
+    mockedListPlans.mockResolvedValue([{ ...PLAN, garmentIds: [TOP, JEANS, SNEAKERS, '00000000-0000-4000-8000-0000000000ff'] }]);
+    mockCloset.garments = CLOSET.map((g) => (g.id === JEANS ? { ...g, status: 'laundry' } : g));
+    mockedFetch.mockReturnValue(ok(list([SECOND])));
+    await render(<TodayScreen />);
+
+    const card = await screen.findByTestId('planned-today');
+    expect(within(card).queryByText('Jeans · Blue')).toBeNull();
+    expect(within(card).getByText("Some pieces aren't available")).toBeOnTheScreen();
+    expect(within(card).getByRole('button', { name: "I'll wear it" })).toBeDisabled();
+  });
+
+  test('a plan for another day shows no card', async () => {
+    mockedListPlans.mockResolvedValue([{ ...PLAN, day: '2026-11-09' }]);
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    expect(screen.queryByTestId('planned-today')).toBeNull();
+  });
+
+  test('"Plan ahead" opens the planner', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await screen.findByText('Jeans · Blue');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Plan ahead' }));
+    expect(mockedPush).toHaveBeenLastCalledWith('/plan');
   });
 });

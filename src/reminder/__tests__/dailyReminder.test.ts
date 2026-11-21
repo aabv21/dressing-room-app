@@ -5,9 +5,11 @@ import { forgetAccountOnDevice } from '../../account/forgetAccount';
 import { allowUserKeys, kvGet, kvKeys, kvRemove } from '../../lib/kv';
 import {
   forgetReminder,
+  isReminderCurrent,
   isReminderResponse,
   REMINDER_CHANNEL_ID,
   scheduleReminder,
+  setReminderPlans,
   turnOffReminder,
   turnOnReminder,
 } from '../dailyReminder';
@@ -25,6 +27,7 @@ beforeEach(() => {
   for (const key of kvKeys()) kvRemove(key);
   allowUserKeys(USER);
   mocked.scheduleNotificationAsync.mockReset().mockResolvedValue('reminder-1');
+  setReminderPlans(USER, {});
 });
 
 test('the default is off at 07:30', () => {
@@ -228,4 +231,96 @@ test("isReminderResponse: a tap on the reminder, not another notification's or a
   expect(isReminderResponse(response({ kind: 'dailyReminder', url: '/' }))).toBe(true);
   expect(isReminderResponse(response({ kind: 'other' }))).toBe(false);
   expect(isReminderResponse(response({ kind: 'dailyReminder' }, 'snooze'))).toBe(false);
+});
+
+describe('with a planned outfit', () => {
+  // Saturday 21 November 2026, 10:00 on the device: a 07:30 reminder next fires on Sunday the 22nd.
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date(2026, 10, 21, 10, 0), doNotFake: ['setTimeout', 'setInterval', 'setImmediate', 'nextTick', 'queueMicrotask'] });
+    let n = 0;
+    mocked.scheduleNotificationAsync.mockReset().mockImplementation(() => {
+      n += 1;
+      return Promise.resolve(`weekly-${String(n)}`);
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  type Scheduled = { content: { title: string; body: string; data: unknown }; trigger: { type: string; weekday?: number; hour: number; minute: number } };
+  const scheduledCalls = (): Scheduled[] => mocked.scheduleNotificationAsync.mock.calls.map(([input]) => input as unknown as Scheduled);
+
+  test('a plan in the next seven reminders: one weekly reminder per weekday, the planned day naming its pieces', async () => {
+    setReminderPlans(USER, { '2026-11-24': 'Blouse · White, Jeans · Blue' });
+
+    await expect(turnOnReminder(USER, { hour: 7, minute: 30 }, 'en')).resolves.toBe('on');
+
+    const calls = scheduledCalls();
+    expect(calls).toHaveLength(7);
+    expect(calls.map((call) => call.trigger.weekday).sort()).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    for (const call of calls) {
+      expect(call.trigger).toMatchObject({ type: 'weekly', hour: 7, minute: 30, channelId: REMINDER_CHANNEL_ID });
+      expect(call.content.data).toEqual({ kind: 'dailyReminder', url: '/' });
+    }
+    // Tuesday is weekday 3 (Sunday is 1).
+    expect(calls.find((call) => call.trigger.weekday === 3)?.content.body).toBe('You planned: Blouse · White, Jeans · Blue.');
+    expect(calls.filter((call) => call.content.body === 'Open Today to see what to wear.')).toHaveLength(6);
+    expect(readReminder(USER)).toMatchObject({ enabled: true, notificationId: 'weekly-1' });
+  });
+
+  test('the Spanish text', async () => {
+    setReminderPlans(USER, { '2026-11-22': 'Blusa · Blanco' });
+
+    await turnOnReminder(USER, { hour: 7, minute: 30 }, 'es');
+
+    expect(scheduledCalls().find((call) => call.trigger.weekday === 1)?.content.body).toBe('Planeaste: Blusa · Blanco.');
+  });
+
+  test('today’s plan counts while today’s reminder is still ahead', async () => {
+    setReminderPlans(USER, { '2026-11-21': 'Blouse · White' });
+
+    await turnOnReminder(USER, { hour: 18, minute: 0 }, 'en');
+
+    // Saturday is weekday 7.
+    expect(scheduledCalls().find((call) => call.trigger.weekday === 7)?.content.body).toBe('You planned: Blouse · White.');
+  });
+
+  test('a plan past the next seven reminders, or for a day whose reminder has passed, keeps the one daily reminder', async () => {
+    setReminderPlans(USER, { '2026-11-29': 'Blouse · White', '2026-11-21': 'Jeans · Blue' });
+
+    await turnOnReminder(USER, { hour: 7, minute: 30 }, 'en');
+
+    expect(scheduledCalls()).toEqual([
+      expect.objectContaining({ trigger: { type: 'daily', hour: 7, minute: 30, channelId: REMINDER_CHANNEL_ID } }),
+    ]);
+  });
+
+  test('isReminderCurrent compares what the OS holds with what the plans call for', async () => {
+    const held = (bodies: string[]): Notifications.NotificationRequest[] =>
+      bodies.map(
+        (body, i) => ({ identifier: `r-${String(i)}`, content: { body, data: { kind: 'dailyReminder' } }, trigger: null }) as unknown as Notifications.NotificationRequest,
+      );
+    const generic = 'Open Today to see what to wear.';
+    const time = { hour: 7, minute: 30 };
+
+    mocked.getAllScheduledNotificationsAsync.mockResolvedValueOnce(held([generic]));
+    await expect(isReminderCurrent(USER, time, 'en')).resolves.toBe(true);
+
+    setReminderPlans(USER, { '2026-11-24': 'Blouse · White' });
+    mocked.getAllScheduledNotificationsAsync.mockResolvedValueOnce(held([generic]));
+    await expect(isReminderCurrent(USER, time, 'en')).resolves.toBe(false);
+
+    const weekly = [...Array.from({ length: 6 }, () => generic), 'You planned: Blouse · White.'];
+    mocked.getAllScheduledNotificationsAsync.mockResolvedValueOnce(held(weekly));
+    await expect(isReminderCurrent(USER, time, 'en')).resolves.toBe(true);
+
+    // The plan was removed: seven weekly reminders are no longer what's wanted.
+    setReminderPlans(USER, {});
+    mocked.getAllScheduledNotificationsAsync.mockResolvedValueOnce(held(weekly));
+    await expect(isReminderCurrent(USER, time, 'en')).resolves.toBe(false);
+
+    mocked.getAllScheduledNotificationsAsync.mockResolvedValueOnce([]);
+    await expect(isReminderCurrent(USER, time, 'en')).resolves.toBe(false);
+  });
 });

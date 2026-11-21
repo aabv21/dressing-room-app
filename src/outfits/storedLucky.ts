@@ -76,3 +76,18 @@ export function storeLucky(userId: string, day: string, occasion: Occasion | nul
   const record: StoredLucky = { day, lists: [...others, { occasion, response }] };
   kvSet(storedLuckyKey(userId), JSON.stringify(record));
 }
+
+/** Every outfit stored for `day`, each once (the first list naming it wins), with its list's occasion. */
+export function storedLuckyOutfits(userId: string, day: string): { garmentIds: string[]; occasion: Occasion | null }[] {
+  const seen = new Set<string>();
+  return readDay(userId, day).flatMap(({ occasion, response }) =>
+    response.kind !== 'ok'
+      ? []
+      : response.outfits.flatMap(({ garmentIds }) => {
+          const key = [...garmentIds].sort().join(',');
+          if (seen.has(key)) return [];
+          seen.add(key);
+          return [{ garmentIds, occasion }];
+        }),
+  );
+}
