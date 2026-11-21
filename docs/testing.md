@@ -18,6 +18,9 @@ environment. `jest.setup.ts` mocks:
   is absent under Jest; a suite that tests a failed capture overrides it.
 - `expo-speech` — an en-US and an es-MX voice, `speak` and `stop` as spies; the Listen suites
   read `speak`'s options to finish or fail an utterance.
+- `expo-speech-recognition` — recognition available and on-device, the permission granted, and
+  `start`, `stop`, `abort` and `addListener` as spies; `src/test/dictation.ts` types them as plain
+  mocks and emits recognition events (`hear(transcript)` sends a final result, then `end`).
 - `expo-notifications` — permission granted, `scheduleNotificationAsync` answering an id, no tap
   response and a listener that does nothing, since the native module is absent under Jest; the
   reminder suites set these with `jest.mocked`.
@@ -164,6 +167,15 @@ The Profile tab's Privacy section (data export and account deletion):
   Spanish; hidden with voices but none in the language; a speak error alerts), `rate.test.tsx` (the
   score, label and reasons; none while loading; unmounting stops it) and `for-you.test.tsx` (each
   idea's text; another idea's Listen takes over; leaving the tab stops it).
+- `src/voice/__tests__/occasionFromSpeech.test.ts` — every occasion from Spanish and English
+  phrases, accents and capitals, the keyword order ("salir a correr", "cena formal", "fiesta en
+  casa", "work out", "home office"), whole words only ("networking", "classic"), each language's
+  own words, and null for empty or unrelated speech. `dictation.test.ts` — `recognitionLanguage`.
+- Dictation on the screens, in `city.test.tsx` (the mic asks for the microphone, starts on-device
+  in en-US and fills the field, which then saves by name; a second tap stops; denied explains and
+  never starts; nothing heard keeps the field and says so; no mic without recognition; closing
+  while listening aborts) and `today.test.tsx` ("a meeting at work" picks Office and stores it,
+  "fiesta" picks Salidas in Spanish with es-MX, and unrelated words say they weren't caught).
 - `src/lib/__tests__/e2eLaunch.test.ts` — the Maestro launch check: `-e2e 1` in the user defaults
   is an end-to-end launch (anything else, or no native settings module, isn't), and only then are
   LogBox's toasts hidden.

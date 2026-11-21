@@ -86,8 +86,12 @@ init`, the OAuth clients and the store records.
   - An old app on the new schema works: it never sends a price, and unpriced rows read as before.
 - **Pending (after merge).** Wave 5a-4 (the daily reminder, listen and dictate), after 5a-3: no
   migration and no function deploy, only a new app build (EAS `preview`, and the store profiles
-  when they're set up). It adds native modules (`expo-notifications`, `expo-speech`), so a JavaScript-only reload
-  of an older build can't run it; the on-device checks are in [section 5](#5-live-checks-on-the-phone).
+  when they're set up). It adds native modules (`expo-notifications`, `expo-speech`, `expo-speech-recognition`), so
+  a JavaScript-only reload of an older build can't run it, and it changes the microphone
+  permission, so a local build must start from a clean prebuild (`pnpm expo prebuild --clean`, or
+  delete `ios/` and `android/` first): the old `AndroidManifest.xml` still blocks `RECORD_AUDIO`
+  with `tools:node="remove"`, and a plain `pnpm android` keeps it. EAS builds prebuild from scratch.
+  The on-device checks are in [section 5](#5-live-checks-on-the-phone).
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
   manual `gh workflow run keepalive.yml` answers the server time from `public.keep_alive()`. GitHub
@@ -215,6 +219,12 @@ project:
   English, then again with the app in Spanish (a Latin American voice where installed); a second
   tap stops it, and so does switching tabs mid-sentence; Listen on another card takes over. With
   no Spanish voice installed (Android: remove it in the TTS settings), the button hides or says so.
+- **Pending.** Dictation in both languages: the city modal's mic (the microphone prompt, and on
+  iOS the speech recognition prompt, in the app's language) fills the field with a spoken city;
+  Today's "Say the occasion" picks Oficina for "trabajo" (Office for "work" in English), Salidas
+  for "fiesta", Deporte for "gimnasio", and says it didn't catch something unrelated. On an iPhone in airplane mode it
+  still works for a language with on-device support; on Android check it once with the Google app
+  or Speech Services installed. Deny the microphone once and check the message.
 - **Pending.** Large text and screen readers: the largest Dynamic Type and Android font scale 2.0
   through every tab, the rating, review and Diary; then VoiceOver and TalkBack.
 - **Pending.** Google sign-in on the phone; Sign in with Apple and its revocation once Apple is

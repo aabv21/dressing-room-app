@@ -21,6 +21,7 @@ import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
 import { getProfile, type Profile, type ProfilePatch } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
+import { hear, recognition } from '../test/dictation';
 import { garment } from '../test/garmentFixture';
 
 const TOP = '00000000-0000-4000-8000-000000000001';
@@ -1145,5 +1146,58 @@ describe("listening to Today's outfit", () => {
 
     expect(alert).toHaveBeenCalledWith("This phone has no voice for this language.");
     expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
+  });
+});
+
+describe('saying the occasion', () => {
+  beforeEach(() => {
+    recognition.start.mockClear();
+    kvRemove('locale-preference');
+  });
+
+  test('"Say the occasion" maps the spoken words to an occasion chip', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Say the occasion' }));
+    expect(recognition.start).toHaveBeenCalledWith(expect.objectContaining({ lang: 'en-US' }));
+
+    await act(() => {
+      hear('a meeting at work');
+    });
+
+    expect(screen.getByRole('radio', { name: 'Office' })).toBeSelected();
+    expect(kvGet(KV_KEY)).toBe('office');
+  });
+
+  test('in Spanish, "fiesta" picks Going out', async () => {
+    kvSet('locale-preference', 'es');
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(
+      <I18nProvider>
+        <TodayScreen />
+      </I18nProvider>,
+    );
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Decir la ocasión' }));
+    expect(recognition.start).toHaveBeenCalledWith(expect.objectContaining({ lang: 'es-MX' }));
+    await act(() => {
+      hear('me voy de fiesta');
+    });
+
+    expect(screen.getByRole('radio', { name: 'Salidas' })).toBeSelected();
+  });
+
+  test("words that match no occasion say they weren't caught and keep the chips", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Say the occasion' }));
+    await act(() => {
+      hear('banana');
+    });
+
+    expect(screen.getByText('Didn\'t catch that. Try "work", "party" or "gym".')).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'Office' })).not.toBeSelected();
   });
 });

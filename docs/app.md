@@ -289,7 +289,9 @@ when the user travels.
 
 ## Voice (`src/voice/`)
 
-"Listen" reads the screen aloud with `expo-speech`, the phone's own text-to-speech.
+"Listen" reads the screen aloud with `expo-speech`, the phone's own text-to-speech, and dictation
+fills the city and Today's occasion. The voice stylist (a conversation with Claude) is a later
+step.
 
 - `speechText.ts`: what is read, as short sentences (a label's " · " becomes a pause):
   `todaySpeech` (Today's pieces in display order, the weather line when there is weather, and
@@ -306,6 +308,31 @@ when the user travels.
   voice for this language."
 - `ListenButton.tsx`: the round Listen / Stop button (Volume2 / Square), on Today's card header,
   the rating's header (once a result is shown) and each For you card.
+
+Dictation uses the community module `expo-speech-recognition` (the phone's own recognizer):
+
+- `dictation.ts`: `recognitionLanguage(locale, deviceTags)` is the device's own regional variant of
+  the app language (`es-CO`), else `es-MX` or `en-US`. `useDictation(onHeard)` hides its mic when
+  `isRecognitionAvailable()` is false; a tap asks for the microphone (and, on iOS, speech
+  recognition) only then, and starts one session with no interim results, not continuous, and
+  `requiresOnDeviceRecognition` on iOS when `supportsOnDeviceRecognition()` (Android's on-device mode
+  needs a downloaded language pack, so it uses the phone's default recognizer). The final
+  transcript goes to `onHeard`; nothing heard (`no-speech`, `speech-timeout`, or an `end` without a
+  result) is `noMatch`, `not-allowed` is `denied`, other errors `failed`. One recognizer serves the
+  app and the city modal sits over Today, so a module-level owner makes only the mic that started a
+  session react to its events; a second tap calls `stop` (the final result still arrives), and
+  unmounting while listening calls `abort`.
+- `occasionFromSpeech.ts`: `occasionFromSpeech(text, language)` lowercases, strips accents and
+  punctuation, and looks for whole-word keywords of that language only ("trabajo", "oficina",
+  "reunión" → office; "fiesta", "salir" → going out; "work", "meeting" → office; "party", "going
+  out" → going out; and so on), checked in the order sport, event, office, university, going out,
+  home, so "salir a correr" is sport, "cena formal" an event, "fiesta en casa" going out and "home
+  office" the office. No keyword is null.
+- `MicButton.tsx`: the round mic (Mic / Square while listening). The city modal's field has one
+  ("Dictate the city") beside "Use my location": the transcript replaces the field like typing
+  (coordinates dropped) and a problem shows under it. Today's chip row starts with "Say the
+  occasion": a match picks the chip (stored like a tap) and is announced; no match says "Didn't
+  catch that. Try "work", "party" or "gym"." and leaves the chips as they were.
 
 ## Stats and Diary (`src/stats/`)
 

@@ -60,7 +60,7 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - A schema change is a new migration (never edit a merged one), `pnpm db:types` and pgTAP ([`docs/database.md`](docs/database.md#new-table-checklist)).
 - A cache lifetime change (`DEGRADED_TTL_MS`, `FOR_YOU_TTL_MS`) needs a new migration for `prune_expired_caches()`.
 - Per-user kv keys follow `<name>.<id>[.<more>]`, so account deletion clears and refuses them ([`docs/app.md`](docs/app.md#account-privacy-srcaccount)).
-- In `app.json`, `expo-image-picker` stays before `expo-camera`, and `cameraPermission: false` is never set ([`docs/native-config.md`](docs/native-config.md#permissions)).
+- In `app.json`, `expo-image-picker` stays before `expo-camera`, `cameraPermission: false` is never set, and neither plugin sets `microphonePermission: false`: dictation needs the microphone ([`docs/native-config.md`](docs/native-config.md#permissions)).
 - Google's `skip_nonce_check` stays `true` in `supabase/config.toml` and on the hosted project ([`docs/red-team.md`](docs/red-team.md#parked)).
 - Nothing is deployed to the hosted project before the owner merges.
 

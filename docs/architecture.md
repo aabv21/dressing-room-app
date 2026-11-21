@@ -176,7 +176,7 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | `public.rating_cache`, `lucky_cache`, `for_you_cache` | AI results by cache key; a degraded entry is served for an hour, a For you entry for 7 days | A daily `pg_cron` job deletes degraded entries after 2 hours, rating and lucky entries after 30 days and For you entries after 8 days, except each user's newest For you entry; the account's deletion removes the rest |
 | `public.weather_cache` | Forecast summaries by place and hour, with no user id | 2 days (the same daily job; [`database.md`](database.md) has the details) |
 | `public.apple_tokens` | The Sign in with Apple refresh token, for revocation | Until the account is deleted |
-| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list, For you ideas and wear history, cached images | Copies go after upload; the rest until sign-out or deletion clears it |
+| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list, For you ideas and wear history, cached images, the daily reminder's time and its scheduled notification | Copies go after upload; the rest until sign-out or deletion clears it (sign-out turns the reminder off and keeps its time) |
 | `~/dressing-room-backups/` | Nightly dumps and photos on the owner's Mac | The newest 14 complete backups |
 
 ## What happens when something fails
@@ -309,6 +309,15 @@ target, so the owner sets spend caps or alerts with Anthropic and TypeSafe
   the piece that would lift the outfit. The rating screen takes it from the last For you ideas on the
   device for the outfit's weakest slot, which costs no Jev call; computing it per rating would add
   up to 10 Jev calls to every low score.
+- **A local daily reminder, over server push.** The phone schedules one repeating notification at
+  its own wall clock ([`app.md`](app.md#the-daily-reminder-srcreminder)), so there is no token
+  table, no sending function, and no FCM or APNs setup, and the reminder follows the user's time
+  zone. Server-sent notifications (garments ready to review, a weekly summary) would need all of
+  those.
+- **The phone's own voices and recognizer for Listen and dictation.** `expo-speech` and the
+  community `expo-speech-recognition` cost nothing per use and keep the server out of it; iOS
+  recognizes on the device when it can, and Android uses its default recognizer (usually Google's),
+  as the privacy policies say. A voice stylist that talks to Claude is a later, metered step.
 
 ## Regenerating the diagrams
 

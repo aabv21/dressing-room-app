@@ -25,7 +25,10 @@ import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
 import { useWaitStage } from '../../ui/useWaitStage';
+import { useDictation } from '../../voice/dictation';
 import { ListenButton } from '../../voice/ListenButton';
+import { MicButton } from '../../voice/MicButton';
+import { occasionFromSpeech } from '../../voice/occasionFromSpeech';
 import { todaySpeech } from '../../voice/speechText';
 import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 
@@ -281,6 +284,20 @@ export default function TodayScreen(): React.JSX.Element {
 
   // Keyed by outfit: a failed or queued wear's note stays with the outfit it was for.
   const wearLog = useWearLog(lucky.day);
+
+  // "Say the occasion": the words that name no occasion leave the chips as they were.
+  const [occasionMissed, setOccasionMissed] = useState(false);
+  const occasionDictation = useDictation((text) => {
+    const heard = occasionFromSpeech(text, locale);
+    setOccasionMissed(heard === null);
+    if (heard === null) {
+      announceForAccessibility(t('dictate.occasionNoMatch'));
+      return;
+    }
+    wearLog.clearError();
+    setOccasion(heard);
+    announceForAccessibility(t('listen.occasion', { occasion: t(`occasion.${heard}`) }));
+  });
 
   // "Not for me" is open for one outfit at a time; its confirmation outlives the outfit it hid.
   const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
@@ -559,6 +576,7 @@ export default function TodayScreen(): React.JSX.Element {
         style={styles.chipsScroller}
         contentContainerStyle={styles.chipsContent}
       >
+        <MicButton dictation={occasionDictation} label={t('dictate.occasion')} />
         <ChipGroup
           multiple={false}
           wrap={false}
@@ -567,10 +585,21 @@ export default function TodayScreen(): React.JSX.Element {
           selected={occasion === null ? [] : [occasion]}
           onChange={([next]: Occasion[]) => {
             wearLog.clearError();
+            setOccasionMissed(false);
+            occasionDictation.clearProblem();
             setOccasion(next ?? null);
           }}
         />
       </ScrollView>
+      {occasionMissed || occasionDictation.problem !== null ? (
+        <Text style={[styles.muted, styles.dictationNote]} accessibilityLiveRegion="polite">
+          {occasionDictation.problem === 'denied'
+            ? t('dictate.denied')
+            : occasionDictation.problem === 'failed'
+              ? t('dictate.failed')
+              : t('dictate.occasionNoMatch')}
+        </Text>
+      ) : null}
       {lucky.offline ? <OfflineNote /> : null}
       {body}
       {notice === undefined ? null : <View style={{ height: NOTICE_ROOM * noticeRows }} />}
@@ -598,6 +627,8 @@ const styles = StyleSheet.create({
     flexGrow: 0,
   },
   chipsContent: {
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: spacing.md,
     paddingVertical: (layout.minHitTarget - 36) / 2,
   },
@@ -674,6 +705,9 @@ const styles = StyleSheet.create({
   // Wraps beside the icon at a large text size instead of running off the screen.
   offlineText: {
     flexShrink: 1,
+  },
+  dictationNote: {
+    paddingHorizontal: 2,
   },
   waitText: {
     paddingHorizontal: 2,

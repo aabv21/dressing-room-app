@@ -35,6 +35,13 @@ where it is kept, who processes it and how you can export or delete it. Question
 - **What you wear.** The outfits you save or log as worn, with the day, the occasion and the score.
 - **What you don't want suggested.** The outfit combinations you marked "Not for me", so they
   aren't suggested again.
+- **Your voice, only when you tap a mic.** Dictating a city or Today's occasion uses the
+  microphone only while you hold that session (tap to start, tap again or pause to stop); the app
+  never records or keeps the audio. Your phone's own speech recognizer turns it into text: on an
+  iPhone that supports it, entirely on the phone; otherwise Apple's (iPhone) or the phone's speech
+  service, usually Google's (Android), may receive the audio to transcribe it, under their own
+  privacy terms. Only the resulting words reach the app, which uses a dictated city or occasion
+  exactly like a typed city or a tapped occasion.
 - **Usage counts.** How many AI requests of each kind you made each day, to enforce the daily
   limits, and the results of recent AI requests, so repeating one costs nothing.
 
