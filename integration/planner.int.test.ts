@@ -2,7 +2,7 @@
 //
 // The planner's repository against the local stack: `plan_outfit` through supabase-js (one plan per
 // day, own garments only, the 14-day window), `listPlans` under RLS (another user sees nothing) and
-// `removePlan`.
+// `removePlan`; the saved-trips repository the same way.
 
 import { randomUUID } from 'node:crypto';
 
@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { signInWithEmail } from '../src/auth/emailAuth';
 import type { Database } from '../src/lib/database.types';
 import { listPlans, planOutfit, removePlan } from '../src/planner/plannedOutfits';
+import { deleteSavedTrip, listSavedTrips, saveTrip } from '../src/trips/savedTrips';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, uniqueEmail } from './helpers';
 
 loadIntegrationEnv();
@@ -82,4 +83,17 @@ test('another user lists none of the plans and can’t remove one; the owner can
 
   expect(await removePlan(plan?.id ?? '', a.client)).toEqual({ ok: true });
   expect(await listPlans(today(), daysFrom(13), a.client)).toHaveLength(1);
+});
+
+test('saved trips: saved with the snapshot, listed only to the owner, deleted by the owner', async () => {
+  const result = { kind: 'ok' as const, city: 'Lisboa', days: [{ date: daysFrom(5), weather: null, garmentIds: a.garmentIds }], packing: [] };
+
+  const saved = await saveTrip({ city: 'Lisboa', start: daysFrom(5), end: daysFrom(7), occasion: 'going_out', result }, a.client);
+
+  expect(saved.ok).toBe(true);
+  const trips = await listSavedTrips(a.client);
+  expect(trips).toEqual([{ id: saved.ok ? saved.trip.id : '', city: 'Lisboa', start: daysFrom(5), end: daysFrom(7), occasion: 'going_out', result }]);
+  expect(await listSavedTrips(b.client)).toEqual([]);
+  expect(await deleteSavedTrip(trips[0]?.id ?? '', a.client)).toEqual({ ok: true });
+  expect(await listSavedTrips(a.client)).toEqual([]);
 });

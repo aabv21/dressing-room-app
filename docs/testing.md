@@ -255,7 +255,7 @@ Outfits, Stats and Diary:
   "Planned for today": the plan shown first (the stored one at once, then the window refreshed), no
   wear until its own "I'll wear it" (the plan's occasion, its Undo), a piece gone or in the laundry
   left out and the button disabled without a complete outfit, no card for another day's plan, and
-  "Plan ahead" opening the planner.
+  "Plan ahead" and "Pack for a trip" opening their screens.
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
   row, a pick moving on to the next empty slot, the disabled button naming what's missing,
   unavailable garments left out, and a slot row at a large text size. Opened with `?planFor=`: the
@@ -266,6 +266,19 @@ Outfits, Stats and Diary:
   day's plan), "Build one" opening Build for that day, an outfit sent back from Build preselected, a
   link's day outside the window or unknown ids ignored, Remove, a failed save explained, and the
   Spanish copy.
+- `src/__tests__/trip.test.tsx` — "Pack for a trip": the request (city, dates, occasion, language,
+  local day), each day with its forecast or "Forecast unavailable" and its outfit, the packing list
+  by slot with checkbox rows, a check-off kept across a remount and a new plan of the same trip,
+  Save only on the tap (then "Saved ✓"), a saved trip opened without a call and deleted, the
+  dictation mic filling the city, the not-found, quota and offline copy, a too-small closet, and the
+  Spanish labels.
+- `src/trips/__tests__/tripClient.test.ts` — `planTripRequest`'s body and error mapping, and
+  `isTripResponse` accepting a plan or `too_small` and refusing another shape.
+- `src/trips/__tests__/tripChecks.test.ts` — `tripKey` (city case and spaces aside), check-offs per
+  trip in kv `trip.checks.<id>` following each toggle, only the latest 20 trips kept, and account
+  deletion clearing them.
+- `src/trips/__tests__/savedTrips.test.ts` — the list (newest first, capped, an unreadable snapshot
+  dropped), a save with its snapshot, a failed save as `network`, and a delete by id.
 - `src/planner/__tests__/plannedOutfits.test.ts` — `listPlans` (the window, by day), `planOutfit`
   (the RPC's arguments, no occasion left out, its refusals as `invalid`, offline as `network`) and
   `removePlan` (a plan already gone counts as removed).
@@ -593,7 +606,8 @@ Supabase stack:
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
 - `planner.int.test.ts` — the planner's repository with supabase-js: a day's plan stored and
   replaced (same id), listed by day; another user's garment, a past day and a day past the window
-  refused as `invalid`; another user lists none and can't remove one; the owner removes it.
+  refused as `invalid`; another user lists none and can't remove one; the owner removes it. Saved
+  trips: saved with the snapshot, listed only to the owner, deleted by the owner.
 - `trip.int.test.ts` — `trip-plan` through the real gateway with the mock geocoder and daily
   forecast: the days and packing list from the user's closet with one `trip` quota and one
   `trip_cache` row, a hit for the same trip (city spelled differently) with no quota or forecast

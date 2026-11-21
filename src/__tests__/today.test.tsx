@@ -1321,12 +1321,14 @@ describe('Planned for today', () => {
     expect(screen.queryByTestId('planned-today')).toBeNull();
   });
 
-  test('"Plan ahead" opens the planner', async () => {
+  test('"Plan ahead" and "Pack for a trip" open their screens', async () => {
     mockedFetch.mockReturnValue(ok(list()));
     await render(<TodayScreen />);
     await screen.findByText('Jeans · Blue');
 
     await fireEvent.press(screen.getByRole('button', { name: 'Plan ahead' }));
     expect(mockedPush).toHaveBeenLastCalledWith('/plan');
+    await fireEvent.press(screen.getByRole('button', { name: 'Pack for a trip' }));
+    expect(mockedPush).toHaveBeenLastCalledWith('/trip');
   });
 });

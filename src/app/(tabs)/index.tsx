@@ -1,7 +1,7 @@
 // Today: the weather (opens the city modal), the day's plan when there is one, an optional occasion,
 // and the day's outfit with "Another", "I'll wear it" and "How does it look?" (the rating).
 import { router, useIsFocused } from 'expo-router';
-import { CalendarDays, Check, Dices, Layers, RotateCw, Share2, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
+import { CalendarDays, Check, Dices, Layers, Luggage, RotateCw, Share2, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -165,11 +165,12 @@ function OfflineNote(): React.JSX.Element {
   );
 }
 
-/** "Plan ahead": the planner starts here. */
+/** "Plan ahead" and "Pack for a trip": the planner and trip packing start here. */
 function PlanLinks(): React.JSX.Element {
   const { t } = useI18n();
   const links = [
     { label: t('today.planAhead'), icon: CalendarDays, path: '/plan' as const },
+    { label: t('today.packTrip'), icon: Luggage, path: '/trip' as const },
   ];
   return (
     <View style={styles.planLinks}>

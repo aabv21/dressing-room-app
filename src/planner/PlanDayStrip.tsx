@@ -1,4 +1,5 @@
-// The planner's 14 days as a horizontal strip of day chips, a dot under each planned day.
+// Days as a horizontal strip of day chips (a radio group), a dot under each planned day: the planner's
+// 14 days, and a trip's start day.
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useI18n } from '../i18n';
@@ -11,11 +12,14 @@ export function PlanDayStrip({
   selected,
   planned,
   onSelect,
+  label,
 }: {
   days: readonly string[];
   selected: string;
   planned: ReadonlySet<string>;
   onSelect: (day: string) => void;
+  /** The group's name for screen readers; the planner's by default. */
+  label?: string;
 }): React.JSX.Element {
   const { t, locale } = useI18n();
   return (
@@ -25,7 +29,7 @@ export function PlanDayStrip({
       style={styles.scroller}
       contentContainerStyle={styles.content}
       accessibilityRole="radiogroup"
-      accessibilityLabel={t('plan.days')}
+      accessibilityLabel={label ?? t('plan.days')}
       testID="plan-days"
     >
       {days.map((day) => {

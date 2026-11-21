@@ -15,8 +15,8 @@ code (components, hooks, utils) stays outside `src/app/`.
 - The root Stack in `_layout.tsx` registers, inside the signed-in guard and without the tab bar:
   `camera`, `review`, `garment/[id]`, `rate` (pushed from Today and Build as
   `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`), `city` (Today's city, a modal
-  sheet) and `plan` (the planner, pushed from Today as `/plan`, and from Build as
-  `/plan?day=<YYYY-MM-DD>&ids=<garment ids>`).
+  sheet), `plan` (the planner, pushed from Today as `/plan`, and from Build as
+  `/plan?day=<YYYY-MM-DD>&ids=<garment ids>`) and `trip` ("Pack for a trip", pushed from Today).
 - Leaving never drops work silently: the camera with unsent shots and the garment detail with
   unsaved edits ask first through `usePreventRemove` (Discard / Keep editing), and Android's back on
   Forgot password's code step returns to the email step. `review`, `rate` and the garment detail
@@ -282,8 +282,8 @@ on it logs one. Server side: `planned_outfits` and `plan_outfit`
   still in the closet and available (`wearablePieces`), "Some pieces aren't available" when they no
   longer make a complete outfit, and its own 48 pt "I'll wear it" through Today's `useWearLog` (the
   plan's occasion, no score), with its error, queued note and Undo inside the card, so Today's
-  anchored button stays the lucky outfit's. Today refreshes the plans on focus and shows a
-  "Plan ahead" link under the lucky card.
+  anchored button stays the lucky outfit's. Today refreshes the plans on focus and shows "Plan
+  ahead" and "Pack for a trip" links under the lucky card.
 - `src/app/plan.tsx`: the day strip, the chosen day's plan (with Remove) or "Nothing planned for
   …", then "Choose an outfit": "Build one" (`/build?planFor=`), and Saved (the Saved list) or
   Suggestions (`storedLuckyOutfits`: every outfit stored for today across occasions, with its
@@ -292,6 +292,32 @@ on it logs one. Server side: `planned_outfits` and `plan_outfit`
   Tue, Nov 24" saves; a failed save stays in its notice. Offline, the cached plans with a note.
 - Account privacy: `forgetAccountOnDevice` clears `plans.v1.<id>` with the other per-user keys, and
   an explicit sign-out drops it as a display cache.
+
+## Trips (`src/trips/`)
+
+"Pack for a trip" plans a trip's outfits with `trip-plan` ([`api.md`](api.md#trip-plan),
+[`ai.md`](ai.md#trip-packing)), which calls no model. Nothing is stored for the user until Save.
+
+- `tripResponse.ts`: `isTripResponse`, the shape check for the function's answer and for a saved
+  trip's snapshot (pure, so `savedTrips.ts` loads no kv).
+- `tripClient.ts`: `planTripRequest({ city, start, end, occasion, language, date })` through
+  `aiClient.ts`'s shared `invoke`, so a 404 (`city_not_found`) is `not_found`, 429 `over_quota`, 503
+  `unavailable`.
+- `savedTrips.ts`: `listSavedTrips` (the newest 50, dropping a snapshot this version can't read),
+  `saveTrip` (the trip and its snapshot) and `deleteSavedTrip`.
+- `tripChecks.ts`: the packing list's check-offs in kv `trip.checks.<userId>`, one entry per trip
+  keyed by `tripKey` (the city lowercased with its spaces collapsed, the dates and the occasion, so
+  planning the same trip again or opening it from Saved keeps them), the latest 20 trips kept;
+  `useTripChecks` follows every toggle. Account deletion clears the key; an explicit sign-out keeps
+  it, like the queues.
+- `src/app/trip.tsx`: the city field with the dictation mic (the transcript replaces the field), a
+  60-day start strip (`PlanDayStrip`), 1–10 days, an optional occasion, and "Plan my packing" with
+  the app language and the local day. The answer shows each day (its date, the weather line or
+  "Forecast unavailable", its outfit or "Nothing in your closet fits…") and the packing list by slot
+  ("Tops · 2"), each piece a checkbox row "Jeans · Blue, worn 2 days". "Save trip" writes
+  `saved_trips` (then "Saved ✓"), "New trip" goes back to the form, which lists the saved trips
+  (open shows the snapshot without a call; Delete). Errors: an unknown city, the 5-a-day quota,
+  the geocoder down, offline; a closet without a required slot says what to add.
 
 ## The daily reminder (`src/reminder/`)
 
