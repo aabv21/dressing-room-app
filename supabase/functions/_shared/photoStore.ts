@@ -10,11 +10,14 @@
 // Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
 // the Edge Functions run it under Deno.
 
+import type { ServiceEnv } from './env.ts';
 import { isRecord } from './extraction.ts';
-import { mapLimit, restJson, serviceHeaders, type SupabaseEnv, UpstreamError, UUID } from './userContext.ts';
+import { UUID } from './guards.ts';
+import { fetchWithDeadline } from './http.ts';
+import { mapLimit, restJson, serviceHeaders, UpstreamError } from './userContext.ts';
 
 /** What a Storage call needs: the project URL and the service-role key. */
-export type StorageEnv = Pick<SupabaseEnv, 'supabaseUrl' | 'serviceRoleKey'>;
+export type StorageEnv = ServiceEnv;
 
 export type PhotoKind = 'full' | 'thumb';
 
@@ -29,6 +32,8 @@ export const REMOVE_CHUNK = 1000;
 export const LIST_CONCURRENCY = 5;
 /** The most paths one batch-sign call takes. */
 export const SIGN_CHUNK = 500;
+/** Every Storage call, the body included. */
+export const STORAGE_TIMEOUT_MS = 10_000;
 
 const storageUrl = (env: StorageEnv, route: string): string => `${env.supabaseUrl}/storage/v1/${route}`;
 
@@ -67,11 +72,16 @@ async function listLevel(env: StorageEnv, fetchFn: typeof fetch, prefix: string)
   const files: string[] = [];
   const folders: string[] = [];
   for (let offset = 0; ; ) {
-    const page = await restJson(fetchFn, storageUrl(env, `object/list/${BUCKET}`), {
-      method: 'POST',
-      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-      body: JSON.stringify({ prefix, limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } }),
-    });
+    const page = await restJson(
+      fetchFn,
+      storageUrl(env, `object/list/${BUCKET}`),
+      {
+        method: 'POST',
+        headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
+        body: JSON.stringify({ prefix, limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } }),
+      },
+      STORAGE_TIMEOUT_MS,
+    );
     if (!Array.isArray(page)) throw new UpstreamError('storage list: not an array');
     if (page.length === 0) return { files, folders };
     offset += page.length;
@@ -105,11 +115,16 @@ export async function listUserObjects(env: StorageEnv, fetchFn: typeof fetch, us
 /** Removes `paths`, `REMOVE_CHUNK` per call, in order; throws at the first chunk that fails. */
 export async function removeObjects(env: StorageEnv, fetchFn: typeof fetch, paths: readonly string[]): Promise<void> {
   for (let start = 0; start < paths.length; start += REMOVE_CHUNK) {
-    const response = await fetchFn(storageUrl(env, `object/${BUCKET}`), {
-      method: 'DELETE',
-      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-      body: JSON.stringify({ prefixes: paths.slice(start, start + REMOVE_CHUNK) }),
-    });
+    const response = await fetchWithDeadline(
+      fetchFn,
+      storageUrl(env, `object/${BUCKET}`),
+      {
+        method: 'DELETE',
+        headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
+        body: JSON.stringify({ prefixes: paths.slice(start, start + REMOVE_CHUNK) }),
+      },
+      STORAGE_TIMEOUT_MS,
+    );
     if (!response.ok) throw new UpstreamError(`storage remove: HTTP ${String(response.status)}`);
   }
 }
@@ -124,11 +139,16 @@ export async function signedUrl(
   path: string,
   expiresInSeconds: number,
 ): Promise<string | null> {
-  const response = await fetchFn(storageUrl(env, `object/sign/${BUCKET}/${encodePath(path)}`), {
-    method: 'POST',
-    headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-    body: JSON.stringify({ expiresIn: expiresInSeconds }),
-  });
+  const response = await fetchWithDeadline(
+    fetchFn,
+    storageUrl(env, `object/sign/${BUCKET}/${encodePath(path)}`),
+    {
+      method: 'POST',
+      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
+      body: JSON.stringify({ expiresIn: expiresInSeconds }),
+    },
+    STORAGE_TIMEOUT_MS,
+  );
   if (!response.ok) {
     if (await isNotFound(response)) return null;
     throw new UpstreamError(`storage sign: HTTP ${String(response.status)}`);
@@ -150,11 +170,16 @@ export async function signedUrls(
 ): Promise<Map<string, string>> {
   const urls = new Map<string, string>();
   for (let start = 0; start < paths.length; start += SIGN_CHUNK) {
-    const answer = await restJson(fetchFn, storageUrl(env, `object/sign/${BUCKET}`), {
-      method: 'POST',
-      headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
-      body: JSON.stringify({ expiresIn: expiresInSeconds, paths: paths.slice(start, start + SIGN_CHUNK) }),
-    });
+    const answer = await restJson(
+      fetchFn,
+      storageUrl(env, `object/sign/${BUCKET}`),
+      {
+        method: 'POST',
+        headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
+        body: JSON.stringify({ expiresIn: expiresInSeconds, paths: paths.slice(start, start + SIGN_CHUNK) }),
+      },
+      STORAGE_TIMEOUT_MS,
+    );
     if (!Array.isArray(answer)) throw new UpstreamError('storage sign: not an array');
     for (const entry of answer as unknown[]) {
       // A path with no object comes back with an error and no URL.
@@ -168,7 +193,12 @@ export async function signedUrls(
 
 /** The bytes stored at `path`; null when the object doesn't exist. */
 export async function downloadObject(env: StorageEnv, fetchFn: typeof fetch, path: string): Promise<Uint8Array | null> {
-  const response = await fetchFn(storageUrl(env, `object/${BUCKET}/${encodePath(path)}`), { headers: serviceHeaders(env) });
+  const response = await fetchWithDeadline(
+    fetchFn,
+    storageUrl(env, `object/${BUCKET}/${encodePath(path)}`),
+    { headers: serviceHeaders(env) },
+    STORAGE_TIMEOUT_MS,
+  );
   if (!response.ok) {
     if (await isNotFound(response)) return null;
     throw new UpstreamError(`storage download: HTTP ${String(response.status)}`);

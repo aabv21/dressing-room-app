@@ -2,8 +2,9 @@
 // supabase/functions/delete-account/__tests__/handler.test.ts
 import { KeyObject } from 'node:crypto';
 
-import type { AppleEnv } from '../../_shared/apple.ts';
-import type { SupabaseEnv } from '../../_shared/userContext.ts';
+import type { AppleEnv } from '../../_shared/env.ts';
+import type { SupabaseEnv } from '../../_shared/env.ts';
+import { STORAGE_TIMEOUT_MS } from '../../_shared/photoStore.ts';
 import { handleDeleteAccount, LIST_CONCURRENCY, REMOVE_CHUNK } from '../handler.ts';
 
 const { jest } = import.meta;
@@ -60,6 +61,8 @@ type World = {
   users: Set<string>;
   failRemoveAt?: number;
   failList?: boolean;
+  /** Storage's list never answers; its calls end only when the caller aborts them. */
+  hangList?: boolean;
   /** The most storage list calls in flight at once, recorded by the fake. */
   listPeak?: number;
   revoke?: () => Response | Promise<Response>;
@@ -115,6 +118,13 @@ function fakeFetch(world: World): { fetch: typeof fetch; steps: Step[] } {
       const { prefix, limit, offset } = JSON.parse(body) as { prefix: string; limit: number; offset: number };
       steps.push({ kind: 'list', prefix, offset });
       if (world.failList === true) return json(500, { error: 'boom' });
+      if (world.hangList === true) {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      }
       listsInFlight += 1;
       world.listPeak = Math.max(world.listPeak ?? 0, listsInFlight);
       await new Promise((resolve) => setTimeout(resolve, 1));
@@ -457,6 +467,31 @@ describe('delete-account', () => {
     expect(response.status).toBe(500);
     expect(kinds(steps)).toEqual(['whoami', 'list']);
     expect(state.users.has(USER_ID)).toBe(true);
+  });
+
+  test('a Storage listing that never answers ends at STORAGE_TIMEOUT_MS with a 500, deleting nothing', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    try {
+      const state = world({ hangList: true });
+      const { fetch: fetchFn, steps } = fakeFetch(state);
+      let settled = false;
+      const pending = handleDeleteAccount(request(), { env: ENV, apple, fetch: fetchFn, now: () => NOW }).finally(() => {
+        settled = true;
+      });
+
+      await jest.advanceTimersByTimeAsync(STORAGE_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      const response = await pending;
+
+      expect(STORAGE_TIMEOUT_MS).toBe(10_000);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: 'internal' });
+      expect(kinds(steps)).toEqual(['whoami', 'list']);
+      expect(state.users.has(USER_ID)).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a failed user deletion answers 500, so the app can retry', async () => {

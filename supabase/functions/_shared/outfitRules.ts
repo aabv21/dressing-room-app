@@ -39,6 +39,15 @@ export type RuleGarment = {
 
 export type Outfit = readonly RuleGarment[];
 
+/**
+ * A garment's rating-relevant columns, for the result cache keys: not `updated_at` or
+ * `last_worn_at`, which logging a wear bumps, so a wear would otherwise spend the quota again.
+ * Changing it changes every stored key.
+ */
+export function garmentFingerprint(g: RuleGarment): unknown[] {
+  return [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth];
+}
+
 export type RuleContext = {
   occasion: Occasion | null;
   /** `null`: no season rule (the tropics, or no city), so the weather alone filters. */

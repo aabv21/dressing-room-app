@@ -11,7 +11,7 @@ import {
   RATING_DIMENSIONS,
   RATING_LEVELS,
 } from '../../_shared/rating.ts';
-import type { FnEnv } from '../../_shared/userContext.ts';
+import type { FnEnv } from '../../_shared/env.ts';
 import { handleRate, type RatingResult } from '../handler.ts';
 import { fakeTime } from '../../_shared/__tests__/fakeTime.ts';
 
@@ -1049,5 +1049,14 @@ describe('logging', () => {
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     }
+  });
+});
+
+describe('the cache key', () => {
+  test('stays the key stored before the shared garment fingerprint, so no cached rating is lost', async () => {
+    const { calls } = await rate(world());
+    expect(calls.find((call) => call.route === 'cacheGet')?.url.searchParams.get('cache_key')).toBe(
+      'eq.310abbcbdf90a5937c58d0651e9b25f74afaa8d664080f9fb96f8db066654151',
+    );
   });
 });

@@ -5,7 +5,6 @@ import {
   cachePut,
   cacheRead,
   consumeQuota,
-  type FnEnv,
   getLocalWeather,
   getWeather,
   loadGarments,
@@ -16,8 +15,9 @@ import {
   runClaude,
   runJev,
   sha256Hex,
-  userIdFromJwt,
 } from '../userContext.ts';
+import type { FnEnv } from '../env.ts';
+import { userIdFromJwt } from '../http.ts';
 
 const { jest } = import.meta;
 

@@ -1,22 +1,7 @@
-// Deno entry point for the `export-data` Edge Function. All logic lives in `handler.ts`; this file
-// only reads the environment and serves requests. `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
-// `SUPABASE_SERVICE_ROLE_KEY` are injected by the Edge Runtime.
-
-import type { SupabaseEnv } from '../_shared/userContext.ts';
+// Deno entry point for `export-data`; the logic is in `handler.ts`.
+import { readEnv } from '../_shared/env.ts';
 import { handleExportData } from './handler.ts';
 
-function required(name: string): string {
-  const value = Deno.env.get(name);
-  if (value === undefined || value === '') throw new Error(`Missing environment variable ${name}`);
-  return value;
-}
+const env = readEnv((name) => Deno.env.get(name), ['supabase']);
 
-function readEnv(): SupabaseEnv {
-  return {
-    supabaseUrl: required('SUPABASE_URL'),
-    anonKey: required('SUPABASE_ANON_KEY'),
-    serviceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
-  };
-}
-
-Deno.serve((req) => handleExportData(req, { env: readEnv(), fetch }));
+Deno.serve((req) => handleExportData(req, { env, fetch }));

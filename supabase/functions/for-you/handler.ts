@@ -22,6 +22,7 @@ import {
   type GarmentColor,
   type Season,
 } from '../_shared/catalog.ts';
+import type { ClaudeEnv, GeocodingEnv, JevEnv, SupabaseEnv } from '../_shared/env.ts';
 import { isRecord } from '../_shared/extraction.ts';
 import {
   buildFitRequest,
@@ -37,7 +38,8 @@ import {
   searchQuery,
   templateLine,
 } from '../_shared/forYou.ts';
-import { type RuleGarment, seasonOf } from '../_shared/outfitRules.ts';
+import { callerOf, readJson, reply } from '../_shared/http.ts';
+import { garmentFingerprint, type RuleGarment, seasonOf } from '../_shared/outfitRules.ts';
 import type { Language } from '../_shared/searchTerms.ts';
 import {
   cacheFresh,
@@ -49,7 +51,6 @@ import {
   consumeQuota,
   geocodedLatitude,
   isIsoDate,
-  type FnEnv,
   loadGarments,
   loadProfile,
   mapLimit,
@@ -59,11 +60,12 @@ import {
   runClaude,
   runJev,
   sha256Hex,
-  userIdFromJwt,
   profileIdentity,
 } from '../_shared/userContext.ts';
 
-export type ForYouDeps = { env: FnEnv; fetch: typeof fetch; now?: () => number };
+export type ForYouEnv = SupabaseEnv & JevEnv & ClaudeEnv & GeocodingEnv;
+
+export type ForYouDeps = { env: ForYouEnv; fetch: typeof fetch; now?: () => number };
 
 /** One idea card. `line` is Claude's; when it's null the app renders `lineKey` with `lineParams`. */
 export type ForYouCard = {
@@ -91,8 +93,6 @@ type OkResponse = Extract<ForYouResponse, { kind: 'ok' }>;
  */
 type CachedForYou = OkResponse & { degraded: boolean };
 
-type Outcome = 'cached' | 'stale' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_quota' | 'invalid' | 'error';
-
 export const FOR_YOU_DAILY_LIMIT = 1;
 /** An entry older than this is a miss, so the ideas follow the season and the user's taste at least weekly. */
 export const FOR_YOU_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -115,23 +115,9 @@ const CACHE_VERSION = 4;
 
 const LANGUAGES = ['en', 'es'] as const satisfies readonly Language[];
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
-
-function reply(outcome: Outcome, status: number, body: unknown): Response {
-  console.info(JSON.stringify({ outcome }));
-  return json(status, body);
-}
-
 /** The language, and the app's local day when it sends a valid one (older apps send none). */
 async function readInput(request: Request): Promise<{ language: Language; date: string | null } | null> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return null;
-  }
+  const body = await readJson(request);
   if (!isRecord(body)) return null;
   const language = LANGUAGES.find((candidate) => candidate === body.language);
   if (language === undefined) return null;
@@ -153,11 +139,9 @@ function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
 
 /**
  * The cache key: the language, the season, `profileIdentity` (clothing type, body and styles)
- * and a fingerprint of the wardrobe's categorized garments — id and rating-relevant columns, not
- * `status` (the laundry and lending don't change For you), nor `updated_at` or `last_worn_at`,
- * which logging a wear bumps (as lucky-list's; a wear would otherwise spend the quota again).
- * `pinned_on` is the lucky list's business and stays out. The season is in the key so the ideas
- * don't stay a season behind for up to a week.
+ * and the `garmentFingerprint` of the wardrobe's categorized garments, without `status` (the
+ * laundry and lending don't change For you). `pinned_on` is the lucky list's business and stays
+ * out. The season is in the key so the ideas don't stay a season behind for up to a week.
  */
 function cacheKey(
   wardrobe: readonly RuleGarment[],
@@ -168,7 +152,7 @@ function cacheKey(
   const fingerprint = wardrobe
     .filter((g) => g.category !== null)
     .sort(byId)
-    .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth]);
+    .map(garmentFingerprint);
   return sha256Hex(
     JSON.stringify({ v: CACHE_VERSION, fingerprint, profile: profileIdentity(profile), language, season }),
   );
@@ -215,7 +199,7 @@ function fromCache(cached: unknown): OkResponse | null {
 }
 
 type FitContext = {
-  env: FnEnv;
+  env: JevEnv;
   fetch: typeof fetch;
   user: ReturnType<typeof ratingState>['user'];
   startedAt: number;
@@ -239,7 +223,7 @@ function fitAll(ctx: FitContext, candidates: readonly ForYouIdea[]): Promise<(Fo
  * parsed, or when `timeoutMs` is too short to be worth a call (`MIN_LINES_TIMEOUT_MS`).
  */
 async function writeLines(
-  env: FnEnv,
+  env: ClaudeEnv,
   fetchFn: typeof fetch,
   ideas: readonly RankedIdea[],
   language: Language,
@@ -282,7 +266,7 @@ function withoutMarker(result: CachedForYou): OkResponse {
  * entry and re-render its template lines.
  */
 async function staleAnswer(
-  deps: { env: FnEnv; fetch: typeof fetch },
+  deps: { env: SupabaseEnv; fetch: typeof fetch },
   userId: string,
   sameKey: OkResponse | null,
   wardrobe: readonly RuleGarment[],
@@ -296,7 +280,7 @@ async function staleAnswer(
 
 /** Writes the new entry, then (only once it's written) drops the user's other keys, best effort. */
 async function store(
-  deps: { env: FnEnv; fetch: typeof fetch },
+  deps: { env: SupabaseEnv; fetch: typeof fetch },
   userId: string,
   key: string,
   result: CachedForYou,
@@ -311,9 +295,9 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
   const now = deps.now ?? Date.now;
   const startedAt = now();
   if (request.method !== 'POST') return reply('invalid', 405, { error: 'method_not_allowed' });
-  const auth = request.headers.get('authorization');
-  const userId = userIdFromJwt(auth);
-  if (auth === null || userId === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const caller = callerOf(request);
+  if (caller === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const { auth, userId } = caller;
   const input = await readInput(request);
   if (input === null) return reply('invalid', 400, { error: 'invalid_input' });
   const { language } = input;

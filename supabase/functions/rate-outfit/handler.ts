@@ -9,9 +9,20 @@
 // "Outfit rating".
 
 import { OCCASIONS, type Occasion, type Season, type Slot, slotOf } from '../_shared/catalog.ts';
+import type { FnEnv } from '../_shared/env.ts';
 import { isRecord } from '../_shared/extraction.ts';
 import { buildFallbackRequest, parseFallback } from '../_shared/fallbackRater.ts';
-import { isCompleteOutfit, passesRules, preScore, type RuleContext, type RuleGarment, seasonOf } from '../_shared/outfitRules.ts';
+import { UUID } from '../_shared/guards.ts';
+import { callerOf, readJson, reply } from '../_shared/http.ts';
+import {
+  garmentFingerprint,
+  isCompleteOutfit,
+  passesRules,
+  preScore,
+  type RuleContext,
+  type RuleGarment,
+  seasonOf,
+} from '../_shared/outfitRules.ts';
 import { pickReasons, RATING_CONFIG, RATING_LEVELS, type RatingLabel, type RatingReason } from '../_shared/rating.ts';
 import {
   cacheGet,
@@ -19,7 +30,6 @@ import {
   type ComposedRating,
   composeAnswers,
   consumeQuota,
-  type FnEnv,
   getLocalWeather,
   isIsoDate,
   jevRating,
@@ -31,8 +41,6 @@ import {
   ratingState,
   runClaude,
   sha256Hex,
-  userIdFromJwt,
-  UUID,
   profileIdentity,
 } from '../_shared/userContext.ts';
 import type { WeatherSummary } from '../_shared/weather.ts';
@@ -93,22 +101,8 @@ type SwapOutcome = Pick<RatingResult, 'swap' | 'noBetterSwap'> & { degraded: boo
 /** A swap search that was skipped or failed: nothing is known, so neither a swap nor "no better swap". */
 const UNKNOWN_SWAP: SwapOutcome = { swap: null, noBetterSwap: false, degraded: true };
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
-
-function reply(outcome: Outcome, status: number, body: unknown): Response {
-  console.info(JSON.stringify({ outcome }));
-  return json(status, body);
-}
-
 async function readInput(request: Request): Promise<RateInput | null> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return null;
-  }
+  const body = await readJson(request);
   if (!isRecord(body)) return null;
   const { garment_ids: ids, occasion, date } = body;
   if (!Array.isArray(ids) || ids.length < MIN_GARMENTS || ids.length > MAX_GARMENTS) return null;
@@ -125,15 +119,14 @@ async function readInput(request: Request): Promise<RateInput | null> {
 }
 
 /**
- * The cache key: each garment's rating-relevant columns (not `updated_at`, which logging a wear
- * bumps, so a wear would otherwise spend the quota again), the profile's rating-relevant fields
+ * The cache key: each garment's fingerprint and status, the profile's rating-relevant fields
  * (`profileIdentity`, so a language toggle keeps the entry), the occasion, the season and the
  * weather bucket.
  */
 function cacheKey(outfit: readonly RuleGarment[], ctx: RatingContext): Promise<string> {
   const items = [...outfit]
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map((g) => [g.id, g.category, g.colors, g.pattern, g.formality, g.fit, g.seasons, g.warmth, g.status]);
+    .map((g) => [...garmentFingerprint(g), g.status]);
   return sha256Hex(
     JSON.stringify({
       v: CACHE_VERSION,
@@ -308,9 +301,9 @@ async function rate(
 export async function handleRate(request: Request, deps: RateDeps): Promise<Response> {
   const startedAt = Date.now();
   if (request.method !== 'POST') return reply('invalid', 405, { error: 'method_not_allowed' });
-  const auth = request.headers.get('authorization');
-  const userId = userIdFromJwt(auth);
-  if (auth === null || userId === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const caller = callerOf(request);
+  if (caller === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const { auth, userId } = caller;
   const input = await readInput(request);
   if (input === null) return reply('invalid', 400, { error: 'invalid_input' });
 

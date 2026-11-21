@@ -6,43 +6,15 @@
 // Runtime-neutral: WebCrypto (`crypto.subtle`), `atob`/`btoa`, `URLSearchParams` and the injected
 // `fetch` only, so Jest drives it under Node and the Edge Functions run it under Deno.
 
+import type { AppleEnv } from './env.ts';
 import { isRecord } from './extraction.ts';
+import { fetchWithDeadline } from './http.ts';
 
-/** The Apple key and app ids; null where a function is given none (the calls are then skipped). */
-export type AppleEnv = {
-  /** `APPLE_TEAM_ID`, the client secret's `iss`. */
-  teamId: string;
-  /** `APPLE_KEY_ID`, the client secret's `kid`. */
-  keyId: string;
-  /** `APPLE_PRIVATE_KEY`, the `.p8` file's PKCS#8 PEM (literal `\n`s are accepted). */
-  privateKey: string;
-  /** `APPLE_CLIENT_ID`, the app's bundle id: the client secret's `sub` and the `client_id`. */
-  clientId: string;
-  /** `APPLE_BASE_URL`; Apple itself unless a mock is set locally. */
-  baseUrl: string;
-};
-
-export const APPLE_DEFAULT_BASE_URL = 'https://appleid.apple.com';
 /** The client secret's `aud`: always Apple, whichever host the calls go to. */
 export const APPLE_AUDIENCE = 'https://appleid.apple.com';
 /** Each call signs a fresh secret, so it only has to outlive the request (Apple allows up to 6 months). */
 export const CLIENT_SECRET_TTL_S = 300;
 export const APPLE_TIMEOUT_MS = 10_000;
-
-const REQUIRED = ['APPLE_TEAM_ID', 'APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_CLIENT_ID'] as const;
-
-/**
- * The Apple env from the function's variables, or null when any of the four required ones is
- * missing, blank or an unresolved `env(...)` reference: a bare `supabase start` without the
- * variable the config names can pass that literal string through instead of leaving it unset.
- */
-export function appleEnvFrom(get: (name: string) => string | undefined): AppleEnv | null {
-  const values = REQUIRED.map((name) => get(name)?.trim() ?? '');
-  const [teamId = '', keyId = '', privateKey = '', clientId = ''] = values;
-  if (values.some((value) => value === '' || value.startsWith('env('))) return null;
-  const baseUrl = get('APPLE_BASE_URL')?.trim() ?? '';
-  return { teamId, keyId, privateKey, clientId, baseUrl: baseUrl === '' ? APPLE_DEFAULT_BASE_URL : baseUrl };
-}
 
 function base64url(bytes: Uint8Array): string {
   let binary = '';
@@ -96,18 +68,18 @@ async function postForm(
   fields: Record<string, string>,
   now: number,
 ): Promise<{ ok: boolean; body: unknown } | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-  }, APPLE_TIMEOUT_MS);
   try {
     const clientSecret = await appleClientSecret(env, now);
-    const response = await fetchFn(`${env.baseUrl.replace(/\/+$/, '')}${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ client_id: env.clientId, client_secret: clientSecret, ...fields }).toString(),
-      signal: controller.signal,
-    });
+    const response = await fetchWithDeadline(
+      fetchFn,
+      `${env.baseUrl}${path}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: env.clientId, client_secret: clientSecret, ...fields }).toString(),
+      },
+      APPLE_TIMEOUT_MS,
+    );
     const text = await response.text();
     let body: unknown = null;
     try {
@@ -118,8 +90,6 @@ async function postForm(
     return { ok: response.ok, body };
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
