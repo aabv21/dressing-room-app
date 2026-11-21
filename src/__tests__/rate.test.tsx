@@ -6,6 +6,7 @@ import { randomUUID } from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
+import * as Speech from 'expo-speech';
 import { captureRef } from 'react-native-view-shot';
 
 import RateScreen from '../app/rate';
@@ -30,6 +31,7 @@ const mockParams: { ids?: string; occasion?: string } = {};
 jest.mock('expo-router', () => ({
   router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), dismissTo: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
+  useIsFocused: () => true,
 }));
 
 jest.mock('../auth/AuthProvider', () => ({
@@ -853,5 +855,56 @@ describe('sharing the outfit as an image', () => {
     } finally {
       kvSet('locale-preference', 'system');
     }
+  });
+});
+
+describe('listening to the rating', () => {
+  beforeEach(() => {
+    jest.mocked(Speech.speak).mockClear();
+    jest.mocked(Speech.stop).mockClear();
+  });
+
+  test('Listen reads the score with its label, then the reasons', async () => {
+    mockedRate.mockReturnValue(
+      ok(
+        result({
+          score: 82,
+          reasons: [
+            { key: 'rating.reason.body_flattery.good', tone: 'good' },
+            { key: 'rating.reason.formality_coherence.warn', tone: 'warn' },
+          ],
+        }),
+      ),
+    );
+    await render(<RateScreen />);
+    await screen.findByText('82%');
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Listen' }));
+
+    expect(Speech.speak).toHaveBeenCalledWith(
+      'Score 82 out of 100: Looks good. It flatters your body type (from your profile). The pieces mix very different levels of formality.',
+      expect.objectContaining({ language: 'en-US' }),
+    );
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Stop' }));
+    expect(Speech.stop).toHaveBeenCalled();
+  });
+
+  test('no Listen while the rating loads', async () => {
+    mockedRate.mockReturnValue(new Promise(() => undefined));
+    await render(<RateScreen />);
+
+    expect(screen.queryByRole('button', { name: 'Listen' })).not.toBeOnTheScreen();
+  });
+
+  test('leaving the rating stops it', async () => {
+    mockedRate.mockReturnValue(ok(result({ score: 82 })));
+    const view = await render(<RateScreen />);
+    await screen.findByText('82%');
+    await fireEvent.press(screen.getByRole('button', { name: 'Listen' }));
+
+    await view.unmount();
+
+    expect(Speech.stop).toHaveBeenCalled();
   });
 });

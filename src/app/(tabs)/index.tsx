@@ -25,6 +25,8 @@ import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
 import { useWaitStage } from '../../ui/useWaitStage';
+import { ListenButton } from '../../voice/ListenButton';
+import { todaySpeech } from '../../voice/speechText';
 import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 
 // Room for a message shown above the buttons, so it never covers the card's last row.
@@ -77,7 +79,15 @@ function useProfileCity(): string | null | undefined {
   return name === '' ? null : name;
 }
 
-function CardHeader({ onRate, onShare }: { onRate?: () => void; onShare?: () => void }): React.JSX.Element {
+function CardHeader({
+  onRate,
+  onShare,
+  listenText,
+}: {
+  onRate?: () => void;
+  onShare?: () => void;
+  listenText?: string;
+}): React.JSX.Element {
   const { t } = useI18n();
   return (
     <View style={styles.cardHeader}>
@@ -86,6 +96,7 @@ function CardHeader({ onRate, onShare }: { onRate?: () => void; onShare?: () => 
         <Text style={styles.muted}>{t('today.lucky')}</Text>
       </View>
       <View style={styles.cardActions}>
+        {listenText === undefined ? null : <ListenButton text={listenText} size={CHIP_AI_HEIGHT} />}
         {onShare === undefined ? null : (
           <Pressable
             accessibilityRole="button"
@@ -437,9 +448,18 @@ export default function TodayScreen(): React.JSX.Element {
     const logged = wearLog.isLogged(outfit.garmentIds);
     const { garmentIds } = outfit;
     const feedbackOpen = feedbackFor === outfitIdentity(garmentIds);
+    const listenText = todaySpeech(
+      {
+        pieces: orderPieces(pieces).map((piece) => pieceLabel(piece, t)),
+        weather: formatWeather(lucky.weather, locale, dayDate),
+        occasion: occasion === null ? null : t(`occasion.${occasion}`),
+      },
+      t,
+    );
     body = (
       <View style={styles.card}>
         <CardHeader
+          listenText={listenText}
           onRate={() => {
             router.push({
               pathname: '/rate',

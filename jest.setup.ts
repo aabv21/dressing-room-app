@@ -34,6 +34,19 @@ jest.mock('expo-notifications', () => ({
   clearLastNotificationResponse: jest.fn(),
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
+// expo-speech's native module is absent under Jest: an English and a Mexican Spanish voice; a suite
+// that tests speaking sets these with `jest.mocked`.
+jest.mock('expo-speech', () => ({
+  VoiceQuality: { Default: 'Default', Enhanced: 'Enhanced' },
+  getAvailableVoicesAsync: jest.fn(() =>
+    Promise.resolve([
+      { identifier: 'voice-en-us', name: 'Samantha', language: 'en-US', quality: 'Default' },
+      { identifier: 'voice-es-mx', name: 'Paulina', language: 'es-MX', quality: 'Default' },
+    ]),
+  ),
+  speak: jest.fn(),
+  stop: jest.fn(() => Promise.resolve()),
+}));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(() => Promise.resolve()),
   impactAsync: jest.fn(() => Promise.resolve()),

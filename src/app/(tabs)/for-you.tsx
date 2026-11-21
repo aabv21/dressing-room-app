@@ -17,6 +17,8 @@ import { useForYou } from '../../outfits/useForYou';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { Screen } from '../../ui/Screen';
 import { useWaitStage } from '../../ui/useWaitStage';
+import { ListenButton } from '../../voice/ListenButton';
+import { ideaSpeech } from '../../voice/speechText';
 import { colors, fontSizes, layout, radii, shadows, spacing } from '../../ui/theme';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -61,6 +63,7 @@ function IdeaCard({ idea }: { idea: ForYouCard }): React.JSX.Element {
           accessibilityElementsHidden
         />
         <Text style={styles.name}>{name}</Text>
+        <ListenButton text={ideaSpeech({ name, line })} />
       </View>
       <Text style={styles.combines}>
         {t('forYou.combines', { n: idea.combinesWith })}{' '}

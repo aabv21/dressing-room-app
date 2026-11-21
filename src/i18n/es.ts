@@ -691,6 +691,13 @@ export const es: Record<MessageKey, string> = {
   'forYou.outfits.one': '(+{count} outfit)',
   'forYou.outfits.other': '(+{count} outfits)',
   'forYou.search': 'Buscar en tiendas',
+  'listen.action': 'Escuchar',
+  'listen.stop': 'Detener',
+  'listen.hint': 'Lo lee en voz alta',
+  'listen.occasion': 'Ocasión: {occasion}',
+  'listen.score': 'Puntaje {score} de 100: {label}',
+  'listen.unavailable': 'Este teléfono no tiene una voz para este idioma.',
+
   'share.action': 'Compartir',
   'share.title': 'Compartir este outfit',
   'share.send': 'Compartir imagen',

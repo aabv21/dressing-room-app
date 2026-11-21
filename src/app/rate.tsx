@@ -42,6 +42,8 @@ import { tapHaptic } from '../ui/feedback';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { useWaitStage } from '../ui/useWaitStage';
 import { colors, fontSizes, gradients, layout, radii, spacing } from '../ui/theme';
+import { ListenButton } from '../voice/ListenButton';
+import { ratingSpeech } from '../voice/speechText';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
@@ -278,7 +280,7 @@ function RateOutfit({
   initialError: AiError | null;
   occasion: Occasion | null;
 }): React.JSX.Element {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const insets = useScreenContentInsets('none');
   const { garments, thumbUrls } = useCloset();
   const byId = useMemo(() => new Map(garments.map((garment) => [garment.id, garment])), [garments]);
@@ -369,6 +371,17 @@ function RateOutfit({
   const waitStage = useWaitStage(rating.kind === 'loading');
   const [shareOpen, setShareOpen] = useState(false);
   const shareable = rating.kind === 'result' && pieces.length > 0;
+  const listenText =
+    rating.kind === 'result'
+      ? ratingSpeech(
+          {
+            score: rating.result.score,
+            label: t(`rating.label.${rating.result.label}`),
+            reasons: rating.result.reasons.flatMap((reason) => reasonText(reason, t, locale) ?? []),
+          },
+          t,
+        )
+      : null;
 
   const retry = useCallback(() => {
     setRating({ kind: 'loading' });
@@ -503,6 +516,7 @@ function RateOutfit({
           <View style={styles.headerTitle}>
             <ScreenTitle title={t('rate.title')} />
           </View>
+          {listenText === null ? null : <ListenButton text={listenText} size={36} />}
           {shareable ? (
             <Pressable
               accessibilityRole="button"

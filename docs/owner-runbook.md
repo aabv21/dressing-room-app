@@ -86,7 +86,7 @@ init`, the OAuth clients and the store records.
   - An old app on the new schema works: it never sends a price, and unpriced rows read as before.
 - **Pending (after merge).** Wave 5a-4 (the daily reminder, listen and dictate), after 5a-3: no
   migration and no function deploy, only a new app build (EAS `preview`, and the store profiles
-  when they're set up). It adds native modules (`expo-notifications`), so a JavaScript-only reload
+  when they're set up). It adds native modules (`expo-notifications`, `expo-speech`), so a JavaScript-only reload
   of an older build can't run it; the on-device checks are in [section 5](#5-live-checks-on-the-phone).
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
@@ -210,6 +210,11 @@ project:
   sign out and check nothing arrives. Deny the permission once: the explanation and "Open settings"
   show, and turning notifications on there lets the switch work. On Android, check the status-bar
   icon renders as the monochrome app outline, not a white square.
+- **Pending.** Listen in both languages, on an iPhone (silent mode off) and an Android phone: on
+  Today, the rating and For you, the voice reads the outfit, the score and reasons, and the idea in
+  English, then again with the app in Spanish (a Latin American voice where installed); a second
+  tap stops it, and so does switching tabs mid-sentence; Listen on another card takes over. With
+  no Spanish voice installed (Android: remove it in the TTS settings), the button hides or says so.
 - **Pending.** Large text and screen readers: the largest Dynamic Type and Android font scale 2.0
   through every tab, the rating, review and Diary; then VoiceOver and TalkBack.
 - **Pending.** Google sign-in on the phone; Sign in with Apple and its revocation once Apple is

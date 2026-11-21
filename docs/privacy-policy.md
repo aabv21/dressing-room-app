@@ -53,6 +53,7 @@ Your phone also keeps a copy of your closet, today's outfit suggestions, your sa
 combinations you marked "Not for me", your last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
 folder until it is uploaded. If you turn on the daily reminder, its time stays on your phone and
 the phone itself schedules the notification: nothing about it reaches a server or a push service.
+"Listen" reads the screen's text with your phone's own text-to-speech voices.
 
 ## Who processes it
 

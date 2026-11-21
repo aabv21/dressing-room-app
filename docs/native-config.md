@@ -42,6 +42,11 @@ create or edit them by hand. Native behavior lives in `app.json` and its config 
   entitlements and manifest), which writes nothing to `ios/` or `android/`; the library's manifest
   entries appear only in a build's merged manifest.
 
+## Text to speech
+
+`expo-speech` (Listen) has no config plugin and asks for no permission: it uses the voices
+installed on the phone. On an iPhone in silent mode it makes no sound.
+
 ## Sign-in configuration
 
 - `@react-native-google-signin/google-signin`'s plugin sets `iosUrlScheme` to the iOS OAuth client's

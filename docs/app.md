@@ -287,6 +287,26 @@ when the user travels.
   ended (any `SIGNED_OUT`, so the next person on the phone never gets it), keeping the time;
   `forgetAccountOnDevice` cancels it before removing the account's kv keys.
 
+## Voice (`src/voice/`)
+
+"Listen" reads the screen aloud with `expo-speech`, the phone's own text-to-speech.
+
+- `speechText.ts`: what is read, as short sentences (a label's " · " becomes a pause):
+  `todaySpeech` (Today's pieces in display order, the weather line when there is weather, and
+  "Occasion: …" when one is picked), `ratingSpeech` ("Score 82 out of 100: Looks good." and each
+  reason the screen shows) and `ideaSpeech` (For you's idea name and its line).
+- `speech.ts`: `pickVoice(voices, locale)` picks the installed voice for the app language: for
+  Spanish es-MX, es-US, then es-419 (the neutral Latin American copy), then any Spanish voice; for
+  English en-US, then any English voice; an enhanced voice wins within a tag, and Android's
+  `es_MX` tags match too. `useSpeaker(text)` keeps one utterance app-wide (a module-level owner
+  read through `useSyncExternalStore`): another button's Listen stops the current one, a second tap
+  stops it, and leaving the screen (`useIsFocused`), unmounting or new text (Today's "Another")
+  stops it too. It is `hidden` when the phone lists voices but none in the app language; an empty
+  list (an engine still starting) keeps the button, and a speak error then alerts "This phone has no
+  voice for this language."
+- `ListenButton.tsx`: the round Listen / Stop button (Volume2 / Square), on Today's card header,
+  the rating's header (once a result is shown) and each For you card.
+
 ## Stats and Diary (`src/stats/`)
 
 All computed on the device. `periods.ts` (local `YYYY-MM-DD` day math anchored in UTC, the period

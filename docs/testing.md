@@ -16,6 +16,8 @@ environment. `jest.setup.ts` mocks:
   `USD`), so i18n-dependent tests don't depend on the host machine's language or region.
 - `react-native-view-shot` — `captureRef` answers a fixed `file://` PNG, since the native capture
   is absent under Jest; a suite that tests a failed capture overrides it.
+- `expo-speech` — an en-US and an es-MX voice, `speak` and `stop` as spies; the Listen suites
+  read `speak`'s options to finish or fail an utterance.
 - `expo-notifications` — permission granted, `scheduleNotificationAsync` answering an id, no tap
   response and a listener that does nothing, since the native module is absent under Jest; the
   reminder suites set these with `jest.mocked`.
@@ -152,6 +154,16 @@ The Profile tab's Privacy section (data export and account deletion):
 - `src/reminder/__tests__/DailyReminderSync.test.tsx` — a reminder tap that launched the app or
   arrives while it runs opens Today and is cleared, another notification's doesn't, the listener is
   removed on unmount, and a language change re-schedules an enabled reminder (never an off one).
+- `src/voice/__tests__/speech.test.ts` — `pickVoice`: Latin American Spanish before Spain, es-MX
+  first, Android's underscore tags, any voice in the language as a fallback, en-US first, an
+  enhanced voice within a tag, and null with no voice in the language.
+- `src/voice/__tests__/speechText.test.ts` — Today's, the rating's and For you's spoken text in
+  English and Spanish, without weather, an occasion, reasons or a line.
+- Listen on the screens, in `today.test.tsx` (the pieces, weather and occasion with the en-US voice;
+  a second tap, the end of the speech, leaving the screen and "Another" stop it; the es-MX voice in
+  Spanish; hidden with voices but none in the language; a speak error alerts), `rate.test.tsx` (the
+  score, label and reasons; none while loading; unmounting stops it) and `for-you.test.tsx` (each
+  idea's text; another idea's Listen takes over; leaving the tab stops it).
 - `src/lib/__tests__/e2eLaunch.test.ts` — the Maestro launch check: `-e2e 1` in the user defaults
   is an end-to-end launch (anything else, or no native settings module, isn't), and only then are
   LogBox's toasts hidden.

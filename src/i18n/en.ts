@@ -688,6 +688,13 @@ export const en = {
   'forYou.outfits.one': '(+{count} outfit)',
   'forYou.outfits.other': '(+{count} outfits)',
   'forYou.search': 'Search in stores',
+  'listen.action': 'Listen',
+  'listen.stop': 'Stop',
+  'listen.hint': 'Reads it aloud',
+  'listen.occasion': 'Occasion: {occasion}',
+  'listen.score': 'Score {score} out of 100: {label}',
+  'listen.unavailable': 'This phone has no voice for this language.',
+
   'share.action': 'Share',
   'share.title': 'Share this outfit',
   'share.send': 'Share image',
