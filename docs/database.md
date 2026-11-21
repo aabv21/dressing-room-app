@@ -228,8 +228,8 @@ adding it). RLS is enabled with **no policies at all** and `revoke all` from
 both `anon` and `authenticated` — the table has no API surface of its own; every read and write goes
 through `public.consume_quota()`.
 
-`public.consume_quota(p_user_id uuid, p_kind public.quota_kind, p_limit integer) returns boolean` is
-`security definer` with `set search_path = ''`, `execute` revoked from `public`, `anon` and
+`public.consume_quota()` (both signatures in [`api.md`](api.md#rpcs)) is `security definer` with
+`set search_path = ''`, `execute` revoked from `public`, `anon` and
 `authenticated`, and granted only to `service_role` — only the Edge Functions call it (extraction,
 rating, lucky list and For you), never a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
 `(p_user_id, today in UTC, p_kind)`, incrementing `count` only `where count < p_limit`, and returns
@@ -239,8 +239,8 @@ reads that absence as `false` via `coalesce`). Each call therefore does at most 
 either the counter moves up by one and the function returns `true`, or nothing changes and it
 returns `false`.
 
-`public.consume_quota(p_user_id, p_kind, p_limit, p_day date)` (`20261120120000_quota_local_day.sql`)
-is the same function with the day given: rating, the lucky list and For you pass the app's local
+The 4-argument `consume_quota` (`20261120120000_quota_local_day.sql`) is the same function with the
+day given: rating, the lucky list and For you pass the app's local
 calendar day from the request. It counts on `p_day` when it is within one day of the UTC date (every
 time zone is) and on the UTC day otherwise, so a phone with a wrong date can't open new counters at
 will. NOTE: changing the device date can spread one user's calls over up to 3 day counters in 24 h,
@@ -474,9 +474,9 @@ run from an empty directory: from the repo, the CLI also pushes `config.toml`'s 
 
 ### Logging a wear
 
-`public.log_wear(p_wear_id uuid, p_garment_ids uuid[], p_worn_on date, p_occasion public.occasion
-default null, p_score smallint default null) returns uuid` is the documented, and only intended,
-way to log a wear. It is `security invoker` with `set search_path = ''`, `execute` revoked from
+`public.log_wear()` (its signature, return value and error codes are in
+[`api.md`](api.md#rpcs)) is the documented, and only intended, way to log a wear. It is
+`security invoker` with `set search_path = ''`, `execute` revoked from
 `public` and `anon`, granted to `authenticated` only. Being `security invoker` (not `security
 definer`) is deliberate: the actual inserts into `outfits`, `outfit_items` and `wears` run as the
 calling role, so they're still gated by those tables' own insert policies — the function doesn't
@@ -508,7 +508,7 @@ the function falls through to step 4's insert, whose primary key conflict on `we
 fresh random uuid per tap), but the behavior is still "raise," never "silently attach to or
 overwrite someone else's wear."
 
-`public.save_outfit(p_garment_ids uuid[]) returns uuid` is the sibling RPC for saving a combination
+`public.save_outfit()` is the sibling RPC for saving a combination
 without logging a wear: same garment-array validation and ownership check as steps 2–3 above (not
 idempotent — it has no caller-supplied id to check against), but it inserts only `outfits` (with
 `saved_at = now()`) and `outfit_items`, no `wears` row, and returns the outfit id instead. Calling
@@ -633,9 +633,8 @@ inside them, never in `src/`.
   `auth.identities` with provider `apple` (read with the service role through
   `GET /auth/v1/admin/users/{uid}`). Only then does it upsert `public.apple_tokens (user_id,
   refresh_token)` with the service role; otherwise it stores nothing and revokes the new token, best
-  effort. It answers 200 with an outcome word (`stored`, `skipped` without the `APPLE_*` secrets,
-  `invalid`, `exchange_failed`, `identity_mismatch`, `lookup_failed`, `store_failed`); the token
-  never leaves the server.
+  effort. It answers 200 with an outcome word ([`api.md`](api.md#apple-token)); the token never leaves
+  the server.
 - **`delete-account`** — in this order:
   0. confirms the caller with `GET /auth/v1/user` and the caller's own token, before anything
      irreversible; only Auth's `user_not_found` means an earlier attempt already finished, so it
@@ -707,8 +706,8 @@ inside them, never in `src/`.
   caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still
   reads every row. Photo URLs are signed with the service role for 7 days,
   only for `{uid}/{garmentId}/{full,thumb}.webp` paths built from the caller's own garments (a
-  missing variant is `null`, and a garment with no photo at all is left out of `photos`). The answer
-  is `{ exportedAt, profile, garments, outfits, wears, photos: [{ garmentId, full, thumb }] }`.
+  missing variant is `null`, and a garment with no photo at all is left out of `photos`). The answer's
+  shape is in [`api.md`](api.md#export-data).
 
 NOTE: locally the signed export URLs start with the Edge Runtime's internal `SUPABASE_URL`
 (`http://kong:8000`), so they only open after swapping in `http://127.0.0.1:54421`; hosted, it's the

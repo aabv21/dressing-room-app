@@ -56,9 +56,9 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 Every user-called function runs with `verify_jwt = true`, so the gateway checks the session token
 before the function runs; `extract-attributes` is the one exception, and it checks its own
 secret instead. Each function folder has a runtime-neutral `handler.ts`, which the Jest
-`functions` project tests under Node, and a small Deno `index.ts`. The prompts, schemas,
-questions and weights are in [`ai.md`](ai.md), and the tables, policies and grants in
-[`database.md`](database.md).
+`functions` project tests under Node, and a small Deno `index.ts`. Every endpoint's request,
+response, statuses and auth mode are in [`api.md`](api.md); the prompts, schemas, questions and
+weights in [`ai.md`](ai.md); and the tables, policies and grants in [`database.md`](database.md).
 
 ## How a garment gets into the closet
 

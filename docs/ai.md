@@ -98,22 +98,8 @@ enums and the 3-color cap is enforced by the parser.
 Every failure after the garment is loaded ends its `pending` state with `failed` and empty
 attributes, so the garment reaches review for manual entry. Nothing is retried.
 
-| Situation                                                   | Garment `extraction_status`          | Response                     |
-| ----------------------------------------------------------- | ------------------------------------ | ---------------------------- |
-| Not `POST`                                                  | unchanged                            | 405                          |
-| Missing or wrong `x-webhook-secret` (constant-time compare) | unchanged                            | 401                          |
-| Body is not `{ garment_id: <uuid> }`                        | unchanged                            | 400                          |
-| Garment missing, no longer `pending`, or already reviewed (when loaded, or at the write-back), or edited since it was loaded (at the write-back) | unchanged | 200 `{ outcome: 'skipped' }` |
-| Daily quota used up (`consume_quota` returns false)         | `over_quota`; Claude not called      | 200 `{ outcome: 'over_quota' }` |
-| Quota check or profile read errors                          | `failed`                             | 200 `{ outcome: 'failed' }`  |
-| Photo not found (storage answers anything but 200)          | `failed`                             | 200 `{ outcome: 'failed' }`  |
-| Claude non-2xx, network error, or no answer within 30 s     | `failed`                             | 200 `{ outcome: 'failed' }`  |
-| `stop_reason: 'refusal'`                                    | `failed`                             | 200 `{ outcome: 'failed' }`  |
-| No text block, or text that isn't a JSON object             | `failed`                             | 200 `{ outcome: 'failed' }`  |
-| `is_garment: false`                                         | `failed`                             | 200 `{ outcome: 'failed' }`  |
-| `category` outside the clothing type's set                  | `failed`                             | 200 `{ outcome: 'failed' }`  |
-| Valid output                                                | `done`, attributes, `uncertain_fields` | 200 `{ outcome: 'done' }`  |
-| Loading the garment or writing back fails                   | may stay `pending`                   | 500                          |
+Each case's status, body and stored `extraction_status` are in
+[`api.md`](api.md#extract-attributes).
 
 The write-back is `PATCH …/garments?id=eq.<id>&extraction_status=eq.pending&reviewed_at=is.null&updated_at=eq.<loaded value>`,
 where the last value is the garment's `updated_at` as the function read it before calling Claude
@@ -351,9 +337,8 @@ their range are clamped instead of rejected.
 
 ### The `rate-outfit` function
 
-`POST { garment_ids: 2–6 unique uuids, occasion: Occasion | null, date: 'YYYY-MM-DD' }` with the
-user's JWT (`verify_jwt = true`). Garments and the profile are read with that JWT, so RLS applies;
-the quota, `rating_cache` and `weather_cache` use the service role. The cache key hashes each
+The request, the response and every status are in [`api.md`](api.md#rate-outfit). Garments and
+the profile are read with the user's JWT, so RLS applies; the quota, `rating_cache` and `weather_cache` use the service role. The cache key hashes each
 garment's id and rating-relevant columns (category, colors, pattern, formality, fit, seasons,
 warmth, status; not `updated_at`, which logging a wear bumps), the profile's rating-relevant fields
 (`profileIdentity`: clothing type, body type, height, age group, styles and the city's coordinates;
@@ -362,19 +347,7 @@ and rain. `CACHE_VERSION` is 2. `donated` is one more `status` the outfit rules 
 exclude (not `available`), so a donated garment is never a swap candidate, exactly like one in the
 laundry or lent out.
 
-| Case | Response | Logged outcome |
-| --- | --- | --- |
-| Not POST | 405 `method_not_allowed` | `invalid` |
-| No user in the JWT | 401 `unauthorized` | `invalid` |
-| Malformed body | 400 `invalid_input` | `invalid` |
-| An id that is deleted or not the caller's | 404 `garment_not_found` | `invalid` |
-| A garment without a category, or no (top + bottom or one_piece) + shoes | 422 `incomplete` | `invalid` |
-| Cache hit (no quota, no Jev) | 200 cached `RatingResult`; a cached swap whose target is gone or not `available` is answered as `swap: null, noBetterSwap: false` | `cached` |
-| Over the daily quota | 429 `over_quota` | `over_quota` |
-| Jev rated it | 200 `RatingResult`, cached | `rated` |
-| Jev failed, Claude rated it | 200, `estimated: true`, `confidence: null`, cached | `fallback` |
-| Both failed | 503 `rating_unavailable`, nothing cached; the day's quota was already used for it | `unavailable` |
-| Loading garments or the profile, or the quota RPC, failed | 500 `internal` | `error` |
+Each case's status and logged outcome: [`api.md`](api.md#rate-outfit).
 
 **Degraded results.** `rating_cache` stores the result with an internal `degraded` marker, which is
 stripped from every response. A result is degraded when it is a Claude estimate, or when its swap
@@ -392,9 +365,8 @@ in `src/lib/fetchWithTimeout.ts`.
 
 ### The `lucky-list` function
 
-`POST { date: 'YYYY-MM-DD', occasion: Occasion | null }` with the user's JWT (`verify_jwt = true`):
-the day's "feeling lucky" outfits for the Today screen. The whole closet and the profile are read
-with that JWT; the quota, `lucky_cache` and `weather_cache` use the service role.
+The day's "feeling lucky" outfits for the Today screen (request, response and statuses:
+[`api.md`](api.md#lucky-list)). The whole closet and the profile are read with the user's JWT; the quota, `lucky_cache` and `weather_cache` use the service role.
 
 1. Load the garments and the profile, then the weather (also for a small closet: Today shows it).
 2. `missingSlots` non-empty → `{ kind: 'too_small', missing, weather }`, with no cache, quota or Jev.
@@ -455,18 +427,7 @@ The response is `{ kind: 'ok', weather, outfits: { garmentIds, score, freshThisW
 `freshThisWeek` is true when no piece was worn in the last 7 days. A complete closet whose
 candidates all fail the rules answers `outfits: []` (cached; the app shows an empty message).
 
-| Case | Response | Logged outcome |
-| --- | --- | --- |
-| Not POST | 405 `method_not_allowed` | `invalid` |
-| No user in the JWT | 401 `unauthorized` | `invalid` |
-| Malformed body | 400 `invalid_input` | `invalid` |
-| A required slot has no available garment | 200 `too_small` | `too_small` |
-| Cache hit (no quota, no Jev) | 200 cached list | `cached` |
-| Over the daily quota | 429 `over_quota` | `over_quota` |
-| Every candidate rated | 200 list, cached | `ranked` |
-| A rating failed or was cut by the budget, or the forecast failed | 200 list, cached degraded | `degraded` |
-| No candidate passes the rules | 200 `outfits: []`, cached | `empty` |
-| Loading garments or the profile, or the quota RPC, failed | 500 `internal` | `error` |
+Each case's status and logged outcome: [`api.md`](api.md#lucky-list).
 
 **Degraded lists and the latency budget.** Like rate-outfit, `lucky_cache` stores an internal
 `degraded` marker (stripped from responses), and a degraded entry is served for an hour only. A
@@ -770,8 +731,9 @@ and opens it in the system browser.
 
 ### The `for-you` function
 
-`POST { language: 'en' | 'es', date?: 'YYYY-MM-DD' }` (the app's local day) with the user's JWT (`verify_jwt = true`). Garments and the profile
-are read with that JWT, so RLS applies; the quota and `for_you_cache` use the service role. No
+The request (the language and an optional local `date`), the response and every status are in
+[`api.md`](api.md#for-you). Garments and the profile are read with the user's JWT, so RLS
+applies; the quota and `for_you_cache` use the service role. No
 weather is read: the season comes from that date (the UTC date without one) and the profile's latitude (a typed city is geocoded); within
 23.44° of the equator, or without a latitude, there is no season rule.
 
@@ -798,20 +760,7 @@ lineKey, lineParams, searchQuery }[] }`, in rank order, and cached. Once the new
 the user's entries under every other key are deleted (best effort), so `for_you_cache` holds one
 entry per user.
 
-| Case | Response | Logged outcome |
-| --- | --- | --- |
-| Not POST | 405 `method_not_allowed` | `invalid` |
-| No user in the JWT | 401 `unauthorized` | `invalid` |
-| Malformed body or another language | 400 `invalid_input` | `invalid` |
-| Fewer than 3 wardrobe garments | 200 `too_small` | `too_small` |
-| Cache hit (no quota, no models) | 200 cached ideas | `cached` |
-| Over the daily quota, with an expired entry for the same key | 200 that entry's ideas | `stale` |
-| Over the daily quota, no entry for the key | 200 the user's newest entry (any key), minus the ideas the wardrobe now owns | `stale` |
-| Over the daily quota, and no entry with an idea left to show | 429 `over_quota` | `over_quota` |
-| Every fit and every line came back | 200 ideas, cached | `ranked` |
-| A fit failed or was skipped, or an idea got a template line | 200 ideas, cached degraded | `degraded` |
-| No archetype with gain > 0 | 200 `ideas: []`, cached | `empty` |
-| Loading garments or the profile, or the quota RPC, failed | 500 `internal` | `error` |
+Each case's status and logged outcome: [`api.md`](api.md#for-you).
 
 **Degraded answers.** Like the lucky list, `for_you_cache` stores an internal `degraded` marker
 (stripped from responses), and a degraded entry is served for an hour only. With one miss a
