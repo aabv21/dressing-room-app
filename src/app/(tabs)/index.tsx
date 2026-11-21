@@ -1,7 +1,7 @@
 // Today: the weather (opens the city modal), an optional occasion, and the day's outfit with
 // "Another", "I'll wear it" and "How does it look?" (the rating).
 import { router } from 'expo-router';
-import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
+import { Check, Dices, Layers, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -13,10 +13,12 @@ import { formatWeather, formatWeekday } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
 import { useWearLog } from '../../outfits/useWearLog';
+import type { AiError } from '../../outfits/aiClient';
 import { ActionNotice, UndoNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
+import { useWaitStage } from '../../ui/useWaitStage';
 import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 
 // Room for a message shown above the buttons, so it never covers the card's last row.
@@ -94,9 +96,12 @@ function CardHeader({ onRate }: { onRate?: () => void }): React.JSX.Element {
 
 function LoadingCard(): React.JSX.Element {
   const { t } = useI18n();
+  const stage = useWaitStage(true);
+  const label = stage === 'start' ? t('today.loading') : t(`wait.${stage}`);
   return (
-    <View style={styles.card} accessible accessibilityLabel={t('today.loading')} accessibilityLiveRegion="polite">
+    <View style={styles.card} accessible accessibilityLabel={label} accessibilityLiveRegion="polite">
       <CardHeader />
+      {stage === 'start' ? null : <Text style={[styles.muted, styles.waitText]}>{label}</Text>}
       {[0, 1, 2].map((row) => (
         <View key={row} style={styles.placeholderRow}>
           <View style={styles.placeholderThumb} />
@@ -127,6 +132,34 @@ function Message({ children }: { children: string }): React.JSX.Element {
       {children}
     </Text>
   );
+}
+
+/**
+ * The way out of an error. Over quota can't succeed again today and a missing piece won't come back
+ * on a retry, so those lead to Build and the closet instead.
+ */
+function errorAction(error: AiError, t: ReturnType<typeof useI18n>['t'], reload: () => void): CtaAction {
+  if (error === 'over_quota') {
+    return {
+      label: t('today.buildOwn'),
+      tone: 'commit',
+      icon: Layers,
+      onPress: () => {
+        router.push('/build');
+      },
+    };
+  }
+  if (error === 'not_found' || error === 'incomplete') {
+    return {
+      label: t('today.tooSmall.cta'),
+      tone: 'commit',
+      icon: Shirt,
+      onPress: () => {
+        router.push('/closet');
+      },
+    };
+  }
+  return { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: reload };
 }
 
 export default function TodayScreen(): React.JSX.Element {
@@ -190,10 +223,7 @@ export default function TodayScreen(): React.JSX.Element {
   } else if (lucky.state === 'error') {
     const error = lucky.error ?? 'unknown';
     body = <Message>{t(`today.error.${error}`)}</Message>;
-    // Over quota can't succeed again today, so there's no retry.
-    if (error !== 'over_quota') {
-      primary = { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: lucky.reload };
-    }
+    primary = errorAction(error, t, lucky.reload);
   } else if (lucky.state === 'too_small') {
     const slots = lucky.missing.map((slot) => t(`today.missing.${slot}`)).join(', ');
     body = <Message>{t('today.tooSmall', { n: lucky.missing.length, slots })}</Message>;
@@ -209,9 +239,7 @@ export default function TodayScreen(): React.JSX.Element {
     // Every outfit was hidden (a piece went to the laundry) and the refetch failed: say why, offer a retry.
     const error = lucky.refetchError;
     body = <Message>{t(`today.error.${error}`)}</Message>;
-    if (error !== 'over_quota') {
-      primary = { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: lucky.reload };
-    }
+    primary = errorAction(error, t, lucky.reload);
   } else if (outfit === undefined) {
     body = <Message>{occasion === null ? t('today.empty') : t('today.empty.occasion')}</Message>;
   } else {
@@ -370,6 +398,9 @@ const styles = StyleSheet.create({
   // Wraps beside the icon at a large text size instead of running off the screen.
   offlineText: {
     flexShrink: 1,
+  },
+  waitText: {
+    paddingHorizontal: 2,
   },
   fresh: {
     marginTop: 2,

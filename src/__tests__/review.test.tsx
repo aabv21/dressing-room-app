@@ -261,7 +261,7 @@ test('over quota shows its notice', async () => {
   mockCloset.garments = [garment({ id: 'g-1', extraction_status: 'over_quota' })];
   await renderReview();
 
-  expect(screen.getByText("Today's AI limit is reached. Fill in the basics.")).toBeOnTheScreen();
+  expect(screen.getByText("Today's AI limit is reached; it renews tomorrow. Fill in the basics.")).toBeOnTheScreen();
 });
 
 test("an empty queue shows the caught-up state, whose button goes back", async () => {

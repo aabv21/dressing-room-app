@@ -2,7 +2,7 @@
 // for a low score) with Save / I'll wear it. Pushed from Today and Build: `/rate?ids=…[&occasion=…]`.
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, CircleAlert, RotateCw, Sparkles } from 'lucide-react-native';
+import { Check, CircleAlert, Layers, RotateCw, Sparkles } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -32,10 +32,11 @@ import type { RatingReason, RatingResult } from '../outfits/types';
 import { useWearLog } from '../outfits/useWearLog';
 import { announceForAccessibility } from '../ui/a11y';
 import { ActionNotice, UndoNotice } from '../ui/ActionNotice';
-import { AnchoredCta } from '../ui/AnchoredCta';
+import { AnchoredCta, type CtaAction } from '../ui/AnchoredCta';
 import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
+import { useWaitStage } from '../ui/useWaitStage';
 import { colors, fontSizes, gradients, layout, radii, spacing } from '../ui/theme';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -354,6 +355,8 @@ function RateOutfit({
     [wearBusy, clearError],
   );
 
+  const waitStage = useWaitStage(rating.kind === 'loading');
+
   const retry = useCallback(() => {
     setRating({ kind: 'loading' });
     setAttempt((value) => value + 1);
@@ -391,7 +394,7 @@ function RateOutfit({
       <View style={styles.loading}>
         <ScoreRingPlaceholder />
         <Text style={styles.loadingText} accessibilityLiveRegion="polite">
-          {t('rate.loading')}
+          {waitStage === 'start' ? t('rate.loading') : t(`wait.${waitStage}`)}
         </Text>
       </View>
     );
@@ -403,16 +406,21 @@ function RateOutfit({
       </Text>
     );
     const retryable = error === 'network' || error === 'unavailable' || error === 'unknown';
-    cta = (
-      <AnchoredCta
-        chrome="none"
-        primary={
-          retryable
-            ? { label: t('rate.retry'), tone: 'commit', icon: RotateCw, onPress: retry }
-            : { label: t('rate.goBack'), tone: 'commit', onPress: leaveToBuild }
-        }
-      />
-    );
+    let primary: CtaAction = { label: t('rate.goBack'), tone: 'commit', onPress: leaveToBuild };
+    if (retryable) {
+      primary = { label: t('rate.retry'), tone: 'commit', icon: RotateCw, onPress: retry };
+    } else if (error === 'over_quota') {
+      // Unwinds to the Build tab under this screen, or opens it when the rating came from Today.
+      primary = {
+        label: t('rate.buildOwn'),
+        tone: 'commit',
+        icon: Layers,
+        onPress: () => {
+          router.navigate('/build');
+        },
+      };
+    }
+    cta = <AnchoredCta chrome="none" primary={primary} />;
   } else {
     const { result } = rating;
     body = (

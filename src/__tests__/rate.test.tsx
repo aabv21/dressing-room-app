@@ -1,7 +1,7 @@
 // The "How does it look?" result screen (mockup 01 screen 3): the score ring, label, AI confidence,
 // reasons, a one-tap swap, and Save / I'll wear it. Rendered directly with the closet, the AI
 // client and the outfit repository mocked.
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { randomUUID } from 'expo-crypto';
 import { router } from 'expo-router';
 
@@ -25,7 +25,7 @@ const BOOTS = '00000000-0000-4000-8000-000000000004';
 
 const mockParams: { ids?: string; occasion?: string } = {};
 jest.mock('expo-router', () => ({
-  router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), canGoBack: jest.fn(() => true) },
+  router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), navigate: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
 }));
 
@@ -103,6 +103,7 @@ beforeEach(() => {
   jest.mocked(router.back).mockClear();
   jest.mocked(router.replace).mockClear();
   jest.mocked(router.push).mockClear();
+  jest.mocked(router.navigate).mockClear();
   mockRefresh.mockClear();
   kvRemove('outfit.worn.user-1');
   kvRemove(wearQueueKey('user-1'));
@@ -488,12 +489,36 @@ test('offline, I\'ll wear it is queued and shows Logged with the note', async ()
   expect(screen.queryByText("Logged — it syncs when you're back online.")).toBeNull();
 });
 
-test('a 429 shows the quota message', async () => {
+test('a 429 says when the quota renews and offers Build instead of a retry', async () => {
   mockedRate.mockResolvedValue({ ok: false, error: 'over_quota' });
   await render(<RateScreen />);
 
   expect(await screen.findByText("You've used today's AI ratings. Try again tomorrow.")).toBeOnTheScreen();
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Build your own' }));
+  expect(router.navigate).toHaveBeenCalledWith('/build');
+});
+
+test('a long rating says so in stages', async () => {
+  jest.useFakeTimers();
+  try {
+    mockedRate.mockReturnValue(new Promise(() => undefined));
+    await render(<RateScreen />);
+
+    expect(screen.getByText('Looking at your outfit…')).toBeOnTheScreen();
+    await act(async () => {
+      jest.advanceTimersByTime(6000);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Still thinking…')).toBeOnTheScreen();
+    await act(async () => {
+      jest.advanceTimersByTime(14000);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Almost there…')).toBeOnTheScreen();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test.each(['network', 'unavailable'] as const)('a %s error shows a retry that rates again', async (error) => {

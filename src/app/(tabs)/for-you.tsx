@@ -12,6 +12,7 @@ import type { ForYouCard } from '../../outfits/types';
 import { useForYou } from '../../outfits/useForYou';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { Screen } from '../../ui/Screen';
+import { useWaitStage } from '../../ui/useWaitStage';
 import { colors, fontSizes, layout, radii, shadows, spacing } from '../../ui/theme';
 
 type Translate = ReturnType<typeof useI18n>['t'];
@@ -78,8 +79,11 @@ function IdeaCard({ idea }: { idea: ForYouCard }): React.JSX.Element {
 
 function LoadingCards(): React.JSX.Element {
   const { t } = useI18n();
+  const stage = useWaitStage(true);
+  const label = stage === 'start' ? t('forYou.loading') : t(`wait.${stage}`);
   return (
-    <View style={styles.cards} accessible accessibilityLabel={t('forYou.loading')} accessibilityLiveRegion="polite">
+    <View style={styles.cards} accessible accessibilityLabel={label} accessibilityLiveRegion="polite">
+      {stage === 'start' ? null : <Text style={styles.waitText}>{label}</Text>}
       {[0, 1, 2].map((row) => (
         <View key={row} style={styles.card}>
           <View style={styles.cardHeader}>
@@ -169,6 +173,10 @@ export default function ForYouScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  waitText: {
+    color: colors.muted,
+    fontSize: fontSizes.bodySmall,
+  },
   intro: {
     color: colors.muted,
     fontSize: fontSizes.bodySmall,

@@ -172,11 +172,12 @@ Outfits, Stats and Diary:
 
 - `src/__tests__/today.test.tsx` — Today's lucky list: the occasion chips, debounced refetches on
   closet changes, one fetch at a time, "I'll wear it" with a reused wear id and its Undo, the too-small, weather,
-  quota and error states, and the stored list offline (its note wraps at a large text size).
+  quota and error states (over quota opens Build, a missing piece the closet), the staged loading
+  copy, and the stored list offline (its note wraps at a large text size).
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
   row, unavailable garments left out, and a slot row at a large text size.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
-  the swap, Save, "I'll wear it" and its Undo, the quota and error states, and the ring named in Spanish too.
+  the swap, Save, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, and one request at a time.
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
@@ -202,7 +203,7 @@ Outfits, Stats and Diary:
   and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
   a large text size) and `ScoreRing.test.tsx` (one progressbar named "Score", the number and
   caption capped for large text with the ring growing with them).
-- `src/__tests__/closet-stats.test.tsx` — the segments, the KPIs per period ("1 outfit logged",
+- `src/__tests__/closet-stats.test.tsx` — the segments, a failed history read and its retry, the KPIs per period ("1 outfit logged",
   "2 outfits logged"), most worn, a color opening the filtered closet, the balance, the unused list
   (Suggest tomorrow and Donate, its row at the largest text sizes) and donated garments left out of Items and
   Build.
@@ -224,7 +225,8 @@ Shared UI, the app shell and helpers:
   label's cap), `ActionNotice.test.tsx` (an error is an alert, both notes are live regions, Undo is a named button), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection, the
   large content viewer and the violet selected style, shared with the chips), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
   (`useBottomChrome` and `useLargeText`), `theme.test.ts` (text contrast, including the selected label), `themeUsage.test.ts` (no component
-  hard-codes a font size or a color, and the type scale stays at 11 pt or more), `Screen.test.tsx`
+  hard-codes a font size or a color, and the type scale stays at 11 pt or more), `useWaitStage.test.tsx`
+  (the wait's stages at 6 and 20 s, starting over for each wait, its timers cleared on unmount), `Screen.test.tsx`
   (the status-bar scrim above scrolled content, the CTA backdrop with no chrome) and
   `feedback.test.ts` (`tapHaptic`: a light impact for a commit, a selection tick for a choice, and
   a device that rejects haptics neither throws nor leaves the rejection unhandled).

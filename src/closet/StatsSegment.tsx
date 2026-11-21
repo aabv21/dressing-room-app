@@ -1,6 +1,7 @@
 // The Closet tab's Stats segment, computed on the device from the closet and the wear history; no AI cost.
 import { Image } from 'expo-image';
 import { router, useIsFocused } from 'expo-router';
+import { RotateCw } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -186,6 +187,7 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
     wears: history,
     offlineSince,
     failed: loadFailed,
+    reload,
   } = useWears(addDays(rangeEnd, -STREAK_HISTORY_DAYS), rangeEnd, { enabled: focused, record: 'replace' });
   // A pin tapped past midnight moves "today" forward before the next focus refetches.
   const [tapDay, setToday] = useState<string | null>(null);
@@ -388,7 +390,15 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
         />
       </ScrollView>
 
-      {loadFailed ? <Text style={styles.error}>{t('stats.error')}</Text> : null}
+      {loadFailed ? (
+        <View style={styles.failed}>
+          <Text style={styles.error}>{t('stats.error')}</Text>
+          <Pressable accessibilityRole="button" onPress={reload} style={styles.retry}>
+            <RotateCw size={14} color={colors.accentText} />
+            <Text style={styles.retryLabel}>{t('stats.retry')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {offlineSince === null ? null : (
         <Text style={styles.offline}>{t('stats.offline', { date: formatMonthDay(locale, offlineSince) })}</Text>
       )}
@@ -528,6 +538,26 @@ const styles = StyleSheet.create({
   error: {
     fontSize: fontSizes.bodySmall,
     color: colors.error,
+  },
+  failed: {
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
+  retry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    minHeight: layout.minHitTarget,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.surface,
+  },
+  retryLabel: {
+    fontSize: fontSizes.body,
+    fontWeight: '700',
+    color: colors.accentText,
   },
   offline: {
     fontSize: fontSizes.bodySmall,

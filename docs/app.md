@@ -28,7 +28,8 @@ handling), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`,
 (`useBottomChrome`, `useLargeText`), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
 `theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
-`fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. A chosen chip or segment
+`fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. `useWaitStage` times an
+AI wait, so Today, the rating and For you say "Still thinking…" at 6 s and "Almost there…" at 20 s. A chosen chip or segment
 is filled with the `selected` violet, which Build's active slot row takes as its border. `feedback.ts` holds `tapHaptic` (a light impact
 for commit actions, a selection tick for choices, silent on a device without haptics) and the
 pressed styles. `charts/` holds the Stats charts: `KpiTile`, `HorizontalBars` (most worn; bars grow

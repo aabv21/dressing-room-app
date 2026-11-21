@@ -206,7 +206,7 @@ describe('the other states', () => {
     mockedFetch.mockReturnValue(failed('over_quota'));
     await render(<ForYouScreen />);
 
-    expect(await screen.findByText("You've used today's new ideas. Showing your last ones.")).toBeOnTheScreen();
+    expect(await screen.findByText("You've used today's new ideas. Showing your last ones until tomorrow.")).toBeOnTheScreen();
     expect(screen.getByText('Blazer · Camel')).toBeOnTheScreen();
   });
 

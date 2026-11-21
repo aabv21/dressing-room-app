@@ -610,12 +610,40 @@ describe('other states', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(2);
   });
 
-  test('over quota shows the quota message without a retry', async () => {
+  test('over quota says when it renews and offers Build instead of a retry', async () => {
     mockedFetch.mockResolvedValue({ ok: false, error: 'over_quota' });
     await render(<TodayScreen />);
 
     expect(await screen.findByText("You've used today's outfit suggestions. Try again tomorrow.")).toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Build your own' }));
+    expect(mockedPush).toHaveBeenCalledWith('/build');
+  });
+
+  test.each([
+    ['not_found', 'Some pieces are no longer in your closet.'],
+    ['incomplete', 'Your closet is missing a piece for an outfit.'],
+  ] as const)('%s offers the closet instead of a retry that would fail again', async (error, message) => {
+    mockedFetch.mockResolvedValue({ ok: false, error });
+    await render(<TodayScreen />);
+
+    expect(await screen.findByText(message)).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Go to your closet' }));
+    expect(mockedPush).toHaveBeenCalledWith('/closet');
+  });
+
+  test('a long wait says so in stages', async () => {
+    jest.useFakeTimers();
+    mockedFetch.mockReturnValue(new Promise(() => undefined));
+    await render(<TodayScreen />);
+
+    expect(screen.queryByText('Still thinking…')).toBeNull();
+    await advance(6000);
+    expect(screen.getByText('Still thinking…')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Still thinking…')).toBeOnTheScreen();
+    await advance(14000);
+    expect(screen.getByText('Almost there…')).toBeOnTheScreen();
   });
 
   test('an empty list says so instead of showing an empty card', async () => {
