@@ -1,25 +1,21 @@
 // Today (mockup 01 screen 1): the day's weather, an optional occasion, and the "feeling lucky"
 // outfit with "Another" and "I'll wear it". The weather line opens the city modal; the card's
 // "How does it look?" chip opens the rating.
-import { randomUUID } from 'expo-crypto';
 import { router, useIsFocused } from 'expo-router';
 import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../../auth/AuthProvider';
 import { OCCASIONS, type Occasion } from '../../closet/catalog';
 import { useCloset } from '../../closet/ClosetProvider';
 import { useI18n } from '../../i18n';
-import type { RequestError } from '../../lib/requestResult';
 import { formatWeather, formatWeekday } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
-import type { LuckyOutfit } from '../../outfits/types';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
-import { logWear } from '../../outfits/outfitRepository';
-import { logWearOrQueue, queuedWears } from '../../outfits/wearQueue';
-import { useWornToday } from '../../outfits/wornToday';
+import { useWearLog } from '../../outfits/useWearLog';
 import { getProfile } from '../../profile/profileRepository';
+import { ActionNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
@@ -31,8 +27,6 @@ const CHIP_AI_HEIGHT = 28;
 const WEATHER_LINE_HEIGHT = 18;
 // The weather line is one short text row; the slop tops its tap area up to the 44 pt minimum.
 const WEATHER_SLOP = (layout.minHitTarget - WEATHER_LINE_HEIGHT) / 2;
-
-const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
 
 /**
  * The weather line under the title, which opens the city modal: the day's weather; with none, why
@@ -160,86 +154,6 @@ function Message({ children }: { children: string }): React.JSX.Element {
   );
 }
 
-/**
- * "I'll wear it" for Today's outfits, one at a time: the ref locks a second tap before the
- * re-render lands. Which outfits are logged comes from the shared worn-today record (the rating
- * screen writes it too); `wearError` is keyed by `<day>|<ids>`, so it belongs to the outfit it was
- * for.
- */
-function useWearLog(
-  day: string,
-  occasion: Occasion | null,
-): {
-  pending: boolean;
-  isLogged: (garmentIds: readonly string[]) => boolean;
-  wearError: { key: string; error: RequestError } | null;
-  setWearError: (next: null) => void;
-  /** The outfit whose wear waits in the offline queue, to show its note. */
-  queuedKey: string | null;
-  wear: (worn: LuckyOutfit, key: string) => Promise<void>;
-} {
-  const { t } = useI18n();
-  const { userId } = useAuth();
-  const { refresh } = useCloset();
-  // The outfit whose wear went to the offline queue, and that wear's id: the note shows while it's queued.
-  const [queued, setQueued] = useState<{ key: string; wearId: string } | null>(null);
-  // False once the screen is gone: a late wear result is dropped.
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-
-  const busy = useRef(false);
-  const [pending, setPending] = useState(false);
-  const { isWorn, markWorn } = useWornToday(day);
-  const [wearError, setWearError] = useState<{ key: string; error: RequestError } | null>(null);
-  // One id per outfit until its wear succeeds, kept across retries (also after trying another
-  // outfit in between), so a lost response can't log it twice.
-  const wearIds = useRef(new Map<string, string>());
-
-  const wear = useCallback(
-    async (worn: LuckyOutfit, key: string) => {
-      if (busy.current) return;
-      busy.current = true;
-      setPending(true);
-      setWearError(null);
-      let id = wearIds.current.get(key);
-      if (id === undefined) {
-        id = randomUUID();
-        wearIds.current.set(key, id);
-      }
-      const input = { wearId: id, garmentIds: worn.garmentIds, wornOn: day, occasion, score: worn.score };
-      // Offline the wear waits in the queue (WearQueueFlusher sends it), and shows as logged now.
-      const outcome = userId === null ? { status: 'failed' as const, error: 'unknown' as const } : await logWearOrQueue(userId, input, logWear);
-      busy.current = false;
-      if (!mounted.current) return;
-      setPending(false);
-      if (outcome.status === 'failed') {
-        setWearError({ key, error: outcome.error });
-        AccessibilityInfo.announceForAccessibility(t(`outfit.error.${outcome.error}`));
-        return;
-      }
-      wearIds.current.delete(key);
-      markWorn(worn.garmentIds);
-      if (outcome.status === 'queued') {
-        setQueued({ key, wearId: id });
-        AccessibilityInfo.announceForAccessibility(t('outfit.queued'));
-      } else {
-        void refresh();
-      }
-    },
-    [day, occasion, markWorn, refresh, t, userId],
-  );
-
-  // Read on every render: the flusher's closet refresh re-renders Today once the wear is sent.
-  const stillQueued =
-    queued !== null && userId !== null && queuedWears(userId).some((wear) => wear.wearId === queued.wearId);
-  return { pending, isLogged: isWorn, wearError, setWearError, queuedKey: stillQueued ? queued.key : null, wear };
-}
-
 export default function TodayScreen(): React.JSX.Element {
   const { t, locale } = useI18n();
   const [occasion, setOccasion] = useTodayOccasion();
@@ -249,9 +163,9 @@ export default function TodayScreen(): React.JSX.Element {
 
   const outfit = lucky.state === 'ready' ? lucky.outfits[lucky.index] : undefined;
   const pieces = useMemo(() => outfit?.garmentIds.flatMap((id) => byId.get(id) ?? []) ?? [], [outfit, byId]);
-  const shownKey = outfit === undefined ? null : `${lucky.day}|${outfitKey(outfit)}`;
 
-  const { pending, isLogged, wearError, setWearError, queuedKey, wear } = useWearLog(lucky.day, occasion);
+  // Keyed by outfit: a failed or queued wear's note stays with the outfit it was for.
+  const wearLog = useWearLog(lucky.day);
 
   const weatherResolved = lucky.state === 'ready' || lucky.state === 'too_small';
   const cityWithoutWeather = useProfileCity(weatherResolved && lucky.weather === null);
@@ -268,14 +182,11 @@ export default function TodayScreen(): React.JSX.Element {
   }
 
   let notice: React.ReactNode = undefined;
-  if (wearError !== null && wearError.key === shownKey) {
-    notice = (
-      <Text style={styles.actionError} accessibilityRole="alert">
-        {t(`outfit.error.${wearError.error}`)}
-      </Text>
-    );
-  } else if (queuedKey !== null && queuedKey === shownKey) {
-    notice = <Text style={styles.queued}>{t('outfit.queued')}</Text>;
+  const wearError = outfit === undefined ? null : wearLog.errorFor(outfit.garmentIds);
+  if (wearError !== null) {
+    notice = <ActionNotice tone="error">{t(`outfit.error.${wearError}`)}</ActionNotice>;
+  } else if (outfit !== undefined && wearLog.isQueued(outfit.garmentIds)) {
+    notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
 
   let body: React.ReactNode;
@@ -301,7 +212,7 @@ export default function TodayScreen(): React.JSX.Element {
         router.push('/closet');
       },
     };
-  } else if ((outfit === undefined || shownKey === null) && lucky.refetchError !== null) {
+  } else if (outfit === undefined && lucky.refetchError !== null) {
     // Every listed outfit was hidden (a piece went to the laundry) and the refetch failed: the list
     // isn't really empty, so say why and offer to try again.
     const error = lucky.refetchError;
@@ -309,10 +220,10 @@ export default function TodayScreen(): React.JSX.Element {
     if (error !== 'over_quota') {
       primary = { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: lucky.reload };
     }
-  } else if (outfit === undefined || shownKey === null) {
+  } else if (outfit === undefined) {
     body = <Message>{occasion === null ? t('today.empty') : t('today.empty.occasion')}</Message>;
   } else {
-    const logged = isLogged(outfit.garmentIds);
+    const logged = wearLog.isLogged(outfit.garmentIds);
     body = (
       <View style={styles.card}>
         <CardHeader
@@ -331,9 +242,9 @@ export default function TodayScreen(): React.JSX.Element {
       label: t('today.another'),
       tone: 'ghost',
       icon: Shuffle,
-      disabled: pending || lucky.outfits.length < 2,
+      disabled: wearLog.busy || lucky.outfits.length < 2,
       onPress: () => {
-        setWearError(null);
+        wearLog.clearError();
         lucky.next();
       },
     };
@@ -341,9 +252,9 @@ export default function TodayScreen(): React.JSX.Element {
       label: logged ? t('outfit.logged') : t('outfit.wear'),
       tone: 'commit',
       ...(logged ? {} : { icon: Check }),
-      disabled: logged || pending,
+      disabled: logged || wearLog.busy,
       onPress: () => {
-        void wear(outfit, shownKey);
+        void wearLog.log(outfit.garmentIds, occasion, outfit.score);
       },
     };
   }
@@ -375,7 +286,7 @@ export default function TodayScreen(): React.JSX.Element {
           options={OCCASIONS.map((value) => ({ value, label: t(`occasion.${value}`) }))}
           selected={occasion === null ? [] : [occasion]}
           onChange={([next]: Occasion[]) => {
-            setWearError(null);
+            wearLog.clearError();
             setOccasion(next ?? null);
           }}
         />
@@ -508,28 +419,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingTop: spacing.lg,
     paddingHorizontal: spacing.sm,
-  },
-  actionError: {
-    alignSelf: 'center',
-    overflow: 'hidden',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.cell,
-    backgroundColor: colors.errorTint,
-    textAlign: 'center',
-    color: colors.error,
-    fontSize: 14,
-  },
-  queued: {
-    alignSelf: 'center',
-    overflow: 'hidden',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.cell,
-    backgroundColor: colors.tint,
-    textAlign: 'center',
-    color: colors.ink,
-    fontSize: 14,
   },
   noticeRoom: {
     height: NOTICE_ROOM,

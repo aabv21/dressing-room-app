@@ -5,7 +5,7 @@
 import { Image } from 'expo-image';
 import { useIsFocused } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
@@ -17,9 +17,9 @@ import { OutfitStack } from '../outfits/OutfitStack';
 import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
-import { dequeueWear, queuedWears, withQueuedWears } from '../outfits/wearQueue';
-import { mergeStoredWears, readStoredWears, wearsInRange } from '../stats/storedWears';
-import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
+import { dequeueWear, queuedWears } from '../outfits/wearQueue';
+import { useWears } from '../stats/useWears';
+import { deleteWear, type WearWithItems } from '../stats/wearsRepository';
 import { useLargeText } from '../ui/layout';
 import { colors, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
 import { slotOf } from './catalog';
@@ -252,15 +252,7 @@ export function DiarySegment(): React.JSX.Element {
   const { userId } = useAuth();
   const { garments, thumbUrls, refresh } = useCloset();
   const focused = useIsFocused();
-  const [today, setToday] = useState(() => localDate());
-  const [month, setMonth] = useState<Month>(() => monthOf(today));
-  // Keyed by month, so a month switch never shows the previous month's wears in the new grid.
-  // `offlineSince` is set when the month comes from the stored history because the fetch failed.
-  const [loaded, setLoaded] = useState<{ key: string; wears: WearWithItems[]; offlineSince: string | null } | null>(
-    null,
-  );
-  const [failedKey, setFailedKey] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
+  const [month, setMonth] = useState<Month>(() => monthOf(localDate()));
   const [picked, setPicked] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<{ id: string; error: RequestError } | null>(null);
@@ -270,48 +262,15 @@ export function DiarySegment(): React.JSX.Element {
   const lastDay = weeks.flat().filter((cell) => cell.inMonth).at(-1)?.day ?? `${key}-01`;
 
   // Refetched on focus (a wear logged on Today shows on return), on a month switch and after a delete.
-  useEffect(() => {
-    if (!focused) {
-      return undefined;
-    }
-    let current = true;
-    const from = `${key}-01`;
-    listWears(from, lastDay).then(
-      (wears) => {
-        const day = localDate();
-        // Stored only up to today: the rest of the month hasn't happened yet.
-        if (userId !== null) mergeStoredWears(userId, from, lastDay < day ? lastDay : day, wears);
-        if (current) {
-          setToday(day);
-          setLoaded({ key, wears: userId === null ? wears : withQueuedWears(userId, wears, from, lastDay), offlineSince: null });
-          setFailedKey(null);
-        }
-      },
-      () => {
-        if (!current) return;
-        const stored = userId === null ? null : readStoredWears(userId);
-        const wears = stored === null ? null : wearsInRange(stored, from, lastDay);
-        if (userId !== null && stored !== null && wears !== null) {
-          setLoaded({ key, wears: withQueuedWears(userId, wears, from, lastDay), offlineSince: stored.to });
-          setFailedKey(null);
-        } else {
-          setFailedKey(key);
-        }
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [focused, key, lastDay, reload, userId]);
-
-  const wears = loaded?.key === key ? loaded.wears : null;
-  const failed = failedKey === key;
-  const offlineSince = loaded?.key === key ? loaded.offlineSince : null;
+  const { wears, offlineSince, failed, today, reload, removeLocal } = useWears(`${key}-01`, lastDay, {
+    enabled: focused,
+    record: 'merge',
+  });
   // Read with the month's wears: a queued wear (sent or deleted since) moves both.
   const queuedIds = useMemo(
     () => new Set(userId === null ? [] : queuedWears(userId).map((queued) => queued.wearId)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `loaded` changes whenever the queue's rows can have
-    [userId, loaded],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `wears` changes whenever the queue's rows can have
+    [userId, wears],
   );
   const byDay = useMemo(() => diaryByDay(wears ?? []), [wears]);
   const byId = useMemo(() => new Map(garments.map((g) => [g.id, g])), [garments]);
@@ -354,11 +313,11 @@ export function DiarySegment(): React.JSX.Element {
         );
         if (!stillWorn) unmarkWornToday(userId, wear.garmentIds);
       }
-      setLoaded((prev) => (prev === null ? prev : { ...prev, wears: prev.wears.filter((w) => w.id !== wear.id) }));
-      setReload((n) => n + 1);
+      removeLocal(wear.id);
+      reload();
       void refresh();
     },
-    [userId, wears, refresh],
+    [userId, wears, refresh, removeLocal, reload],
   );
 
   const confirmDelete = useCallback(

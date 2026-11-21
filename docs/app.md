@@ -21,7 +21,9 @@ code (components, hooks, utils) stays outside `src/app/`.
 
 Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
 handling), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
-(`useBottomChrome`, `useLargeText`) and `theme.ts`. `feedback.ts` holds `tapHaptic` (a light impact
+(`useBottomChrome`, `useLargeText`), `ActionNotice` (an action's error or queued note above the
+anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
+`theme.ts`. `feedback.ts` holds `tapHaptic` (a light impact
 for commit actions, a selection tick for choices, silent on a device without haptics) and the
 pressed styles. `charts/` holds the Stats charts: `KpiTile`, `HorizontalBars` (most worn; bars grow
 with reanimated unless reduced motion is on, rows tappable) and `ProportionBar` (the colors, real
@@ -129,6 +131,8 @@ state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx
 - `kv.ts`: the only `expo-sqlite/kv-store` caller. `kvKeys` lists every key for the deletion
   cleanup; once an account's data is dropped, `kvSet` refuses keys with its id as a segment until
   that account signs in again.
+- `useOnResume.ts`: runs a callback on returning to the foreground and when the network comes back;
+  the closet, the upload queue and the wear queue catch up through it.
 - `e2eLaunch.ts`: `quietDevToastsForE2e` hides LogBox's toasts in a dev build Maestro launched with
   `-e2e 1`.
 
@@ -143,6 +147,9 @@ state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx
 - `buildSelection.ts`: Build's selection: one garment per slot, a one-piece and top/bottom exclude
   each other, one bag, hat or accessory, so a built outfit has at most five pieces against
   `rate-outfit`'s six; `canRate`, `selectionIds` and `retainSelection`.
+- `useStoredQuery.ts`: a function answer fetched one request at a time for the latest inputs and
+  shown over its stored copy until this session has one (`offline` when the fetch couldn't
+  connect); Today's list and For you are built on it.
 - `useLuckyList.ts` and `storedLucky.ts`: Today's list with debounced closet-driven refetches, the
   last good list per occasion for the day in kv `today.lucky.<userId>`, and `useTodayOccasion`.
 - `useForYou.ts` and `storedForYou.ts`: For you's ideas in the app's language, fetched on focus one
@@ -152,6 +159,9 @@ state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx
   order, one flush per user, only under that user's stored session, drops a wear the server refuses
   as `invalid` and stops at any other failure; `withQueuedWears` adds unsent wears to Stats and
   Diary. `WearQueueFlusher.tsx` flushes on mount, foreground and reconnect.
+- `useWearLog.ts`: "I'll wear it" for Today and the rating screen: one wear at a time, one wear id
+  per outfit until it succeeds, logged or queued, marked worn, announced, and the failed or queued
+  note kept with the outfit it was for.
 - `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
   Today and the rating screen; Diary's Delete calls `unmarkWornToday`.
 - `OutfitStack.tsx`, `ScoreRing.tsx`, and `types.ts` (the functions' response types, re-exported
@@ -164,7 +174,8 @@ ranges and the Monday-first month grid), `statsModel.ts` (the KPIs, most worn, c
 balance, the unused list and the diary by day), `wearsRepository.ts` (`listWears` in pages of 1000,
 at most 20, and `deleteWear`; the trigger lowers the counts), `storedWears.ts` (the last fetched
 wears in kv `wears.v1.<userId>` with the range they cover, read when a fetch fails) and
-`useWearHistory.ts` (Stats' year of wears).
+`useWears.ts` (a range's wears for Stats' year and Diary's month, fetched on focus with the queued
+ones added, stored, and served from the stored copy offline).
 
 ## Account privacy (`src/account/`)
 

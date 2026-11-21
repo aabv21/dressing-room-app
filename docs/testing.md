@@ -181,6 +181,14 @@ Outfits, Stats and Diary:
   once sending each wear once), `withQueuedWears` for Stats and Diary, and a wear being sent that
   can't be dequeued. `WearQueueFlusher.test.tsx`: flushes on mount with the stored session as the
   guard, on foreground and reconnect, and refreshes the closet after a send.
+- `src/outfits/__tests__/useStoredQuery.test.tsx` — one request in flight with triggers queued
+  once for the latest inputs, a queued trigger dropped once disabled, the stored answer while the
+  first fetch runs and offline, a failed refetch keeping this session's answer, reload, another
+  query's answer kept only as the last one, and nothing set or stored after unmount.
+- `src/outfits/__tests__/useWearLog.test.tsx` — a wear logged once (a second tap ignored), marked
+  worn and refreshing the closet; a failure kept for its outfit and announced, with the retry
+  reusing the wear id; the offline queue and its note; and a late answer after unmount still
+  marking the outfit worn.
 - `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping and
   `localDate`), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
@@ -199,12 +207,14 @@ Outfits, Stats and Diary:
   `wearsRepository.test.ts` (the wears query, its paging in ranges of 1000 until a short page,
   at most 20 pages, a failed later page throwing, and Diary's delete) and `storedWears.test.ts` (the
   stored year round-trips, a malformed value reads as null, `wearsInRange` refuses a range before
-  the stored one, and a fetched month merges into the stored range).
+  the stored one, and a fetched month merges into the stored range) and `useWears.test.tsx` (a
+  range with its queued wears, replaced or merged into the stored record, the stored fallback
+  for each, a new range never showing the previous one's wears, reload and a local delete).
 
 Shared UI, the app shell and helpers:
 
 - `src/ui/__tests__/` — `AnchoredCta.test.tsx` and `ChipGroup.test.tsx` (roles, states and the CTA
-  label's cap), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection and the
+  label's cap), `ActionNotice.test.tsx` (an error is an alert, both notes are live regions), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection and the
   large content viewer), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
   (`useBottomChrome` and `useLargeText`), `theme.test.ts` (error text contrast), `Screen.test.tsx`
   (the status-bar scrim above scrolled content, the CTA backdrop with no chrome) and
@@ -220,7 +230,8 @@ Shared UI, the app shell and helpers:
   language, the override and its persistence).
 - `src/lib/__tests__/` — `supabase.test.ts` (the client's options, a missing URL or key named in the
   error, auto-refresh with the app state), `fetchWithTimeout.test.ts` (12 s, 45 s for function
-  POSTs, 60 s for uploads) and `storedSession.test.ts`.
+  POSTs, 60 s for uploads), `storedSession.test.ts` and `useOnResume.test.tsx` (foreground and
+  reconnect, the first network report only a baseline, the latest callback without resubscribing).
 - `src/perf/__tests__/` — `frameStats.test.ts` (dropped frames at 60 and 120 Hz, the inferred
   refresh rate) and `PerfHud.test.tsx` (tap to reset, long-press to clear the image caches).
 - `src/__tests__/smoke.test.tsx` — the Today screen renders.

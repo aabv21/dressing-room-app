@@ -2,12 +2,11 @@
 // label, the AI confidence, template reasons, a one-tap swap for a low score — and Save / I'll wear
 // it. Today and Build push it with the garment ids (`ids`, comma-separated) and an optional
 // `occasion`. A root Stack screen inside the tabs guard, so there's no tab bar.
-import { randomUUID } from 'expo-crypto';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronLeft, CircleAlert, RotateCw, Sparkles } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
 import { GARMENT_COLORS, OCCASIONS, type GarmentColor, type Occasion, type Slot } from '../closet/catalog';
@@ -16,14 +15,15 @@ import type { Garment } from '../closet/garmentRepository';
 import { isMessageKey, useI18n, type Locale } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
 import { localDate, rateOutfit, type AiError } from '../outfits/aiClient';
-import { logWear, saveOutfit } from '../outfits/outfitRepository';
+import { saveOutfit } from '../outfits/outfitRepository';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { missingPieceIdea, pieceLabel } from '../outfits/outfitDisplay';
 import { readStoredForYou } from '../outfits/storedForYou';
-import { logWearOrQueue, queuedWears } from '../outfits/wearQueue';
-import { useWornToday } from '../outfits/wornToday';
 import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
 import type { RatingReason, RatingResult } from '../outfits/types';
+import { useWearLog } from '../outfits/useWearLog';
+import { announceForAccessibility } from '../ui/a11y';
+import { ActionNotice } from '../ui/ActionNotice';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
@@ -271,7 +271,7 @@ function RateOutfit({
 }): React.JSX.Element {
   const { t } = useI18n();
   const insets = useScreenContentInsets('none');
-  const { garments, thumbUrls, refresh } = useCloset();
+  const { garments, thumbUrls } = useCloset();
   const byId = useMemo(() => new Map(garments.map((garment) => [garment.id, garment])), [garments]);
 
   const [ids, setIds] = useState(initialIds);
@@ -297,7 +297,7 @@ function RateOutfit({
     };
   }, [ids, occasion, rateable, attempt]);
 
-  // False once the screen is gone: a late save or wear result is dropped.
+  // False once the screen is gone: a late save result is dropped.
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -306,79 +306,55 @@ function RateOutfit({
     };
   }, []);
 
-  // Save and I'll wear it, one at a time. The ref locks a second tap before the re-render lands.
-  const busy = useRef(false);
-  const [pending, setPending] = useState<'save' | 'wear' | null>(null);
-  const [saved, setSaved] = useState(false);
   // Shared with Today, so an outfit logged on either screen (or before a restart) stays logged here.
-  const day = localDate();
-  const { isWorn, markWorn } = useWornToday(day);
-  const logged = isWorn(ids);
-  const [actionError, setActionError] = useState<RequestError | null>(null);
-  // The wear sent to the offline queue: the note shows while it's still there.
-  const [queuedWearId, setQueuedWearId] = useState<string | null>(null);
-  const { userId } = useAuth();
-  // One id per wear attempt, kept across a retry so a lost response can't log it twice.
-  const wearId = useRef<string | null>(null);
-
-  const run = useCallback(
-    async (action: 'save' | 'wear', request: () => Promise<{ ok: true } | { ok: false; error: RequestError }>) => {
-      if (busy.current) return false;
-      busy.current = true;
-      setPending(action);
-      setActionError(null);
-      const outcome = await request();
-      busy.current = false;
-      if (!mounted.current) return false;
-      setPending(null);
-      if (!outcome.ok) {
-        setActionError(outcome.error);
-        AccessibilityInfo.announceForAccessibility(t(`outfit.error.${outcome.error}`));
-      }
-      return outcome.ok;
-    },
-    [t],
-  );
+  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued } = useWearLog(localDate());
+  const logged = isLogged(ids);
+  // Save, one at a time and never during a wear. The ref locks a second tap before the re-render lands.
+  const saving = useRef(false);
+  const [savePending, setSavePending] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<RequestError | null>(null);
+  const pending = savePending || wearBusy;
 
   const save = useCallback(async () => {
-    if (await run('save', () => saveOutfit(ids))) setSaved(true);
-  }, [run, ids]);
+    if (saving.current || wearBusy) return;
+    saving.current = true;
+    setSavePending(true);
+    setSaveError(null);
+    clearError();
+    const outcome = await saveOutfit(ids);
+    saving.current = false;
+    if (!mounted.current) return;
+    setSavePending(false);
+    if (outcome.ok) {
+      setSaved(true);
+    } else {
+      setSaveError(outcome.error);
+      announceForAccessibility(t(`outfit.error.${outcome.error}`));
+    }
+  }, [ids, t, wearBusy, clearError]);
 
   const wear = useCallback(
-    async (score: number) => {
-      const id = (wearId.current ??= randomUUID());
-      // Set inside the request, read after it: an object, so the flag isn't narrowed to its initial value.
-      const result = { queued: false };
-      const done = await run('wear', async () => {
-        if (userId === null) return { ok: false, error: 'unknown' };
-        // Offline the wear waits in the queue (WearQueueFlusher sends it) and shows as logged now.
-        const outcome = await logWearOrQueue(userId, { wearId: id, garmentIds: ids, wornOn: day, occasion, score }, logWear);
-        result.queued = outcome.status === 'queued';
-        return outcome.status === 'failed' ? { ok: false, error: outcome.error } : { ok: true };
-      });
-      if (done) {
-        markWorn(ids);
-        setQueuedWearId(result.queued ? id : null);
-        if (result.queued) {
-          AccessibilityInfo.announceForAccessibility(t('outfit.queued'));
-        } else {
-          void refresh();
-        }
-      }
+    (score: number) => {
+      if (saving.current) return;
+      setSaveError(null);
+      void log(ids, occasion, score);
     },
-    [run, ids, day, occasion, markWorn, refresh, t, userId],
+    [ids, occasion, log],
   );
 
-  const trySwap = useCallback((fromId: string, toId: string) => {
-    if (busy.current) return;
-    // A different outfit: its own save, wear and rating.
-    wearId.current = null;
-    setQueuedWearId(null);
-    setSaved(false);
-    setActionError(null);
-    setRating({ kind: 'loading' });
-    setIds((current) => current.map((id) => (id === fromId ? toId : id)));
-  }, []);
+  const trySwap = useCallback(
+    (fromId: string, toId: string) => {
+      if (saving.current || wearBusy) return;
+      // A different outfit: its own save, wear and rating.
+      setSaved(false);
+      setSaveError(null);
+      clearError();
+      setRating({ kind: 'loading' });
+      setIds((current) => current.map((id) => (id === fromId ? toId : id)));
+    },
+    [wearBusy, clearError],
+  );
 
   const retry = useCallback(() => {
     setRating({ kind: 'loading' });
@@ -386,19 +362,11 @@ function RateOutfit({
   }, []);
 
   let notice: React.ReactNode = undefined;
+  const actionError = saveError ?? errorFor(ids);
   if (actionError !== null) {
-    notice = (
-      <Text style={styles.actionError} accessibilityRole="alert">
-        {t(`outfit.error.${actionError}`)}
-      </Text>
-    );
-  } else if (
-    logged &&
-    queuedWearId !== null &&
-    userId !== null &&
-    queuedWears(userId).some((wear) => wear.wearId === queuedWearId)
-  ) {
-    notice = <Text style={styles.queued}>{t('outfit.queued')}</Text>;
+    notice = <ActionNotice tone="error">{t(`outfit.error.${actionError}`)}</ActionNotice>;
+  } else if (logged && isQueued(ids)) {
+    notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
 
   let body: React.ReactNode;
@@ -439,7 +407,7 @@ function RateOutfit({
         byId={byId}
         thumbUrls={thumbUrls}
         // A logged wear is of this outfit; swapping after it would rate one that wasn't worn.
-        swapDisabled={pending !== null || logged}
+        swapDisabled={pending || logged}
         onSwap={trySwap}
       />
     );
@@ -450,7 +418,7 @@ function RateOutfit({
         secondary={{
           label: saved ? t('outfit.saved') : t('outfit.save'),
           tone: 'ghost',
-          disabled: saved || pending !== null,
+          disabled: saved || pending,
           onPress: () => {
             void save();
           },
@@ -459,9 +427,9 @@ function RateOutfit({
           label: logged ? t('outfit.logged') : t('outfit.wear'),
           tone: 'commit',
           ...(logged ? {} : { icon: Check }),
-          disabled: logged || pending !== null,
+          disabled: logged || pending,
           onPress: () => {
-            void wear(result.score);
+            wear(result.score);
           },
         }}
       />
@@ -652,27 +620,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingTop: spacing.xl,
     paddingHorizontal: spacing.sm,
-  },
-  actionError: {
-    alignSelf: 'center',
-    overflow: 'hidden',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.cell,
-    backgroundColor: colors.errorTint,
-    textAlign: 'center',
-    color: colors.error,
-    fontSize: 14,
-  },
-  queued: {
-    alignSelf: 'center',
-    overflow: 'hidden',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.cell,
-    backgroundColor: colors.tint,
-    textAlign: 'center',
-    color: colors.ink,
-    fontSize: 14,
   },
 });

@@ -1,12 +1,12 @@
-import * as Network from 'expo-network';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, AppState } from 'react-native';
+import { Alert } from 'react-native';
 
 import { confirmPendingDeletion } from '../account/deletionFlow';
 import { deletionState } from '../account/deletionMarker';
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n';
+import { useOnResume } from '../lib/useOnResume';
 import { useCloset } from './ClosetProvider';
 import {
   clearQueue,
@@ -210,36 +210,20 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     }
   }, [userId]);
 
+  // Mount, foreground and reconnect either check an unconfirmed deletion or run the queue.
+  const trigger = useCallback(() => {
+    if (!verifyPendingDeletion()) {
+      void run();
+    }
+  }, [run, verifyPendingDeletion]);
   useEffect(() => {
     mounted.current = true;
-    // Mount, foreground and reconnect either check an unconfirmed deletion or run the queue.
-    const trigger = (): void => {
-      if (!verifyPendingDeletion()) {
-        void run();
-      }
-    };
     trigger();
-
-    const appState = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        trigger();
-      }
-    });
-    let wasOnline: boolean | null = null;
-    const network = Network.addNetworkStateListener((event) => {
-      const online = event.isConnected === true && event.isInternetReachable !== false;
-      if (online && wasOnline === false) {
-        trigger();
-      }
-      wasOnline = online;
-    });
-
     return () => {
       mounted.current = false;
-      appState.remove();
-      network.remove();
     };
-  }, [run, verifyPendingDeletion]);
+  }, [trigger]);
+  useOnResume(trigger);
 
   const enqueue = useCallback(
     (uris: readonly string[]) => {

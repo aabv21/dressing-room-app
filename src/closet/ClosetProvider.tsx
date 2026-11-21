@@ -1,10 +1,9 @@
-import * as Network from 'expo-network';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AppState } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
 import { kvGet, kvSet } from '../lib/kv';
+import { useOnResume } from '../lib/useOnResume';
 import { isLivePending } from './closetSelectors';
 import { garmentPhotoPath, listGarments, signedPhotoUrls, type Garment } from './garmentRepository';
 
@@ -217,27 +216,13 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
   useEffect(() => {
     mounted.current = true;
     void refresh();
-
-    const appState = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        void refresh();
-      }
-    });
-    let wasOnline: boolean | null = null;
-    const network = Network.addNetworkStateListener((event) => {
-      const online = event.isConnected === true && event.isInternetReachable !== false;
-      if (online && wasOnline === false) {
-        void refresh();
-      }
-      wasOnline = online;
-    });
-
     return () => {
       mounted.current = false;
-      appState.remove();
-      network.remove();
     };
   }, [refresh]);
+  useOnResume(() => {
+    void refresh();
+  });
 
   const replaceLocal = useCallback(
     (g: Garment) => {
