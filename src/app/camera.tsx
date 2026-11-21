@@ -1,8 +1,5 @@
-// Mockup 02 screen 2: the burst camera. A dark full-screen modal (registered as such in
-// `_layout.tsx`, without the tab bar) where the user shoots one garment per photo with no forms,
-// then hands every shot to the upload queue at once. The simulator has no camera, so this screen is exercised here
-// through its permission/denied states and its own logic (shutter debounce, the running shot list,
-// Close's confirmation) — the real capture flow is an owner check (docs/owner-runbook.md).
+// The burst camera: one garment per photo, no forms, every shot handed to the upload queue at once.
+// The simulator has no camera, so real capture is an owner check (docs/owner-runbook.md).
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { router, usePreventRemove } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -97,10 +94,8 @@ function BurstCamera(): React.JSX.Element {
   }, []);
 
   /**
-   * The Discard / Keep shooting choice, shared by the Close button and `usePreventRemove`'s
-   * blocked-removal callback below. `proceed` already includes disabling prevention before it
-   * navigates (`uris` is still non-empty at that instant, so skipping that would have the hook
-   * re-block its own caller's navigation with a second, redundant confirmation).
+   * Discard / Keep shooting, for Close and `usePreventRemove`'s callback. `proceed` must disable
+   * prevention first: `uris` is still non-empty, so the hook would re-block with a second confirm.
    */
   const confirmDiscard = useCallback(
     (proceed: () => void) => {
@@ -112,12 +107,9 @@ function BurstCamera(): React.JSX.Element {
     [t],
   );
 
-  // A hardware back press, the system back gesture, or (on iOS) swiping the modal away all
-  // bypass the Close button — `presentation: 'fullScreenModal'` falls back to a plain `modal` on
-  // Android, whose back gesture/button would otherwise leave with unsaved shots and skip the
-  // Discard confirmation entirely. `usePreventRemove` intercepts any such removal attempt while
-  // shots are pending; its callback's `repeat()` continues that specific blocked action (already
-  // preceded by the hook's own prevention-disabling, per its documented contract).
+  // Back press, back gesture or a swipe bypass Close (Android turns `fullScreenModal` into a plain
+  // `modal`), so `usePreventRemove` blocks removal while shots are pending; `repeat()` resumes the
+  // blocked action (the hook disables prevention first, per its contract).
   const disablePrevention = usePreventRemove(uris.length > 0, ({ repeat }) => {
     confirmDiscard(repeat);
   });
@@ -147,8 +139,7 @@ function BurstCamera(): React.JSX.Element {
         Animated.timing(flash, { toValue: 0, duration: 150, useNativeDriver: true }).start();
       }
     } catch {
-      // Hardware/session error, or the device ran out of storage: keep the shots already taken
-      // and leave the shutter usable for the next attempt.
+      // Hardware/session error or full storage: keep the shots taken and the shutter usable.
       Alert.alert(t('camera.captureFailed'));
     } finally {
       capturing.current = false;
@@ -156,9 +147,7 @@ function BurstCamera(): React.JSX.Element {
   }, [t, flash]);
 
   const done = useCallback(() => {
-    // Disables prevention first: `uris` is still non-empty at this instant, and without this the
-    // hook would intercept this very `router.back()` and pop an unwanted Discard confirmation
-    // right after a successful Done.
+    // `uris` is still non-empty, so the hook would otherwise block this `router.back()` with a Discard prompt.
     disablePrevention();
     enqueue(uris);
     router.back();

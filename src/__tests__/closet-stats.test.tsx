@@ -11,7 +11,7 @@ import ClosetScreen from '../app/(tabs)/closet';
 import { updateGarment, type Garment } from '../closet/garmentRepository';
 import { kvRemove } from '../lib/kv';
 import { enqueueWear, wearQueueKey } from '../outfits/wearQueue';
-import { localDate } from '../outfits/aiClient';
+import { localDate } from '../lib/localDate';
 import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
 import { listWears, type WearWithItems } from '../stats/wearsRepository';
 import { garment } from '../test/garmentFixture';
@@ -31,7 +31,7 @@ jest.mock('expo-router', () => ({
   useIsFocused: jest.fn(() => true),
 }));
 jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
-jest.mock('../outfits/aiClient', () => ({ localDate: jest.fn(() => '2026-11-08') }));
+jest.mock('../lib/localDate', () => ({ localDate: jest.fn(() => '2026-11-08') }));
 jest.mock('../stats/wearsRepository', () => ({ listWears: jest.fn() }));
 // The Diary segment reads the signed-in user (its deletes clear Today's worn record).
 jest.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));

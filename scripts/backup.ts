@@ -1,31 +1,5 @@
-// scripts/backup.ts
-//
-// `pnpm backup` (`node scripts/backup.ts`): a local export of the hosted project, run on the owner's
-// Mac by launchd (see `docs/owner-runbook.md`'s "Backups"). The free tier has no downloadable
-// backups, so this script takes one:
-//
-//   1. `schema.sql` and `data.sql` from `pnpm exec supabase db dump --db-url $BACKUP_DB_URL` (the
-//      repo's own CLI, which runs pg_dump in Docker). The data dump covers `public`, `auth` and
-//      `storage`'s object rows.
-//   2. Every object in the `garments` bucket, under `garments/<path>`, read with the service role
-//      through Storage's REST API.
-//   3. `manifest.json`: each file's path, size and sha256.
-//
-// Everything is written to `<BACKUP_DIR>/<UTC timestamp>.partial/`, renamed to `<UTC timestamp>/`
-// only once complete; then all but the newest `KEEP_BACKUPS` complete backups are deleted. A run
-// that fails at any step exits 1 and leaves its `.partial` folder for inspection, and never
-// rotates; each run starts by deleting `.partial` folders over `STALE_PARTIAL_DAYS` old and logging
-// the age of the newest complete backup. A backup is credential material (password hashes, refresh
-// tokens), so every file is 0600 and every folder 0700. Logs carry outcome words only: secrets and
-// connection strings are redacted. The database password never reaches a command line (where `ps`
-// shows it): the dump gets the URL without it and the password in `PGPASSWORD`.
-//
-// Env: BACKUP_DB_URL (the hosted connection string, percent-encoded), SUPABASE_URL,
-// SUPABASE_SERVICE_ROLE_KEY, and optionally BACKUP_DIR (default `~/dressing-room-backups`, never
-// inside this repository, never the home folder or the filesystem root).
-//
-// `node scripts/backup.ts --verify <backup folder>` recomputes every size and sha256 in the
-// folder's `manifest.json` and exits 1 on any difference (run it before a restore).
+// `pnpm backup`: a local export of the hosted project (dumps, `garments` objects, manifest). The flow, env
+// and the `--verify` restore check: docs/owner-runbook.md#7-backups.
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -54,10 +28,8 @@ const FETCH_TIMEOUT_MS = 60_000;
 /** Each dump's limit. */
 const DUMP_TIMEOUT_MS = 30 * 60_000;
 /**
- * Tables left out of the data dump, so it restores on top of the migrations as `postgres`: the
- * bucket row is created by a migration (restoring it would collide), the `postgres` role can't
- * write Storage's vector tables (this project uses none), and pg_net's queue and responses are
- * transient.
+ * Left out of the data dump so it restores on top of the migrations as `postgres`: a migration creates the
+ * bucket row, `postgres` can't write Storage's vector tables (unused here), and pg_net's tables are transient.
  */
 const DATA_DUMP_EXCLUDE = [
   'storage.buckets',
@@ -86,10 +58,7 @@ export type BackupConfig = {
 
 export type CommandResult = { code: number; stderr: string };
 
-/**
- * Runs `command` with `args` from the repository root, with `env` added to its environment,
- * resolving with its exit code and stderr.
- */
+/** Runs `command` from the repository root with `env` added; resolves with its exit code and stderr. */
 export type RunCommand = (command: string, args: readonly string[], env: Readonly<Record<string, string>>) => Promise<CommandResult>;
 
 export type BackupDeps = {
@@ -105,19 +74,13 @@ export function backupDirName(now: Date): string {
   return `${now.toISOString().slice(0, 19).replace(/:/g, '-')}Z`;
 }
 
-/**
- * The complete backups in `existing` (folder names) to delete so the newest `keep` remain, newest
- * first. A `.partial` folder or any other name is never returned.
- */
+/** The complete backups in `existing` to delete so the newest `keep` remain; never a `.partial` or other name. */
 export function rotate(existing: readonly string[], keep: number): string[] {
   const complete = existing.filter((name) => BACKUP_NAME.test(name)).sort((a, b) => b.localeCompare(a));
   return complete.slice(Math.max(0, keep));
 }
 
-/**
- * The `.partial` folders in `names` whose embedded UTC time is more than `maxAgeDays` before `now`.
- * Complete backups, other names and impossible times are never returned.
- */
+/** The `.partial` folders in `names` whose embedded UTC time is over `maxAgeDays` before `now`; nothing else. */
 export function stalePartials(names: readonly string[], now: Date, maxAgeDays: number): string[] {
   return names.filter((name) => {
     const match = PARTIAL_NAME.exec(name);
@@ -177,9 +140,8 @@ function splitDbUrl(url: string): { dbUrl: string; dbPassword: string } | { erro
 }
 
 /**
- * The run's settings from `env`, or why they're unusable (never echoing a value). BACKUP_DIR may
- * start with `~/`; it must be absolute otherwise, never inside `repoRoot`, since backups hold
- * personal data, and never `home` or the root, since the run chmods it to 0700.
+ * The run's settings from `env`, or why they're unusable (never echoing a value). BACKUP_DIR is absolute or
+ * `~/`, outside `repoRoot` (personal data) and never `home` or the root (the run chmods it to 0700).
  */
 export function backupConfigFrom(
   env: Readonly<Record<string, string | undefined>>,
@@ -238,18 +200,17 @@ function stderrTail(stderr: string): string {
 
 async function dump(deps: BackupDeps, what: string, extraArgs: readonly string[], file: string): Promise<void> {
   const args = ['exec', 'supabase', 'db', 'dump', '--db-url', deps.config.dbUrl, ...extraArgs, '-f', file];
+  // The password goes in `PGPASSWORD`, never on the command line, where `ps` would show it.
   const env: Record<string, string> = deps.config.dbPassword === '' ? {} : { PGPASSWORD: deps.config.dbPassword };
   const result = await deps.run('pnpm', args, env);
   if (result.code !== 0) throw new StepError(`${what} dump failed (exit ${String(result.code)}): ${stderrTail(result.stderr)}`);
   // The CLI creates the file; make it owner-only whatever the umask was.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await chmod(file, 0o600);
   deps.log(`backup: ${what} dump ok`);
 }
 
 const storageUrl = (config: BackupConfig, route: string): string => `${config.supabaseUrl}/storage/v1/${route}`;
 
-/** An object path as a URL path, each segment encoded. */
 const encodePath = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
 
 /** A name Storage returned for one level: one plain path segment that can't leave its folder. */
@@ -257,9 +218,8 @@ const isSafeSegment = (name: string): boolean =>
   name !== '' && name !== '.' && name !== '..' && !/[/\\\0]/.test(name);
 
 /**
- * The files and folders one level under `prefix` (`''` for the bucket root, else ending in `/`),
- * paged until an empty page: a short page alone doesn't prove the end, since the server may cap a
- * page below `LIST_PAGE`.
+ * The files and folders one level under `prefix` (`''` or ending in `/`), paged until an empty page: the
+ * server may cap a page below `LIST_PAGE`, so a short page doesn't prove the end.
  */
 async function listLevel(deps: BackupDeps, prefix: string): Promise<{ files: string[]; folders: string[] }> {
   const files: string[] = [];
@@ -305,17 +265,12 @@ async function downloadObject(deps: BackupDeps, dir: string, path: string, stop:
   const relativePath = `${BUCKET}/${path}`;
   const file = join(dir, ...relativePath.split('/'));
   // `file` is under this run's own folder: every segment passed `isSafeSegment`.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await writeFile(file, bytes, { mode: 0o600 });
   return manifestEntry(relativePath, bytes);
 }
 
-/**
- * Downloads every path, `DOWNLOAD_CONCURRENCY` at a time. After the first failure no download
- * starts and the ones in flight are aborted; the first error is thrown.
- */
+/** Downloads every path; after the first failure no download starts, those in flight abort, and it throws. */
 async function downloadAll(deps: BackupDeps, dir: string, paths: readonly string[]): Promise<ManifestEntry[]> {
   const stop = new AbortController();
   const entries: ManifestEntry[] = [];
@@ -339,9 +294,7 @@ async function downloadAll(deps: BackupDeps, dir: string, paths: readonly string
   return entries;
 }
 
-/** The manifest entry of a file already written under `dir`. */
 async function entryOf(dir: string, relativePath: string): Promise<ManifestEntry> {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   return manifestEntry(relativePath, new Uint8Array(await readFile(join(dir, relativePath))));
 }
 
@@ -352,13 +305,9 @@ const secretsOf = (config: BackupConfig): string[] => [
   encodeURIComponent(config.dbPassword),
 ];
 
-/**
- * Deletes the `.partial` folders over `STALE_PARTIAL_DAYS` old and logs the newest complete
- * backup's age, so even a failing run's log says how old the last good backup is.
- */
+/** Deletes stale `.partial` folders and logs the newest complete backup's age, even on a run that fails. */
 async function tidyAndReport(deps: BackupDeps): Promise<void> {
   const { backupRoot } = deps.config;
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const names = await readdir(backupRoot);
   const stale = stalePartials(names, deps.now, STALE_PARTIAL_DAYS);
   for (const old of stale) await rm(join(backupRoot, old), { recursive: true, force: true });
@@ -374,7 +323,7 @@ async function tidyAndReport(deps: BackupDeps): Promise<void> {
   }
 }
 
-/** Takes one backup (see the module comment); resolves with the process exit code. */
+/** Takes one backup; resolves with the process exit code. */
 export async function runBackup(deps: BackupDeps): Promise<number> {
   const { backupRoot } = deps.config;
   const name = backupDirName(deps.now);
@@ -382,15 +331,11 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
   const secrets = secretsOf(deps.config);
   let created = false;
   try {
-    // The root holds personal data: owner-only, also when it already existed with looser modes.
-    // `backupRoot` comes from the owner's own env.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    // Personal data: owner-only even if it existed with looser modes (`backupRoot` is the owner's own env).
     await mkdir(backupRoot, { recursive: true, mode: 0o700 });
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     await chmod(backupRoot, 0o700);
     await tidyAndReport(deps);
     // Not recursive: a folder left by another run in the same second fails here.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     await mkdir(partial, { mode: 0o700 });
     created = true;
 
@@ -407,10 +352,8 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
       ...objects.sort((a, b) => a.path.localeCompare(b.path)),
     ];
     const manifest = { createdAt: deps.now.toISOString(), files };
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     await writeFile(join(partial, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     await rename(partial, join(backupRoot, name));
   } catch (error) {
     const left = created ? `; ${name}.partial left for inspection` : '';
@@ -420,7 +363,6 @@ export async function runBackup(deps: BackupDeps): Promise<number> {
   deps.log(`backup: complete ${name}`);
 
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     const stale = rotate(await readdir(backupRoot), KEEP_BACKUPS);
     for (const old of stale) {
       await rm(join(backupRoot, old), { recursive: true, force: true });
@@ -437,14 +379,12 @@ const isManifestEntry = (value: unknown): value is ManifestEntry =>
   isRecord(value) && typeof value.path === 'string' && typeof value.size === 'number' && typeof value.sha256 === 'string';
 
 /**
- * Recomputes every size and sha256 that `<dir>/manifest.json` lists. `problems` names each file
- * that is missing or differs; a missing or malformed manifest, or a path that would leave `dir`, is
- * a problem too.
+ * Recomputes every size and sha256 in `<dir>/manifest.json`; `problems` names each missing or differing
+ * file, a missing or malformed manifest, and any path that would leave `dir`.
  */
 export async function verifyBackup(dir: string): Promise<{ files: number; problems: string[] }> {
   let entries: ManifestEntry[];
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     const manifest: unknown = JSON.parse(await readFile(join(dir, 'manifest.json'), 'utf8'));
     if (!isRecord(manifest) || !Array.isArray(manifest.files)) throw new Error('malformed');
     const files = manifest.files as unknown[];
@@ -461,7 +401,6 @@ export async function verifyBackup(dir: string): Promise<{ files: number; proble
     }
     let bytes: Uint8Array;
     try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
       bytes = new Uint8Array(await readFile(join(dir, ...entry.path.split('/'))));
     } catch {
       problems.push(`${entry.path}: missing`);
@@ -474,9 +413,8 @@ export async function verifyBackup(dir: string): Promise<{ files: number; proble
 }
 
 /**
- * Spawns `command` from the repository root, so `pnpm exec supabase` is this repo's CLI. The child
- * gets this process's env plus `env`, minus the URL with the password and the service-role key,
- * which it doesn't need.
+ * Spawns from the repository root so `pnpm exec supabase` is this repo's CLI; the child doesn't get the
+ * URL with the password or the service-role key.
  */
 const runCommand: RunCommand = (command, args, env) =>
   new Promise((resolveResult, reject) => {
@@ -512,8 +450,7 @@ async function verifyCommand(dir: string | undefined): Promise<number> {
 }
 
 async function main(args: readonly string[]): Promise<number> {
-  // Everything this process creates is owner-only (the dump files are written by the CLI child,
-  // which inherits this umask).
+  // Owner-only for everything created, including the dumps the CLI child writes (it inherits the umask).
   process.umask(0o077);
   if (args[0] === '--verify') return verifyCommand(args[1]);
   const config = backupConfigFrom(process.env, homedir(), REPO_ROOT);
@@ -532,7 +469,6 @@ async function main(args: readonly string[]): Promise<number> {
   });
 }
 
-/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
 function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
   return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
 }

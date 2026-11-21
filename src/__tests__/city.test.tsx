@@ -5,18 +5,17 @@ import * as Location from 'expo-location';
 import { router } from 'expo-router';
 
 import CityScreen from '../app/city';
-import { getProfile, saveProfile, type Profile } from '../profile/profileRepository';
+import { saveProfile, type Profile } from '../profile/profileRepository';
+import { resetAuth, setAuth } from '../test/authMock';
 
 jest.mock('expo-router', () => ({
   router: { back: jest.fn(), canGoBack: jest.fn(() => true), replace: jest.fn() },
 }));
 
-jest.mock('../auth/AuthProvider', () => ({
-  useAuth: () => ({ userId: 'user-1' }),
-}));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+jest.mock('../auth/AuthProvider', () => require('../test/authMock'));
 
 jest.mock('../profile/profileRepository', () => ({
-  getProfile: jest.fn(),
   saveProfile: jest.fn(),
 }));
 
@@ -28,7 +27,6 @@ jest.mock('expo-location', () => ({
   reverseGeocodeAsync: jest.fn(),
 }));
 
-const mockedGetProfile = jest.mocked(getProfile);
 const mockedSaveProfile = jest.mocked(saveProfile);
 
 function profile(overrides: Partial<Profile> = {}): Profile {
@@ -36,7 +34,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
 }
 
 beforeEach(() => {
-  mockedGetProfile.mockReset();
+  resetAuth();
   mockedSaveProfile.mockReset();
   mockedSaveProfile.mockResolvedValue({ ok: true });
   jest.mocked(router.back).mockClear();
@@ -45,7 +43,7 @@ beforeEach(() => {
 });
 
 test('prefills the field with the profile city', async () => {
-  mockedGetProfile.mockResolvedValue(profile());
+  setAuth({ profile: profile() });
   await render(<CityScreen />);
 
   expect(await screen.findByDisplayValue('Madrid')).toBeOnTheScreen();
@@ -53,7 +51,7 @@ test('prefills the field with the profile city', async () => {
 });
 
 test('a typed city is saved by name with no coordinates, then the modal closes', async () => {
-  mockedGetProfile.mockResolvedValue(profile());
+  setAuth({ profile: profile() });
   await render(<CityScreen />);
 
   await fireEvent.changeText(await screen.findByDisplayValue('Madrid'), '  Lima ');
@@ -64,8 +62,18 @@ test('a typed city is saved by name with no coordinates, then the modal closes',
   expect(router.back).toHaveBeenCalledTimes(1);
 });
 
+test('a saved city reaches the shared profile, so Today shows it without another read', async () => {
+  const auth = resetAuth({ profile: profile() });
+  await render(<CityScreen />);
+
+  await fireEvent.changeText(await screen.findByDisplayValue('Madrid'), 'Lima');
+  await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(auth.replaceProfileLocal).toHaveBeenCalledWith({ city_name: 'Lima', city_lat: null, city_lon: null });
+});
+
 test('"use my location" fills the city, and Save stores its coordinates', async () => {
-  mockedGetProfile.mockResolvedValue(profile({ city_name: null, city_lat: null, city_lon: null }));
+  setAuth({ profile: profile({ city_name: null, city_lat: null, city_lon: null }) });
   jest.mocked(Location.requestForegroundPermissionsAsync).mockResolvedValue({
     status: Location.PermissionStatus.GRANTED,
   } as Location.LocationPermissionResponse);
@@ -83,7 +91,7 @@ test('"use my location" fills the city, and Save stores its coordinates', async 
 });
 
 test('a denied location permission says so and saves nothing', async () => {
-  mockedGetProfile.mockResolvedValue(profile());
+  setAuth({ profile: profile() });
   jest.mocked(Location.requestForegroundPermissionsAsync).mockResolvedValue({
     status: Location.PermissionStatus.DENIED,
   } as Location.LocationPermissionResponse);
@@ -95,7 +103,7 @@ test('a denied location permission says so and saves nothing', async () => {
 });
 
 test('"use my location" is disabled while a save is in flight', async () => {
-  mockedGetProfile.mockResolvedValue(profile());
+  setAuth({ profile: profile() });
   jest.mocked(Location.requestForegroundPermissionsAsync).mockClear();
   let finishSave: (value: Awaited<ReturnType<typeof saveProfile>>) => void = () => undefined;
   mockedSaveProfile.mockReturnValue(
@@ -124,7 +132,7 @@ test('"use my location" is disabled while a save is in flight', async () => {
 });
 
 test('an unchanged city closes without saving', async () => {
-  mockedGetProfile.mockResolvedValue(profile());
+  setAuth({ profile: profile() });
   await render(<CityScreen />);
 
   await screen.findByDisplayValue('Madrid');
@@ -135,7 +143,7 @@ test('an unchanged city closes without saving', async () => {
 });
 
 test('a failed save shows the error and keeps the modal open', async () => {
-  mockedGetProfile.mockResolvedValue(profile());
+  setAuth({ profile: profile() });
   mockedSaveProfile.mockResolvedValue({ ok: false, error: 'profile.error.network' });
   await render(<CityScreen />);
 
@@ -147,7 +155,11 @@ test('a failed save shows the error and keeps the modal open', async () => {
 });
 
 test('a failed profile read offers a retry instead of an empty field', async () => {
-  mockedGetProfile.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(profile());
+  const refreshProfile = jest.fn(() => {
+    setAuth({ profile: profile(), profileStatus: 'ready' });
+    return Promise.resolve(true);
+  });
+  setAuth({ profile: null, profileStatus: 'error', refreshProfile });
   await render(<CityScreen />);
 
   await fireEvent.press(await screen.findByRole('button', { name: 'Try again' }));
@@ -156,7 +168,7 @@ test('a failed profile read offers a retry instead of an empty field', async () 
 });
 
 test('the close button goes back', async () => {
-  mockedGetProfile.mockResolvedValue(profile());
+  setAuth({ profile: profile() });
   await render(<CityScreen />);
 
   await fireEvent.press(await screen.findByRole('button', { name: 'Close' }));

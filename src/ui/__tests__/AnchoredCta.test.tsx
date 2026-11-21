@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Check, Shuffle } from 'lucide-react-native';
-import { processColor, StyleSheet, Text } from 'react-native';
+import { Platform, processColor, StyleSheet, Text } from 'react-native';
 
 import { AnchoredCta } from '../AnchoredCta';
 
@@ -83,4 +83,18 @@ test('a commit press is a light haptic and still runs the action; a ghost press 
   expect(wear).toHaveBeenCalledTimes(1);
   await fireEvent.press(screen.getByRole('button', { name: 'Otro' }));
   expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});
+
+test('the AI gradient button draws its Android ripple above the gradient, which would hide it', async () => {
+  const os = Platform.OS;
+  Platform.OS = 'android';
+  try {
+    await render(<AnchoredCta primary={{ label: '¿Cómo se ve?', tone: 'ai', onPress: jest.fn() }} />);
+
+    const button = screen.getByRole('button', { name: '¿Cómo se ve?' });
+    expect(button.props.nativeForegroundAndroid).toEqual(expect.objectContaining({ type: 'RippleAndroid' }));
+    expect(button.props.nativeBackgroundAndroid).toBeUndefined();
+  } finally {
+    Platform.OS = os;
+  }
 });

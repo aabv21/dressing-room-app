@@ -1,12 +1,5 @@
-// integration/mockServices.ts
-//
-// Stand-ins for TypeSafe's System One API (Jev), Open-Meteo's forecast and geocoding APIs and Sign
-// in with Apple's `/auth/token` and `/auth/revoke`, so the local `rate-outfit`, `lucky-list`,
-// `for-you`, `apple-token` and `delete-account` Edge Functions run end to end without a key or the
-// network. The local Edge Runtime points `TYPESAFE_BASE_URL`, `OPEN_METEO_URL`,
-// `OPEN_METEO_GEOCODING_URL` and `APPLE_BASE_URL` at `http://host.docker.internal:54498` (see
-// `supabase/config.toml`), so this listens on every interface, not only loopback: the requests come
-// from inside a container. One server answers them all, routed by path.
+// Mock Jev, Open-Meteo (forecast, geocoding) and Apple's token/revoke, one server routed by path. It listens on
+// every interface since the Edge Runtime calls from a container (docs/local-stack.md#mocks).
 
 import { createServer, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -34,10 +27,7 @@ export type MockServices = {
   appleRevoke(next: AppleReply): void;
   /** The form fields of every call so far on an Apple path (`/auth/token` or `/auth/revoke`), oldest first. */
   appleForms(path: string): URLSearchParams[];
-  /**
-   * How many calls have arrived so far on `path` (`/v1/systemone`, `/v1/forecast`, `/v1/search`,
-   * `/auth/token` or `/auth/revoke`).
-   */
+  /** How many calls have arrived so far on `path` (any route above). */
   calls(path: string): number;
   close(): Promise<void>;
 };
@@ -93,10 +83,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * A well-formed System One response answering every question in `request`: each Score question
- * at `level` of its range (0 = its worst criterion, 1 = its best), each Noul well below the
- * hard-failure threshold, and each Choice with `none` when offered (else its first `criteria`
- * key). With every Score at the same level, the composite rating is `round(100 · level)`.
+ * A System One response answering every question in `request`: each Score at `level` of its range (so the
+ * composite is `round(100 · level)`), each Noul well below hard failure, each Choice `none` (else its first key).
  */
 export function jevAnswers(request: unknown, level = 1): { model: string; answers: Record<string, unknown> } {
   const questions: Record<string, unknown> = isRecord(request) && isRecord(request.questions) ? request.questions : {};
@@ -119,9 +107,8 @@ export function jevAnswers(request: unknown, level = 1): { model: string; answer
 }
 
 /**
- * `jevAnswers` for the end-to-end flows' swap: an outfit holding a piece of category `weak` scores
- * at `low` (a composite of `round(100 · low)`) and names that piece's slot as the weakest, so
- * `rate-outfit` looks for a swap; any other outfit scores at the best level with no weak piece.
+ * `jevAnswers` for the e2e swap: an outfit holding a `weak` piece scores at `low` and names its slot the weakest,
+ * so `rate-outfit` looks for a swap; any other outfit scores at the best level.
  */
 export function jevAnswersWithWeakPiece(
   request: unknown,
@@ -157,10 +144,8 @@ function parseJson(text: string): unknown {
 }
 
 /**
- * Starts the mock on `port`. Until a test sets its own, Jev answers every question at the best
- * level, the forecast is `MILD_FORECAST`, geocoding finds Madrid, Apple's token exchange answers a
- * refresh token and an id_token named after the code (`mockAppleRefreshToken`, `mockAppleSubject`)
- * and Apple's revoke answers 200.
+ * Starts the mock on `port`. Until a test sets its own: Jev at the best level, `MILD_FORECAST`, Madrid, Apple
+ * tokens named after the code (`mockAppleRefreshToken`, `mockAppleSubject`) and a 200 revoke.
  */
 export function startMockServices(port = 54498): Promise<MockServices> {
   let jevReply: JevReply = DEFAULT_JEV;
@@ -265,12 +250,8 @@ export function serveOptionsFrom(argv: readonly string[]): ServeOptions {
 }
 
 /**
- * `node integration/mockServices.ts --serve [--level <0..1> | --weak <category>] [--temp <°C>]`:
- * keeps the mock running for a manual simulator check or the Maestro flows. Jev answers every
- * question at `level` (default 1, so a composite of `round(100 · level)`), or, with `--weak`, scores
- * outfits holding that category low and names it the weakest piece (`jevAnswersWithWeakPiece`);
- * the forecast is `MILD_FORECAST`, or a clear, dry day around `temp`; geocoding finds Madrid. Stop
- * it with Ctrl-C.
+ * `node integration/mockServices.ts --serve [--level <0..1> | --weak <category>] [--temp <°C>]`: keeps the
+ * mock running for a manual check or the Maestro flows until Ctrl-C (flags: docs/local-stack.md#mocks).
  */
 async function serveFromCli(argv: readonly string[]): Promise<void> {
   const { level, temp, weak } = serveOptionsFrom(argv);

@@ -1,10 +1,10 @@
-import * as Network from 'expo-network';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AppState } from 'react-native';
 
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { useAuth } from '../auth/AuthProvider';
-import { kvGet, kvSet } from '../lib/kv';
+import { kvGetJson, kvSet } from '../lib/kv';
+import { useOnResume } from '../lib/useOnResume';
 import { isLivePending } from './closetSelectors';
 import { garmentPhotoPath, listGarments, signedPhotoUrls, type Garment } from './garmentRepository';
 
@@ -24,9 +24,8 @@ interface ClosetContextValue {
 }
 
 /**
- * `photoVersion` is the garment's `photo_version` the URL was signed for. A replaced photo keeps its
- * storage path, so only a fresh signature (a new URL) gets past an HTTP or CDN cache of the old one;
- * a thumbnail whose version no longer matches its row is re-signed at once, not after 50 minutes.
+ * `photoVersion`: the `photo_version` the URL was signed for. A replaced photo keeps its path, so only a
+ * new URL gets past an HTTP or CDN cache; a mismatched version is re-signed at once, not after 50 minutes.
  */
 type SignedThumb = { url: string; signedAt: number; photoVersion: number };
 type CachedCloset = { garments: Garment[]; thumbs: Record<string, SignedThumb> };
@@ -51,10 +50,7 @@ function sameGarment(a: Garment, b: Garment): boolean {
   return entries.length === other.size && entries.every(([key, value]) => sameValue(value, other.get(key)));
 }
 
-/**
- * `listed`, reusing the previous object for every row whose values didn't change, and `previous`
- * itself when no row changed, so memoized grid cells don't re-render on a poll that found nothing.
- */
+/** `listed`, reusing unchanged rows (and `previous` itself if none changed) so memoized cells don't re-render. */
 function mergeGarments(previous: Garment[], listed: Garment[]): Garment[] {
   const byId = new Map(previous.map((g) => [g.id, g]));
   const merged = listed.map((g) => {
@@ -75,30 +71,17 @@ function cacheKey(userId: string): string {
 }
 
 function readCache(userId: string): CachedCloset | null {
-  const raw = kvGet(cacheKey(userId));
-  if (raw === null) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<CachedCloset>;
-    return Array.isArray(parsed.garments) ? { garments: parsed.garments, thumbs: parsed.thumbs ?? {} } : null;
-  } catch {
-    return null;
-  }
+  const parsed = kvGetJson(cacheKey(userId), isRecord) as Partial<CachedCloset> | null;
+  return parsed !== null && Array.isArray(parsed.garments) ? { garments: parsed.garments, thumbs: parsed.thumbs ?? {} } : null;
 }
 
 /**
- * The closet's garments and signed thumbnail URLs for the signed-in user, with an on-device copy
- * (kv `closet.v1.<userId>`) so an offline launch still shows the last known closet. The cached
- * signed URLs may have expired by then; the grid's cache keys still find the photos in
- * expo-image's disk cache. Mounted only while signed in, keyed by user id, so a user switch
- * starts from that user's own cache.
+ * The user's garments and thumbnail URLs, with an offline copy in kv `closet.v1.<userId>`. Its signed
+ * URLs may have expired by then; the grid's cache keys still find the photos in expo-image's disk cache.
  */
 export function ClosetProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { userId: sessionUserId } = useAuth();
-  // The user this closet belongs to, fixed for the provider's lifetime (the layout keys it by
-  // user). During a user switch AuthProvider reports the next user while this tree is still
-  // mounted, so `sessionUserId` can differ from it.
+  // Fixed for the provider's lifetime (keyed by user); mid-switch `sessionUserId` may already be the next user.
   const [userId] = useState(sessionUserId);
   const sessionUser = useRef(sessionUserId);
   useEffect(() => {
@@ -109,16 +92,14 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
   const [thumbs, setThumbs] = useState<Record<string, SignedThumb>>(initial?.thumbs ?? {});
   const [status, setStatus] = useState<ClosetStatus>('loading');
 
-  // The latest values, for the async refresh and the local edits, which must not race each other
-  // through stale closures.
+  // Latest values, so the async refresh and local edits don't race through stale closures.
   const latest = useRef<CachedCloset>({ garments, thumbs });
   const inFlight = useRef<Promise<void> | null>(null);
   const followUp = useRef<Promise<void> | null>(null);
   const mounted = useRef(true);
 
-  // Work started for this closet's user must not land after they are gone: after unmount (sign-out)
-  // or once another account's session is active, a late result would overwrite this user's
-  // offline copy with an empty or foreign list.
+  // After unmount or once another account's session is active, a late result would overwrite this
+  // user's offline copy with an empty or foreign list.
   const isCurrent = useCallback(() => mounted.current && sessionUser.current === userId, [userId]);
 
   const commit = useCallback(
@@ -212,32 +193,17 @@ export function ClosetProvider({ children }: { children: ReactNode }): React.JSX
     return followUp.current;
   }, [load, isCurrent]);
 
-  // Refresh on mount, on returning to the foreground (signed URLs may have expired meanwhile; only
-  // stale ones are re-signed) and when the network comes back (clears `offline`).
+  // Foreground: signed URLs may have expired (only stale ones are re-signed); reconnect clears `offline`.
   useEffect(() => {
     mounted.current = true;
     void refresh();
-
-    const appState = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        void refresh();
-      }
-    });
-    let wasOnline: boolean | null = null;
-    const network = Network.addNetworkStateListener((event) => {
-      const online = event.isConnected === true && event.isInternetReachable !== false;
-      if (online && wasOnline === false) {
-        void refresh();
-      }
-      wasOnline = online;
-    });
-
     return () => {
       mounted.current = false;
-      appState.remove();
-      network.remove();
     };
   }, [refresh]);
+  useOnResume(() => {
+    void refresh();
+  });
 
   const replaceLocal = useCallback(
     (g: Garment) => {
@@ -282,9 +248,8 @@ export function useCloset(): ClosetContextValue {
 }
 
 /**
- * While `active` (the Closet or Review screen is focused), refreshes every 5 s as long as some
- * garment is still waiting for its extraction. A garment pending for over 10 minutes no longer
- * counts: it is treated as failed and goes to review.
+ * While `active` (Closet or Review focused), refreshes every 5 s while an extraction is pending; one
+ * pending for over 10 minutes counts as failed and goes to review.
  */
 export function usePendingPolling(active: boolean): void {
   const { garments, refresh } = useCloset();

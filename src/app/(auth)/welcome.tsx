@@ -54,7 +54,7 @@ export default function WelcomeScreen() {
     try {
       const result = await signUpWithEmail(trimmedEmail, password);
       if (!result.ok) {
-        showFieldError('password', t(result.error));
+        showFieldError(result.error === 'auth.error.emailInUse' ? 'email' : 'password', t(result.error));
         return;
       }
       // With email confirmations off, `signUp` already returns a session and the root guard navigates.

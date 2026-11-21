@@ -4,25 +4,23 @@ export const colors = {
   hairline: '#ece6fb',
   accent: '#7c3aed',
   commit: '#141317',
-  // Mockup 03: the deeper violet for selected labels/links, the unfilled step-bar/slider track and
-  // the optional section's dashed outline.
+  // Selected labels and links; then the unfilled step-bar/slider track and the dashed outline.
   accentText: '#6d28d9',
   track: '#e6e0f5',
   dashed: '#cfc6e8',
   error: '#c0392b',
-  // Mockup 02's `.g.proc` / mockup 02 review's `.doubt` fill, and its border.
+  // The processing / doubtful-attribute fill, and its border.
   tint: '#f3edff',
   tintBorder: '#d9c9ff',
   errorTint: '#fdecea',
-  // Mockup 01 screen 3's reason marks: `.ok` (✓) and `.warn` (!).
+  // The rating's reason marks: ✓ and !.
   positive: '#16a34a',
   warning: '#e11d48',
-  // `positive` is for icons (3:1 is enough there); as text it falls short of 4.5:1 on white, so
-  // green text uses this deeper shade.
+  // `positive` is for icons (3:1); as text it falls short of 4.5:1 on white, so green text uses this.
   positiveText: '#15803d',
 } as const;
 
-/** Mockup 03's selected-card halo (`box-shadow: 0 0 0 3px rgba(124,58,237,.12)`). */
+/** The selected card's halo. */
 export const selectionRing = '0 0 0 3px rgba(124, 58, 237, 0.12)';
 
 export const gradients = {
@@ -36,9 +34,7 @@ export const radii = {
   cell: 12,
 } as const;
 
-// NOTE: no spacing scale is pinned in the spec yet; this 4pt-based scale covers the
-// mockups seen so far. Upgrade path: replace with spec-pinned values once the spec
-// defines them.
+// NOTE: an ad hoc 4pt scale covering the screens so far; upgrade path: replace it once a design scale is pinned.
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -59,11 +55,10 @@ export const textScale = {
   cta: 1.5,
   // The score ring's number and caption; the ring grows with them up to the same factor.
   ring: 1.2,
-  // Calendar day numbers and weekday letters, inside square day cells (with the worn day's
-  // thumbnail, which shrinks at a large text size).
+  // Calendar day numbers and weekday letters, inside square day cells (beside a shrinking thumbnail).
   calendar: 1.45,
-  // The status badge and wear count over a closet grid thumbnail; iOS shows the cell enlarged on a
-  // long press, and a screen reader reads both in the cell's label.
+  // The badge and wear count over a closet thumbnail; iOS enlarges the cell on a long press, and a
+  // screen reader reads both in its label.
   overlay: 1.3,
   // Decorative emoji beside text, which would otherwise take the width the text needs.
   emoji: 1.3,
@@ -76,13 +71,10 @@ export const layout = {
   tabBarGap: 12,
   ctaGap: 10,
   ctaHeight: 48,
-  // AnchoredCta's `zone` wraps its buttons in `paddingBottom: ctaZoneBottomPadding` (the gradient
-  // fade needs room above the button). `useBottomChrome`'s chrome:'none' math (layout.ts)
-  // subtracts this so the button's own bottom edge — not the zone's — lands at exactly
-  // `insets.bottom + 22`.
+  // AnchoredCta's `zone` bottom padding; `useBottomChrome`'s chrome:'none' math subtracts it so the
+  // button's own bottom edge, not the zone's, lands at exactly `insets.bottom + 22`.
   ctaZoneBottomPadding: 8,
   // AnchoredCta's `zone` padding above its buttons, where the fade starts.
   ctaZoneTopPadding: 22,
-  // Minimum tap target everywhere in the app (44pt).
   minHitTarget: 44,
 } as const;

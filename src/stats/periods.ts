@@ -1,6 +1,5 @@
-// Date math for the Stats and Diary segments: local calendar days as `YYYY-MM-DD` strings, with
-// all arithmetic done through UTC-anchored `Date` objects so it never shifts with the host's
-// timezone (midnight in one zone is not midnight in `Date`'s local time).
+// Local calendar days as `YYYY-MM-DD`, with all arithmetic on UTC-anchored `Date`s so it never shifts
+// with the host's timezone.
 
 export type Period = 'week' | 'month' | 'sixMonths';
 
@@ -20,7 +19,6 @@ function toDayString(date: Date): string {
   return `${year}-${month}-${dayOfMonth}`;
 }
 
-/** `day` shifted by `n` days (negative goes back), still `YYYY-MM-DD`. */
 export function addDays(day: string, n: number): string {
   return toDayString(new Date(toUtcDate(day).getTime() + n * DAY_MS));
 }
@@ -46,10 +44,7 @@ function mondayFirstDow(date: Date): number {
   return (date.getUTCDay() + 6) % 7;
 }
 
-/**
- * The 42 cells (6 full Monday-first weeks) of `month`'s calendar grid, including the trailing and
- * leading days of the neighboring months so the grid is always complete.
- */
+/** 42 cells (6 Monday-first weeks), padded with the neighboring months' days. */
 export function monthGrid(year: number, month: number): { day: string; inMonth: boolean }[] {
   const firstOfMonth = new Date(Date.UTC(year, month - 1, 1));
   const start = new Date(firstOfMonth.getTime() - mondayFirstDow(firstOfMonth) * DAY_MS);
@@ -62,9 +57,6 @@ export function monthGrid(year: number, month: number): { day: string; inMonth: 
   return cells;
 }
 
-// NOTE: a year of history feeds the streak, so a longer streak reads as 365 days; an unbounded
-// fetch on every focus isn't worth it. Upgrade path: a server-side streak count.
-// `listWears` pages through the year 1000 wears at a time (PostgREST's `max_rows`), up to 20 pages;
-// see its NOTE for the ceiling.
+// NOTE: a year of history feeds the streak, so a longer one reads as 365 days; upgrade path: a server-side streak count.
 /** How far back Stats reads (and stores) the wear history: the streak's reach. */
 export const STREAK_HISTORY_DAYS = 365;

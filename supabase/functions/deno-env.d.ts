@@ -1,6 +1,5 @@
-// Ambient types for the only Deno APIs this repo's Edge Function entry points (`*/index.ts`) call,
-// so `tsc` and ESLint check those files without Deno installed. Never imported at runtime; Deno
-// supplies the real `Deno` namespace.
+// Ambient types for the Deno APIs the `*/index.ts` entry points call, so `tsc` and ESLint check them
+// without Deno installed. Never imported at runtime.
 declare namespace Deno {
   function serve(handler: (request: Request) => Response | Promise<Response>): unknown;
 

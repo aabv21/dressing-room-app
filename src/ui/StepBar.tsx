@@ -6,7 +6,6 @@ import { colors, radii } from './theme';
 const TOTAL_STEPS = 3;
 const STEPS = [1, 2, 3] as const;
 
-/** Mockup 03's 3-segment onboarding progress bar (`.steps`). */
 export function StepBar({ step }: { step: 1 | 2 | 3 }): React.JSX.Element {
   const { t } = useI18n();
   return (

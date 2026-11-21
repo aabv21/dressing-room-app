@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, MapPin } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AGE_GROUPS, OCCASIONS, STYLES } from '../closet/catalog';
 import type { Locale, MessageKey } from '../i18n';
 import { useI18n } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
@@ -15,23 +16,21 @@ import { colors, layout, selectionRing, spacing } from '../ui/theme';
 import { silhouettesFor, suggestBodyType } from './bodyType';
 import type { BodyAnswers, ClothingType } from './bodyType';
 import { defaultHeightFor, withClothingType } from './profileDraft';
-import type { AgeGroup, BodyErrors, Occasion, ProfileDraft, Style } from './profileDraft';
+import type { BodyErrors, ProfileDraft } from './profileDraft';
 import { useCurrentCity } from './useCurrentCity';
 import { SIZE_MAX_LENGTH } from './validation';
 import type { BodyField, FieldError } from './validation';
 
 /**
- * The profile's editable sections, shared by the onboarding steps (one section per step) and the
- * Profile tab (all three on one screen). Each one is controlled: it renders `value` and reports
- * edits through `onChange` as a partial draft; saving is the screen's job.
+ * The profile's controlled sections, shared by onboarding (one per step) and the Profile tab (all three).
+ * Edits go out through `onChange` as a partial draft; saving is the screen's job.
  */
 type SectionProps = {
   value: ProfileDraft;
   onChange: (patch: Partial<ProfileDraft>) => void;
 };
 
-// ---------------------------------------------------------------------------------------------
-// Clothing
+// Clothing ------------------------------------------------------------------------------------
 
 const CLOTHING_OPTIONS: readonly { value: ClothingType; emoji: string; title: MessageKey; hint: MessageKey }[] = [
   { value: 'feminine', emoji: '👗', title: 'onboarding.clothing.feminine', hint: 'onboarding.clothing.feminineHint' },
@@ -60,15 +59,12 @@ export function ClothingSection({ value, onChange }: SectionProps): React.JSX.El
   );
 }
 
-// ---------------------------------------------------------------------------------------------
-// Body
+// Body ----------------------------------------------------------------------------------------
 
-// The slider runs 140–210 cm in steps of 1. Saved heights may be anywhere in
-// the DB's 120–230 range, so one outside the slider keeps its true value in the label (and in what
-// a screen reader says) while the thumb rests at the nearest end, with a note explaining why.
+// The slider runs 140–210 cm; a saved height elsewhere in the DB's 120–230 range keeps its true value in
+// the label (and spoken value) while the thumb rests at the nearest end, with a note explaining why.
 export const SLIDER_MIN = 140;
 export const SLIDER_MAX = 210;
-const AGE_GROUPS: readonly AgeGroup[] = ['under_18', '18_24', '25_34', '35_44', '45_54', '55_plus'];
 
 type AnswerOption<T> = { value: T; label: MessageKey };
 
@@ -77,8 +73,7 @@ const SHOULDER_ANSWERS: readonly AnswerOption<BodyAnswers['shoulders']>[] = [
   { value: 'average', label: 'onboarding.body.answer.average' },
   { value: 'broad', label: 'onboarding.body.answer.broad' },
 ];
-// Separate keys from the shoulder answers: Spanish adjectives agree with the noun ("hombros
-// estrechos", "caderas estrechas").
+// Own keys: Spanish adjectives agree with the noun ("hombros estrechos", "caderas estrechas").
 const HIP_ANSWERS: readonly AnswerOption<BodyAnswers['hips']>[] = [
   { value: 'narrow', label: 'onboarding.body.answer.hipsNarrow' },
   { value: 'average', label: 'onboarding.body.answer.hipsAverage' },
@@ -90,10 +85,8 @@ const WAIST_ANSWERS: readonly AnswerOption<BodyAnswers['waist']>[] = [
   { value: 'fuller', label: 'onboarding.body.answer.fuller' },
 ];
 
-// A bitmap thumb (white disc, violet ring — mockup 03's `.track i`) so the slider looks the same on
-// iOS and Android instead of each platform's native knob.
-// The slider's typings only accept a `{ uri }` source (its runtime resolves either), so the asset is
-// resolved here.
+// A bitmap thumb (white disc, violet ring) so the slider looks the same on iOS and Android. Resolved
+// here because the slider's typings only accept a `{ uri }` source (its runtime resolves either).
 const thumbImage = Image.resolveAssetSource(
   // eslint-disable-next-line @typescript-eslint/no-require-imports -- Metro resolves image assets (and their @2x/@3x variants) only through require(); this repo has no `*.png` module declaration for an import.
   require('../../assets/images/slider-thumb.png') as number,
@@ -113,10 +106,7 @@ export function BodySection({
   errors?: BodyErrors;
   /** Lets a screen show a field's error once the user leaves it, instead of on every keystroke. */
   onFieldBlur?: (field: BodyField) => void;
-  /**
-   * How a height that was never saved reads: as the clothing type's default (onboarding, where Next
-   * saves what the slider shows), or as "not set" (Profile, where an untouched slider saves nothing).
-   */
+  /** An unsaved height reads as the default (onboarding: Next saves it) or "not set" (Profile: saves nothing). */
   unsetHeight?: 'default' | 'notSet';
 }): React.JSX.Element {
   const { t, locale } = useI18n();
@@ -265,10 +255,8 @@ export function BodySection({
         <Slider
           testID="body-height-slider"
           accessibilityLabel={t('onboarding.body.height')}
-          // Spoken as the true height in metres. NOTE: not the slider's own accessibilityUnits /
-          // accessibilityIncrements: in 5.2.1 Android parses each increment with Integer.parseInt
-          // (a crash for "1.65") and iOS drops the plural for "1.x"; upgrade path: revisit if the
-          // library accepts decimal increments.
+          // NOTE: not accessibilityUnits/Increments: in 5.2.1 Android crashes on "1.65" (Integer.parseInt)
+          // and iOS drops the plural for "1.x"; upgrade path: use them once the library accepts decimals.
           accessibilityValue={{
             min: SLIDER_MIN,
             max: SLIDER_MAX,
@@ -428,19 +416,14 @@ export function BodySection({
   );
 }
 
-// ---------------------------------------------------------------------------------------------
-// Style
-
-const STYLES: readonly Style[] = ['casual', 'elegant', 'minimalist', 'sporty', 'urban', 'bohemian', 'classic'];
-const OCCASIONS: readonly Occasion[] = ['office', 'university', 'going_out', 'home', 'event', 'sport'];
+// Style ---------------------------------------------------------------------------------------
 
 export function StyleSection({ value, onChange }: SectionProps): React.JSX.Element {
   const { t } = useI18n();
   const { request: requestCity } = useCurrentCity();
   const [locating, setLocating] = useState(false);
   const [locationMessage, setLocationMessage] = useState<MessageKey | undefined>(undefined);
-  // Counts the user's own edits to the city field. A location lookup that resolves after the user
-  // typed (it can take seconds) must not overwrite what they typed.
+  // The user's edits to the city field: a slow location lookup must not overwrite what they typed.
   const cityEditsRef = useRef(0);
   const mountedRef = useRef(true);
 

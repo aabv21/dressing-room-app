@@ -13,7 +13,3 @@ export const fetchLuckyList = jest.fn(never);
 export const rateOutfit = jest.fn(never);
 export const logWear = jest.fn(() => Promise.resolve({ ok: true as const }));
 export const saveOutfit = jest.fn(() => Promise.resolve({ ok: true as const }));
-
-export function localDate(): string {
-  return '2026-11-08';
-}

@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(14);
+select plan(15);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -77,6 +77,12 @@ select is(
   public.consume_quota('11111111-1111-1111-1111-111111111111', 'rating', 1, (now() at time zone 'utc')::date + 3),
   false,
   'a day more than one day from UTC counts on the UTC day'
+);
+
+select is(
+  public.consume_quota('11111111-1111-1111-1111-111111111111', 'rating', 1, (now() at time zone 'utc')::date - 2),
+  false,
+  'a day two days before UTC counts on the UTC day too'
 );
 
 reset role;

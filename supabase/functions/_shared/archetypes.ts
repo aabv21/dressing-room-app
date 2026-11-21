@@ -1,13 +1,7 @@
-// The For you archetypes: generic wardrobe staples (a camel blazer, white sneakers, dark straight
-// jeans, ...) that the for-you function weighs against the user's closet. Each one carries the
-// same attributes as a garment row, so the outfit rules can judge it like any other piece.
-//
-// Runtime-neutral (only `catalog.ts` imported). Ids are stable: they key the cached ideas and the
-// Claude lines, so rename one only together with a cache flush.
-//
-// NOTE: only outfit pieces (tops, bottoms, one-pieces, outerwear, shoes) are listed. Extras (bags,
-// belts, scarves) never make an outfit complete, so they would add no outfit a closet can't
-// already make; the upgrade path is a separate "finish the look" list for them.
+// The For you staples, shaped like garment rows (docs/ai.md#archetypes). Ids key the cached ideas
+// and Claude lines, so rename one only with a cache flush.
+
+// NOTE: outfit pieces only (extras complete no outfit, so add no gain); upgrade: a separate "finish the look" list.
 
 import type { ClothingType, GarmentCategory, GarmentColor, GarmentFit, GarmentPattern, Season } from './catalog.ts';
 
@@ -23,10 +17,7 @@ export type Archetype = {
   warmth: number;
   fit: GarmentFit;
   clothing: 'feminine' | 'masculine' | 'all';
-  /**
-   * The store-search noun phrase, for an archetype whose defining trait is a pattern, material or
-   * wash that "{category} {color}" would lose ("camisa de franela", not "camisa roja").
-   */
+  /** The store-search phrase when "{category} {color}" would lose the trait ("camisa de franela"). */
   search?: { en: string; es: string };
 };
 

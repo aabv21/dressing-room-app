@@ -1,26 +1,16 @@
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
+import { parseJson } from './kv';
+
 export type StoredSession = { userId: string; email: string | null };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
 /**
- * Reads the session supabase-js persisted (its `sb-<ref>-auth-token` entry) without asking the
- * server. Only the user id and email are trusted from it, and only while it still holds a refresh
- * token: with one, supabase-js keeps retrying the refresh, and a rejected token removes the entry
- * and emits SIGNED_OUT.
+ * The session supabase-js persisted (`sb-<ref>-auth-token`), read without the server. Only its user
+ * id and email are trusted, and only while it holds a refresh token: supabase-js keeps retrying
+ * that refresh, and a rejected token removes the entry and emits SIGNED_OUT.
  */
 export function parseStoredSession(raw: string | null): StoredSession | null {
-  if (raw === null) {
-    return null;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (!isRecord(parsed) || typeof parsed['refresh_token'] !== 'string' || parsed['refresh_token'] === '') {
+  const parsed = parseJson(raw, isRecord);
+  if (parsed === null || typeof parsed['refresh_token'] !== 'string' || parsed['refresh_token'] === '') {
     return null;
   }
   const user = parsed['user'];

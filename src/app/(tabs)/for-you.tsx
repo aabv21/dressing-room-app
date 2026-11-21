@@ -1,7 +1,5 @@
-// For you (spec §3.7): 3–5 "what you're missing" ideas from the `for-you` function, each with how
-// many of the user's pieces it combines with, a line (Claude's, or a template rendered here) and
-// "Search in stores", which opens a web search for it in the system browser. Cards follow mockups
-// 01 and 04 (white rounded cards, accent pills).
+// For you: 3–5 "what you're missing" ideas from `for-you`, each with how many pieces it combines with,
+// a line (Claude's or a template) and "Search in stores" (a web search in the system browser).
 import { router } from 'expo-router';
 import { RotateCw, Search, Shirt, Sparkles, TriangleAlert, WifiOff } from 'lucide-react-native';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -21,7 +19,7 @@ type Translate = ReturnType<typeof useI18n>['t'];
 const SEARCH_HEIGHT = 40;
 const SWATCH_HEX = new Map(Object.entries(PALETTE_HEX));
 
-/** The Google search for an idea, in the app's language (global constraints' "Store search"). */
+/** The Google search for an idea, in the app's language. */
 function storeSearchUrl(searchQuery: string, locale: Locale): string {
   return `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}&hl=${locale}`;
 }
@@ -96,7 +94,7 @@ function LoadingCards(): React.JSX.Element {
   );
 }
 
-/** A small line above the cards when they're the last good ones, because the latest fetch failed. */
+/** Shown when the cards are the last good ones because the latest fetch failed. */
 function Note({ error }: { error: AiError }): React.JSX.Element {
   const { t } = useI18n();
   let Icon = TriangleAlert;

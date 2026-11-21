@@ -12,7 +12,6 @@ export const es: Record<MessageKey, string> = {
   'wear.other': '{count} usos',
 
   'grid.empty': 'Toma fotos de una parte de arriba, una de abajo y zapatos para empezar.',
-  'grid.loadError': 'No se pudo cargar la foto',
 
   'closet.gallery': 'Galería',
   'closet.burstMode': 'Tomar fotos',
@@ -174,7 +173,6 @@ export const es: Record<MessageKey, string> = {
   'auth.welcome.title': 'VÍSTETE\nSIN DUDAR',
   'auth.welcome.subtitle': 'Tu clóset en el bolsillo y una IA que te dice qué tan bien se ve.',
   'auth.welcome.cta': 'Crear cuenta',
-  'auth.social.apple': 'Continuar con Apple',
   'auth.social.google': 'Continuar con Google',
   'auth.divider.email': 'o con tu correo',
   'auth.field.email': 'Correo',

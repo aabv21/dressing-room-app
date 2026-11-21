@@ -1,16 +1,5 @@
-// The `lucky-list` Edge Function's request handler: the day's ranked "feeling lucky" outfits from
-// a signed-in user's closet. Rule-passing candidates come from seeded random draws (user id +
-// date); the 30 best pre-scored ones, spread over the closet (at most 2 per base, and a
-// per-slot cap on each garment while others remain), are rated with Jev and sorted by score; outfits
-// whose rating failed (or never started inside the time budget) follow in pre-score order with
-// `score: null`.
-// Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node
-// and `index.ts` serves it under Deno.
-//
-// Garments and the profile are read with the caller's own token (RLS applies); the quota,
-// `lucky_cache` and the weather cache use the service role. Logs carry only an outcome word,
-// never garments, the profile, prompts or model output. See `docs/ai.md`'s "The `lucky-list`
-// function".
+// The day's ranked "feeling lucky" outfits: docs/ai.md#the-lucky-list-function. Logs carry only an
+// outcome word, never garments, the profile, prompts or model output.
 
 import { OCCASIONS, type Occasion, type Slot, slotOf } from '../_shared/catalog.ts';
 import type { JevEnv, SupabaseEnv, WeatherEnv } from '../_shared/env.ts';
@@ -65,32 +54,18 @@ export type LuckyResponse =
 
 type OkResponse = Extract<LuckyResponse, { kind: 'ok' }>;
 
-/**
- * What `lucky_cache` stores: the response plus an internal marker, stripped before answering. A
- * degraded list (a failed or skipped Jev rating, or a forecast that failed for a known location)
- * is served from the cache for an hour only, so a better list is tried again soon (see `cacheGet`).
- */
+/** The response plus the internal `degraded` marker (a failed or skipped rating or forecast), stripped before answering. */
 type CachedLucky = OkResponse & { degraded: boolean };
 
 type Outcome = 'cached' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_quota' | 'invalid' | 'error';
 
 const LUCKY_DAILY_LIMIT = 10;
-/** How many of the best pre-scored candidates are rated with Jev. */
 const MAX_RANKED = 30;
-/**
- * At most this many of the ranked outfits share the same base (the same pieces but the extra), so
- * the list spreads.
- */
+/** Ranked outfits sharing one base (the same pieces but the extra). */
 const MAX_PER_BASE = 2;
-/**
- * The floor of the per-garment cap among the ranked outfits (raised for a slot with few
- * garments; see `selectForRanking`), applied while enough other candidates remain.
- */
+/** The floor of the per-garment cap (raised for a slot with few garments; see `selectForRanking`). */
 const MAX_PER_PIECE = 4;
-/**
- * No Jev ranking call starts once this long has passed since the request arrived, so the answer
- * lands inside the app's function deadline.
- */
+/** No Jev call starts this long after the request arrived, so the answer beats the app's deadline. */
 const RANK_BUDGET_MS = 15_000;
 const CACHE_VERSION = 2;
 
@@ -112,18 +87,12 @@ const locationOf = (profile: ProfileRow | null): string | null =>
   locationKey({ name: profile?.city_name ?? null, lat: profile?.city_lat ?? null, lon: profile?.city_lon ?? null });
 
 /**
- * The cache key. The closet fingerprint hashes each candidate garment's `garmentFingerprint`, so
- * wearing an outfit doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit
- * instead. The tuple
- * carries whether `pinned_on` equals *this request's* date, not the raw value: "Wear it" sets
- * `pinned_on` to tomorrow, and the raw date would otherwise change today's fingerprint too,
- * spending quota and re-ranking a list that "Wear it" was never meant to touch.
- * The profile part is `profileIdentity`: the fields a list depends on, not `updated_at`, so a
- * language toggle keeps today's list.
+ * Wearing an outfit doesn't change the key (`freshThisWeek` is recomputed on a hit instead). It
+ * carries whether `pinned_on` equals *this request's* date, not the raw value: "Wear it" pins for
+ * tomorrow and must not re-rank (and spend quota on) today's list.
  */
 function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, input: LuckyInput): Promise<string> {
-  // Only garments that can be candidates count: an upload still being read (no category
-  // yet) or a piece in the laundry or lent can't change today's list, so it doesn't change the key.
+  // Only garments that can be candidates count (not uncategorized, in the laundry or lent).
   const fingerprint = garments
     .filter((g) => g.category !== null && g.status === 'available')
     .sort(byId)
@@ -140,22 +109,12 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
   );
 }
 
-/**
- * The garments `pinned_on` equals the request's date, among the ones `generateCandidates` can
- * ever place (`available` and categorized); a pin on a garment that's in the laundry, lent,
- * donated, or still being read simply has no effect. `keepPinned` below accepts a candidate
- * containing any one of these, so a seeded draw biased towards one pinned piece doesn't starve
- * the others out of the final list — they can still turn up in an unforced draw.
- */
+/** Garments pinned for the request's date that `generateCandidates` can place (available, categorized). */
 function pinnedFor(garments: readonly RuleGarment[], date: string): RuleGarment[] {
   return garments.filter((g) => g.category !== null && g.status === 'available' && g.pinned_on === date);
 }
 
-/**
- * Candidates containing any of `pinned`, when at least one candidate does; otherwise `candidates`
- * unfiltered — a pin with no complete rule-passing candidate behind it is simply ignored, rather
- * than emptying today's list.
- */
+/** Candidates containing any of `pinned` when one does; otherwise all, rather than an empty list. */
 function keepPinned(candidates: readonly Outfit[], pinned: readonly RuleGarment[]): Outfit[] {
   if (pinned.length === 0) return [...candidates];
   const pinnedIds = new Set(pinned.map((g) => g.id));
@@ -164,10 +123,8 @@ function keepPinned(candidates: readonly Outfit[], pinned: readonly RuleGarment[
 }
 
 /**
- * A cached list answered against today's closet and weather: `freshThisWeek` from the current
- * wear dates, and this request's weather when it has one (else the validated stored one). The
- * list itself stays as ranked. Null (a miss) when the entry isn't a well-formed list of this
- * closet's garments.
+ * A cached list, still as ranked, with `freshThisWeek` from current wear dates and this request's
+ * weather (else the validated stored one). Null (a miss) when not a well-formed list of this closet.
  */
 function fromCache(
   cached: unknown,
@@ -203,11 +160,7 @@ type RankContext = {
   startedAt: number;
 };
 
-/**
- * Rates each candidate with Jev (at most `MAX_CONCURRENT_JEV` at once) and sorts them: rated
- * ones by score, highest first, then the rest in their input (pre-score) order. No rating
- * starts after `RANK_BUDGET_MS`; `complete` is false when any rating failed or was skipped.
- */
+/** Rated by score first, then the rest in pre-score order; `complete` is false when any rating failed or was skipped. */
 async function rank(ctx: RankContext, candidates: readonly Outfit[]): Promise<{ ranked: LuckyOutfit[]; complete: boolean }> {
   const entries = await mapLimit(
     candidates.map((outfit, index) => ({ outfit, index })),
@@ -238,14 +191,8 @@ function capSlotOf(garment: RuleGarment): Slot | null {
 }
 
 /**
- * The `MAX_RANKED` candidates Jev rates: the best by pre-score (ties in generation order), with at
- * most `MAX_PER_BASE` per base. A first pass also caps how many of them each base garment is in,
- * per slot: `max(MAX_PER_PIECE, ceil(MAX_RANKED / distinct garments of that slot among the
- * candidates))`. Tops and one-pieces are counted together, since either one dresses the body: a
- * lone top beside several dresses is not unavoidable. The few freshest pieces can't fill the
- * whole list, while a garment with no alternative (the one coat on a cold day, the one pair of
- * shoes) is never capped. A second pass fills what's left without that cap. Returned in
- * pre-score order.
+ * The `MAX_RANKED` candidates Jev rates, in pre-score order (ties in generation order), spread by
+ * the per-base and per-garment caps of docs/ai.md#the-lucky-list-function (step 5).
  */
 function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
   const sorted = candidates
@@ -322,12 +269,8 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
       return reply('over_quota', 429, { error: 'over_quota' });
     }
 
-    // `generateCandidates` sets `outerwearAvailable` from the closet itself, so a closet with no
-    // outerwear still gets candidates on a cold day.
     const rules: RuleContext = { occasion: input.occasion, season: seasonOf(input.date, lat), weather, today: input.date };
     const pinned = pinnedFor(garments, input.date);
-    // `generateCandidates` rotates the forced draw across every pinned garment that's admissible
-    // for this context on its own; `keepPinned` then accepts a candidate containing any of them.
     const generated = generateCandidates(
       garments,
       rules,
@@ -340,11 +283,8 @@ export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Re
       { env, fetch: fetchFn, rand: deps.rand ?? Math.random, profile, occasion: input.occasion, weather, rules, startedAt },
       candidates,
     );
-    // A location that resolved to coordinates but got no forecast is a transient failure; no city
-    // (or one that can't be geocoded) is not, and recomputing it hourly would only spend quota.
-    // NOTE: a geocode that times out for a typed city (no stored coordinates) looks like a city
-    // that can't be geocoded, so its weather-null list is cached for the day. Upgrade path: have
-    // `getLocalWeather` report why the weather is null (none, unknown city, upstream failure).
+    // Only a located city with no forecast is transient; recomputing an ungeocodable one hourly wastes quota.
+    // NOTE: a timed-out geocode looks ungeocodable, so its list is cached all day; upgrade: `getLocalWeather` reports why.
     const weatherFailed = weather === null && lat !== null && locationOf(profile) !== null;
     const result: CachedLucky = { kind: 'ok', weather, outfits: ranked, degraded: !complete || weatherFailed };
 

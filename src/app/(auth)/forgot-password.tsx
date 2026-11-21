@@ -39,12 +39,7 @@ export default function ForgotPasswordScreen() {
     announceForAccessibility(message);
   }
 
-  /**
-   * Shared email validation + `requestPasswordReset` call for both the initial send (step 1) and
-   * "Send a new code" (step 2's resend). Returns the outcome instead of setting any error state
-   * itself — step 1 and step 2 show failures in different places (the email field vs. nothing
-   * visible for an email that isn't on screen anymore), so each caller reports it to its own spot.
-   */
+  /** For the first send and the resend; returns the outcome because each step shows errors elsewhere. */
   async function sendCode(): Promise<{ ok: true } | { ok: false; message: string }> {
     const trimmedEmail = email.trim();
     if (trimmedEmail === '') {
@@ -76,10 +71,7 @@ export default function ForgotPasswordScreen() {
     }
   }
 
-  /**
-   * Reports to `codeError`, which step 2's Code field renders — not the email field's error, which
-   * step 2 never shows, so a resend failure (e.g. a network error) would be silently swallowed.
-   */
+  /** Reports to `codeError`: step 2 never shows the email field's error, so it would be swallowed. */
   async function handleResend(): Promise<void> {
     setCodeError(undefined);
     setCodeSent(false);
@@ -123,10 +115,8 @@ export default function ForgotPasswordScreen() {
     try {
       const result = await confirmPasswordReset(email.trim(), code, newPassword);
       if (!result.ok) {
-        // An invalid/expired code (or any other failure) keeps the user on step 2 with a "Send a
-        // new code" link rather than bouncing them back to step 1 and losing their email. The
-        // guard (not this screen) drives navigation on success — a fresh session is just a normal
-        // sign-in from AuthProvider's point of view.
+        // A failure keeps the user on step 2 with "Send a new code" rather than losing their email.
+        // On success the guard navigates: a fresh session is a normal sign-in to AuthProvider.
         const message = t(result.error);
         setCodeError(message);
         announce(message);
@@ -141,8 +131,7 @@ export default function ForgotPasswordScreen() {
     setStep('email');
     setCodeError(undefined);
     setPasswordError(undefined);
-    // Step 1 doesn't carry step 2's leftovers when the user comes back through "Change email" after
-    // already having typed a code or seen a confirmation.
+    // Back through "Change email": drop step 2's code and confirmation.
     setCode('');
     setCodeSent(false);
   }

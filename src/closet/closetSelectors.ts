@@ -1,3 +1,4 @@
+import { isCompleteOutfit } from '../../supabase/functions/_shared/outfitRules.ts';
 import type { MessageKey } from '../i18n';
 import { GARMENT_FIELDS, slotOf, type GarmentCategory, type GarmentColor, type GarmentField, type Slot } from './catalog';
 import type { GridItem } from './ClosetGrid';
@@ -89,7 +90,7 @@ export function firstOutfitProgress(garments: readonly Garment[]): FirstOutfitPr
   const bottom = slots.has('bottom');
   const onePiece = slots.has('one_piece');
   const shoes = slots.has('shoes');
-  return { top, bottom, onePiece, shoes, complete: shoes && (onePiece || (top && bottom)) };
+  return { top, bottom, onePiece, shoes, complete: isCompleteOutfit([...slots]) };
 }
 
 /** Active garments per slot; slots with none are absent, and uncategorized garments aren't counted. */
@@ -116,11 +117,9 @@ export function categoryCounts(garments: readonly Garment[], slot: Slot | 'all')
 }
 
 /**
- * Grid cells for the active garments in `filter` (`'all'` keeps uncategorized ones too), of
- * `category` when given, and, when `colors` is given, with one of those colors (Stats' "Your
- * colors" tap). `thumbUrls` is
- * keyed by garment id. The cache key changes only with `photo_version`, so a re-signed URL for the
- * same photo still hits expo-image's disk cache, and a replaced photo never shows the old one.
+ * Grid cells for the active garments in `filter` (`'all'` keeps uncategorized ones), `category` and
+ * `colors` when given. The cache key changes only with `photo_version`, so a re-signed URL still hits
+ * expo-image's disk cache and a replaced photo never shows the old one.
  */
 export function toGridItems(
   garments: readonly Garment[],

@@ -13,7 +13,6 @@ blockExoticSubdeps: true
 `;
 
 test("the repo's own pnpm-workspace.yaml passes", () => {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the repo's own config, not user input.
   expect(supplyChainProblems(readFileSync(new URL('../../pnpm-workspace.yaml', import.meta.url), 'utf8'))).toEqual([]);
 });
 

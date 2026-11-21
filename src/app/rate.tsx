@@ -1,29 +1,37 @@
-// "How does it look?" (mockup 01 screen 3): the AI's rating of a picked outfit — the score ring and
-// label, the AI confidence, template reasons, a one-tap swap for a low score — and Save / I'll wear
-// it. Today and Build push it with the garment ids (`ids`, comma-separated) and an optional
-// `occasion`. A root Stack screen inside the tabs guard, so there's no tab bar.
-import { randomUUID } from 'expo-crypto';
+// "How does it look?": the AI's rating of an outfit (score ring, confidence, reasons, a one-tap swap
+// for a low score) with Save / I'll wear it. Pushed from Today and Build: `/rate?ids=…[&occasion=…]`.
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronLeft, CircleAlert, RotateCw, Sparkles } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { UUID } from '../../supabase/functions/_shared/guards.ts';
 import { useAuth } from '../auth/AuthProvider';
-import { GARMENT_COLORS, OCCASIONS, type GarmentColor, type Occasion, type Slot } from '../closet/catalog';
+import {
+  GARMENT_COLORS,
+  MAX_OUTFIT_PIECES,
+  MIN_OUTFIT_PIECES,
+  OCCASIONS,
+  type GarmentColor,
+  type Occasion,
+  type Slot,
+} from '../closet/catalog';
 import { useCloset } from '../closet/ClosetProvider';
 import type { Garment } from '../closet/garmentRepository';
 import { isMessageKey, useI18n, type Locale } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
-import { localDate, rateOutfit, type AiError } from '../outfits/aiClient';
-import { logWear, saveOutfit } from '../outfits/outfitRepository';
+import { localDate } from '../lib/localDate';
+import { rateOutfit, type AiError } from '../outfits/aiClient';
+import { saveOutfit } from '../outfits/outfitRepository';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { missingPieceIdea, pieceLabel } from '../outfits/outfitDisplay';
 import { readStoredForYou } from '../outfits/storedForYou';
-import { logWearOrQueue, queuedWears } from '../outfits/wearQueue';
-import { useWornToday } from '../outfits/wornToday';
 import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
 import type { RatingReason, RatingResult } from '../outfits/types';
+import { useWearLog } from '../outfits/useWearLog';
+import { announceForAccessibility } from '../ui/a11y';
+import { ActionNotice } from '../ui/ActionNotice';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
@@ -33,11 +41,6 @@ type Translate = ReturnType<typeof useI18n>['t'];
 
 type Rating = { kind: 'loading' } | { kind: 'result'; result: RatingResult } | { kind: 'error'; error: AiError };
 
-/** `rate-outfit`'s input bounds (its `MIN_GARMENTS`/`MAX_GARMENTS`); an outfit outside them isn't sent. */
-const MIN_PIECES = 2;
-const MAX_PIECES = 6;
-/** The garment id shape `rate-outfit` accepts (`_shared/userContext.ts`'s `UUID`). */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Room for a message shown above the buttons, so it never covers the outfit's last piece.
 const NOTICE_ROOM = 56;
 /** Below this score with no swap shown, the rating points to For you. */
@@ -53,13 +56,12 @@ function parseIds(raw: string | string[] | undefined): string[] {
 }
 
 /**
- * Why a link's ids can't be rated, without asking the function: a malformed id can't be a garment
- * (`not_found`), and too few or too many pieces aren't an outfit (`incomplete`). Either way a retry
- * can't succeed, so the screen offers only "Go back".
+ * Why a link's ids can't be rated, without asking the function: a malformed id is `not_found`, a wrong
+ * piece count `incomplete`. A retry can't succeed, so the screen offers only "Go back".
  */
 function invalidIds(ids: readonly string[]): AiError | null {
   if (ids.some((id) => !UUID.test(id))) return 'not_found';
-  if (ids.length < MIN_PIECES || ids.length > MAX_PIECES) return 'incomplete';
+  if (ids.length < MIN_OUTFIT_PIECES || ids.length > MAX_OUTFIT_PIECES) return 'incomplete';
   return null;
 }
 
@@ -81,9 +83,8 @@ function joinColors(names: readonly string[], and: string, locale: Locale): stri
 }
 
 /**
- * A reason's text, or null for a key this app version doesn't know. color_harmony's good reason
- * carries `params.colors` as comma-separated enum values, localized here; with none it falls back
- * to a sentence without colors.
+ * A reason's text, or null for a key this app version doesn't know. color_harmony's good reason carries
+ * `params.colors` as comma-separated enum values, localized here (none: a sentence without colors).
  */
 function reasonText(reason: RatingReason, t: Translate, locale: Locale): string | null {
   if (!isMessageKey(reason.key)) return null;
@@ -148,7 +149,7 @@ function SwapCard({
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onTry}
-        // 36 pt like the mockup's small button; the slop keeps the 44 pt target.
+        // A 36 pt button; the slop keeps the 44 pt target.
         hitSlop={{ top: 4, bottom: 4 }}
         style={[styles.swapButton, disabled ? styles.dimmed : null]}
       >
@@ -161,15 +162,11 @@ function SwapCard({
   );
 }
 
-/**
- * Mockup 01 screen 3's "Missing something? → For you": a low score with no swap to offer (none
- * beat it, or the fallback rater searched none) points to the pieces the closet lacks.
- */
+/** "Missing something? → For you": a low score with no swap (none beat it, or the fallback rater searched none). */
 function ForYouLink({ weakestSlot }: { weakestSlot: Slot | null }): React.JSX.Element {
   const { t, locale } = useI18n();
   const { userId } = useAuth();
-  // The piece comes from the last For you answer in this language (no model call); without one for
-  // the weakest slot, the line stays generic.
+  // The piece comes from the last stored For you answer in this language (no model call), else generic.
   const stored = userId === null ? null : readStoredForYou(userId, locale);
   const idea = stored?.kind === 'ok' ? missingPieceIdea(stored.ideas, weakestSlot) : null;
   const question = idea === null ? t('rate.forYou') : t('rate.forYou.named', { piece: pieceLabel(idea, t) });
@@ -214,8 +211,8 @@ function ResultBody({
   const from = swap === null ? undefined : byId.get(swap.fromId);
   const to = swap === null ? undefined : byId.get(swap.toId);
   const swapShown = swap !== null && from !== undefined && to !== undefined;
-  // A swap to a garment the local closet doesn't have yet (added on another device, or since the
-  // last refresh) would stay hidden: refresh the closet once per swap target, and the card appears.
+  // A swap to a garment the local closet lacks (added elsewhere or since the last refresh) would stay
+  // hidden: refresh the closet once per swap target.
   const { refresh } = useCloset();
   const refreshedFor = useRef<string | null>(null);
   const missingTarget = swap !== null && (from === undefined || to === undefined) ? swap.toId : null;
@@ -271,7 +268,7 @@ function RateOutfit({
 }): React.JSX.Element {
   const { t } = useI18n();
   const insets = useScreenContentInsets('none');
-  const { garments, thumbUrls, refresh } = useCloset();
+  const { garments, thumbUrls } = useCloset();
   const byId = useMemo(() => new Map(garments.map((garment) => [garment.id, garment])), [garments]);
 
   const [ids, setIds] = useState(initialIds);
@@ -279,7 +276,7 @@ function RateOutfit({
   const rateable = initialError === null;
   const pieces = useMemo(() => ids.flatMap((id) => byId.get(id) ?? []), [ids, byId]);
 
-  // Bumped by "Try again": the effect below rates `ids` again.
+  // Bumped by "Try again" to rate `ids` again.
   const [attempt, setAttempt] = useState(0);
   const [rating, setRating] = useState<Rating>(() =>
     initialError === null ? { kind: 'loading' } : { kind: 'error', error: initialError },
@@ -297,7 +294,7 @@ function RateOutfit({
     };
   }, [ids, occasion, rateable, attempt]);
 
-  // False once the screen is gone: a late save or wear result is dropped.
+  // False once the screen is gone: a late save result is dropped.
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -306,79 +303,55 @@ function RateOutfit({
     };
   }, []);
 
-  // Save and I'll wear it, one at a time. The ref locks a second tap before the re-render lands.
-  const busy = useRef(false);
-  const [pending, setPending] = useState<'save' | 'wear' | null>(null);
-  const [saved, setSaved] = useState(false);
   // Shared with Today, so an outfit logged on either screen (or before a restart) stays logged here.
-  const day = localDate();
-  const { isWorn, markWorn } = useWornToday(day);
-  const logged = isWorn(ids);
-  const [actionError, setActionError] = useState<RequestError | null>(null);
-  // The wear sent to the offline queue: the note shows while it's still there.
-  const [queuedWearId, setQueuedWearId] = useState<string | null>(null);
-  const { userId } = useAuth();
-  // One id per wear attempt, kept across a retry so a lost response can't log it twice.
-  const wearId = useRef<string | null>(null);
-
-  const run = useCallback(
-    async (action: 'save' | 'wear', request: () => Promise<{ ok: true } | { ok: false; error: RequestError }>) => {
-      if (busy.current) return false;
-      busy.current = true;
-      setPending(action);
-      setActionError(null);
-      const outcome = await request();
-      busy.current = false;
-      if (!mounted.current) return false;
-      setPending(null);
-      if (!outcome.ok) {
-        setActionError(outcome.error);
-        AccessibilityInfo.announceForAccessibility(t(`outfit.error.${outcome.error}`));
-      }
-      return outcome.ok;
-    },
-    [t],
-  );
+  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued } = useWearLog(localDate());
+  const logged = isLogged(ids);
+  // Save, one at a time and never during a wear. The ref locks a second tap before the re-render lands.
+  const saving = useRef(false);
+  const [savePending, setSavePending] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<RequestError | null>(null);
+  const pending = savePending || wearBusy;
 
   const save = useCallback(async () => {
-    if (await run('save', () => saveOutfit(ids))) setSaved(true);
-  }, [run, ids]);
+    if (saving.current || wearBusy) return;
+    saving.current = true;
+    setSavePending(true);
+    setSaveError(null);
+    clearError();
+    const outcome = await saveOutfit(ids);
+    saving.current = false;
+    if (!mounted.current) return;
+    setSavePending(false);
+    if (outcome.ok) {
+      setSaved(true);
+    } else {
+      setSaveError(outcome.error);
+      announceForAccessibility(t(`outfit.error.${outcome.error}`));
+    }
+  }, [ids, t, wearBusy, clearError]);
 
   const wear = useCallback(
-    async (score: number) => {
-      const id = (wearId.current ??= randomUUID());
-      // Set inside the request, read after it: an object, so the flag isn't narrowed to its initial value.
-      const result = { queued: false };
-      const done = await run('wear', async () => {
-        if (userId === null) return { ok: false, error: 'unknown' };
-        // Offline the wear waits in the queue (WearQueueFlusher sends it) and shows as logged now.
-        const outcome = await logWearOrQueue(userId, { wearId: id, garmentIds: ids, wornOn: day, occasion, score }, logWear);
-        result.queued = outcome.status === 'queued';
-        return outcome.status === 'failed' ? { ok: false, error: outcome.error } : { ok: true };
-      });
-      if (done) {
-        markWorn(ids);
-        setQueuedWearId(result.queued ? id : null);
-        if (result.queued) {
-          AccessibilityInfo.announceForAccessibility(t('outfit.queued'));
-        } else {
-          void refresh();
-        }
-      }
+    (score: number) => {
+      if (saving.current) return;
+      setSaveError(null);
+      void log(ids, occasion, score);
     },
-    [run, ids, day, occasion, markWorn, refresh, t, userId],
+    [ids, occasion, log],
   );
 
-  const trySwap = useCallback((fromId: string, toId: string) => {
-    if (busy.current) return;
-    // A different outfit: its own save, wear and rating.
-    wearId.current = null;
-    setQueuedWearId(null);
-    setSaved(false);
-    setActionError(null);
-    setRating({ kind: 'loading' });
-    setIds((current) => current.map((id) => (id === fromId ? toId : id)));
-  }, []);
+  const trySwap = useCallback(
+    (fromId: string, toId: string) => {
+      if (saving.current || wearBusy) return;
+      // A different outfit: its own save, wear and rating.
+      setSaved(false);
+      setSaveError(null);
+      clearError();
+      setRating({ kind: 'loading' });
+      setIds((current) => current.map((id) => (id === fromId ? toId : id)));
+    },
+    [wearBusy, clearError],
+  );
 
   const retry = useCallback(() => {
     setRating({ kind: 'loading' });
@@ -386,19 +359,11 @@ function RateOutfit({
   }, []);
 
   let notice: React.ReactNode = undefined;
+  const actionError = saveError ?? errorFor(ids);
   if (actionError !== null) {
-    notice = (
-      <Text style={styles.actionError} accessibilityRole="alert">
-        {t(`outfit.error.${actionError}`)}
-      </Text>
-    );
-  } else if (
-    logged &&
-    queuedWearId !== null &&
-    userId !== null &&
-    queuedWears(userId).some((wear) => wear.wearId === queuedWearId)
-  ) {
-    notice = <Text style={styles.queued}>{t('outfit.queued')}</Text>;
+    notice = <ActionNotice tone="error">{t(`outfit.error.${actionError}`)}</ActionNotice>;
+  } else if (logged && isQueued(ids)) {
+    notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
 
   let body: React.ReactNode;
@@ -439,7 +404,7 @@ function RateOutfit({
         byId={byId}
         thumbUrls={thumbUrls}
         // A logged wear is of this outfit; swapping after it would rate one that wasn't worn.
-        swapDisabled={pending !== null || logged}
+        swapDisabled={pending || logged}
         onSwap={trySwap}
       />
     );
@@ -450,7 +415,7 @@ function RateOutfit({
         secondary={{
           label: saved ? t('outfit.saved') : t('outfit.save'),
           tone: 'ghost',
-          disabled: saved || pending !== null,
+          disabled: saved || pending,
           onPress: () => {
             void save();
           },
@@ -459,9 +424,9 @@ function RateOutfit({
           label: logged ? t('outfit.logged') : t('outfit.wear'),
           tone: 'commit',
           ...(logged ? {} : { icon: Check }),
-          disabled: logged || pending !== null,
+          disabled: logged || pending,
           onPress: () => {
-            void wear(result.score);
+            wear(result.score);
           },
         }}
       />
@@ -508,8 +473,7 @@ export default function RateScreen(): React.JSX.Element {
   const params = useLocalSearchParams<{ ids?: string | string[]; occasion?: string | string[] }>();
   const ids = parseIds(params.ids);
   const occasion = parseOccasion(first(params.occasion));
-  // Keyed by the outfit: a link to this screen while it's open (new params, same instance) starts
-  // over with the new outfit instead of keeping the old one's rating and swap state.
+  // Keyed by the outfit: a link while open (new params, same instance) starts over with fresh state.
   return (
     <RateOutfit
       key={`${ids.join(',')}|${occasion ?? ''}`}
@@ -652,27 +616,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingTop: spacing.xl,
     paddingHorizontal: spacing.sm,
-  },
-  actionError: {
-    alignSelf: 'center',
-    overflow: 'hidden',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.cell,
-    backgroundColor: colors.errorTint,
-    textAlign: 'center',
-    color: colors.error,
-    fontSize: 14,
-  },
-  queued: {
-    alignSelf: 'center',
-    overflow: 'hidden',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.cell,
-    backgroundColor: colors.tint,
-    textAlign: 'center',
-    color: colors.ink,
-    fontSize: 14,
   },
 });

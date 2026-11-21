@@ -1,10 +1,5 @@
-// Sign in with Apple's server-to-server calls: the ES256 client secret, the authorization-code
-// exchange (`/auth/token`) that yields the refresh token and the Apple user it belongs to, and its
-// revocation (`/auth/revoke`) when the account is deleted. `signInWithIdToken` keeps no Apple refresh token, so `apple-token` exchanges
-// the code at sign-in and stores it (`public.apple_tokens`) for `delete-account` to revoke.
-//
-// Runtime-neutral: WebCrypto (`crypto.subtle`), `atob`/`btoa`, `URLSearchParams` and the injected
-// `fetch` only, so Jest drives it under Node and the Edge Functions run it under Deno.
+// Sign in with Apple's server calls: the ES256 client secret, the code exchange (`/auth/token`) and
+// the revocation (`/auth/revoke`); why they exist: docs/database.md, "Account deletion and data export".
 
 import type { AppleEnv } from './env.ts';
 import { isRecord } from './guards.ts';
@@ -35,10 +30,8 @@ function pkcs8Bytes(pem: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
- * The client secret Apple's `/auth/token` and `/auth/revoke` take: a JWT signed with the `.p8` key
- * (ES256), header `{ alg, kid }`, claims `iss` (team), `sub` (bundle id), `aud`, `iat` and `exp`.
- * WebCrypto's ECDSA signature is already the raw `r || s` pair JWS wants. Throws when the key can't
- * be imported.
+ * The client secret: an ES256 JWT signed with the `.p8` key. WebCrypto's ECDSA signature is already
+ * the raw `r || s` pair JWS wants. Throws when the key can't be imported.
  */
 export async function appleClientSecret(env: AppleEnv, now: number): Promise<string> {
   const iat = Math.floor(now / 1000);
@@ -56,11 +49,7 @@ export async function appleClientSecret(env: AppleEnv, now: number): Promise<str
   return `${signingInput}.${base64url(new Uint8Array(signature))}`;
 }
 
-/**
- * POSTs a form to `{baseUrl}{path}` with a fresh client secret: whether Apple answered 2xx and its
- * JSON body (null when there is none). Null on any failure, the timeout (which covers reading the
- * body) included.
- */
+/** POSTs a form with a fresh client secret: 2xx-or-not and the JSON body; null on any failure or the timeout (body included). */
 async function postForm(
   env: AppleEnv,
   fetchFn: typeof fetch,
@@ -94,9 +83,8 @@ async function postForm(
 }
 
 /**
- * The Apple user id (`sub`) of an id_token Apple issued for `clientId`; null when it isn't one (another
- * issuer or audience, no `sub`, or not a JWT). The signature isn't checked: this only reads the
- * id_token from `/auth/token`'s answer to this server's own call to Apple over TLS.
+ * The `sub` of an id_token Apple issued for `clientId`, else null. The signature isn't checked: the
+ * token comes from this server's own TLS call to `/auth/token`.
  */
 export function appleSubject(idToken: unknown, clientId: string): string | null {
   if (typeof idToken !== 'string') return null;
@@ -115,7 +103,7 @@ export function appleSubject(idToken: unknown, clientId: string): string | null 
   }
 }
 
-/** What a code exchange yields: the refresh token, and the Apple user it's for (null when the id_token doesn't say). */
+/** `appleUserId` is null when the id_token doesn't say. */
 export type AppleTokens = { refreshToken: string; subject: string | null };
 
 /** Exchanges a sign-in authorization code at `/auth/token`; null when Apple refuses or can't be reached. */

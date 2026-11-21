@@ -1,9 +1,5 @@
-// Season derivation, outfit-completeness and rule checks, candidate generation and pre-scoring
-// for the rate-outfit and lucky-list Edge Functions.
-//
-// Runtime-neutral (only `catalog.ts` and `weather.ts` imported, nothing Deno- or Node-only) so
-// Jest exercises it under Node and the Edge Functions run it under Deno. Pure functions over the
-// data they're given: no network, so no Open-Meteo or Jev calls.
+// Season, outfit-completeness and rule checks, candidate generation and pre-scoring for
+// rate-outfit and lucky-list. Pure functions: no network, so no Open-Meteo or Jev calls.
 
 import {
   type GarmentCategory,
@@ -20,7 +16,6 @@ import type { WeatherSummary } from './weather.ts';
 /** `public.garment_status`, not yet exported from `catalog.ts` (that enum lives only in SQL today). */
 export type GarmentStatus = 'available' | 'laundry' | 'lent' | 'donated';
 
-/** The rating-relevant columns of a `garments` row that the outfit rules read. */
 export type RuleGarment = {
   id: string;
   category: GarmentCategory | null;
@@ -55,12 +50,9 @@ export type RuleContext = {
   weather: WeatherSummary | null;
   today: string;
   /**
-   * Whether the closet has at least one outerwear piece admissible for this context (available,
-   * in-season, in the occasion's formality range — not merely present in the closet). Defaults
-   * to `true` so existing callers (and `passesRules`'s original "cold requires outerwear"
-   * semantics) are unaffected; `generateCandidates` sets it from the actual closet. When `false`,
-   * a cold-weather outfit is allowed with no outerwear rather than making the lucky list empty for
-   * a user who owns none, or whose only coat doesn't fit today's occasion or season.
+   * Whether the closet has an outerwear piece admissible here (not merely present); default `true`.
+   * `generateCandidates` sets it; when `false`, a cold-day outfit may skip outerwear rather than
+   * leave the lucky list empty for a user without a coat that fits today's occasion or season.
    */
   outerwearAvailable?: boolean;
 };
@@ -103,17 +95,14 @@ function isRecentlyWorn(item: RuleGarment, today: string): boolean {
 export const TROPIC_LATITUDE = 23.44;
 
 /**
- * Month-and-hemisphere season: Dec–Feb is winter in the north and summer in the south, Mar–May
- * spring in the north and autumn in the south, and so on. `lat` is the user's city latitude.
- * `null` in the tropics and without a latitude (no city, or one that can't be geocoded): the
- * season rule is then off and the day's weather decides.
+ * Month-and-hemisphere season for the user's city latitude (Dec–Feb: winter north, summer south).
+ * `null` in the tropics or without a latitude (no city, or not geocodable): the weather decides.
  */
 export function seasonOf(date: string, lat: number | null): Season | null {
   if (lat === null || Math.abs(lat) < TROPIC_LATITUDE) return null;
   const month = Number(date.slice(5, 7));
   const north = lat >= 0;
 
-  // Northern-hemisphere month -> season; the south is offset by two quarters.
   const northernSeason: Season =
     month === 12 || month <= 2
       ? 'winter'
@@ -224,10 +213,9 @@ export function basePieces(outfit: Outfit): RuleGarment[] {
 }
 
 /**
- * The mean, over the outfit's base pieces, of (days since last worn, never-worn = 30, capped at
- * 30) plus 5 for a piece with a neutral color. Extras don't count, so adding a belt can't win,
- * and a mean doesn't favor top + bottom over a one-piece for having one more piece. An outfit of
- * extras only (rate-outfit's freshness of a single swap candidate) scores those pieces instead.
+ * Mean over the base pieces of days since last worn (capped at 30) plus 5 for a neutral color
+ * (docs/ai.md#the-lucky-list-function). An extras-only outfit (rate-outfit's freshness of a single
+ * swap candidate) scores those pieces instead.
  */
 export function preScore(outfit: Outfit, today: string): number {
   const base = basePieces(outfit);
@@ -258,7 +246,7 @@ function hashString(seed: string): number {
   return h >>> 0;
 }
 
-/** mulberry32: a small, fast, deterministic PRNG seeded from a 32-bit integer. */
+/** A small, fast, deterministic PRNG seeded from a 32-bit integer. */
 export function mulberry32(seed: number): () => number {
   let state = seed;
   return () => {
@@ -312,14 +300,10 @@ function groupBySlot(garments: readonly RuleGarment[]): SlotGroups {
 
 /** How many draws `generateCandidates` may make in total (both passes) per candidate it is asked for. */
 const ATTEMPTS_PER_CANDIDATE = 20;
-/** Every 4th draw forces that attempt's pinned garment into its slot (so 1 in 4, or 5, of a candidate's 20 attempts; see `generateCandidates`). */
+/** Every 4th draw forces that attempt's pinned garment into its slot. */
 const PIN_ATTEMPT_STRIDE = 4;
 
-/**
- * `items`, with `pinnedId` moved first when it's a member: `pick`'s index-0 fallback (an empty
- * `rng()` draw never lands past the array) and the forced-pick stride in `generateCandidates`
- * both read index 0, so this is the one place a "pick the pinned garment" attempt needs.
- */
+/** `items` with `pinnedId` moved first when present: `pick` returns index 0 on a forced attempt. */
 function withPinnedFirst<T extends { id: string }>(items: readonly T[], pinnedId: string | null): readonly T[] {
   if (pinnedId === null) return items;
   const index = items.findIndex((item) => item.id === pinnedId);
@@ -330,35 +314,9 @@ function withPinnedFirst<T extends { id: string }>(items: readonly T[], pinnedId
 }
 
 /**
- * Rule-passing outfit candidates from seeded random draws, so the list spreads over the closet
- * instead of exhausting one pair of shoes and one top first. Each draw picks shoes, then top +
- * bottom or a one-piece (weighted by how many garments can fill each: half the tops and bottoms
- * against the one-pieces), outerwear when the weather calls for it and the closet has an
- * admissible piece (a closet without one still gets candidates), and an optional bag or
- * accessory, where "none" weighs as much as all the extras together. Each slot's pool holds only
- * pieces that pass the per-piece rules (`fitsAlone`), so a few admissible garments in a large
- * closet are always reachable and a draw can only fail on colors or patterns. Duplicates are
- * dropped; drawing stops at `limit` candidates or after `limit × 20` draws in total. Items worn
- * in the last 7 days are avoided while at least 3 candidates survive without them: that first pass may use half the draws, the
- * fallback pass the rest. Deterministic for a given seed and closet order.
- *
- * `pinnedIds`, when given, also biases every `PIN_ATTEMPT_STRIDE`th draw to pick one of them for
- * its own slot instead of a random one — lucky-list asks for this on the garments pinned for
- * today. "Wear it" on the "Unused for 6 months" list (spec §3.6) pins a garment for tomorrow, and
- * that day's lucky list should include it whenever a complete outfit with it passes the rules; a
- * plain seeded draw can otherwise miss it across many seeds on a large closet. Only the pinned
- * garments that pass `fitsAlone` for this context are rotated through the forced attempts (one
- * per attempt, round-robin); an inadmissible pin (wrong season, formality, or an outerwear piece
- * on a hot day) never claims a forced attempt, so it can't starve an admissible sibling pin out
- * of them. An admissible pinned garment is also exempt from the 7-day recent-wear exclusion in
- * the first pass (a wear logged between the "Wear it" tap and the pinned day shouldn't silently
- * drop the pin), and a pinned outerwear piece is still tried on forced attempts even when the
- * weather doesn't call for outerwear (`passesRules` allows outerwear any day; it only requires it
- * when cold). The bias changes which garment a few draws use, not how many draws happen or how
- * the rest of the outfit is picked, so it only shifts the pinned garments' own odds, not the
- * overall distribution. `lucky-list` still re-checks that at least one of the returned candidates
- * actually contains a pin before treating it as pinned (a pinned garment might not fit any
- * rule-passing outfit at all).
+ * Rule-passing outfits from seeded random draws (deterministic for a seed and closet order); the
+ * sampling, the 7-day fallback pass and the pin bias: docs/ai.md#the-lucky-list-function. Pins are
+ * only biased toward; lucky-list re-checks that a returned candidate contains one.
  */
 export function generateCandidates(
   garments: readonly RuleGarment[],
@@ -370,9 +328,7 @@ export function generateCandidates(
   const rng = mulberry32(hashString(seed));
   const groups = groupBySlot(garments);
 
-  // Computed once from the closet: "available" means admissible for this context, using
-  // the same `isAdmissible` check `passesRules` applies per piece, so an inadmissible-only coat
-  // behaves the same as owning none.
+  // Admissible, not merely owned: an inadmissible-only coat behaves the same as owning none.
   const admissibleOuterwear = groups.outerwear.filter((item) => isAdmissible(item, ctx));
   const outerwearAvailable = admissibleOuterwear.length > 0;
   const ctxWithOuterwear: RuleContext = { ...ctx, outerwearAvailable };
@@ -381,9 +337,7 @@ export function generateCandidates(
     ctx.weather !== null &&
     (ctx.weather.band === 'cold' || (ctx.weather.rain && ctx.weather.band !== 'hot'));
 
-  // Only pins `fitsAlone` admits for this context ever claim a forced attempt: an
-  // inadmissible pin (the wrong season, formality, or a coat on a hot day) would otherwise waste
-  // every 4th attempt on a garment that can never appear, starving an admissible sibling pin.
+  // Only admissible pins claim forced attempts; an inadmissible one would starve its siblings.
   const byId = new Map(garments.map((item) => [item.id, item]));
   const admissiblePins = pinnedIds.flatMap((id) => {
     const item = byId.get(id);
@@ -402,8 +356,7 @@ export function generateCandidates(
   let attemptCount = 0;
 
   function draw(excludeRecentlyWorn: boolean, remaining: number, maxDraws: number): Outfit[] {
-    // An admissible pinned garment is kept even if it was worn recently — a wear logged
-    // between the "Wear it" tap and the pinned day shouldn't silently drop it from every draw.
+    // An admissible pin survives the recent-wear exclusion (a wear after the "Wear it" tap).
     const pool = (items: readonly RuleGarment[]): readonly RuleGarment[] =>
       items.filter(
         (item) =>
@@ -424,8 +377,7 @@ export function generateCandidates(
     const seen = new Set<string>();
     for (let attempt = 0; attempt < maxDraws && results.length < remaining; attempt += 1) {
       drawsLeft -= 1;
-      // Round-robins the forced garment across every admissible pin, one per forced attempt, so
-      // several simultaneous pins each get a fair share of the bias rather than only the first.
+      // Round-robin over the admissible pins so each gets a fair share of the bias.
       const forcedPin =
         admissiblePins.length > 0 && attemptCount % PIN_ATTEMPT_STRIDE === 0
           ? (admissiblePins.at(Math.floor(attemptCount / PIN_ATTEMPT_STRIDE) % admissiblePins.length) ?? null)
@@ -433,8 +385,7 @@ export function generateCandidates(
       attemptCount += 1;
       const pinnedId = forcedPin?.id ?? null;
 
-      // A pinned outerwear piece is tried even when the weather doesn't call for outerwear —
-      // `passesRules` allows outerwear on any day, it only requires it when cold.
+      // `passesRules` allows outerwear any day (it only requires it when cold).
       const drawOuterwear = needsOuterwear || (pinnedId !== null && outerwearPinIds.has(pinnedId));
 
       const outfit: (RuleGarment | undefined)[] = [pick(withPinnedFirst(shoes, pinnedId), pinnedId)];

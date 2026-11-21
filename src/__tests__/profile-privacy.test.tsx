@@ -26,10 +26,8 @@ jest.mock('../closet/UploadQueueProvider', () => ({
   }),
 }));
 
-jest.mock('../auth/AuthProvider', () => ({
-  AuthProvider: ({ children }: { children?: React.ReactNode }) => children,
-  useAuth: jest.fn(),
-}));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above
+jest.mock('../auth/AuthProvider', () => require('../test/authMock'));
 
 jest.mock('../profile/profileRepository', () => ({
   getProfile: jest.fn(),
@@ -131,14 +129,11 @@ import { renderRouter } from 'expo-router/testing-library';
 import { deleteAccount, exportData } from '../account/accountClient';
 import type { DataExport } from '../account/accountClient';
 import { deletionState } from '../account/deletionMarker';
-import { useAuth } from '../auth/AuthProvider';
 import { signOut, signOutLocally, storedSessionUserId } from '../auth/authService';
 import { allowUserKeys, kvGet, kvKeys, kvRemove, kvSet } from '../lib/kv';
-import { getProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
+import { resetAuth, setAuth } from '../test/authMock';
 
-const mockedUseAuth = jest.mocked(useAuth);
-const mockedGetProfile = jest.mocked(getProfile);
 const mockedDeleteAccount = jest.mocked(deleteAccount);
 const mockedExportData = jest.mocked(exportData);
 const mockedShare = jest.mocked(Sharing.shareAsync);
@@ -189,7 +184,7 @@ function profileRow(): Profile {
 }
 
 async function openProfile() {
-  mockedGetProfile.mockResolvedValue(profileRow());
+  setAuth({ profile: profileRow() });
   await renderRouter({ appDir: 'src/app', overrides: {} }, { initialUrl: '/profile' });
   await screen.findByTestId('profile-form');
 }
@@ -218,13 +213,7 @@ beforeEach(() => {
   mockCacheNames.length = 0;
   for (const key of kvKeys()) kvRemove(key);
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
-  mockedUseAuth.mockReturnValue({
-    status: 'signedIn',
-    userId: USER_ID,
-    email: 'ana@example.com',
-    onboardingComplete: true,
-    refreshProfile: jest.fn(() => Promise.resolve(true)),
-  });
+  resetAuth({ userId: USER_ID, email: 'ana@example.com' });
   mockedSessionUser.mockReturnValue(null);
   // A deletion refuses the user's later writes for the process; each test starts from a live account.
   allowUserKeys(USER_ID);

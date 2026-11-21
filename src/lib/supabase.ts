@@ -7,14 +7,8 @@ import type { StoredSession } from './storedSession';
 import type { Database } from './database.types';
 import { fetchWithTimeout } from './fetchWithTimeout';
 
-// `expo-sqlite/localStorage/install` installs a SQLite-backed `localStorage` global (see
-// expo-sqlite's `localStorage/install.js`) before `createClient` reads it below. The `localStorage`
-// identifier itself comes from the DOM lib Expo's base tsconfig includes; there is no DOM here at
-// runtime, but the shape matches what expo-sqlite installs.
-//
-// Expo inlines `process.env.EXPO_PUBLIC_*` at build time via static analysis, so these must be
-// literal member expressions — a dynamic `process.env[name]` lookup would not be replaced and
-// would read `undefined` at runtime. See AGENTS.md and the Expo env vars docs.
+// `expo-sqlite/localStorage/install` installs a SQLite-backed `localStorage` before `createClient` reads
+// it (typed by the DOM lib). Expo inlines only literal `process.env.EXPO_PUBLIC_*` member expressions.
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -41,9 +35,8 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
 });
 
 /**
- * The persisted session's user, read straight from storage. supabase-js reports no session at
- * launch when an expired access token can't be refreshed for lack of network, although the session
- * is still stored and its refresh keeps being retried; this lets the app stay signed in meanwhile.
+ * Read straight from storage: offline with an expired token supabase-js reports no session at launch
+ * while still storing it and retrying, so this keeps the app signed in meanwhile.
  */
 export function readStoredSession(): StoredSession | null {
   return parseStoredSession(localStorage.getItem(authStorageKey));
@@ -55,9 +48,8 @@ export function clearPersistedAuth(): void {
 }
 
 /**
- * Ties Supabase's background token refresh to the app's foreground/background state, per
- * supabase-js's React Native guidance: refreshing while backgrounded wastes battery and can
- * throw once the refresh request outlives the app's background execution window.
+ * Refreshes tokens only in the foreground (supabase-js's React Native guidance): in the background it
+ * wastes battery and can throw once the request outlives the background window.
  */
 export function startAuthAutoRefresh(): () => void {
   const subscription = AppState.addEventListener('change', (status) => {

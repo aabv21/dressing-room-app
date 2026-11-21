@@ -1,11 +1,5 @@
-// The `extract-attributes` Edge Function's request handler: called by a database webhook after a
-// garment row is inserted, it sends the garment's photo to Claude and writes the enum-only
-// attributes back. The photo is read through `_shared/photoStore.ts`. Runtime-neutral: every effect
-// goes through the injected `fetch`, so Jest drives it under Node and `index.ts` serves it under Deno.
-//
-// Every failure after the garment is loaded (quota check, photo, Claude, parsing) still ends the
-// garment's `pending` state, so it always reaches review. Logs carry only the garment id and an
-// outcome word, never the photo, the prompt or the model's output.
+// Webhook after a garment insert: Claude reads the photo, enum attributes are written back. Any failure
+// after loading still ends `pending`. Logs carry only the garment id and an outcome word.
 
 import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
 import type { ClaudeEnv, ServiceEnv, WebhookEnv } from '../_shared/env.ts';
@@ -129,11 +123,8 @@ async function extract(deps: ExtractDeps, garment: Garment): Promise<WriteBack> 
 
 /** Returns whether the guarded write matched the garment. */
 async function writeBack(deps: ExtractDeps, garment: Garment, patch: Record<string, unknown>): Promise<boolean> {
-  // The `pending` filter makes a duplicate webhook delivery a no-op instead of a second write. The
-  // `reviewed_at` one keeps a review saved while Claude was answering (the app sends a garment to
-  // review after 10 minutes by the device's clock) from being overwritten by the model's guesses,
-  // and the `updated_at` one (the value read before the Claude call; every write to the row moves
-  // it) does the same for an edit saved in the garment detail, which leaves `reviewed_at` null.
+  // `pending` makes a duplicate delivery a no-op; `reviewed_at` and `updated_at` (read before the
+  // Claude call) keep a review or a detail edit saved meanwhile from being overwritten by the model.
   const filter = [
     `id=eq.${garment.id}`,
     'extraction_status=eq.pending',
@@ -168,8 +159,7 @@ export async function handleExtract(request: Request, deps: ExtractDeps): Promis
       outcome = (await writeBack(deps, garment, result.patch)) ? result.outcome : 'skipped';
     }
   } catch {
-    // The database itself failed (loading or writing back). The garment may stay `pending`; the app
-    // treats a garment pending for 10 minutes as failed, so it still reaches review.
+    // The database failed; a garment left `pending` reaches review after the app's 10-minute timeout.
     log(garmentId, 'error');
     return json(500, { error: 'internal' });
   }

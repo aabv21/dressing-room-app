@@ -88,10 +88,8 @@ export const APPLE_DEFAULT_BASE_URL = 'https://appleid.apple.com';
 const APPLE_REQUIRED = ['APPLE_TEAM_ID', 'APPLE_KEY_ID', 'APPLE_PRIVATE_KEY', 'APPLE_CLIENT_ID'] as const;
 
 /**
- * The Apple env, or null when any of the four required variables is missing, blank or an
- * unresolved `env(...)` reference: a bare `supabase start` without the variable the config names
- * can pass that literal string through instead of leaving it unset. Without it the Apple calls are
- * skipped, never failed.
+ * Null (the Apple calls are skipped, never failed) when a required variable is missing, blank or an
+ * unresolved `env(...)` literal, which a bare `supabase start` passes through instead of leaving unset.
  */
 export function appleEnvFrom(get: (name: string) => string | undefined): AppleEnv | null {
   const values = APPLE_REQUIRED.map((name) => get(name)?.trim() ?? '');

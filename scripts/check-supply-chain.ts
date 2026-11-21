@@ -1,11 +1,5 @@
-// scripts/check-supply-chain.ts
-//
-// Fails when pnpm-workspace.yaml loses the supply-chain settings CI can't otherwise see:
-// `pnpm install --frozen-lockfile` installs exactly what the lockfile says and does not re-check
-// trust evidence or release age, so a weakened policy (or a trust exception) would pass CI silently.
-//
-// Usage:
-//   node scripts/check-supply-chain.ts
+// Fails when pnpm-workspace.yaml loses its supply-chain settings: `pnpm install --frozen-lockfile` doesn't
+// re-check trust evidence or release age, so CI would pass a weakened policy (or a trust exception) silently.
 
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -43,7 +37,6 @@ export function supplyChainProblems(yaml: string): string[] {
 
 async function main(): Promise<void> {
   // A fixed path to the repo's own config, never user input.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const problems = supplyChainProblems(await readFile(WORKSPACE_FILE_PATH, 'utf8'));
   if (problems.length > 0) {
     console.error(`pnpm-workspace.yaml: ${problems.join('; ')}`);
@@ -53,7 +46,6 @@ async function main(): Promise<void> {
   console.log('pnpm-workspace.yaml: supply-chain settings OK');
 }
 
-/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
 function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
   return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
 }

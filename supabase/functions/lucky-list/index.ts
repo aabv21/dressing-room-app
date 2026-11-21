@@ -1,4 +1,3 @@
-// Deno entry point for `lucky-list`; the logic is in `handler.ts`.
 import { readEnv } from '../_shared/env.ts';
 import { handleLucky } from './handler.ts';
 

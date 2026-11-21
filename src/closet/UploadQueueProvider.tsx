@@ -1,12 +1,12 @@
-import * as Network from 'expo-network';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Alert, AppState } from 'react-native';
+import { Alert } from 'react-native';
 
 import { confirmPendingDeletion } from '../account/deletionFlow';
 import { deletionState } from '../account/deletionMarker';
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n';
+import { useOnResume } from '../lib/useOnResume';
 import { useCloset } from './ClosetProvider';
 import {
   clearQueue,
@@ -31,10 +31,9 @@ interface UploadQueueContextValue {
   retryFailed: () => void;
   discardFailed: () => void;
   /**
-   * For account deletion: `pause` stops the queue and resolves once a stage in flight has finished,
-   * so nothing reaches storage after the server has listed it; nothing runs until `resume`.
-   * `clear` drops every queued photo, only once the account is gone. `resume` unpauses and runs
-   * the queue (`run: false` only unpauses, for a user who is signing out).
+   * For account deletion: `pause` resolves once a stage in flight has finished, so nothing reaches
+   * storage after the server's listing; `clear` only once the account is gone; `resume` runs the queue
+   * (`run: false` only unpauses, for a user signing out).
    */
   pause: () => Promise<void>;
   clear: () => void;
@@ -66,22 +65,10 @@ function nextRetryAt(items: readonly QueueItem[], now: number): number | null {
   return next;
 }
 
-/**
- * Runs the signed-in user's persisted upload queue: on mount (a launch resumes whatever an earlier
- * session left), after every enqueue, when the app returns to the foreground, when the network
- * comes back, and at the earliest pending retry, so a backed-off item doesn't wait for an
- * unrelated trigger while the app stays open. A pass that committed garments refreshes the closet.
- *
- * While the user's account deletion is unconfirmed (`account.deleting.<id>`, see
- * `src/account/deletionMarker.ts`) the queue never runs, and mounting (a launch or sign-in with the
- * marker present), the app returning to the foreground and a reconnect only check whether the
- * account still exists (`confirmPendingDeletion`); they never delete anything without the user's
- * tap. Mounting also carries out queue purge requests for other accounts (see `upload/queuePurge.ts`).
- */
+/** When the queue runs and how an unconfirmed deletion holds it: docs/app.md#the-closet-srccloset. */
 export function UploadQueueProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { userId: sessionUserId } = useAuth();
-  // The user whose queue this is, fixed for the provider's lifetime (keyed by user in the layout);
-  // a pass started for them never runs another account's queue during a switch.
+  // Fixed for the provider's lifetime (keyed by user in the layout), so a switch never runs another queue.
   const [userId] = useState(sessionUserId);
   const sessionUser = useRef(sessionUserId);
   useEffect(() => {
@@ -93,8 +80,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
   const [counts, setCounts] = useState<Counts>(() =>
     userId === null ? { pending: 0, failed: 0 } : countsOf(listQueue(userId)),
   );
-  // A new object after every pass (even for the same time), so the timer effect below always
-  // re-arms: a pass that ended without changing the earliest retry still schedules one.
+  // A new object after every pass, even for the same time, so the timer effect always re-arms.
   const [nextRetry, setNextRetry] = useState<{ at: number } | null>(null);
   const mounted = useRef(true);
 
@@ -107,8 +93,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
   }, [userId]);
 
   const run = useCallback(async (): Promise<void> => {
-    // Another account's session is already active (a switch still settling): starting a pass would
-    // only burn the owner's retry attempts on SessionMismatchError.
+    // Another account's session is active (a switch settling): a pass would only burn retry attempts.
     if (userId === null || sessionUser.current !== userId) {
       return;
     }
@@ -122,8 +107,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     } catch {
       // A storage error aborted the pass; the items stay queued for the next trigger.
     }
-    // Unmounted (signed out or switched user) while the pass ran: no refresh and no retry timer
-    // for a user who is gone. Their items stay queued for their next sign-in.
+    // Unmounted while the pass ran: no refresh or timer for a user who is gone; their items stay queued.
     if (!mounted.current) {
       return;
     }
@@ -163,10 +147,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     [userId, run],
   );
 
-  /**
-   * While the user's deletion is unconfirmed, checks whether the account still exists (verify only,
-   * never a deletion; overlapping checks share one) and reports true, so the caller skips its run.
-   */
+  /** While a deletion is unconfirmed, only verifies the account (never deletes) and returns true to skip the run. */
   const verifyPendingDeletion = useCallback((): boolean => {
     if (userId === null || deletionState(userId) === null) {
       return false;
@@ -187,10 +168,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     };
   }, [nextRetry, run]);
 
-  // An account forgotten after a lost session mid-deletion left its queued photos behind
-  // (`queue.purge.<uid>`); this mount clears them. A request for this provider's own user is only
-  // dropped: their session shows the account still exists, so their queue runs as before. A
-  // request whose clear failed stays for the next mount.
+  // Carries out `queue.purge.<uid>` requests (only dropped for this user): docs/app.md#account-deletion-on-the-device.
   useEffect(() => {
     let requests: string[];
     try {
@@ -210,44 +188,27 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
     }
   }, [userId]);
 
+  // Mount, foreground and reconnect either check an unconfirmed deletion or run the queue.
+  const trigger = useCallback(() => {
+    if (!verifyPendingDeletion()) {
+      void run();
+    }
+  }, [run, verifyPendingDeletion]);
   useEffect(() => {
     mounted.current = true;
-    // Mount, foreground and reconnect either check an unconfirmed deletion or run the queue.
-    const trigger = (): void => {
-      if (!verifyPendingDeletion()) {
-        void run();
-      }
-    };
     trigger();
-
-    const appState = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
-        trigger();
-      }
-    });
-    let wasOnline: boolean | null = null;
-    const network = Network.addNetworkStateListener((event) => {
-      const online = event.isConnected === true && event.isInternetReachable !== false;
-      if (online && wasOnline === false) {
-        trigger();
-      }
-      wasOnline = online;
-    });
-
     return () => {
       mounted.current = false;
-      appState.remove();
-      network.remove();
     };
-  }, [run, verifyPendingDeletion]);
+  }, [trigger]);
+  useOnResume(trigger);
 
   const enqueue = useCallback(
     (uris: readonly string[]) => {
       if (userId === null || uris.length === 0) {
         return;
       }
-      // A photo that couldn't be copied into the app's storage (e.g. the disk is full) is reported;
-      // the others are queued and run below.
+      // A photo that couldn't be copied (e.g. a full disk) is reported; the others still run.
       if (enqueuePhotos(userId, uris).failed > 0) {
         Alert.alert(t('closet.addFailed'));
       }

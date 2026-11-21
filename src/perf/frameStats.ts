@@ -18,10 +18,8 @@ export const EMPTY_FRAME_STATS: FrameStats = {
 export const MAX_BUFFERED_FRAMES = 6000;
 
 /**
- * Summarizes a buffer of per-frame deltas (ms between consecutive frames) into drop-rate and
- * tail-latency stats. A frame counts as "dropped" when it took more than 1.5x the median delta,
- * which adapts to both 60 Hz (~16.7 ms) and 120 Hz ProMotion (~8.3 ms) displays without a
- * hardcoded target frame time.
+ * Deltas in ms. A frame is "dropped" over 1.5x the median delta, which fits 60 Hz (~16.7 ms) and
+ * 120 Hz (~8.3 ms) displays without a hardcoded target.
  */
 export function summarizeFrameDeltas(deltasMs: readonly number[]): FrameStats {
   const frames = deltasMs.length;

@@ -4,7 +4,7 @@ import { androidRipple, pressedStyle, tapHaptic } from './feedback';
 
 import { colors, layout, selectionRing, textScale } from './theme';
 
-/** A large single-choice card (mockup 03 screen 2's `.opt`): emoji, bold title, muted subtitle. */
+/** A large single-choice card: emoji, bold title, muted subtitle. */
 export function OptionCard(props: {
   emoji: string;
   title: string;

@@ -7,17 +7,9 @@ import { appendFrameDeltas, EMPTY_FRAME_STATS, summarizeFrameDeltas, type FrameS
 const PUBLISH_INTERVAL_MS = 500;
 
 /**
- * Records per-frame deltas on the UI thread while `active` and summarizes them on the JS thread.
- *
- * The UI thread only appends to a small chunk in place and, every 500 ms, hands that chunk (not
- * the whole history) to JS and starts a new one, so the work it adds to each frame stays constant.
- * JS accumulates the chunks, applies the 6,000-frame cap and recomputes the stats. When `active`
- * turns false, the last partial chunk is flushed too, so the slowdown at the end of a fling is
- * counted.
- *
- * NOTE: shared values are read/written via `.get()`/`.set()`/`.modify()`, not `.value` — the React
- * Compiler integration in eslint-plugin-react-hooks v7 flags direct `.value` assignment as an
- * immutability violation; these are Reanimated's compiler-compliant equivalents.
+ * The UI thread appends frame deltas to a small chunk and hands it to JS every 500 ms (and on deactivation,
+ * so a fling's tail counts), keeping per-frame work constant; JS applies the 6,000-frame cap.
+ * NOTE: `.get()`/`.set()`/`.modify()`, not `.value`, which react-hooks v7's React Compiler rule flags as mutation.
  */
 export function useFrameStats(active: boolean): { stats: FrameStats; reset: () => void } {
   const [stats, setStats] = useState<FrameStats>(EMPTY_FRAME_STATS);
@@ -40,8 +32,7 @@ export function useFrameStats(active: boolean): { stats: FrameStats; reset: () =
     scheduleOnRN(receive, pending);
   }, [chunk, receive]);
 
-  // `useFrameCallback` re-registers its worklet whenever this callback's identity changes, so it
-  // only depends on stable values (shared values and `useCallback`s with stable deps).
+  // `useFrameCallback` re-registers on each new identity, so this depends only on stable values.
   const onFrame = useCallback(
     (frameInfo: FrameInfo) => {
       'worklet';

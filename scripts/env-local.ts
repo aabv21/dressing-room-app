@@ -1,11 +1,5 @@
-// scripts/env-local.ts
-//
-// Generates `.env.local` from the running local Supabase stack's `supabase status -o env`
-// output: the two EXPO_PUBLIC_* keys the app bundles, plus the service-role key and DB URL used
-// only by scripts and integration tests (never read from src/).
-//
-// Usage:
-//   node scripts/env-local.ts
+// `pnpm env:local`: writes `.env.local` from `supabase status -o env`: the two EXPO_PUBLIC_* keys the app
+// bundles, plus the service-role key and DB URL only scripts and integration tests read (never src/).
 
 import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -25,14 +19,8 @@ const OWNED_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Maps `supabase status -o env` output to the app and test variables, in a fixed order. Throws if
- * `API_URL` or `ANON_KEY` is missing — the two keys the app cannot run without.
- *
- * When `existing` (an already-read `.env.local`) is given, this merges rather than clobbers: the
- * four Supabase keys are (re)written in their fixed order first, and every other line from
- * `existing` — e.g. `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, set by hand from the owner runbook —
- * is kept, in its original order, after them. Without `existing`, the result is just the four keys,
- * matching the previous (pre-merge) behavior.
+ * Maps `supabase status -o env` output to the four keys in a fixed order; throws without `API_URL` or `ANON_KEY`.
+ * Every other line of `existing` (e.g. a hand-set `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`) is kept, in order, after them.
  */
 export function toEnvFile(statusEnv: Readonly<Record<string, string>>, existing?: string): string {
   const apiUrl = statusEnv['API_URL'];
@@ -97,9 +85,7 @@ function parseStatusEnv(output: string): Record<string, string> {
 /** Reads the current `.env.local`, or `undefined` if it doesn't exist yet (a first run). */
 async function readExistingEnvFile(): Promise<string | undefined> {
   try {
-    // ENV_FILE_PATH is this script's own fixed path, never user input, so this isn't the
-    // path-traversal sink the rule guards against.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    // ENV_FILE_PATH is this script's own fixed path, never user input.
     return await readFile(ENV_FILE_PATH, 'utf8');
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
@@ -116,13 +102,10 @@ async function main(): Promise<void> {
   ]);
   const statusEnv = parseStatusEnv(stdout);
   const contents = toEnvFile(statusEnv, existing);
-  // Same fixed path as readExistingEnvFile above.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await writeFile(ENV_FILE_PATH, contents, 'utf8');
   console.log(`Wrote ${ENV_FILE_PATH}`);
 }
 
-/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
 export function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
   return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
 }

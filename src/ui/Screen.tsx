@@ -12,31 +12,20 @@ import { colors, gradients, spacing, textScale } from './theme';
 type ScreenProps = {
   cta?: ComponentProps<typeof AnchoredCta>;
   chrome?: ScreenChrome;
-  /**
-   * Rendered above the title (mockup 03 screen 1's `.top` row: the LanguageToggle sits top-right,
-   * above the headline, not beside it at the same baseline). Only meaningful with `scroll !==
-   * false`, since a non-scrolling screen renders its own header entirely.
-   */
+  /** Rendered above the title (e.g. Welcome's LanguageToggle); a `scroll: false` screen renders its own header. */
   headerAccessory?: React.ReactNode;
-  /**
-   * 'hero' is ~1.26x the default title size (about 21-22pt vs 17pt), weight 900, and does not
-   * uppercase or strip line breaks — for `auth.welcome.title`'s forced two-line headline
-   * ("DRESS\nWITHOUT DOUBT"). 'default' (unset) keeps the existing single-line uppercased title.
-   */
+  /** 'hero': larger, not uppercased, keeps line breaks (Welcome's two-line "DRESS\nWITHOUT DOUBT"). */
   titleVariant?: 'default' | 'hero';
 } & (
   | {
-      /** Default: Screen scrolls its children and renders the title above them. */
       scroll?: true;
       title: string;
       children: React.ReactNode;
     }
   | {
       /**
-       * For screens whose content is its own scroll container (a virtualized list). Children fill
-       * the screen; they render `ScreenTitle` themselves (e.g. as the list header) and pad their
-       * content with `useScreenContentInsets()`. Nesting a list inside the default ScrollView would
-       * stretch it to its full height and defeat virtualization.
+       * Content that is its own scroll container (a virtualized list, which a ScrollView would defeat).
+       * Children render `ScreenTitle` themselves and pad with `useScreenContentInsets()`.
        */
       scroll: false;
       children: React.ReactNode;
@@ -138,10 +127,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     letterSpacing: 1,
   },
-  // ~1.26x the default 17pt title (the mockup's hero is about 21–22pt), same 900 weight; no uppercase (a
-  // catalog-provided "\n" forces the mockup's two-line break instead of wrapping unpredictably).
-  // `letterSpacing: 1.1` matches the mockup's `.ttl { letter-spacing: .05em }` at this 22pt size
-  // (CSS `em` is relative to the element's own font-size: 22 * 0.05 = 1.1pt).
+  // No uppercase: the catalog's "\n" forces the two-line break. `letterSpacing` is 0.05em at 22pt.
   heroTitle: {
     color: colors.ink,
     fontWeight: '900',
@@ -149,9 +135,8 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     letterSpacing: 1.1,
   },
-  // No justifyContent here by design: callers control their own accessory's alignment (e.g.
-  // welcome's language toggle sits flex-end; sign-in/forgot-password's back chevron sits
-  // flex-start) by wrapping their content in a full-width row with the alignment they need.
+  // No justifyContent: callers align their accessory (Welcome's toggle flex-end, a back chevron
+  // flex-start) with a full-width row of their own.
   headerRow: {
     flexDirection: 'row',
   },

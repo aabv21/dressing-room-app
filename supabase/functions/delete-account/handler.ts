@@ -1,25 +1,5 @@
-// The `delete-account` Edge Function's request handler: deletes the signed-in caller's account.
-//   0. The caller is confirmed with `GET /auth/v1/user` and the caller's own token (the gateway has
-//      verified the JWT; this makes sure Auth still knows the user before anything irreversible).
-//      An unknown user means a previous attempt already finished: the `{uid}/` folder is swept
-//      once more (a photo the app uploaded while that attempt's answer was lost), then `deleted`.
-//   1. Every object under `garments/{uid}/` is listed (1000 entries per page, the garment folders
-//      `LIST_CONCURRENCY` at a time), and only then removed, 1000 paths per call; both go through
-//      `_shared/photoStore.ts`.
-//   2. The stored Apple refresh token, if there is one, is revoked with Apple. A failed revoke (or a
-//      failed read of the token row) never blocks the deletion.
-//   3. The auth user is deleted (`DELETE /auth/v1/admin/users/{id}`); every public table cascades
-//      from `auth.users`, `apple_tokens` included. A 404 means a concurrent attempt deleted it
-//      first, so the folder is swept again, as in step 0.
-//   4. Once this call has deleted the user, the folder is swept one last time, best effort: another
-//      device (or a token that is still valid) can upload between steps 1 and 3, because the
-//      storage insert policy only checks the folder's uid. A failed sweep never changes the answer.
-// Steps 1–4 use the service role. Safe to retry: a failure in step 0, 1 or 3 answers 500 with the
-// user still there, so a retry starts over with whatever is left; once the user is gone, a retry
-// (the caller's token is still valid until it expires) sweeps the folder at step 0 and answers
-// `deleted`. The uid is always the verified JWT's `sub`, never anything from the request body.
-// Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
-// `index.ts` serves it under Deno. Logs carry only outcome words.
+// Deletes the caller's account; the steps (0–4) and why a retry is safe: docs/database.md,
+// "Account deletion and data export". The uid is always the verified JWT's `sub`. Logs carry outcome words only.
 
 import { revokeToken } from '../_shared/apple.ts';
 import type { AppleEnv, SupabaseEnv } from '../_shared/env.ts';
@@ -35,14 +15,12 @@ export { LIST_CONCURRENCY, LIST_PAGE, REMOVE_CHUNK } from '../_shared/photoStore
 
 type Revoke = 'revoked' | 'revoke_failed' | 'no_token' | 'skipped';
 
-/** Each Auth call (the caller check and the user deletion), the body included. */
+/** Each Auth call, the body included. */
 export const AUTH_TIMEOUT_MS = 10_000;
 
 /**
- * Whether Auth still knows the caller, asked with the caller's own token: true for the token's
- * user, false only when Auth says the user doesn't exist (`error_code: 'user_not_found'`). Throws on
- * anything else, a bare 404 included (a misrouted gateway answers 404 too), so nothing is reported
- * deleted on an answer that can't be trusted.
+ * False only on Auth's `user_not_found`. Throws on anything else, a bare 404 included (a misrouted
+ * gateway answers 404 too), so nothing is reported deleted on an answer that can't be trusted.
  */
 async function callerExists(env: SupabaseEnv, fetchFn: typeof fetch, auth: string, userId: string): Promise<boolean> {
   const response = await fetchWithDeadline(fetchFn, `${env.supabaseUrl}/auth/v1/user`, { headers: userHeaders(env, auth) }, AUTH_TIMEOUT_MS);

@@ -1,12 +1,5 @@
-// Garment attribute extraction with Claude Haiku 5.5: the Messages API request body and the
-// sanitizer that turns its response into enum-only garment attributes.
-//
-// Runtime-neutral (no imports beyond the catalog and the guards, nothing Deno- or Node-only) so Jest exercises it
-// under Node and the Edge Function runs it under Deno. The model's output is untrusted: the
-// structured-output schema bounds it, and `parseExtraction` still re-checks every value against the
-// catalog, so only enum members (and the 1–5 / 1–3 scales) can ever reach the database.
-//
-// See `docs/ai.md` for the prompt, the schema and the failure mapping.
+// Garment attribute extraction with Claude (docs/ai.md#garment-attribute-extraction). The output is
+// untrusted: `parseExtraction` re-checks every value, so only enum members reach the database.
 
 import {
   categoriesFor,
@@ -113,7 +106,7 @@ function extractionSchema(clothingType: ClothingType): Record<string, unknown> {
   };
 }
 
-/** The Messages API request body for one garment photo (a base64 WebP, at most 784 px). */
+/** For one garment photo (a base64 WebP, at most 784 px). */
 export function buildExtractionRequest(imageBase64: string, clothingType: ClothingType): Record<string, unknown> {
   return {
     model: EXTRACTION_MODEL,
@@ -152,9 +145,8 @@ export function firstText(content: unknown): string | null {
 const failed = (reason: ExtractionFailure): ExtractionOutcome => ({ kind: 'failed', reason });
 
 /**
- * Maps a Messages API response body to garment attributes. Never throws. A refusal, unparseable
- * output, `is_garment: false` or a category outside the clothing type's set fails the extraction;
- * any other out-of-catalog value is dropped and its field reported as uncertain.
+ * Never throws. A refusal, unparseable output, `is_garment: false` or a category outside the clothing
+ * type's set fails; any other out-of-catalog value is dropped and its field reported as uncertain.
  */
 export function parseExtraction(body: unknown, clothingType: ClothingType): ExtractionOutcome {
   if (!isRecord(body)) return failed('invalid');

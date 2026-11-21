@@ -1,4 +1,3 @@
-// Deno entry point for `export-data`; the logic is in `handler.ts`.
 import { readEnv } from '../_shared/env.ts';
 import { handleExportData } from './handler.ts';
 

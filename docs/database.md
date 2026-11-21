@@ -402,13 +402,13 @@ with the service role (which bypasses these policies, so every caller passes a u
   when either id isn't a uuid;
 - `listUserObjects` lists everything under `{uid}/` at any depth (1000 entries a page, the garment
   folders 5 at a time), and `removeObjects` removes paths 1000 per call;
-- `signedUrl` signs one path, `signedUrls` up to 500 paths per call;
+- `signedUrls` signs up to 500 paths per call;
 - `downloadObject` reads an object's bytes.
 
-A missing object is `null` from `signedUrl` and `downloadObject` (and simply absent from
-`signedUrls`'s map). Storage reports one as a 404, or, in the version the local stack runs, as a
-400 whose body says `"statusCode": "404"`; both count as missing. Any other failure throws. No other
-function file builds a `/storage/v1/` URL; `_shared/__tests__/photoStore.test.ts` fails if one does.
+A missing object is `null` from `downloadObject` and simply absent from `signedUrls`'s map. Storage
+reports one as a 404, or, in the version the local stack runs, as a 400 whose body says
+`"statusCode": "404"`; both count as missing. Any other failure throws, and every call stops after
+10 s. No other function file builds a `/storage/v1/` URL; `_shared/__tests__/photoStore.test.ts` fails if one does.
 
 ### Writing a profile: update, never a partial upsert
 
