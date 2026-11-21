@@ -211,6 +211,8 @@ describe('exportData', () => {
     ['an HTTP error', { data: null, error: httpError(500) }, 'unknown'],
     ['a network error', { data: null, error: new FunctionsFetchError(new TypeError('x')) }, 'network'],
     ['an empty body', { data: null, error: null }, 'unknown'],
+    ['a body of another shape (a newer function)', { data: { kind: 'surprise' }, error: null }, 'unknown'],
+    ['a document missing its rows', { data: { ...EXPORT, garments: undefined }, error: null }, 'unknown'],
   ] as const)('%s is a failure', async (_label, answer, expected) => {
     const { client } = fakeClient(() => Promise.resolve(answer));
 

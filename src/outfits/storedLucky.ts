@@ -40,8 +40,11 @@ function isOutfit(value: unknown): boolean {
   );
 }
 
-/** A stored list this app version can render; anything else (an older shape, a bad write) is dropped. */
-function isLuckyResponse(value: unknown): value is LuckyResponse {
+/**
+ * A list this app version can render: the function's answer is checked with it before it's shown
+ * or stored, and a stored one again when read (an older shape, a bad write).
+ */
+export function isLuckyResponse(value: unknown): value is LuckyResponse {
   if (!isRecord(value) || !isWeather(value.weather)) return false;
   if (value.kind === 'ok') return Array.isArray(value.outfits) && value.outfits.every(isOutfit);
   if (value.kind === 'too_small') {

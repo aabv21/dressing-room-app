@@ -139,6 +139,69 @@ describe('fetchForYou', () => {
   });
 });
 
+describe('an answer the app does not know (a newer function)', () => {
+  const SURPRISE = { data: { kind: 'surprise' }, error: null };
+
+  test.each([
+    ['rateOutfit', (client: ReturnType<typeof fakeClient>) => rateOutfit(RATE_INPUT, client)],
+    ['fetchLuckyList', (client: ReturnType<typeof fakeClient>) => fetchLuckyList(LUCKY_INPUT, client)],
+    ['fetchForYou', (client: ReturnType<typeof fakeClient>) => fetchForYou({ language: 'en', date: '2026-12-15' }, client)],
+  ])('%s answers unknown for a 200 whose body has another shape', async (_name, call) => {
+    expect(await call(fakeClient(() => Promise.resolve(SURPRISE)))).toEqual({ ok: false, error: 'unknown' });
+  });
+
+  test('a full rating with reasons and a swap still passes', async () => {
+    const result: RatingResult = {
+      score: 58,
+      label: 'fair',
+      confidence: null,
+      estimated: true,
+      reasons: [
+        { key: 'rating.reason.color_harmony.good', tone: 'good', params: { colors: 'navy,white' } },
+        { key: 'rating.reason.weather_fit.warn', tone: 'warn' },
+      ],
+      weakestSlot: 'shoes',
+      swap: { fromId: 'g-3', toId: 'g-9', score: 74 },
+      noBetterSwap: false,
+    };
+    const client = fakeClient(() => Promise.resolve({ data: result, error: null }));
+
+    expect(await rateOutfit(RATE_INPUT, client)).toEqual({ ok: true, result });
+  });
+
+  test('a lucky list with outfits and weather, and For you ideas, still pass', async () => {
+    const lucky: LuckyResponse = {
+      kind: 'ok',
+      weather: { tempC: 12, condition: 'rain', band: 'cool', rain: true },
+      outfits: [{ garmentIds: ['g-1', 'g-2', 'g-3'], score: 81, freshThisWeek: true }],
+    };
+    const forYou: ForYouResponse = {
+      kind: 'ok',
+      ideas: [
+        {
+          id: 'white-sneakers',
+          category: 'sneakers',
+          colors: ['white'],
+          newOutfits: 6,
+          combinesWith: 4,
+          line: null,
+          lineKey: 'forYou.line.combines',
+          lineParams: { count: '4' },
+          searchQuery: 'white sneakers',
+        },
+      ],
+    };
+
+    expect(await fetchLuckyList(LUCKY_INPUT, fakeClient(() => Promise.resolve({ data: lucky, error: null })))).toEqual({
+      ok: true,
+      result: lucky,
+    });
+    expect(
+      await fetchForYou({ language: 'en', date: '2026-12-15' }, fakeClient(() => Promise.resolve({ data: forYou, error: null }))),
+    ).toEqual({ ok: true, result: forYou });
+  });
+});
+
 describe('localDate', () => {
   test('gives the device local YYYY-MM-DD for a fixed date', () => {
     expect(localDate(new Date(2026, 10, 8, 23, 30))).toBe('2026-11-08');

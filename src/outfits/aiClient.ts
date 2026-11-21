@@ -1,14 +1,18 @@
 // The outfit AI client: thin wrappers over `supabase.functions.invoke('rate-outfit' | 'lucky-list' |
 // 'for-you')` that map the functions' HTTP error bodies (see `supabase/functions/*/handler.ts`)
 // onto a small translated-error union the UI renders through i18n, instead of leaking HTTP
-// status codes or Supabase's error classes into the screens.
+// status codes or Supabase's error classes into the screens. An answer of a shape this app version
+// doesn't know (a newer function) is `unknown` too, so nothing unchecked is rendered or stored.
 
 import { FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
 
-import type { Occasion } from '../closet/catalog';
+import { isRecord } from '../../supabase/functions/_shared/extraction.ts';
+import { type Occasion, SLOTS } from '../closet/catalog';
 import type { Locale } from '../i18n';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';
+import { isForYouResponse } from './storedForYou';
+import { isLuckyResponse } from './storedLucky';
 import type { ForYouResponse, LuckyResponse, RatingResult } from './types';
 
 type Client = SupabaseClient<Database>;
@@ -35,17 +39,50 @@ function errorFrom(error: unknown): AiError {
   return 'unknown';
 }
 
+const RATING_LABELS: readonly unknown[] = ['great', 'good', 'fair', 'poor'] satisfies RatingResult['label'][];
+
+function isReason(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.key === 'string' &&
+    (value.tone === 'good' || value.tone === 'warn') &&
+    (value.params === undefined || (isRecord(value.params) && Object.values(value.params).every((param) => typeof param === 'string')))
+  );
+}
+
+function isSwap(value: unknown): boolean {
+  return (
+    value === null ||
+    (isRecord(value) && typeof value.fromId === 'string' && typeof value.toId === 'string' && typeof value.score === 'number')
+  );
+}
+
+/** A rating this app version can render. */
+export function isRatingResult(value: unknown): value is RatingResult {
+  return (
+    isRecord(value) &&
+    typeof value.score === 'number' &&
+    RATING_LABELS.includes(value.label) &&
+    (value.confidence === null || typeof value.confidence === 'number') &&
+    typeof value.estimated === 'boolean' &&
+    Array.isArray(value.reasons) &&
+    value.reasons.every(isReason) &&
+    (value.weakestSlot === null || (SLOTS as readonly unknown[]).includes(value.weakestSlot)) &&
+    isSwap(value.swap) &&
+    typeof value.noBetterSwap === 'boolean'
+  );
+}
+
 async function invoke<T>(
   name: 'rate-outfit' | 'lucky-list' | 'for-you',
   body: Record<string, unknown>,
+  guard: (value: unknown) => value is T,
   client: Client,
 ): Promise<AiOutcome<T>> {
   try {
-    const response = await client.functions.invoke<T>(name, { body });
-    if (response.error !== null || response.data === null) {
-      return { ok: false, error: response.error !== null ? errorFrom(response.error) : 'unknown' };
-    }
-    return { ok: true, result: response.data };
+    const response = await client.functions.invoke<unknown>(name, { body });
+    if (response.error !== null) return { ok: false, error: errorFrom(response.error) };
+    return guard(response.data) ? { ok: true, result: response.data } : { ok: false, error: 'unknown' };
   } catch (error) {
     return { ok: false, error: errorFrom(error) };
   }
@@ -55,9 +92,10 @@ export function rateOutfit(
   input: { garmentIds: readonly string[]; occasion: Occasion | null; date: string },
   client: Client = supabase,
 ): Promise<AiOutcome<RatingResult>> {
-  return invoke<RatingResult>(
+  return invoke(
     'rate-outfit',
     { garment_ids: input.garmentIds, occasion: input.occasion, date: input.date },
+    isRatingResult,
     client,
   );
 }
@@ -66,12 +104,12 @@ export function fetchLuckyList(
   input: { occasion: Occasion | null; date: string },
   client: Client = supabase,
 ): Promise<AiOutcome<LuckyResponse>> {
-  return invoke<LuckyResponse>('lucky-list', { occasion: input.occasion, date: input.date }, client);
+  return invoke('lucky-list', { occasion: input.occasion, date: input.date }, isLuckyResponse, client);
 }
 
 /** For you's ideas, with the lines and store-search words in `language` (the app's current locale). */
 export function fetchForYou(input: { language: Locale; date: string }, client: Client = supabase): Promise<AiOutcome<ForYouResponse>> {
-  return invoke<ForYouResponse>('for-you', { language: input.language, date: input.date }, client);
+  return invoke('for-you', { language: input.language, date: input.date }, isForYouResponse, client);
 }
 
 /** The device's local calendar day as `YYYY-MM-DD`, matching the functions' `isIsoDate` input. */
