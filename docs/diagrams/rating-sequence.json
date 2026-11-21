@@ -141,7 +141,8 @@
       "to": "fn",
       "y": 472,
       "label": "hit: answer · over 50: 429",
-      "variant": "return"
+      "variant": "return",
+      "note": "a cached swap is re-read (RLS), dropped unless available"
     },
     {
       "from": "fn",

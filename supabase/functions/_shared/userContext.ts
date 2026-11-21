@@ -61,9 +61,9 @@ export const POSTGREST_TIMEOUT_MS = 8_000;
 export const MAX_CONCURRENT_JEV = 5;
 const ANTHROPIC_VERSION = '2023-06-01';
 
-/** A real calendar date written `YYYY-MM-DD` (the client's local day, as the functions take it). */
+/** A real calendar date written `YYYY-MM-DD` from year 0001 on (Postgres has no year 0). */
 export function isIsoDate(value: unknown): value is string {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) return false;
   const parsed = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }

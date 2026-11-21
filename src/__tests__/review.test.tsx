@@ -1,6 +1,6 @@
 // Mockup 02 screen 3: the review queue. Rendered directly with the closet, repository and profile
 // seams mocked; the queue order and the asked fields themselves are covered by closetSelectors.test.
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { AccessibilityInfo } from 'react-native';
 
@@ -308,6 +308,61 @@ describe('confirming the garments the AI was sure of', () => {
     await renderReview();
     await fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
     expect(screen.getByRole('button', { name: 'Confirm the 2 the AI was sure of' })).toBeDisabled();
+  });
+
+  test('a double tap on the bulk button starts one loop', async () => {
+    mockCloset.garments = [sureOne('s-1', 1), sureOne('s-2', 2), sureOne('s-3', 3)];
+    let finish: (value: { ok: true }) => void = () => undefined;
+    mockedConfirmReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mockedConfirmReview.mockResolvedValue({ ok: true });
+    await renderReview();
+
+    const bulk = screen.getByRole('button', { name: 'Confirm the 2 the AI was sure of' });
+    // Both taps land before the disabled state renders.
+    await act(async () => {
+      void fireEvent.press(bulk);
+      void fireEvent.press(bulk);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      finish({ ok: true });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockedConfirmReview).toHaveBeenCalledTimes(2);
+    });
+    expect(mockedConfirmReview.mock.calls.map((call) => call[0])).toEqual(['s-2', 's-3']);
+  });
+
+  test('a loop that ends after the screen is gone announces nothing', async () => {
+    mockCloset.garments = [sureOne('s-1', 1), sureOne('s-2', 2), sureOne('s-3', 3)];
+    let finish: (value: { ok: true }) => void = () => undefined;
+    mockedConfirmReview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    mockedConfirmReview.mockResolvedValue({ ok: true });
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    await render(<ReviewScreen />);
+    await waitFor(() => {
+      expect(screen.getByLabelText('Garment photo')).toBeOnTheScreen();
+    });
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Confirm the 2 the AI was sure of' }));
+    await screen.unmount();
+    await act(async () => {
+      finish({ ok: true });
+      await Promise.resolve();
+    });
+
+    expect(announce).not.toHaveBeenCalled();
+    announce.mockRestore();
   });
 
   test('one sure garment gets no bulk button', async () => {

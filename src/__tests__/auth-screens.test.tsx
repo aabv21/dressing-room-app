@@ -204,6 +204,27 @@ describe('WelcomeScreen', () => {
     expect(screen.getByLabelText('Email').props.value).toBe('keep-me@example.com');
   });
 
+  test('an email already in use shows under the email field, and another server error under the password', async () => {
+    Platform.OS = 'ios';
+    await render(<WelcomeScreen />);
+    const emailField = (): ReturnType<typeof screen.getByTestId> => screen.getByTestId('welcome-email-container');
+    const passwordField = (): ReturnType<typeof screen.getByTestId> => screen.getByTestId('welcome-password-container');
+    await fireEvent.changeText(screen.getByLabelText('Email'), 'taken@example.com');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'longenough1');
+
+    mockedSignUpWithEmail.mockResolvedValueOnce({ ok: false, error: 'auth.error.emailInUse' });
+    await fireEvent.press(screen.getByRole('button', { name: 'Create account' }));
+    expect(await within(emailField()).findByText('That email is already in use.')).toBeOnTheScreen();
+    expect(within(passwordField()).queryByText('That email is already in use.')).not.toBeOnTheScreen();
+
+    mockedSignUpWithEmail.mockResolvedValueOnce({ ok: false, error: 'auth.error.network' });
+    await fireEvent.press(screen.getByRole('button', { name: 'Create account' }));
+    expect(
+      await within(passwordField()).findByText("Couldn't connect. Check your internet and try again."),
+    ).toBeOnTheScreen();
+    expect(within(emailField()).queryByText('That email is already in use.')).not.toBeOnTheScreen();
+  });
+
   test('ok + needsConfirmation true shows the check-your-email message', async () => {
     Platform.OS = 'ios';
     mockedSignUpWithEmail.mockResolvedValue({ ok: true, needsConfirmation: true });

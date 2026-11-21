@@ -1,3 +1,4 @@
+import { isCompleteOutfit } from '../../supabase/functions/_shared/outfitRules.ts';
 import type { MessageKey } from '../i18n';
 import { GARMENT_FIELDS, slotOf, type GarmentCategory, type GarmentColor, type GarmentField, type Slot } from './catalog';
 import type { GridItem } from './ClosetGrid';
@@ -89,7 +90,7 @@ export function firstOutfitProgress(garments: readonly Garment[]): FirstOutfitPr
   const bottom = slots.has('bottom');
   const onePiece = slots.has('one_piece');
   const shoes = slots.has('shoes');
-  return { top, bottom, onePiece, shoes, complete: shoes && (onePiece || (top && bottom)) };
+  return { top, bottom, onePiece, shoes, complete: isCompleteOutfit([...slots]) };
 }
 
 /** Active garments per slot; slots with none are absent, and uncategorized garments aren't counted. */

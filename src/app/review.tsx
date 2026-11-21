@@ -4,7 +4,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from 'expo-router';
 import { Check } from 'lucide-react-native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { GARMENT_FIELDS, type ClothingType, type GarmentField } from '../closet/catalog';
@@ -262,24 +262,40 @@ export default function ReviewScreen(): React.JSX.Element {
     },
     [onConfirmed],
   );
+  // The ref locks a second tap before the running state renders; `mounted` drops a late result.
+  const batchLock = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   // One garment at a time, stopping at the first failure: what was saved stays confirmed, and the
   // rest stays in the queue for another try or the card.
   const confirmSure = useCallback(async () => {
+    if (batchLock.current) return;
+    batchLock.current = true;
     setBatchRunning(true);
     setBatchFailed(false);
     let saved = 0;
     for (const g of sure) {
       const values = fieldValuesOf(g);
       const result = await confirmReview(g.id, values);
+      // The closet takes a saved garment even once the screen is gone; the loop stops there.
+      if (result.ok) replaceLocal({ ...g, ...values, reviewed_at: new Date().toISOString() });
+      if (!mounted.current) break;
       if (!result.ok) {
         setBatchFailed(true);
         break;
       }
-      replaceLocal({ ...g, ...values, reviewed_at: new Date().toISOString() });
       onConfirmed(g.id);
       saved += 1;
     }
+    batchLock.current = false;
+    if (!mounted.current) return;
     setBatchRunning(false);
+    // No live region carries the done message, so it's announced on both platforms.
     AccessibilityInfo.announceForAccessibility(
       saved === sure.length ? t('review.confirmSure.done', { count: saved }) : t('review.confirmSure.error'),
     );

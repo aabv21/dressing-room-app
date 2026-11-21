@@ -1,3 +1,4 @@
+import { isCompleteOutfit } from '../../../supabase/functions/_shared/outfitRules.ts';
 import { translate, type MessageKey } from '../../i18n';
 import type { Garment } from '../garmentRepository';
 import {
@@ -251,6 +252,15 @@ describe('sureGarments', () => {
     expect(sureGarments(queue, NOW).map((g) => g.id)).toEqual(['a', 'e']);
   });
 
+  test('an over-quota or stale pending garment is never sure, even with its fields filled', () => {
+    const queue = [
+      sure('over', { extraction_status: 'over_quota' }),
+      sure('stale', { extraction_status: 'pending', created_at: createdAgo(10 * MINUTE + 1) }),
+      sure('done'),
+    ];
+    expect(sureGarments(queue, NOW).map((g) => g.id)).toEqual(['done']);
+  });
+
   test('a garment with no category is never sure', () => {
     expect(sureGarments([sure('a', { category: null })], NOW)).toEqual([]);
   });
@@ -276,6 +286,21 @@ describe('firstOutfitProgress', () => {
 
   test('a top and shoes are not enough', () => {
     expect(firstOutfitProgress([piece('t_shirt'), piece('sneakers')]).complete).toBe(false);
+  });
+
+  test('complete agrees with the functions\' complete-outfit rule for every mix of slots', () => {
+    const pieces = [
+      { slot: 'top', garment: piece('t_shirt') },
+      { slot: 'bottom', garment: piece('jeans') },
+      { slot: 'one_piece', garment: piece('dress') },
+      { slot: 'shoes', garment: piece('sneakers') },
+    ] as const;
+    for (let mask = 0; mask < 2 ** pieces.length; mask += 1) {
+      const chosen = pieces.filter((_, index) => (mask & (1 << index)) !== 0);
+      expect(firstOutfitProgress(chosen.map((entry) => entry.garment)).complete).toBe(
+        isCompleteOutfit(chosen.map((entry) => entry.slot)),
+      );
+    }
   });
 
   test('donated and uncategorized pieces do not count', () => {

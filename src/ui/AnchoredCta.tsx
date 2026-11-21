@@ -48,7 +48,8 @@ function ActionButton({ action, flexBasisPercent }: { action: CtaAction; flexBas
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onPress}
-        android_ripple={androidRipple}
+        // In the foreground: the gradient child would cover a background ripple.
+        android_ripple={{ ...androidRipple, foreground: true }}
         style={(state) => [styles.button, flexStyle, disabled ? styles.disabled : null, pressed(state)]}
       >
         <LinearGradient colors={gradients.ai} style={styles.fill}>

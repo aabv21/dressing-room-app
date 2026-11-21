@@ -135,8 +135,8 @@ Accounts, onboarding and the profile:
   mounted instead of unmounting the navigator.
 - `src/__tests__/auth-screens.test.tsx` — Welcome, Sign in and Forgot password: field validation
   before any call, the social buttons (no Apple on Android, cancel shows nothing, disabled while one
-  runs), service errors, and the reset code's two steps (format, invalid code, resend, change
-  email).
+  runs), service errors (an email in use under the email field), and the reset code's two steps
+  (format, invalid code, resend, change email).
 - `src/auth/__tests__/AuthProvider.test.tsx` — the session, an offline launch, the language sync,
   and the shared profile: read at sign-in (no row as `{}`), an error until a retry succeeds (loading
   while it runs), a failed refresh keeping the last good profile, `replaceProfileLocal` merging a
@@ -345,9 +345,9 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   lines and their template fallbacks, and the store-search query.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs, weather bands and
   conditions, and the forecast and geocoding parsers.
-- `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `mapLimit`, the
-  profile and garments read with the user's token (enums checked, non-uuid ids refused before any
-  request), and the cached weather.
+- `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
+  0000), `mapLimit`, the profile and garments read with the user's token (enums checked, non-uuid
+  ids refused before any request), and the cached weather.
 - `supabase/functions/_shared/__tests__/env.test.ts` — `readEnv`: only the asked capabilities'
   variables, a throw naming a missing one, the real API hosts as fallbacks for unset or empty base
   URLs, trailing slashes trimmed, and `appleEnvFrom`'s trimmed base URL.
