@@ -81,6 +81,17 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
 - **Capture:** `src/app/camera.tsx` is the burst camera, with `ShotStrip` showing the latest shots;
   `useGalleryImport` picks up to 30 photos and hands them to the queue (the camera and the Closet
   share it).
+- **`price.ts`**: the optional price. `parsePrice` reads either decimal style ("12,50" and "12.50"
+  are 12.5; one separator followed by exactly three digits groups thousands, so "250.000" is
+  250000) up to `numeric(10,2)`'s ceiling; `priceOf` pairs the price with its currency (null for an
+  unpriced row or one cached before the columns existed); `deviceCurrency` is expo-localization's
+  `getLocales()[0].currencyCode` (USD when missing); `currencyChoices` is the picker's list
+  (`COMMON_CURRENCIES`: USD, COP, MXN, EUR, VES, ARS, CLP, PEN, BRL, with the device's or the stored
+  code first when it's another); `costPerWear` is `price / max(wear_count, 1)`; and `formatMoney`
+  uses `Intl.NumberFormat` in the app locale and the garment's own currency. Amounts in different
+  currencies are never summed or compared. The garment detail's Price field and currency chips join
+  its Save (an invalid price disables it with a hint; clearing the price clears the currency), and
+  the detail shows "Cost per wear: $2.50 after 12 wears" for a priced garment.
 - **`garmentRepository.ts`**: the garment data layer: list, signed photo URLs, photo uploads,
   insert, edits, review confirmation, and delete (photos before the row).
 

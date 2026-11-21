@@ -30,7 +30,8 @@ where it is kept, who processes it and how you can export or delete it. Question
   library beyond the photos you pick.
 - **Your closet.** Each garment's attributes (category, colors, pattern, material, formality,
   seasons, warmth, fit, occasions), its status (available, in the laundry, lent or donated), how
-  often you wear it, and whether you took it out of suggestions.
+  often you wear it, whether you took it out of suggestions, and, only if you enter it, what you
+  paid for it and in which currency (to show its cost per wear).
 - **What you wear.** The outfits you save or log as worn, with the day, the occasion and the score.
 - **What you don't want suggested.** The outfit combinations you marked "Not for me", so they
   aren't suggested again.
@@ -82,8 +83,8 @@ Each processor above applies its own retention rules to what it receives from th
 
 ## Your choices: export and deletion
 
-- **Export.** Profile → Privacy → "Export my data" gives you a file with your profile, garments,
-  outfits, wears and the combinations you marked "Not for me", plus links to your photos that work
+- **Export.** Profile → Privacy → "Export my data" gives you a file with your profile, garments
+  (with any prices you entered), outfits, wears and the combinations you marked "Not for me", plus links to your photos that work
   for 7 days.
 - **Delete your account.** Profile → Privacy → "Delete account", confirmed twice, removes your
   photos, revokes Sign in with Apple if you used it, and deletes your account and every row that

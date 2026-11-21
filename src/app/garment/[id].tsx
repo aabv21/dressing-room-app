@@ -12,8 +12,9 @@ import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
 import { isLivePending, isSuggestable } from '../../closet/closetSelectors';
 import { changedFields, FieldEditor, fieldValuesOf, type FieldValues } from '../../closet/GarmentFields';
 import { GarmentPhoto } from '../../closet/GarmentPhoto';
-import { deleteGarment, updateGarment, type Garment } from '../../closet/garmentRepository';
+import { deleteGarment, updateGarment, type Garment, type GarmentPatch } from '../../closet/garmentRepository';
 import { leaveToCloset } from '../../closet/leaveToCloset';
+import { costPerWear, currencyChoices, deviceCurrency, formatMoney, parsePrice, priceOf, priceText } from '../../closet/price';
 import { useUploadQueue } from '../../closet/UploadQueueProvider';
 import { useNow } from '../../closet/useNow';
 import { formatWearCount, useI18n } from '../../i18n';
@@ -26,6 +27,7 @@ import { BackChevron } from '../../ui/BackChevron';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { CtaBackdrop } from '../../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
+import { TextField } from '../../ui/TextField';
 import { colors, fontSizes, gradients, layout, radii, spacing } from '../../ui/theme';
 
 type GarmentStatus = Garment['status'];
@@ -82,8 +84,34 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   const stored = useMemo(() => fieldValuesOf(garment), [garment]);
   const [draft, setDraft] = useState<Partial<FieldValues>>({});
   const values = useMemo<FieldValues>(() => ({ ...stored, ...draft }), [stored, draft]);
-  const patch = useMemo(() => changedFields(stored, values), [stored, values]);
-  const dirty = Object.keys(patch).length > 0;
+  const fieldPatch = useMemo(() => changedFields(stored, values), [stored, values]);
+
+  // The price and its currency join the same Save; untouched (null) drafts follow the stored row.
+  const device = useMemo(() => deviceCurrency(), []);
+  const priced = useMemo(() => priceOf(garment), [garment]);
+  const storedPrice = priced?.price ?? null;
+  const storedCurrency = priced?.currency ?? null;
+  const [priceDraft, setPriceDraft] = useState<string | null>(null);
+  const [currencyDraft, setCurrencyDraft] = useState<string | null>(null);
+  const priceInput = priceDraft ?? priceText(storedPrice, locale);
+  const currency = currencyDraft ?? storedCurrency ?? device;
+  const parsedPrice = parsePrice(priceInput);
+  const priceInvalid = parsedPrice === 'invalid';
+  const pricePatch = useMemo<GarmentPatch>(() => {
+    if (parsedPrice === 'invalid') return {};
+    // No price, no currency: the database keeps the two together.
+    const nextCurrency = parsedPrice === null ? null : currency;
+    return parsedPrice === storedPrice && nextCurrency === storedCurrency
+      ? {}
+      : { price: parsedPrice, currency: nextCurrency };
+  }, [parsedPrice, currency, storedPrice, storedCurrency]);
+  const currencyOptions = useMemo(
+    () => currencyChoices(device, storedCurrency).map((code) => ({ value: code, label: code })),
+    [device, storedCurrency],
+  );
+
+  const patch = useMemo<GarmentPatch>(() => ({ ...fieldPatch, ...pricePatch }), [fieldPatch, pricePatch]);
+  const dirty = Object.keys(patch).length > 0 || priceInvalid;
   const onChange = useCallback(
     (next: FieldValues) => {
       setDraft(changedFields(stored, next));
@@ -106,8 +134,10 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     }
     replaceLocal({ ...latest.current, ...patch });
     // Keeps only what changed again while the save was in flight.
-    setDraft((current) => changedFields({ ...stored, ...patch }, { ...stored, ...current }));
-  }, [garment.id, patch, stored, replaceLocal, report]);
+    setDraft((current) => changedFields({ ...stored, ...fieldPatch }, { ...stored, ...current }));
+    setPriceDraft((current) => (current === priceDraft ? null : current));
+    setCurrencyDraft((current) => (current === currencyDraft ? null : current));
+  }, [garment.id, patch, fieldPatch, priceDraft, currencyDraft, stored, replaceLocal, report]);
 
   // The status saves on tap, one at a time (chips disabled until it lands). The tapped chip shows at
   // once; a failure reverts to the last confirmed status, which a refresh resets to the stored one.
@@ -284,6 +314,16 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
         ) : null}
         <GarmentPhoto garment={garment} />
         <Text style={styles.wears}>{formatWearCount(garment.wear_count, locale)}</Text>
+        {priced === null ? null : (
+          <Text style={styles.costPerWear}>
+            {garment.wear_count === 0
+              ? t('garment.costPerWear.unworn', { amount: formatMoney(priced.price, priced.currency, locale) })
+              : t('garment.costPerWear', {
+                  amount: formatMoney(costPerWear(priced.price, garment.wear_count), priced.currency, locale),
+                  wears: formatWearCount(garment.wear_count, locale),
+                })}
+          </Text>
+        )}
         <View style={styles.section}>
           <Text style={styles.label}>{t('garment.status')}</Text>
           {garment.status === 'donated' ? (
@@ -335,6 +375,31 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
             />
           </View>
         ))}
+        <View style={styles.section}>
+          <TextField
+            label={t('garment.price')}
+            value={priceInput}
+            onChangeText={setPriceDraft}
+            keyboardType="decimal-pad"
+            maxLength={16}
+            hint={t('garment.price.hint')}
+            error={priceInvalid ? t('garment.price.invalid') : undefined}
+          />
+          <Text style={styles.label}>{t('garment.currency')}</Text>
+          <ChipGroup
+            options={currencyOptions}
+            selected={[currency]}
+            multiple={false}
+            accessibilityLabel={t('garment.currency')}
+            onChange={(next) => {
+              // Like the status: tapping the chosen currency again keeps it.
+              const picked = next[0];
+              if (picked !== undefined) {
+                setCurrencyDraft(picked);
+              }
+            }}
+          />
+        </View>
       </ScrollView>
       <CtaBackdrop />
       <AnchoredCta
@@ -354,7 +419,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
           label: t('garment.save'),
           tone: 'commit',
           icon: Check,
-          disabled: !dirty || missingCategory || reading || busy || deleting,
+          disabled: !dirty || priceInvalid || missingCategory || reading || busy || deleting,
           onPress: () => {
             void save();
           },
@@ -443,6 +508,11 @@ const styles = StyleSheet.create({
   },
   wears: {
     color: colors.muted,
+    fontSize: fontSizes.body,
+    fontWeight: '600',
+  },
+  costPerWear: {
+    color: colors.ink,
     fontSize: fontSizes.body,
     fontWeight: '600',
   },
