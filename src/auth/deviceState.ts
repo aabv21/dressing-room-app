@@ -1,4 +1,5 @@
-import { kvGet, kvRemove, kvSet, kvUserRefused } from '../lib/kv';
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
+import { kvGet, kvGetJson, kvRemove, kvSet, kvUserRefused } from '../lib/kv';
 
 /**
  * Small per-account facts kept on the device so an offline launch behaves like the last online
@@ -11,26 +12,10 @@ const LANGUAGE_PENDING_KEY = 'language-save-pending';
 type OnboardingEntry = { userId: string; complete: boolean };
 
 function readOnboardingEntry(): OnboardingEntry | null {
-  const raw = kvGet(ONBOARDING_KEY);
-  if (raw === null) {
-    return null;
-  }
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'userId' in parsed &&
-      typeof parsed.userId === 'string' &&
-      'complete' in parsed &&
-      typeof parsed.complete === 'boolean'
-    ) {
-      return { userId: parsed.userId, complete: parsed.complete };
-    }
-  } catch {
-    // An unreadable entry is treated as absent.
-  }
-  return null;
+  // An unreadable entry is treated as absent.
+  const parsed = kvGetJson(ONBOARDING_KEY, isRecord);
+  if (parsed === null || typeof parsed.userId !== 'string' || typeof parsed.complete !== 'boolean') return null;
+  return { userId: parsed.userId, complete: parsed.complete };
 }
 
 /** The last onboarding status read from the server for `userId`, or null if none is cached. */

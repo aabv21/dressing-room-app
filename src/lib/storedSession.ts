@@ -1,8 +1,7 @@
-export type StoredSession = { userId: string; email: string | null };
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
+import { parseJson } from './kv';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+export type StoredSession = { userId: string; email: string | null };
 
 /**
  * Reads the session supabase-js persisted (its `sb-<ref>-auth-token` entry) without asking the
@@ -11,16 +10,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * and emits SIGNED_OUT.
  */
 export function parseStoredSession(raw: string | null): StoredSession | null {
-  if (raw === null) {
-    return null;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (!isRecord(parsed) || typeof parsed['refresh_token'] !== 'string' || parsed['refresh_token'] === '') {
+  const parsed = parseJson(raw, isRecord);
+  if (parsed === null || typeof parsed['refresh_token'] !== 'string' || parsed['refresh_token'] === '') {
     return null;
   }
   const user = parsed['user'];

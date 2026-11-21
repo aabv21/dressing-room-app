@@ -8,7 +8,7 @@ import { listWears, type WearWithItems } from '../wearsRepository';
 
 jest.mock('../wearsRepository', () => ({ listWears: jest.fn() }));
 jest.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
-jest.mock('../../outfits/aiClient', () => ({ localDate: () => '2026-11-08' }));
+jest.mock('../../lib/localDate', () => ({ localDate: () => '2026-11-08' }));
 
 const USER = 'user-1';
 const list = jest.mocked(listWears);

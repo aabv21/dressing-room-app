@@ -46,9 +46,10 @@ export function pieceLabel(
   return firstColor === undefined ? categoryLabel : `${categoryLabel} · ${t(`garment.color.${firstColor}`)}`;
 }
 
-function capitalize(word: string): string {
-  const [first, ...rest] = word;
-  return first === undefined ? word : first.toLocaleUpperCase() + rest.join('');
+/** `text` with its first letter upper-cased, for a weekday or month name opening a label. */
+export function capitalize(text: string): string {
+  const [first, ...rest] = text;
+  return first === undefined ? text : first.toLocaleUpperCase() + rest.join('');
 }
 
 /** The capitalized weekday, e.g. "Martes": Today's header always names the day. */

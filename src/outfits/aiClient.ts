@@ -111,11 +111,3 @@ export function fetchLuckyList(
 export function fetchForYou(input: { language: Locale; date: string }, client: Client = supabase): Promise<AiOutcome<ForYouResponse>> {
   return invoke('for-you', { language: input.language, date: input.date }, isForYouResponse, client);
 }
-
-/** The device's local calendar day as `YYYY-MM-DD`, matching the functions' `isIsoDate` input. */
-export function localDate(now: Date = new Date()): string {
-  const year = String(now.getFullYear());
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}

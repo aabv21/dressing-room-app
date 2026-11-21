@@ -8,6 +8,10 @@
 // run it under Deno.
 
 import {
+  AGE_GROUPS,
+  type AgeGroup,
+  BODY_TYPES,
+  type BodyType,
   type ClothingType,
   GARMENT_CATEGORIES,
   GARMENT_COLORS,
@@ -17,16 +21,14 @@ import {
   type Season,
   SEASONS,
   slotOf,
+  type Style,
+  STYLES,
 } from './catalog.ts';
 import type { ClaudeEnv, GeocodingEnv, JevEnv, ServiceEnv, SupabaseEnv, WeatherEnv } from './env.ts';
 import { isRecord, UUID } from './guards.ts';
 import { fetchWithDeadline, userIdFromJwt } from './http.ts';
 import type { GarmentStatus, RuleGarment } from './outfitRules.ts';
 import {
-  AGE_GROUPS,
-  type AgeGroup,
-  BODY_TYPES,
-  type BodyType,
   buildJevRequest,
   composeRating,
   heightBucket,
@@ -36,8 +38,6 @@ import {
   type RatingLabel,
   RATING_LEVELS,
   type RatingState,
-  type Style,
-  STYLES,
 } from './rating.ts';
 import {
   forecastUrl,

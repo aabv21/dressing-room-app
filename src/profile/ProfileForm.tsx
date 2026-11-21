@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, MapPin } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { AGE_GROUPS, OCCASIONS, STYLES } from '../closet/catalog';
 import type { Locale, MessageKey } from '../i18n';
 import { useI18n } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
@@ -15,7 +16,7 @@ import { colors, layout, selectionRing, spacing } from '../ui/theme';
 import { silhouettesFor, suggestBodyType } from './bodyType';
 import type { BodyAnswers, ClothingType } from './bodyType';
 import { defaultHeightFor, withClothingType } from './profileDraft';
-import type { AgeGroup, BodyErrors, Occasion, ProfileDraft, Style } from './profileDraft';
+import type { BodyErrors, ProfileDraft } from './profileDraft';
 import { useCurrentCity } from './useCurrentCity';
 import { SIZE_MAX_LENGTH } from './validation';
 import type { BodyField, FieldError } from './validation';
@@ -68,7 +69,6 @@ export function ClothingSection({ value, onChange }: SectionProps): React.JSX.El
 // a screen reader says) while the thumb rests at the nearest end, with a note explaining why.
 export const SLIDER_MIN = 140;
 export const SLIDER_MAX = 210;
-const AGE_GROUPS: readonly AgeGroup[] = ['under_18', '18_24', '25_34', '35_44', '45_54', '55_plus'];
 
 type AnswerOption<T> = { value: T; label: MessageKey };
 
@@ -430,9 +430,6 @@ export function BodySection({
 
 // ---------------------------------------------------------------------------------------------
 // Style
-
-const STYLES: readonly Style[] = ['casual', 'elegant', 'minimalist', 'sporty', 'urban', 'bohemian', 'classic'];
-const OCCASIONS: readonly Occasion[] = ['office', 'university', 'going_out', 'home', 'event', 'sport'];
 
 export function StyleSection({ value, onChange }: SectionProps): React.JSX.Element {
   const { t } = useI18n();

@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { useAuth } from '../auth/AuthProvider';
-import { kvGet, kvSet } from '../lib/kv';
+import { kvGetJson, kvSet } from '../lib/kv';
 import { useOnResume } from '../lib/useOnResume';
 import { isLivePending } from './closetSelectors';
 import { garmentPhotoPath, listGarments, signedPhotoUrls, type Garment } from './garmentRepository';
@@ -74,16 +75,8 @@ function cacheKey(userId: string): string {
 }
 
 function readCache(userId: string): CachedCloset | null {
-  const raw = kvGet(cacheKey(userId));
-  if (raw === null) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<CachedCloset>;
-    return Array.isArray(parsed.garments) ? { garments: parsed.garments, thumbs: parsed.thumbs ?? {} } : null;
-  } catch {
-    return null;
-  }
+  const parsed = kvGetJson(cacheKey(userId), isRecord) as Partial<CachedCloset> | null;
+  return parsed !== null && Array.isArray(parsed.garments) ? { garments: parsed.garments, thumbs: parsed.thumbs ?? {} } : null;
 }
 
 /**

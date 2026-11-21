@@ -5,7 +5,8 @@ import { useCallback } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n } from '../i18n';
-import { fetchForYou, localDate, type AiError } from './aiClient';
+import { localDate } from '../lib/localDate';
+import { fetchForYou, type AiError } from './aiClient';
 import { readStoredForYou, storeForYou } from './storedForYou';
 import type { ForYouCard, ForYouResponse } from './types';
 import { useStoredQuery } from './useStoredQuery';

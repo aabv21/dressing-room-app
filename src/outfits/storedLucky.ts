@@ -1,8 +1,9 @@
 // The last good `lucky-list` answer per occasion, kept on the device for the day, so Today has
 // something to show at once on a cold start and stays readable offline (spec §5.4: "today's cached
 // suggestion stays readable").
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { OCCASIONS, SLOTS, type Occasion } from '../closet/catalog';
-import { kvGet, kvSet } from '../lib/kv';
+import { kvGetJson, kvSet } from '../lib/kv';
 import type { LuckyResponse } from './types';
 
 /** The record's kv key: one per user, holding only the latest day's lists. */
@@ -14,10 +15,6 @@ export function storedLuckyKey(userId: string): string {
 type StoredList = { occasion: Occasion | null; response: LuckyResponse };
 
 type StoredLucky = { day: string; lists: StoredList[] };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isWeather(value: unknown): boolean {
   if (value === null) return true;
@@ -65,15 +62,8 @@ function isStoredList(value: unknown): value is StoredList {
 
 /** The lists stored for `day`, each validated; an earlier day's record counts as none. */
 function readDay(userId: string, day: string): StoredList[] {
-  const raw = kvGet(storedLuckyKey(userId));
-  if (raw === null) return [];
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!isRecord(value) || value.day !== day || !Array.isArray(value.lists)) return [];
+  const value = kvGetJson(storedLuckyKey(userId), isRecord);
+  if (value === null || value.day !== day || !Array.isArray(value.lists)) return [];
   return value.lists.filter(isStoredList);
 }
 

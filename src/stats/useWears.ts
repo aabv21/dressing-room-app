@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
-import { localDate } from '../outfits/aiClient';
+import { localDate } from '../lib/localDate';
 import { withQueuedWears } from '../outfits/wearQueue';
 import { mergeStoredWears, readStoredWears, storeWears, wearsInRange } from './storedWears';
 import { listWears, type WearWithItems } from './wearsRepository';

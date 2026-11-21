@@ -18,6 +18,7 @@ import { useNow } from '../closet/useNow';
 import { useI18n } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
 import { useClothingType } from '../profile/useClothingType';
+import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
@@ -62,7 +63,7 @@ function ReviewCard(props: {
       onConfirmed(garment.id);
     } else {
       setError(result.error);
-      AccessibilityInfo.announceForAccessibility(t(`closet.error.${result.error}`));
+      announceForAccessibility(t(`closet.error.${result.error}`));
     }
   }, [garment, values, replaceLocal, onConfirmed, t]);
 
@@ -160,7 +161,7 @@ function ReviewCard(props: {
           ? {}
           : {
               notice: (
-                <Text style={styles.error} accessibilityRole="alert" testID="review-error">
+                <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite" testID="review-error">
                   {t(`closet.error.${error}`)}
                 </Text>
               ),

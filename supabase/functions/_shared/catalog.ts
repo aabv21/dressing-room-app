@@ -144,10 +144,31 @@ export const SLOTS = [
 
 export type Slot = (typeof SLOTS)[number];
 
+/** How many pieces `rate-outfit` accepts; the rating screen checks a link's ids against them first. */
+export const MIN_OUTFIT_PIECES = 2;
+export const MAX_OUTFIT_PIECES = 6;
+
 // `occasion` is Plan 2's Postgres enum, reused here rather than redefined.
 export const OCCASIONS = ['office', 'university', 'going_out', 'home', 'event', 'sport'] as const;
 
 export type Occasion = (typeof OCCASIONS)[number];
+
+/** `public.body_type`, `public.age_group` and `public.style`, in their SQL order. */
+export const BODY_TYPES = [
+  'hourglass',
+  'pear',
+  'apple',
+  'rectangle',
+  'inverted_triangle',
+  'trapezoid',
+  'triangle',
+  'oval',
+] as const;
+export const AGE_GROUPS = ['under_18', '18_24', '25_34', '35_44', '45_54', '55_plus'] as const;
+export const STYLES = ['casual', 'elegant', 'minimalist', 'sporty', 'urban', 'bohemian', 'classic'] as const;
+export type BodyType = (typeof BODY_TYPES)[number];
+export type AgeGroup = (typeof AGE_GROUPS)[number];
+export type Style = (typeof STYLES)[number];
 
 export const CLOTHING_TYPES = ['feminine', 'masculine', 'everything'] as const;
 

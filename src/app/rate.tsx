@@ -8,13 +8,23 @@ import { Check, ChevronLeft, CircleAlert, RotateCw, Sparkles } from 'lucide-reac
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { UUID } from '../../supabase/functions/_shared/guards.ts';
 import { useAuth } from '../auth/AuthProvider';
-import { GARMENT_COLORS, OCCASIONS, type GarmentColor, type Occasion, type Slot } from '../closet/catalog';
+import {
+  GARMENT_COLORS,
+  MAX_OUTFIT_PIECES,
+  MIN_OUTFIT_PIECES,
+  OCCASIONS,
+  type GarmentColor,
+  type Occasion,
+  type Slot,
+} from '../closet/catalog';
 import { useCloset } from '../closet/ClosetProvider';
 import type { Garment } from '../closet/garmentRepository';
 import { isMessageKey, useI18n, type Locale } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
-import { localDate, rateOutfit, type AiError } from '../outfits/aiClient';
+import { localDate } from '../lib/localDate';
+import { rateOutfit, type AiError } from '../outfits/aiClient';
 import { saveOutfit } from '../outfits/outfitRepository';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { missingPieceIdea, pieceLabel } from '../outfits/outfitDisplay';
@@ -33,11 +43,6 @@ type Translate = ReturnType<typeof useI18n>['t'];
 
 type Rating = { kind: 'loading' } | { kind: 'result'; result: RatingResult } | { kind: 'error'; error: AiError };
 
-/** `rate-outfit`'s input bounds (its `MIN_GARMENTS`/`MAX_GARMENTS`); an outfit outside them isn't sent. */
-const MIN_PIECES = 2;
-const MAX_PIECES = 6;
-/** The garment id shape `rate-outfit` accepts (`_shared/userContext.ts`'s `UUID`). */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Room for a message shown above the buttons, so it never covers the outfit's last piece.
 const NOTICE_ROOM = 56;
 /** Below this score with no swap shown, the rating points to For you. */
@@ -59,7 +64,7 @@ function parseIds(raw: string | string[] | undefined): string[] {
  */
 function invalidIds(ids: readonly string[]): AiError | null {
   if (ids.some((id) => !UUID.test(id))) return 'not_found';
-  if (ids.length < MIN_PIECES || ids.length > MAX_PIECES) return 'incomplete';
+  if (ids.length < MIN_OUTFIT_PIECES || ids.length > MAX_OUTFIT_PIECES) return 'incomplete';
   return null;
 }
 

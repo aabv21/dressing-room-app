@@ -8,6 +8,8 @@
 // "Outfit rating" for the levels verbatim, the weights and the bands.
 
 import {
+  type AgeGroup,
+  type BodyType,
   type ClothingType,
   type GarmentCategory,
   type GarmentColor,
@@ -17,6 +19,7 @@ import {
   type Season,
   type Slot,
   SLOTS,
+  type Style,
 } from './catalog.ts';
 import { isRecord } from './guards.ts';
 import { seededShuffle } from './outfitRules.ts';
@@ -79,23 +82,6 @@ export const RATING_CONFIG = {
 } as const satisfies RatingConfig;
 
 export type RatingLabel = 'great' | 'good' | 'fair' | 'poor';
-
-/** `public.body_type`, `public.age_group` and `public.style`, in their SQL order. */
-export const BODY_TYPES = [
-  'hourglass',
-  'pear',
-  'apple',
-  'rectangle',
-  'inverted_triangle',
-  'trapezoid',
-  'triangle',
-  'oval',
-] as const;
-export const AGE_GROUPS = ['under_18', '18_24', '25_34', '35_44', '45_54', '55_plus'] as const;
-export const STYLES = ['casual', 'elegant', 'minimalist', 'sporty', 'urban', 'bohemian', 'classic'] as const;
-export type BodyType = (typeof BODY_TYPES)[number];
-export type AgeGroup = (typeof AGE_GROUPS)[number];
-export type Style = (typeof STYLES)[number];
 
 export type HeightBucket = 'short' | 'medium' | 'tall';
 

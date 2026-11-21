@@ -11,8 +11,8 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'rea
 import { useAuth } from '../auth/AuthProvider';
 import { pluralKey, useI18n, type Locale } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
-import { localDate } from '../outfits/aiClient';
-import { orderPieces } from '../outfits/outfitDisplay';
+import { localDate } from '../lib/localDate';
+import { capitalize, orderPieces } from '../outfits/outfitDisplay';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
@@ -49,11 +49,6 @@ function dateFormat(locale: Locale, options: Intl.DateTimeFormatOptions): Intl.D
     formats.set(key, format);
   }
   return format;
-}
-
-function capitalize(text: string): string {
-  const [first, ...rest] = text;
-  return first === undefined ? text : first.toLocaleUpperCase() + rest.join('');
 }
 
 function utcDate(day: string): Date {

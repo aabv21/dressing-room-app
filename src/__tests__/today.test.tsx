@@ -54,8 +54,8 @@ jest.mock('../closet/ClosetProvider', () => ({
 
 jest.mock('../outfits/aiClient', () => ({
   fetchLuckyList: jest.fn(),
-  localDate: () => '2026-11-08',
 }));
+jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-08' }));
 
 jest.mock('../outfits/outfitRepository', () => ({
   logWear: jest.fn(),
@@ -401,9 +401,9 @@ describe('the lucky list', () => {
     await render(<TodayScreen />);
     await screen.findByText('Jeans · Blue');
 
-    const aiClient = jest.requireMock<{ localDate: () => string }>('../outfits/aiClient');
-    const original = aiClient.localDate;
-    aiClient.localDate = () => '2026-11-09';
+    const dates = jest.requireMock<{ localDate: () => string }>('../lib/localDate');
+    const original = dates.localDate;
+    dates.localDate = () => '2026-11-09';
     try {
       await act(async () => {
         for (const listener of appStateListeners) listener('active');
@@ -411,7 +411,7 @@ describe('the lucky list', () => {
       });
       expect(mockedFetch).toHaveBeenLastCalledWith({ occasion: null, date: '2026-11-09' });
     } finally {
-      aiClient.localDate = original;
+      dates.localDate = original;
     }
   });
 });

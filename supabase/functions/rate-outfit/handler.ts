@@ -8,7 +8,15 @@
 // only an outcome word, never garments, the profile, prompts or model output. See `docs/ai.md`'s
 // "Outfit rating".
 
-import { OCCASIONS, type Occasion, type Season, type Slot, slotOf } from '../_shared/catalog.ts';
+import {
+  MAX_OUTFIT_PIECES,
+  MIN_OUTFIT_PIECES,
+  OCCASIONS,
+  type Occasion,
+  type Season,
+  type Slot,
+  slotOf,
+} from '../_shared/catalog.ts';
 import type { FnEnv } from '../_shared/env.ts';
 import { buildFallbackRequest, parseFallback } from '../_shared/fallbackRater.ts';
 import { isRecord, UUID } from '../_shared/guards.ts';
@@ -75,8 +83,6 @@ export const MAX_SWAP_CANDIDATES = 8;
  * inside the app's function deadline.
  */
 export const SWAP_BUDGET_MS = 15_000;
-const MIN_GARMENTS = 2;
-const MAX_GARMENTS = 6;
 const CACHE_VERSION = 2;
 
 type RateInput = { garmentIds: string[]; occasion: Occasion | null; date: string };
@@ -104,7 +110,7 @@ async function readInput(request: Request): Promise<RateInput | null> {
   const body = await readJson(request);
   if (!isRecord(body)) return null;
   const { garment_ids: ids, occasion, date } = body;
-  if (!Array.isArray(ids) || ids.length < MIN_GARMENTS || ids.length > MAX_GARMENTS) return null;
+  if (!Array.isArray(ids) || ids.length < MIN_OUTFIT_PIECES || ids.length > MAX_OUTFIT_PIECES) return null;
   const garmentIds: string[] = [];
   for (const id of ids as unknown[]) {
     if (typeof id !== 'string' || !UUID.test(id)) return null;

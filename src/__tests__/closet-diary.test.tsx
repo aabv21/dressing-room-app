@@ -31,7 +31,7 @@ jest.mock('expo-router', () => ({
   useIsFocused: jest.fn(() => true),
 }));
 jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
-jest.mock('../outfits/aiClient', () => ({ localDate: () => '2026-10-28' }));
+jest.mock('../lib/localDate', () => ({ localDate: () => '2026-10-28' }));
 jest.mock('../stats/wearsRepository', () => ({ listWears: jest.fn(), deleteWear: jest.fn() }));
 jest.mock('../closet/garmentRepository', () => ({ updateGarment: jest.fn() }));
 jest.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));

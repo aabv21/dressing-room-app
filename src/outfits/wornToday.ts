@@ -4,7 +4,8 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
-import { kvGet, kvSet } from '../lib/kv';
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
+import { kvGet, kvGetJson, kvSet, parseJson } from '../lib/kv';
 
 /** The record's kv key: one per user, holding only the latest day's outfits. */
 export function wornTodayKey(userId: string): string {
@@ -19,25 +20,18 @@ export function outfitIdentity(garmentIds: readonly string[]): string {
 type WornRecord = { day: string; outfits: string[] };
 
 function isWornRecord(value: unknown): value is WornRecord {
-  if (typeof value !== 'object' || value === null) return false;
-  const record = value as Partial<Record<keyof WornRecord, unknown>>;
   return (
-    typeof record.day === 'string' &&
-    Array.isArray(record.outfits) &&
-    record.outfits.every((outfit) => typeof outfit === 'string')
+    isRecord(value) &&
+    typeof value.day === 'string' &&
+    Array.isArray(value.outfits) &&
+    value.outfits.every((outfit) => typeof outfit === 'string')
   );
 }
 
 /** The outfits stored for `day`; an earlier day's record, or one that doesn't parse, counts as none. */
 function parse(raw: string | null, day: string): ReadonlySet<string> {
-  if (raw === null) return new Set();
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return new Set();
-  }
-  return isWornRecord(value) && value.day === day ? new Set(value.outfits) : new Set();
+  const value = parseJson(raw, isWornRecord);
+  return value !== null && value.day === day ? new Set(value.outfits) : new Set();
 }
 
 const listeners = new Set<() => void>();
@@ -75,15 +69,8 @@ export function markWornToday(userId: string, day: string, garmentIds: readonly 
  */
 export function unmarkWornToday(userId: string, garmentIds: readonly string[]): void {
   const key = wornTodayKey(userId);
-  const raw = kvGet(key);
-  if (raw === null) return;
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return;
-  }
-  if (!isWornRecord(value)) return;
+  const value = kvGetJson(key, isWornRecord);
+  if (value === null) return;
   const identity = outfitIdentity(garmentIds);
   if (!value.outfits.includes(identity)) return;
   const record: WornRecord = { day: value.day, outfits: value.outfits.filter((outfit) => outfit !== identity) };

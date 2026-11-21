@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronLeft, ImageIcon, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { GARMENT_FIELDS } from '../../closet/catalog';
 import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
@@ -21,6 +21,7 @@ import { formatWearCount, useI18n } from '../../i18n';
 import { Constants } from '../../lib/database.types';
 import type { RequestError } from '../../lib/requestResult';
 import { useClothingType } from '../../profile/useClothingType';
+import { announceForAccessibility } from '../../ui/a11y';
 import { AnchoredCta } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { CtaBackdrop } from '../../ui/CtaBackdrop';
@@ -73,7 +74,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   const report = useCallback(
     (next: Failure) => {
       setFailure(next);
-      AccessibilityInfo.announceForAccessibility(failureText(next, t));
+      announceForAccessibility(failureText(next, t));
     },
     [t],
   );
@@ -211,7 +212,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   let message: React.ReactNode = null;
   if (failure !== null) {
     message = (
-      <Text style={styles.error} accessibilityRole="alert">
+      <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">
         {failureText(failure, t)}
       </Text>
     );

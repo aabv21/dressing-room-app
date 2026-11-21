@@ -195,8 +195,7 @@ Outfits, Stats and Diary:
   worn and refreshing the closet; a failure kept for its outfit and announced, with the retry
   reusing the wear id; the offline queue and its note; and a late answer after unmount still
   marking the outfit worn.
-- `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping and
-  `localDate`), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
+- `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
   and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
   a large text size) and `ScoreRing.test.tsx` (one progressbar named "Score", the number and
@@ -236,7 +235,8 @@ Shared UI, the app shell and helpers:
   language, the override and its persistence).
 - `src/lib/__tests__/` — `supabase.test.ts` (the client's options, a missing URL or key named in the
   error, auto-refresh with the app state), `fetchWithTimeout.test.ts` (12 s, 45 s for function
-  POSTs, 60 s for uploads), `storedSession.test.ts` and `useOnResume.test.tsx` (foreground and
+  POSTs, 60 s for uploads), `storedSession.test.ts`, `kv.test.ts` (`kvGetJson` is null for a
+  missing key, invalid JSON or a guard miss), `localDate.test.ts` (the local `YYYY-MM-DD`) and `useOnResume.test.tsx` (foreground and
   reconnect, the first network report only a baseline, the latest callback without resubscribing).
 - `src/perf/__tests__/` — `frameStats.test.ts` (dropped frames at 60 and 120 Hz, the inferred
   refresh rate) and `PerfHud.test.tsx` (tap to reset, long-press to clear the image caches).

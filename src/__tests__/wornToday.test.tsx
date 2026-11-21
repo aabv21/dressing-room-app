@@ -46,8 +46,8 @@ jest.mock('../closet/ClosetProvider', () => ({
 jest.mock('../outfits/aiClient', () => ({
   fetchLuckyList: jest.fn(),
   rateOutfit: jest.fn(),
-  localDate: () => '2026-11-08',
 }));
+jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-08' }));
 
 jest.mock('../outfits/outfitRepository', () => ({ logWear: jest.fn(), saveOutfit: jest.fn() }));
 

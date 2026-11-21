@@ -11,6 +11,23 @@ export function kvGet(key: string): string | null {
   return Storage.getItemSync(key);
 }
 
+/** `raw` parsed as JSON when it passes `guard`; null when absent, unreadable or of another shape. */
+export function parseJson<T>(raw: string | null, guard: (value: unknown) => value is T): T | null {
+  if (raw === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return guard(value) ? value : null;
+}
+
+/** The value stored under `key`, read like `parseJson`. */
+export function kvGetJson<T>(key: string, guard: (value: unknown) => value is T): T | null {
+  return parseJson(kvGet(key), guard);
+}
+
 // Accounts whose device data was dropped (a deletion). A write to a key with one of their ids as
 // a dot-separated segment is refused, so a request that resolves after the cleanup (a closet
 // re-sign, For you, the lucky list, a logged wear) can't bring that data back.

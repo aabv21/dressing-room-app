@@ -8,7 +8,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 
 import { formatWearCount, pluralKey, useI18n } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
-import { localDate } from '../outfits/aiClient';
+import { localDate } from '../lib/localDate';
 import { pieceLabel } from '../outfits/outfitDisplay';
 import { addDays, daysBetween, periodRange, STREAK_HISTORY_DAYS, type Period } from '../stats/periods';
 import { colorShares, kpis, mostWorn, slotBalance, unusedSixMonths } from '../stats/statsModel';
