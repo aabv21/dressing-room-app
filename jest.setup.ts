@@ -17,6 +17,23 @@ jest.mock('react-native-view-shot', () => ({
   captureRef: jest.fn(() => Promise.resolve('file:///cache/outfit.png')),
   releaseCapture: jest.fn(),
 }));
+// expo-notifications' native module is absent under Jest: permission granted, scheduling answers an
+// id, no tap response; a suite that tests the reminder sets these with `jest.mocked`.
+jest.mock('expo-notifications', () => ({
+  SchedulableTriggerInputTypes: { DAILY: 'daily' },
+  IosAuthorizationStatus: { NOT_DETERMINED: 0, DENIED: 1, AUTHORIZED: 2, PROVISIONAL: 3, EPHEMERAL: 4 },
+  AndroidImportance: { DEFAULT: 5 },
+  DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',
+  getPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true, status: 'granted' })),
+  requestPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true, canAskAgain: true, status: 'granted' })),
+  setNotificationChannelAsync: jest.fn(() => Promise.resolve(null)),
+  scheduleNotificationAsync: jest.fn(() => Promise.resolve('reminder-id')),
+  cancelScheduledNotificationAsync: jest.fn(() => Promise.resolve()),
+  setNotificationHandler: jest.fn(),
+  getLastNotificationResponse: jest.fn(() => null),
+  clearLastNotificationResponse: jest.fn(),
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+}));
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(() => Promise.resolve()),
   impactAsync: jest.fn(() => Promise.resolve()),

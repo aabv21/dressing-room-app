@@ -153,7 +153,8 @@ failed launch read can't overwrite a finished profile with defaults), and the sh
 state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx` (`ClothingSection`,
 `BodySection`, `StyleSection`), used by onboarding and the Profile tab. The tab shows "Save changes"
 only while there's a change (or a save, its error, or "Saved" for 2 seconds), with a failed save in
-the button's notice slot until the next edit, and lists household mode as "Coming soon", a row with no action.
+the button's notice slot until the next edit, holds the daily reminder's section
+([below](#the-daily-reminder-srcreminder)), and lists household mode as "Coming soon", a row with no action.
 
 ## Supabase client and storage (`src/lib/`)
 
@@ -256,6 +257,36 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   with Reduce Motion; the rating screen adds a success haptic as the result arrives), and `types.ts`
   (the functions' response types, re-exported from their `handler.ts`).
 
+## The daily reminder (`src/reminder/`)
+
+A local notification at a time the user picks, inviting them to open Today. No server, no push
+token: the phone schedules it and shows it at its own wall clock, so it follows the local time zone
+when the user travels.
+
+- `reminderStore.ts`: the settings on this device, per account, in kv `reminder.<userId>`:
+  `{ enabled, hour, minute, notificationId, language }`, off at 07:30 by default. The key's
+  `<name>.<id>` shape lets account deletion clear and refuse it.
+- `dailyReminder.ts`: `turnOnReminder` creates the Android `daily-reminder` channel (Android 13
+  shows no permission prompt without one), asks for notification permission only when the system
+  still can (iOS provisional counts as allowed), then schedules one notification with a `DAILY`
+  trigger (`hour`, `minute`, the channel), "Your outfit for today is ready" / "Tu outfit de hoy
+  está listo" in the app language, and `data: { kind: 'dailyReminder', url: '/' }`; it answers
+  `on`, `denied` or `failed`. `scheduleReminder` (a new time or language) cancels the stored id
+  before scheduling, and every change runs after the previous one, so two quick changes never
+  leave two notifications. `turnOffReminder` cancels and keeps the time; `cancelStoredReminder`
+  reads the id synchronously and cancels in the background, for the deletion.
+  `presentRemindersInForeground` (the root layout's module scope) shows a reminder that arrives
+  with the app open, silently.
+- `ReminderSection.tsx`: Profile's "Daily reminder" card: the switch, the time (Intl's `7:30 AM` /
+  `7:30 a. m.`) opening a sheet of hour and 5-minute chips with Done, and on a denial the reason with
+  an "Open settings" link (`Linking.openSettings`). A time picked while off is only stored.
+- `DailyReminderSync.tsx`, mounted in the signed-in, onboarded tree: a tap on the reminder (the
+  launch tap from `getLastNotificationResponse`, or one while the app runs) navigates to Today and
+  clears the response; a change of app language re-schedules an enabled reminder in it.
+- Turning off on the way out: `AuthProvider` turns the reminder off for the account whose session
+  ended (any `SIGNED_OUT`, so the next person on the phone never gets it), keeping the time;
+  `forgetAccountOnDevice` cancels it before removing the account's kv keys.
+
 ## Stats and Diary (`src/stats/`)
 
 All computed on the device. `periods.ts` (local `YYYY-MM-DD` day math anchored in UTC, the period
@@ -281,8 +312,9 @@ compared across them. Each line opens the garment, and the card is hidden with n
   `forgetInterruptedDeletions`.
 - `deletionFlow.ts`: `runDeletion` (only from the user's tap) and `confirmPendingDeletion` (the
   provider's check); one run per user at a time. `DELETION_SETTLE_MS` is 10 minutes.
-- `forgetAccount.ts`: `forgetAccountOnDevice` removes every kv key with the user's id as a
-  dot-separated segment, plus `deviceState`'s entries, after refusing that user's later kv writes.
+- `forgetAccount.ts`: `forgetAccountOnDevice` cancels the daily reminder, then removes every kv key
+  with the user's id as a dot-separated segment, plus `deviceState`'s entries, after refusing that
+  user's later kv writes.
   New per-user kv keys must keep the `<name>.<id>[.<more>]` shape to be cleared and refused;
   `queue.purge.<id>` is the one key it keeps.
 - `deviceFiles.ts`: `removeExports` and `forgetDeviceFiles` (the exports plus expo-image's caches).

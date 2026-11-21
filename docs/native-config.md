@@ -24,6 +24,24 @@ create or edit them by hand. Native behavior lives in `app.json` and its config 
   (look for `android.permission.CAMERA` in `android/app/src/main/AndroidManifest.xml`), then delete
   the generated folders.
 
+## Notifications
+
+- `expo-notifications` schedules the daily reminder, a local notification only
+  ([`app.md`](app.md#the-daily-reminder-srcreminder)). Its plugin sets
+  `enableRemoteNotifications: false`, so the iOS build has no APNs (`aps-environment`) entitlement
+  and needs no push setup with Apple, FCM or Expo Push; `icon` (the monochrome adaptive-icon layer)
+  and `color` style the Android status-bar icon.
+- iOS needs no usage string for notifications; the system asks when the switch is turned on.
+- On Android the library's own manifest adds `POST_NOTIFICATIONS` (Android 13+ asks for it, and
+  only once a channel exists, so the app creates its `daily-reminder` channel first) and
+  `RECEIVE_BOOT_COMPLETED` (scheduled reminders survive a restart).
+- No `SCHEDULE_EXACT_ALARM` or `USE_EXACT_ALARM`: the `DAILY` trigger's default `bestEffort`
+  delivery may arrive a few minutes late on some phones, which suits a morning reminder, and Google
+  Play reserves exact alarms for alarm-clock and calendar apps.
+- **Verify** with `pnpm exec expo config --type introspect` (the `_internal.modResults` Info.plist,
+  entitlements and manifest), which writes nothing to `ios/` or `android/`; the library's manifest
+  entries appear only in a build's merged manifest.
+
 ## Sign-in configuration
 
 - `@react-native-google-signin/google-signin`'s plugin sets `iosUrlScheme` to the iOS OAuth client's

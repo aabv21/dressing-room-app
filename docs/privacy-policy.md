@@ -51,7 +51,8 @@ connections and holds no other key.
 
 Your phone also keeps a copy of your closet, today's outfit suggestions, your saved outfits, the
 combinations you marked "Not for me", your last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
-folder until it is uploaded.
+folder until it is uploaded. If you turn on the daily reminder, its time stays on your phone and
+the phone itself schedules the notification: nothing about it reaches a server or a push service.
 
 ## Who processes it
 

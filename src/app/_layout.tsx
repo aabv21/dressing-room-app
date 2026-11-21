@@ -10,6 +10,8 @@ import { UploadQueueProvider } from '../closet/UploadQueueProvider';
 import { WearQueueFlusher } from '../outfits/WearQueueFlusher';
 import { I18nProvider } from '../i18n/I18nProvider';
 import { quietDevToastsForE2e } from '../lib/e2eLaunch';
+import { presentRemindersInForeground } from '../reminder/dailyReminder';
+import { DailyReminderSync } from '../reminder/DailyReminderSync';
 import { OnboardingArrivalContext } from '../ui/onboardingArrival';
 import { colors } from '../ui/theme';
 
@@ -17,6 +19,7 @@ import { colors } from '../ui/theme';
 // in), so no intermediate route flashes before the guards know which group to show.
 void SplashScreen.preventAutoHideAsync();
 quietDevToastsForE2e();
+presentRemindersInForeground();
 
 type Settled = { status: 'signedOut' | 'signedIn'; onboardingComplete: boolean; userId: string | null };
 
@@ -101,6 +104,7 @@ function Guards() {
           <ClosetProvider key={active.userId}>
             <UploadQueueProvider>{stack}</UploadQueueProvider>
             <WearQueueFlusher />
+            {active.onboardingComplete ? <DailyReminderSync /> : null}
           </ClosetProvider>
         ) : (
           stack

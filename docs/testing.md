@@ -16,6 +16,9 @@ environment. `jest.setup.ts` mocks:
   `USD`), so i18n-dependent tests don't depend on the host machine's language or region.
 - `react-native-view-shot` — `captureRef` answers a fixed `file://` PNG, since the native capture
   is absent under Jest; a suite that tests a failed capture overrides it.
+- `expo-notifications` — permission granted, `scheduleNotificationAsync` answering an id, no tap
+  response and a listener that does nothing, since the native module is absent under Jest; the
+  reminder suites set these with `jest.mocked`.
 - `expo-sqlite/kv-store` — replaced with an in-memory `Map` behind the same synchronous
   `getItemSync`/`setItemSync`/`removeItemSync`/`getAllKeysSync` API `src/lib/kv.ts` calls, since
   there is no native SQLite module under Jest.
@@ -114,7 +117,8 @@ The Profile tab's Privacy section (data export and account deletion):
   user signing in drops a `deleting` account's kv data and keeps their own marker for their
   session's check; that account signing in again can write its kv data again.
 - `src/account/__tests__/forgetAccount.test.ts` — every kv key under the user's id goes (each day's
-  `today.occasion.<id>.<date>` too, and the saved outfits), with the onboarding status and pending language save; another
+  `today.occasion.<id>.<date>` too, the saved outfits, and the daily reminder's settings after its
+  notification is cancelled), with the onboarding status and pending language save; another
   account's keys, the device's language preference and a `queue.purge.<id>` request stay; the
   user's later writes are refused
   (also the id-less onboarding and language entries), and lifted once that account signs in again.
@@ -134,6 +138,20 @@ The Profile tab's Privacy section (data export and account deletion):
   locally, keeping the queued photos and the data; Sign out is disabled while an export or a
   deletion runs, and a late `reauth` after another account signed in neither signs it out nor
   alerts it.
+- `src/reminder/__tests__/dailyReminder.test.ts` — turning the reminder on: the Android channel
+  before the permission request, iOS provisional counting as allowed, asking only when the system
+  still can, one `DAILY` trigger at the chosen hour and minute on the reminder channel, the copy in
+  English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; denied and a
+  scheduling failure store nothing; a re-schedule cancels the stored id first, and two at once never
+  leave two notifications; off cancels and keeps the time; `cancelStoredReminder`;
+  `isReminderResponse` (only a default tap on the reminder).
+- `src/reminder/__tests__/ReminderSection.test.tsx` — Profile's section: off at 7:30 by default,
+  the switch asks and schedules, a new time from the sheet re-schedules (the old id cancelled), a
+  time picked while off is kept without scheduling, off cancels, denied stays off with the
+  explanation and "Open settings", a scheduling failure says so, and the Spanish labels.
+- `src/reminder/__tests__/DailyReminderSync.test.tsx` — a reminder tap that launched the app or
+  arrives while it runs opens Today and is cleared, another notification's doesn't, the listener is
+  removed on unmount, and a language change re-schedules an enabled reminder (never an off one).
 - `src/lib/__tests__/e2eLaunch.test.ts` — the Maestro launch check: `-e2e 1` in the user defaults
   is an end-to-end launch (anything else, or no native settings module, isn't), and only then are
   LogBox's toasts hidden.
@@ -152,7 +170,8 @@ Accounts, onboarding and the profile:
   and the shared profile: read at sign-in (no row as `{}`), an error until a retry succeeds (loading
   while it runs), a failed refresh keeping the last good profile, a foreground or reconnect after an
   offline launch reading it again, `replaceProfileLocal` merging a saved patch, and another account
-  or a sign-out dropping it. Screen suites stand it in with
+  or a sign-out dropping it; a session that ends turns off that account's daily reminder, keeping
+  its time. Screen suites stand it in with
   `src/test/authMock.ts`, a store that re-renders on `setAuth`.
 - `src/auth/__tests__/authService.test.ts` — sign-up, sign-in, sign-out (offline falls back to a
   local sign-out), the password-reset request (no account and the email rate limit both answer

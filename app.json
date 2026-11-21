@@ -68,6 +68,14 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/android-icon-monochrome.png",
+          "color": "#7c3aed",
+          "enableRemoteNotifications": false
+        }
+      ],
+      [
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.988226077161-2mj7u7trmakoadvm8dtu8d77tej74ko2"

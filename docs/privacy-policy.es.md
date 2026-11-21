@@ -53,7 +53,9 @@ cambie. La app se comunica con Supabase por conexiones cifradas y no guarda ning
 Tu teléfono guarda además una copia de tu clóset, las sugerencias de outfit del día, tus outfits
 guardados, las combinaciones que marcaste con "No es para mí", tus últimas ideas de "Para ti" y
 fotos en caché, para que la app funcione sin conexión. Una foto que espera para
-subirse se guarda en la carpeta propia de la app hasta que se sube.
+subirse se guarda en la carpeta propia de la app hasta que se sube. Si activas el recordatorio
+diario, su hora se queda en tu teléfono y el propio teléfono programa la notificación: nada de eso
+llega a un servidor ni a un servicio de notificaciones push.
 
 ## Quién los procesa
 
