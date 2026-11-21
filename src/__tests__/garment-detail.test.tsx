@@ -133,7 +133,7 @@ function confirmEveryAlert(): jest.SpyInstance {
 test('shows the garment: title, full photo cached by version, wear count and status', async () => {
   await renderDetail();
 
-  expect(screen.getByRole('header', { name: 'JEANS' })).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Jeans' })).toBeOnTheScreen();
   expect(screen.getByLabelText('Garment photo').props.source).toEqual([
     expect.objectContaining({ uri: 'https://signed/user-1/g-1/full.webp', cacheKey: 'g-1:full:2' }),
   ]);
@@ -264,7 +264,7 @@ test('a failed delete keeps the screen and shows the message', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Delete garment' }));
 
   expect(await screen.findByText("Couldn't delete. Check your internet and try again.")).toBeOnTheScreen();
-  expect(screen.getByRole('header', { name: 'JEANS' })).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Jeans' })).toBeOnTheScreen();
   expect(mockRemoveLocal).not.toHaveBeenCalled();
   expect(router.back).not.toHaveBeenCalled();
   alert.mockRestore();

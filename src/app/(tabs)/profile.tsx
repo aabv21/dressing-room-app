@@ -23,7 +23,7 @@ import { LanguageToggle } from '../../ui/LanguageToggle';
 
 function SectionHeading({ children }: { children: string }): React.JSX.Element {
   return (
-    <Text style={styles.heading} accessibilityRole="header">
+    <Text style={styles.heading} accessibilityRole="header" accessibilityLabel={children}>
       {children.toUpperCase()}
     </Text>
   );

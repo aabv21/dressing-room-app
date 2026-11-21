@@ -116,7 +116,7 @@ export const es: Record<MessageKey, string> = {
   'stats.unused.donateMessage': 'Sale de tu clóset y de tus sugerencias. Sus outfits pasados siguen en tu historial.',
   'stats.unused.cancel': 'Cancelar',
 
-  'review.title': 'REVISAR',
+  'review.title': 'Revisar',
   'review.back': 'Volver',
   'review.progress': '{index} de {total}',
   'garment.photo': 'Foto de la prenda',
@@ -143,7 +143,7 @@ export const es: Record<MessageKey, string> = {
   'review.done.body': 'Las prendas nuevas aparecen aquí cuando la IA las lee.',
   'review.done.back': 'Volver al clóset',
 
-  'camera.title': 'TOMAR FOTOS',
+  'camera.title': 'Tomar fotos',
   'camera.close': 'Cerrar',
   'camera.hint': 'Una prenda por foto',
   'camera.removeLast': 'Quitar la última foto',
@@ -162,11 +162,11 @@ export const es: Record<MessageKey, string> = {
   'camera.permission.gallery': 'Elegir de la galería',
   'camera.captureFailed': 'No se pudo tomar la foto. Inténtalo de nuevo.',
 
-  'screen.today': 'HOY',
-  'screen.closet': 'TU CLÓSET',
-  'screen.build': 'ARMAR OUTFIT',
-  'screen.forYou': 'PARA TI',
-  'screen.profile': 'PERFIL',
+  'screen.today': 'Hoy',
+  'screen.closet': 'Tu clóset',
+  'screen.build': 'Armar outfit',
+  'screen.forYou': 'Para ti',
+  'screen.profile': 'Perfil',
 
   'perf.hud': '{frames} frames · {dropped} dropped ({ratio}%)\np95 {p95} ms · median {median} ms ≈ {hz} Hz',
   'perf.cacheCleared': 'Caché de imágenes vaciada · estadísticas reiniciadas',
@@ -185,13 +185,13 @@ export const es: Record<MessageKey, string> = {
   'auth.forgotPassword': '¿Olvidaste tu contraseña?',
   'auth.haveAccount': 'Ya tengo cuenta',
 
-  'auth.signIn.title': 'HOLA DE NUEVO',
+  'auth.signIn.title': 'Hola de nuevo',
   'auth.signIn.subtitle': 'Entra para continuar donde lo dejaste.',
   'auth.signIn.cta': 'Entrar',
   'auth.signIn.noAccount': 'Crear una cuenta',
   'auth.checkEmail': 'Revisa tu correo para confirmar tu cuenta antes de entrar.',
 
-  'auth.forgotPassword.title': 'RESTABLECE TU CONTRASEÑA',
+  'auth.forgotPassword.title': 'Restablece tu contraseña',
   'auth.forgotPassword.step1.subtitle': 'Te enviaremos un código de 6 dígitos a tu correo.',
   'auth.forgotPassword.sendCode': 'Enviar código',
   'auth.forgotPassword.step2.subtitle': 'Ingresa el código y elige una nueva contraseña.',
@@ -516,7 +516,7 @@ export const es: Record<MessageKey, string> = {
   'weather.condition.snow': 'con nieve',
   'weather.condition.storm': 'tormenta',
 
-  'rate.title': '¿CÓMO SE VE?',
+  'rate.title': '¿Cómo se ve?',
   'rate.back': 'Volver',
   'rate.loading': 'Mirando tu outfit…',
   'rate.confidence': 'Confianza de la IA: {value} %',
@@ -648,8 +648,9 @@ export const es: Record<MessageKey, string> = {
   'build.chip.all': 'Todo',
   'build.empty': 'No hay prendas disponibles para este espacio. Agrégalas en tu clóset.',
   'build.rate': '¿Cómo se ve?',
+  'build.rate.missing': 'Elige {slots} para calificar',
 
-  'city.title': 'TU CIUDAD',
+  'city.title': 'Tu ciudad',
   'city.intro': 'Hoy la usa para el clima.',
   'city.save': 'Guardar',
   'city.close': 'Cerrar',

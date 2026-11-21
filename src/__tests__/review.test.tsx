@@ -85,7 +85,7 @@ test('3 queued shows "1 of 3", with the title, and polls while focused', async (
   mockCloset.garments = three();
   await renderReview();
 
-  expect(screen.getByRole('header', { name: 'REVIEW' })).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Review' })).toBeOnTheScreen();
   expect(screen.getByText('1 of 3')).toBeOnTheScreen();
   expect(usePendingPolling).toHaveBeenCalledWith(true);
 });

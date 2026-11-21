@@ -35,7 +35,7 @@ function PieceRow({
       accessibilityLabel={`${label}, ${wears}`}
       testID={`outfit-piece-${garment.id}`}
     >
-      <View style={[styles.thumb, compact ? styles.thumbCompact : null]}>
+      <View style={[styles.thumb, compact ? styles.thumbCompact : null]} testID={`outfit-thumb-${garment.id}`}>
         {source === null ? null : (
           <Image
             source={source}
@@ -100,7 +100,9 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 10,
     overflow: 'hidden',
-    backgroundColor: colors.tint,
+    backgroundColor: colors.thumbFill,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    borderColor: colors.hairline,
   },
   thumbCompact: {
     width: 36,

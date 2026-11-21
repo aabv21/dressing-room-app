@@ -63,12 +63,13 @@ beforeEach(() => {
 
 const row = (name: string | RegExp) => screen.getByRole('button', { name });
 const cell = (name: string | RegExp) => screen.getByRole('button', { name });
-const cta = () => screen.getByRole('button', { name: 'How does it look?' });
+// Disabled, the button says what's missing; complete, it's "How does it look?".
+const cta = () => screen.getByRole('button', { name: /^(How does it look\?|Pick .+ to rate)$/ });
 
 test('shows the title, the slot rows with placeholders, and the Top grid first', async () => {
   await render(<BuildScreen />);
 
-  expect(screen.getByRole('header', { name: 'BUILD AN OUTFIT' })).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Build an outfit' })).toBeOnTheScreen();
   expect(row('Top, Pick one')).toBeSelected();
   expect(row('Bottom, Pick one')).not.toBeSelected();
   expect(row('Shoes, Pick one')).toBeOnTheScreen();
@@ -94,10 +95,10 @@ test('re-tapping the chosen cell clears the slot', async () => {
   await render(<BuildScreen />);
 
   await fireEvent.press(cell('Blouse, 9 wears'));
-  expect(row('Top, Blouse · Black ✓')).toBeOnTheScreen();
+  await fireEvent.press(row('Top, Blouse · Black ✓'));
   await fireEvent.press(cell('Blouse, 9 wears'));
 
-  expect(row('Top, Pick one')).toBeOnTheScreen();
+  expect(row('Top, Pick one')).toBeSelected();
 });
 
 test('the CTA is disabled until the outfit is complete, then pushes /rate with the 3 ids', async () => {
@@ -161,9 +162,11 @@ test('a dress in the Bottom row replaces the top and bottom, and dress + shoes c
   await fireEvent.press(row('Bottom, Pick one'));
   await fireEvent.press(cell('Skirt, 21 wears'));
 
+  await fireEvent.press(row('Bottom, Skirt · Camel ✓'));
   await fireEvent.press(cell('Dress, 2 wears'));
 
-  expect(row('One-piece, Dress · Black ✓')).toBeSelected();
+  expect(row('One-piece, Dress · Black ✓')).toBeOnTheScreen();
+  expect(row('Shoes, Pick one')).toBeSelected();
   expect(screen.queryByRole('button', { name: /^Top, / })).not.toBeOnTheScreen();
   expect(screen.queryByRole('button', { name: /^Bottom, / })).not.toBeOnTheScreen();
 
@@ -238,4 +241,32 @@ test('a slot row keeps its value on one line at the default text size, and stack
   await screen.rerender(<BuildScreen />);
   expect(row('Top, Pick one')).toHaveStyle({ flexDirection: 'column' });
   expect(within(row('Top, Pick one')).getByText('Pick one').props.numberOfLines).toBeUndefined();
+});
+
+test('picking a piece moves on to the next empty slot, and the optional row stays put', async () => {
+  await render(<BuildScreen />);
+
+  await fireEvent.press(cell('Blouse, 9 wears'));
+  expect(row('Bottom, Pick one')).toBeSelected();
+  await fireEvent.press(cell('Skirt, 21 wears'));
+  expect(row('Shoes, Pick one')).toBeSelected();
+  await fireEvent.press(cell('Sneakers, 30 wears'));
+  // Nothing required left after Shoes: the row stays.
+  expect(row('Shoes, Sneakers · White ✓')).toBeSelected();
+
+  await fireEvent.press(row('Outerwear · Accessories, optional'));
+  await fireEvent.press(cell('Blazer, 3 wears'));
+  expect(row('Outerwear · Accessories, Blazer · Navy ✓')).toBeSelected();
+});
+
+test("the disabled rate button says what's missing", async () => {
+  await render(<BuildScreen />);
+  expect(screen.getByRole('button', { name: 'Pick a top, a bottom and shoes to rate' })).toBeDisabled();
+
+  await fireEvent.press(cell('Blouse, 9 wears'));
+  await fireEvent.press(cell('Skirt, 21 wears'));
+  expect(screen.getByRole('button', { name: 'Pick shoes to rate' })).toBeDisabled();
+
+  await fireEvent.press(cell('Sneakers, 30 wears'));
+  expect(screen.getByRole('button', { name: 'How does it look?' })).toBeEnabled();
 });

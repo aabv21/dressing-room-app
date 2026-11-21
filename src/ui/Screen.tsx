@@ -53,8 +53,9 @@ export function ScreenTitle({
       </Text>
     );
   }
+  // Shown upper-cased, read as written: VoiceOver can spell a short all-caps word letter by letter.
   return (
-    <Text style={styles.title} accessibilityRole="header">
+    <Text style={styles.title} accessibilityRole="header" accessibilityLabel={title}>
       {title.toUpperCase()}
     </Text>
   );

@@ -61,3 +61,13 @@ test('Screen with chrome none and a cta renders the backdrop', async () => {
   );
   expect(screen.queryByTestId('cta-backdrop')).toBeNull();
 });
+
+test('an upper-cased title reads in mixed case, so a screen reader says the words', async () => {
+  await render(
+    <Screen title="Your body" chrome="none">
+      <Text>Hips</Text>
+    </Screen>,
+  );
+  expect(screen.getByText('YOUR BODY')).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Your body' })).toBeOnTheScreen();
+});

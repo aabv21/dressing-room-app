@@ -123,9 +123,11 @@ beforeEach(() => {
 test('shows every section prefilled and the account email, with no Save until something changes', async () => {
   await openProfile();
 
-  for (const heading of ['YOUR CLOTHES', 'YOUR BODY', 'YOUR STYLE', 'LANGUAGE', 'ACCOUNT']) {
+  for (const heading of ['Your clothes', 'Your body', 'Your style', 'Language', 'Account']) {
     expect(screen.getByRole('header', { name: heading })).toBeTruthy();
+    expect(screen.getByText(heading.toUpperCase())).toBeTruthy();
   }
+  expect(screen.getByRole('header', { name: 'Profile' })).toBeTruthy();
   expect(screen.getByRole('radio', { name: /^Feminine/ })).toBeSelected();
   expect(screen.getByRole('radio', { name: 'Hourglass' })).toBeSelected();
   expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.68 m');
@@ -258,13 +260,13 @@ test('switching the language to English relabels the screen and the tabs, and sa
   kvSet(LOCALE_PREFERENCE_KEY, 'es');
   await openProfile();
   expect(screen.getByText('PERFIL')).toBeTruthy();
-  expect(screen.getByRole('header', { name: 'TU ROPA' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Tu ropa' })).toBeTruthy();
   expect(screen.getByText('Perfil')).toBeTruthy();
 
   await fireEvent.press(screen.getByRole('tab', { name: 'English' }));
 
   expect(screen.getByText('PROFILE')).toBeTruthy();
-  expect(screen.getByRole('header', { name: 'YOUR CLOTHES' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Your clothes' })).toBeTruthy();
   expect(screen.getByText('Profile')).toBeTruthy();
   expect(screen.queryByText('PERFIL')).toBeNull();
   await waitFor(() => {

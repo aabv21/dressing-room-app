@@ -134,7 +134,7 @@ describe('fixture mode', () => {
     const list = screen.getByTestId('flash-list');
     // A vertical ScrollView around FlashList stretches it to full height and disables recycling.
     expect(scrollViewAncestors(list as unknown as HostNode)).toBe(0);
-    expect(screen.getByRole('header', { name: 'YOUR CLOSET' })).toBeOnTheScreen();
+    expect(screen.getByRole('header', { name: 'Your closet' })).toBeOnTheScreen();
     expect(scrollViewAncestors(screen.getByRole('header') as unknown as HostNode)).toBe(1);
     expect(screen.getByTestId('perf-hud')).toBeOnTheScreen();
   });

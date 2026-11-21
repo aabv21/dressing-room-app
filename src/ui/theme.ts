@@ -37,6 +37,8 @@ export const colors = {
     95: 'rgba(255,255,255,0.95)',
   },
   divider: '#eee9f8',
+  // Behind an outfit's thumbnails: neutral, so a white garment doesn't vanish into a white or violet fill.
+  thumbFill: '#f1f0f3',
   accentBorder: '#e3d8ff',
   accentBright: '#8b5cf6',
   inkSoft: '#4a4656',

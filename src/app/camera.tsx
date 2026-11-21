@@ -172,7 +172,9 @@ function BurstCamera(): React.JSX.Element {
         <Pressable accessibilityRole="button" accessibilityLabel={t('camera.close')} onPress={close} style={styles.closeButton}>
           <X size={20} color={colors.onFill} />
         </Pressable>
-        <Text style={styles.title}>{t('camera.title')}</Text>
+        <Text style={styles.title} accessibilityRole="header" accessibilityLabel={t('camera.title')}>
+          {t('camera.title').toUpperCase()}
+        </Text>
       </View>
 
       <View style={styles.viewfinder}>

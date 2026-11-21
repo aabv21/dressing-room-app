@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import type { BottomTabBarProps } from 'expo-router/tabs';
+import { StyleSheet } from 'react-native';
 
 import { GlassTabBar } from '../GlassTabBar';
 
@@ -106,4 +107,22 @@ test('pressing a tab is a selection tick', async () => {
   );
   await fireEvent.press(screen.getByRole('tab', { name: 'Build' }));
   expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});
+
+test("each tab is at least 48 pt tall, Android's minimum touch target", async () => {
+  await render(
+    <GlassTabBar
+      {...({
+        state: { index: 0, routes },
+        emitter: { emit: () => ({ defaultPrevented: false }) },
+        navigateToTab: jest.fn(),
+        descriptors: {},
+        insets: { top: 0, bottom: 0, left: 0, right: 0 },
+      } as unknown as BottomTabBarProps)}
+    />,
+  );
+  for (const tab of screen.getAllByRole('tab')) {
+    const { height } = StyleSheet.flatten(tab.props.style) as { height: number };
+    expect(height).toBeGreaterThanOrEqual(48);
+  }
 });

@@ -139,9 +139,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 5,
   },
+  // Android's 48 dp minimum touch target.
   tab: {
     flex: 1,
-    height: 46,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -160,7 +161,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    borderRadius: 23,
+    borderRadius: 24,
     backgroundColor: colors.glass[90],
     boxShadow: shadows.tabLens,
   },

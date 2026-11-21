@@ -114,7 +114,7 @@ export const en = {
   'stats.unused.donateMessage': 'It leaves your closet and your suggestions. Its past outfits stay in your history.',
   'stats.unused.cancel': 'Cancel',
 
-  'review.title': 'REVIEW',
+  'review.title': 'Review',
   'review.back': 'Back',
   'review.progress': '{index} of {total}',
   'garment.photo': 'Garment photo',
@@ -141,7 +141,7 @@ export const en = {
   'review.done.body': 'New garments show up here once the AI has read them.',
   'review.done.back': 'Back to closet',
 
-  'camera.title': 'TAKE PHOTOS',
+  'camera.title': 'Take photos',
   'camera.close': 'Close',
   'camera.hint': 'One garment per shot',
   'camera.removeLast': 'Remove the last photo',
@@ -160,11 +160,11 @@ export const en = {
   'camera.permission.gallery': 'Choose from gallery',
   'camera.captureFailed': "Couldn't take that photo. Try again.",
 
-  'screen.today': 'TODAY',
-  'screen.closet': 'YOUR CLOSET',
-  'screen.build': 'BUILD AN OUTFIT',
-  'screen.forYou': 'FOR YOU',
-  'screen.profile': 'PROFILE',
+  'screen.today': 'Today',
+  'screen.closet': 'Your closet',
+  'screen.build': 'Build an outfit',
+  'screen.forYou': 'For you',
+  'screen.profile': 'Profile',
 
   'perf.hud': '{frames} frames · {dropped} dropped ({ratio}%)\np95 {p95} ms · median {median} ms ≈ {hz} Hz',
   'perf.cacheCleared': 'Image cache cleared · stats reset',
@@ -183,13 +183,13 @@ export const en = {
   'auth.forgotPassword': 'Forgot your password?',
   'auth.haveAccount': 'I already have an account',
 
-  'auth.signIn.title': 'HELLO AGAIN',
+  'auth.signIn.title': 'Hello again',
   'auth.signIn.subtitle': 'Sign in to pick up where you left off.',
   'auth.signIn.cta': 'Sign in',
   'auth.signIn.noAccount': 'Create an account',
   'auth.checkEmail': 'Check your email to confirm your account before signing in.',
 
-  'auth.forgotPassword.title': 'RESET YOUR PASSWORD',
+  'auth.forgotPassword.title': 'Reset your password',
   'auth.forgotPassword.step1.subtitle': "We'll send a 6-digit code to your email.",
   'auth.forgotPassword.sendCode': 'Send code',
   'auth.forgotPassword.step2.subtitle': 'Enter the code and choose a new password.',
@@ -513,7 +513,7 @@ export const en = {
   'weather.condition.snow': 'snowy',
   'weather.condition.storm': 'stormy',
 
-  'rate.title': 'HOW DOES IT LOOK?',
+  'rate.title': 'How does it look?',
   'rate.back': 'Back',
   'rate.loading': 'Looking at your outfit…',
   'rate.confidence': 'AI confidence: {value}%',
@@ -645,8 +645,9 @@ export const en = {
   'build.chip.all': 'All',
   'build.empty': 'Nothing available for this slot. Add pieces in your closet.',
   'build.rate': 'How does it look?',
+  'build.rate.missing': 'Pick {slots} to rate',
 
-  'city.title': 'YOUR CITY',
+  'city.title': 'Your city',
   'city.intro': 'Today uses it for the weather.',
   'city.save': 'Save',
   'city.close': 'Close',

@@ -24,7 +24,7 @@ code (components, hooks, utils) stays outside `src/app/`.
 ## Shared UI (`src/ui/`)
 
 Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
-handling), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
+handling; `ScreenTitle` shows the title upper-cased but gives screen readers the words as written), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
 (`useBottomChrome`, `useLargeText`), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
 `theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
@@ -161,7 +161,9 @@ button's notice slot, and lists household mode as "Coming soon", a row with no a
   line.
 - `buildSelection.ts`: Build's selection: one garment per slot, a one-piece and top/bottom exclude
   each other, one bag, hat or accessory, so a built outfit has at most five pieces against
-  `rate-outfit`'s six; `canRate`, `selectionIds` and `retainSelection`.
+  `rate-outfit`'s six; `canRate`, `selectionIds` and `retainSelection`. On the Build tab a pick in a
+  required row moves on to the next empty one below it, and the disabled button names what's missing
+  ("Pick shoes to rate").
 - `useStoredQuery.ts`: a function answer fetched one request at a time for the latest inputs and
   shown over its stored copy until this session has one (`offline` when the fetch couldn't
   connect); Today's list and For you are built on it.
