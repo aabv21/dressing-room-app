@@ -9,7 +9,8 @@
 
 import { type Archetype, ARCHETYPES, archetypesFor } from './archetypes.ts';
 import { type ClothingType, type Season, type Slot, slotOf } from './catalog.ts';
-import { firstText, isRecord } from './extraction.ts';
+import { firstText } from './extraction.ts';
+import { isRecord } from './guards.ts';
 import { type Outfit, passesRules, type RuleContext, type RuleGarment } from './outfitRules.ts';
 import { inRange, JEV_MODEL, RATING_LEVELS, type RatingPiece, type RatingState, SCORE_QUESTIONS } from './rating.ts';
 import { audienceTerm, categoryTerm, colorTerm, type Language } from './searchTerms.ts';

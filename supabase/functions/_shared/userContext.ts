@@ -1,12 +1,11 @@
-// What the user-called functions share: who is calling, the caller's profile and garments (read
-// with the caller's own token, so RLS applies), today's weather (cached per location and UTC hour),
-// the daily quota, the result caches (service role), the Jev and Claude calls with their timeouts,
-// and a concurrency-limited map. The account functions (`apple-token`, `delete-account`,
-// `export-data`) use only the caller and the PostgREST helpers, with `SupabaseEnv`.
+// What the user-called functions share: the caller's profile and garments (read with the caller's
+// own token, so RLS applies), today's weather (cached per location and UTC hour), the daily quota,
+// the result caches (service role), the Jev and Claude calls with their timeouts, and a
+// concurrency-limited map. The account functions use only the PostgREST helpers.
 //
 // Runtime-neutral: every effect goes through the injected `fetch`, and only web-standard globals
-// (`crypto.subtle`, `atob`, `TextEncoder`, `AbortController`) are used, so Jest drives it under
-// Node and the Edge Functions run it under Deno.
+// (`crypto.subtle`, `TextEncoder`) are used, so Jest drives it under Node and the Edge Functions
+// run it under Deno.
 
 import {
   type ClothingType,
@@ -19,7 +18,9 @@ import {
   SEASONS,
   slotOf,
 } from './catalog.ts';
-import { isRecord } from './extraction.ts';
+import type { ClaudeEnv, GeocodingEnv, JevEnv, ServiceEnv, SupabaseEnv, WeatherEnv } from './env.ts';
+import { isRecord, UUID } from './guards.ts';
+import { fetchWithDeadline, userIdFromJwt } from './http.ts';
 import type { GarmentStatus, RuleGarment } from './outfitRules.ts';
 import {
   AGE_GROUPS,
@@ -49,21 +50,6 @@ import {
   type WeatherSummary,
 } from './weather.ts';
 
-export type FnEnv = {
-  supabaseUrl: string;
-  anonKey: string;
-  serviceRoleKey: string;
-  typesafeApiKey: string;
-  typesafeBaseUrl: string;
-  anthropicApiKey: string;
-  anthropicBaseUrl: string;
-  openMeteoUrl: string;
-  geocodingUrl: string;
-};
-
-/** The part of `FnEnv` every function has: the project URL and its two keys. */
-export type SupabaseEnv = Pick<FnEnv, 'supabaseUrl' | 'anonKey' | 'serviceRoleKey'>;
-
 type FetchFn = typeof fetch;
 
 export const JEV_TIMEOUT_MS = 10_000;
@@ -75,8 +61,6 @@ export const POSTGREST_TIMEOUT_MS = 8_000;
 export const MAX_CONCURRENT_JEV = 5;
 const ANTHROPIC_VERSION = '2023-06-01';
 
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** A real calendar date written `YYYY-MM-DD` (the client's local day, as the functions take it). */
 export function isIsoDate(value: unknown): value is string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -87,32 +71,6 @@ export function isIsoDate(value: unknown): value is string {
 /** A PostgREST or RPC call answered with something other than success. */
 export class UpstreamError extends Error {}
 
-const trimSlash = (url: string): string => url.replace(/\/+$/, '');
-
-// --- Caller ------------------------------------------------------------------------------------
-
-/**
- * The `sub` of the bearer token, without verifying the signature: with `verify_jwt` on, the
- * gateway has already verified it before the function runs. Null for anything that isn't a
- * bearer JWT whose `sub` is a uuid (the anon and service-role keys have no `sub`).
- */
-export function userIdFromJwt(authHeader: string | null): string | null {
-  if (authHeader === null) return null;
-  const [scheme, jwt, ...rest] = authHeader.trim().split(/\s+/);
-  if (scheme?.toLowerCase() !== 'bearer' || jwt === undefined || rest.length > 0) return null;
-  const [, payload] = jwt.split('.');
-  if (payload === undefined || payload === '') return null;
-  try {
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const binary = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='));
-    const claims: unknown = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0))));
-    if (!isRecord(claims) || typeof claims.sub !== 'string' || !UUID.test(claims.sub)) return null;
-    return claims.sub.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
 // --- PostgREST ---------------------------------------------------------------------------------
 
 /** Headers for a request made as the caller: RLS applies. */
@@ -121,32 +79,18 @@ export function userHeaders(env: SupabaseEnv, auth: string): Record<string, stri
 }
 
 /** Headers for a request made with the service role, which bypasses RLS. */
-export function serviceHeaders(env: Pick<SupabaseEnv, 'serviceRoleKey'>): Record<string, string> {
+export function serviceHeaders(env: Pick<ServiceEnv, 'serviceRoleKey'>): Record<string, string> {
   return { apikey: env.serviceRoleKey, authorization: `Bearer ${env.serviceRoleKey}` };
 }
 
 /**
- * Runs one PostgREST call (the request and reading its body) under `POSTGREST_TIMEOUT_MS`, so a hung
- * database connection can't hold a function to its wall clock; the abort rejects the call.
+ * One call's JSON answer, the call bounded by `timeoutMs` (by default `POSTGREST_TIMEOUT_MS`, so a
+ * hung database connection can't hold a function to its wall clock); throws on a non-2xx answer.
  */
-async function withDeadline<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-  }, POSTGREST_TIMEOUT_MS);
-  try {
-    return await run(controller.signal);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-export function restJson(fetchFn: FetchFn, url: string, init: RequestInit): Promise<unknown> {
-  return withDeadline(async (signal) => {
-    const response = await fetchFn(url, { ...init, signal });
-    if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
-    return (await response.json()) as unknown;
-  });
+export async function restJson(fetchFn: FetchFn, url: string, init: RequestInit, timeoutMs = POSTGREST_TIMEOUT_MS): Promise<unknown> {
+  const response = await fetchWithDeadline(fetchFn, url, init, timeoutMs);
+  if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
+  return (await response.json()) as unknown;
 }
 
 export async function restRows(fetchFn: FetchFn, url: string, headers: Record<string, string>): Promise<unknown[]> {
@@ -157,14 +101,16 @@ export async function restRows(fetchFn: FetchFn, url: string, headers: Record<st
 
 /** POST with `Prefer: resolution=merge-duplicates`: an insert that updates the row on a primary-key conflict. */
 export async function upsert(
-  env: SupabaseEnv,
+  env: ServiceEnv,
   fetchFn: FetchFn,
   table: string,
   row: Record<string, unknown>,
 ): Promise<boolean> {
   try {
-    const response = await withDeadline((signal) =>
-      fetchFn(`${env.supabaseUrl}/rest/v1/${table}`, {
+    const response = await fetchWithDeadline(
+      fetchFn,
+      `${env.supabaseUrl}/rest/v1/${table}`,
+      {
         method: 'POST',
         headers: {
           ...serviceHeaders(env),
@@ -172,8 +118,8 @@ export async function upsert(
           prefer: 'resolution=merge-duplicates,return=minimal',
         },
         body: JSON.stringify(row),
-        signal,
-      }),
+      },
+      POSTGREST_TIMEOUT_MS,
     );
     return response.ok;
   } catch {
@@ -242,7 +188,7 @@ export function profileFrom(row: Record<string, unknown>): ProfileRow {
 }
 
 /** The caller's profile, read with the caller's token; null when the row doesn't exist. */
-export async function loadProfile(env: FnEnv, fetchFn: FetchFn, auth: string): Promise<ProfileRow | null> {
+export async function loadProfile(env: SupabaseEnv, fetchFn: FetchFn, auth: string): Promise<ProfileRow | null> {
   const userId = userIdFromJwt(auth);
   if (userId === null) return null;
   const rows = await restRows(
@@ -289,7 +235,7 @@ export function garmentFrom(row: unknown): RuleGarment {
  * users' garments, so a foreign or deleted id is simply absent from the result.
  */
 export async function loadGarments(
-  env: FnEnv,
+  env: SupabaseEnv,
   fetchFn: FetchFn,
   auth: string,
   ids?: readonly string[],
@@ -339,7 +285,7 @@ function cachedWeatherFrom(payload: unknown): { weather: WeatherSummary; lat: nu
 }
 
 async function readWeatherCache(
-  env: FnEnv,
+  env: ServiceEnv,
   fetchFn: FetchFn,
   key: string,
   hour: string,
@@ -357,20 +303,14 @@ async function readWeatherCache(
   }
 }
 
-/** GET a JSON body with a timeout; null on a non-2xx answer, a network error or the timeout. */
+/** A JSON body with a timeout; null on a non-2xx answer, a network error or the timeout. */
 async function fetchJson(fetchFn: FetchFn, url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
   try {
-    const response = await fetchFn(url, { ...init, signal: controller.signal });
+    const response = await fetchWithDeadline(fetchFn, url, init, timeoutMs);
     if (!response.ok) return null;
     return (await response.json()) as unknown;
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -382,9 +322,9 @@ async function fetchJson(fetchFn: FetchFn, url: string, init: RequestInit, timeo
  * city that can't be geocoded, or any Open-Meteo failure gives `weather: null`, never a throw.
  */
 /** A typed city's latitude from Open-Meteo's geocoding, or null when it can't be found or the call fails. */
-export async function geocodedLatitude(env: FnEnv, fetchFn: FetchFn, cityName: string): Promise<number | null> {
+export async function geocodedLatitude(env: GeocodingEnv, fetchFn: FetchFn, cityName: string): Promise<number | null> {
   try {
-    const body = await fetchJson(fetchFn, geocodeUrl(`${trimSlash(env.geocodingUrl)}/v1/search`, cityName.trim()), {}, WEATHER_TIMEOUT_MS);
+    const body = await fetchJson(fetchFn, geocodeUrl(`${env.geocodingUrl}/v1/search`, cityName.trim()), {}, WEATHER_TIMEOUT_MS);
     return parseGeocode(body)?.lat ?? null;
   } catch {
     return null;
@@ -392,7 +332,7 @@ export async function geocodedLatitude(env: FnEnv, fetchFn: FetchFn, cityName: s
 }
 
 export async function getLocalWeather(
-  env: FnEnv,
+  env: ServiceEnv & WeatherEnv,
   fetchFn: FetchFn,
   profile: WeatherProfile,
   now: Date = new Date(),
@@ -409,7 +349,7 @@ export async function getLocalWeather(
     if (coords === null && profile.city_name !== null) {
       const body = await fetchJson(
         fetchFn,
-        geocodeUrl(`${trimSlash(env.geocodingUrl)}/v1/search`, profile.city_name.trim()),
+        geocodeUrl(`${env.geocodingUrl}/v1/search`, profile.city_name.trim()),
         {},
         WEATHER_TIMEOUT_MS,
       );
@@ -420,7 +360,7 @@ export async function getLocalWeather(
 
     const forecast = await fetchJson(
       fetchFn,
-      forecastUrl(`${trimSlash(env.openMeteoUrl)}/v1/forecast`, coords.lat, coords.lon),
+      forecastUrl(`${env.openMeteoUrl}/v1/forecast`, coords.lat, coords.lon),
       {},
       WEATHER_TIMEOUT_MS,
     );
@@ -438,32 +378,23 @@ export async function getLocalWeather(
   }
 }
 
-/** `getLocalWeather` without the latitude. */
-export async function getWeather(
-  env: FnEnv,
-  fetchFn: FetchFn,
-  profile: WeatherProfile,
-  now: Date = new Date(),
-): Promise<WeatherSummary | null> {
-  return (await getLocalWeather(env, fetchFn, profile, now)).weather;
-}
-
 // --- Quota and result caches -------------------------------------------------------------------
 
 /**
- * `public.consume_quota` for the caller on `day`, the app's local calendar day (the database falls
- * back to the UTC day when it is more than a day off); throws when the RPC itself fails.
+ * `public.consume_quota` for the user on `day`, the app's local calendar day (the database falls
+ * back to the UTC day when it is more than a day off, or when there is none); throws when the RPC
+ * itself fails.
  * NOTE: two identical requests that both miss the cache at once both spend quota and both call the
  * model (a double tap the app's busy locks already prevent). Upgrade path: an advisory lock on the
  * cache key around the miss.
  */
 export async function consumeQuota(
-  env: FnEnv,
+  env: ServiceEnv,
   fetchFn: FetchFn,
   userId: string,
-  kind: 'rating' | 'lucky' | 'for_you',
+  kind: 'rating' | 'lucky' | 'for_you' | 'extraction',
   limit: number,
-  day: string,
+  day?: string,
 ): Promise<boolean> {
   const allowed = await restJson(fetchFn, `${env.supabaseUrl}/rest/v1/rpc/consume_quota`, {
     method: 'POST',
@@ -482,7 +413,7 @@ export const DEGRADED_TTL_MS = 60 * 60 * 1000;
 export type CacheRow = { result: unknown; createdAt: number | null };
 
 /** The first row a cache read answered, or null when there is none or any request fails. */
-async function firstCacheRow(fetchFn: FetchFn, url: string, env: FnEnv): Promise<CacheRow | null> {
+async function firstCacheRow(fetchFn: FetchFn, url: string, env: ServiceEnv): Promise<CacheRow | null> {
   try {
     const [row] = await restRows(fetchFn, url, serviceHeaders(env));
     if (!isRecord(row) || row.result === undefined || row.result === null) return null;
@@ -495,7 +426,7 @@ async function firstCacheRow(fetchFn: FetchFn, url: string, env: FnEnv): Promise
 
 /** The stored row for `key` whatever its age, or null on a miss or any error. */
 export function cacheRead(
-  env: FnEnv,
+  env: ServiceEnv,
   fetchFn: FetchFn,
   table: ResultCache,
   userId: string,
@@ -510,7 +441,7 @@ export function cacheRead(
 
 /** The user's most recently written row, whatever its key or age; null when there is none or on any error. */
 export function cacheReadNewest(
-  env: FnEnv,
+  env: ServiceEnv,
   fetchFn: FetchFn,
   table: ResultCache,
   userId: string,
@@ -537,21 +468,12 @@ export function cacheFresh(row: CacheRow, now: number, maxAgeMs: number = Number
 /**
  * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
  * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
- * unknown), so a better answer is tried again; any other result expires only after `maxAgeMs`
- * (never by default). The marker is returned as stored; callers strip it before
- * answering.
+ * unknown), so a better answer is tried again; any other result never expires. The marker is
+ * returned as stored; callers strip it before answering.
  */
-export async function cacheGet(
-  env: FnEnv,
-  fetchFn: FetchFn,
-  table: ResultCache,
-  userId: string,
-  key: string,
-  now: number = Date.now(),
-  maxAgeMs: number = Number.POSITIVE_INFINITY,
-): Promise<unknown> {
+export async function cacheGet(env: ServiceEnv, fetchFn: FetchFn, table: ResultCache, userId: string, key: string): Promise<unknown> {
   const row = await cacheRead(env, fetchFn, table, userId, key);
-  return row !== null && cacheFresh(row, now, maxAgeMs) ? row.result : null;
+  return row !== null && cacheFresh(row, Date.now()) ? row.result : null;
 }
 
 /**
@@ -560,7 +482,7 @@ export async function cacheGet(
  * would otherwise keep its old age and a degraded one would never be served.
  */
 export function cachePut(
-  env: FnEnv,
+  env: ServiceEnv,
   fetchFn: FetchFn,
   table: ResultCache,
   userId: string,
@@ -578,7 +500,7 @@ export function cachePut(
 
 /** Deletes the user's rows under every key but `keep`; best effort, so a failure is ignored. */
 export async function cachePrune(
-  env: FnEnv,
+  env: ServiceEnv,
   fetchFn: FetchFn,
   table: ResultCache,
   userId: string,
@@ -586,12 +508,11 @@ export async function cachePrune(
 ): Promise<void> {
   try {
     const filter = `user_id=eq.${userId}&cache_key=neq.${encodeURIComponent(keep)}`;
-    await withDeadline((signal) =>
-      fetchFn(`${env.supabaseUrl}/rest/v1/${table}?${filter}`, {
-        method: 'DELETE',
-        headers: { ...serviceHeaders(env), prefer: 'return=minimal' },
-        signal,
-      }),
+    await fetchWithDeadline(
+      fetchFn,
+      `${env.supabaseUrl}/rest/v1/${table}?${filter}`,
+      { method: 'DELETE', headers: { ...serviceHeaders(env), prefer: 'return=minimal' } },
+      POSTGREST_TIMEOUT_MS,
     );
   } catch {
     // A row left behind is only an older entry; the next write prunes it again.
@@ -606,10 +527,10 @@ export async function sha256Hex(text: string): Promise<string> {
 // --- Models ------------------------------------------------------------------------------------
 
 /** The System One response body, or null on a non-2xx answer, a network error or 10 s passing. */
-export function runJev(env: Pick<FnEnv, 'typesafeApiKey' | 'typesafeBaseUrl'>, fetchFn: FetchFn, request: unknown): Promise<unknown> {
+export function runJev(env: JevEnv, fetchFn: FetchFn, request: unknown): Promise<unknown> {
   return fetchJson(
     fetchFn,
-    `${trimSlash(env.typesafeBaseUrl)}/v1/systemone`,
+    `${env.typesafeBaseUrl}/v1/systemone`,
     {
       method: 'POST',
       headers: { authorization: `Bearer ${env.typesafeApiKey}`, 'content-type': 'application/json' },
@@ -624,14 +545,14 @@ export function runJev(env: Pick<FnEnv, 'typesafeApiKey' | 'typesafeBaseUrl'>, f
  * (default 20 s) passing.
  */
 export function runClaude(
-  env: FnEnv,
+  env: ClaudeEnv,
   fetchFn: FetchFn,
   request: unknown,
   timeoutMs: number = CLAUDE_TIMEOUT_MS,
 ): Promise<unknown> {
   return fetchJson(
     fetchFn,
-    `${trimSlash(env.anthropicBaseUrl)}/v1/messages`,
+    `${env.anthropicBaseUrl}/v1/messages`,
     {
       method: 'POST',
       headers: {
@@ -706,7 +627,7 @@ export function composeAnswers(parsed: RatingAnswers, weather: WeatherSummary | 
 
 /** One Jev rating of `state`, or null when Jev fails, times out or answers something unparseable. */
 export async function jevRating(
-  env: FnEnv,
+  env: JevEnv,
   fetchFn: FetchFn,
   state: RatingState,
   rand: () => number,

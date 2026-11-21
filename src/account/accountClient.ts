@@ -9,6 +9,7 @@ import {
   type SupabaseClient,
 } from '@supabase/supabase-js';
 
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import type { DataExport } from '../../supabase/functions/export-data/handler.ts';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';
@@ -116,14 +117,37 @@ export async function verifyAccount(userId: string, client: Client = supabase): 
   }
 }
 
+const isRows = (value: unknown): boolean => Array.isArray(value) && value.every(isRecord);
+
+function isPhoto(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.garmentId === 'string' &&
+    (value.full === null || typeof value.full === 'string') &&
+    (value.thumb === null || typeof value.thumb === 'string')
+  );
+}
+
+/** The export document's shape; anything else (a newer function's answer) is never written to a file. */
+function isDataExport(value: unknown): value is DataExport {
+  return (
+    isRecord(value) &&
+    typeof value.exportedAt === 'string' &&
+    (value.profile === null || isRecord(value.profile)) &&
+    isRows(value.garments) &&
+    isRows(value.outfits) &&
+    isRows(value.wears) &&
+    Array.isArray(value.photos) &&
+    value.photos.every(isPhoto)
+  );
+}
+
 /** The signed-in account's data as one JSON document (signed photo URLs valid for 7 days). */
 export async function exportData(client: Client = supabase): Promise<{ ok: true; result: DataExport } | AccountFailure> {
   try {
-    const response = await client.functions.invoke<DataExport>('export-data', { body: {} });
-    if (response.error !== null || response.data === null) {
-      return { ok: false, error: response.error !== null ? errorFrom(response.error) : 'unknown' };
-    }
-    return { ok: true, result: response.data };
+    const response = await client.functions.invoke<unknown>('export-data', { body: {} });
+    if (response.error !== null) return { ok: false, error: errorFrom(response.error) };
+    return isDataExport(response.data) ? { ok: true, result: response.data } : { ok: false, error: 'unknown' };
   } catch (error) {
     return { ok: false, error: errorFrom(error) };
   }

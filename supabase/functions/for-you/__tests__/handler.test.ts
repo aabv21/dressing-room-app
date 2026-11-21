@@ -16,7 +16,7 @@ import {
 } from '../../_shared/forYou.ts';
 import { type RuleGarment, seasonOf } from '../../_shared/outfitRules.ts';
 import { RATING_LEVELS } from '../../_shared/rating.ts';
-import type { FnEnv } from '../../_shared/userContext.ts';
+import type { FnEnv } from '../../_shared/env.ts';
 import { FOR_YOU_DAILY_LIMIT, type ForYouCard, handleForYou } from '../handler.ts';
 import { fakeTime } from '../../_shared/__tests__/fakeTime.ts';
 
@@ -944,5 +944,14 @@ describe('logging', () => {
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
+  });
+});
+
+describe('the cache key', () => {
+  test('stays the key stored before the shared garment fingerprint, so no cached answer is lost', async () => {
+    const { calls } = await forYou(world());
+    expect(calls.find((call) => call.route === 'cacheGet')?.url.searchParams.get('cache_key')).toBe(
+      'eq.2e9ac9b9bd5d2f65e8064f5f5e787d57deaaa9ac160dec0f3ff533861ae3e31a',
+    );
   });
 });

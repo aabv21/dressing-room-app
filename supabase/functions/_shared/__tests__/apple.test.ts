@@ -2,17 +2,8 @@
 // supabase/functions/_shared/__tests__/apple.test.ts
 import { KeyObject } from 'node:crypto';
 
-import {
-  APPLE_AUDIENCE,
-  APPLE_DEFAULT_BASE_URL,
-  appleClientSecret,
-  type AppleEnv,
-  appleEnvFrom,
-  CLIENT_SECRET_TTL_S,
-  appleSubject,
-  exchangeCode,
-  revokeToken,
-} from '../apple.ts';
+import { APPLE_AUDIENCE, appleClientSecret, CLIENT_SECRET_TTL_S, appleSubject, exchangeCode, revokeToken } from '../apple.ts';
+import { APPLE_DEFAULT_BASE_URL, type AppleEnv, appleEnvFrom } from '../env.ts';
 
 const NOW = Date.parse('2026-11-09T12:00:00Z');
 const SIX_MONTHS_S = 15_777_000;
@@ -236,7 +227,18 @@ describe('exchangeCode', () => {
 
   test('trims a trailing slash off the base URL', async () => {
     const { fetch: fetchFn, sent } = recordingFetch(() => json(200, TOKEN_BODY));
-    await exchangeCode({ ...env, baseUrl: 'http://apple.test/' }, fetchFn, 'code-test', NOW);
+    const variables = new Map(
+      Object.entries({
+        APPLE_TEAM_ID: env.teamId,
+        APPLE_KEY_ID: env.keyId,
+        APPLE_PRIVATE_KEY: env.privateKey,
+        APPLE_CLIENT_ID: env.clientId,
+        APPLE_BASE_URL: 'http://apple.test/',
+      }),
+    );
+    const configured = appleEnvFrom((name) => variables.get(name));
+    if (configured === null) throw new Error('the Apple env did not parse');
+    await exchangeCode(configured, fetchFn, 'code-test', NOW);
     expect(sent[0]?.url).toBe('http://apple.test/auth/token');
   });
 

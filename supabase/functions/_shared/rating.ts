@@ -18,7 +18,7 @@ import {
   type Slot,
   SLOTS,
 } from './catalog.ts';
-import { isRecord } from './extraction.ts';
+import { isRecord } from './guards.ts';
 import { seededShuffle } from './outfitRules.ts';
 import type { WeatherSummary } from './weather.ts';
 

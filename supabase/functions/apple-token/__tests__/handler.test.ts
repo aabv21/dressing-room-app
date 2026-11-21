@@ -2,8 +2,8 @@
 // supabase/functions/apple-token/__tests__/handler.test.ts
 import { KeyObject } from 'node:crypto';
 
-import type { AppleEnv } from '../../_shared/apple.ts';
-import type { SupabaseEnv } from '../../_shared/userContext.ts';
+import type { AppleEnv } from '../../_shared/env.ts';
+import type { SupabaseEnv } from '../../_shared/env.ts';
 import { handleAppleToken } from '../handler.ts';
 
 const { jest } = import.meta;

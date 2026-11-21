@@ -13,9 +13,11 @@
 // The app fires this and forgets it, so everything past the caller check answers 200 with an
 // outcome word. The response and the logs never carry the code, the token or the Apple user id.
 
-import { type AppleEnv, type AppleTokens, exchangeCode, revokeToken } from '../_shared/apple.ts';
-import { isRecord } from '../_shared/extraction.ts';
-import { restJson, serviceHeaders, type SupabaseEnv, upsert, userIdFromJwt } from '../_shared/userContext.ts';
+import { type AppleTokens, exchangeCode, revokeToken } from '../_shared/apple.ts';
+import type { AppleEnv, SupabaseEnv } from '../_shared/env.ts';
+import { isRecord } from '../_shared/guards.ts';
+import { callerOf, readJson, reply } from '../_shared/http.ts';
+import { restJson, serviceHeaders, upsert } from '../_shared/userContext.ts';
 
 export type AppleTokenDeps = { env: SupabaseEnv; apple: AppleEnv | null; fetch: typeof fetch; now?: () => number };
 
@@ -31,24 +33,10 @@ export type AppleTokenOutcome =
 /** Apple's authorization codes are short; anything far longer isn't one. */
 const MAX_CODE_LENGTH = 2048;
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
-
-function reply(outcome: AppleTokenOutcome | 'unauthorized' | 'method_not_allowed', status: number, body: unknown): Response {
-  console.info(JSON.stringify({ outcome }));
-  return json(status, body);
-}
-
 const answer = (outcome: AppleTokenOutcome): Response => reply(outcome, 200, { outcome });
 
 async function readCode(request: Request): Promise<string | null> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return null;
-  }
+  const body = await readJson(request);
   if (!isRecord(body) || typeof body.code !== 'string') return null;
   const code = body.code.trim();
   return code === '' || code.length > MAX_CODE_LENGTH ? null : code;
@@ -100,8 +88,9 @@ async function keepIfOwned(
 export async function handleAppleToken(request: Request, deps: AppleTokenDeps): Promise<Response> {
   const now = deps.now ?? Date.now;
   if (request.method !== 'POST') return reply('method_not_allowed', 405, { error: 'method_not_allowed' });
-  const userId = userIdFromJwt(request.headers.get('authorization'));
-  if (userId === null) return reply('unauthorized', 401, { error: 'unauthorized' });
+  const caller = callerOf(request);
+  if (caller === null) return reply('unauthorized', 401, { error: 'unauthorized' });
+  const { userId } = caller;
 
   const code = await readCode(request);
   if (code === null) return answer('invalid');

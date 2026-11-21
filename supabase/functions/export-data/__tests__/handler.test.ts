@@ -1,6 +1,6 @@
 /** @jest-environment node */
 // supabase/functions/export-data/__tests__/handler.test.ts
-import type { SupabaseEnv } from '../../_shared/userContext.ts';
+import type { SupabaseEnv } from '../../_shared/env.ts';
 import { handleExportData, SIGNED_URL_TTL_S } from '../handler.ts';
 
 const { jest } = import.meta;

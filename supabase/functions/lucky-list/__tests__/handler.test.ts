@@ -3,8 +3,8 @@
 import { slotOf, type GarmentCategory, type Slot } from '../../_shared/catalog.ts';
 import { isCompleteOutfit, mulberry32, preScore, type RuleGarment } from '../../_shared/outfitRules.ts';
 import { RATING_DIMENSIONS, RATING_LEVELS } from '../../_shared/rating.ts';
-import type { FnEnv } from '../../_shared/userContext.ts';
-import { handleLucky, LUCKY_DAILY_LIMIT, type LuckyOutfit } from '../handler.ts';
+import type { FnEnv } from '../../_shared/env.ts';
+import { handleLucky, type LuckyOutfit } from '../handler.ts';
 import { fakeTime } from '../../_shared/__tests__/fakeTime.ts';
 
 const { jest } = import.meta;
@@ -379,8 +379,7 @@ describe('the lucky list', () => {
     expect(jevPeak()).toBeLessThanOrEqual(5);
     expect(jevPeak()).toBeGreaterThan(1);
     const quota = calls.find((call) => call.route === 'quota');
-    expect(JSON.parse(quota?.body ?? '{}')).toEqual({ p_user_id: USER_ID, p_kind: 'lucky', p_limit: LUCKY_DAILY_LIMIT, p_day: DATE });
-    expect(LUCKY_DAILY_LIMIT).toBe(10);
+    expect(JSON.parse(quota?.body ?? '{}')).toEqual({ p_user_id: USER_ID, p_kind: 'lucky', p_limit: 10, p_day: DATE });
 
     expect(body).not.toHaveProperty('degraded');
     expect(cachedResults(w)).toEqual([{ ...(body as OkBody), degraded: false }]);
@@ -995,5 +994,15 @@ describe('logging', () => {
     } finally {
       for (const spy of spies) spy.mockRestore();
     }
+  });
+});
+
+describe('the cache key', () => {
+  test('stays the key stored before the shared garment fingerprint, so no cached list is lost', async () => {
+    const garments = bigCloset().map((row, index) => (index === 0 ? { ...row, pinned_on: DATE } : row));
+    const { calls } = await lucky(world({ garments }));
+    expect(calls.find((call) => call.route === 'cacheGet')?.url.searchParams.get('cache_key')).toBe(
+      'eq.b6ed4f6de94b4be74558fb31547df0fe1c6cc6d4b097e75b55487412cfac08a4',
+    );
   });
 });

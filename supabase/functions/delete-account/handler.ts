@@ -21,17 +21,12 @@
 // Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
 // `index.ts` serves it under Deno. Logs carry only outcome words.
 
-import { type AppleEnv, revokeToken } from '../_shared/apple.ts';
-import { isRecord } from '../_shared/extraction.ts';
+import { revokeToken } from '../_shared/apple.ts';
+import type { AppleEnv, SupabaseEnv } from '../_shared/env.ts';
+import { isRecord } from '../_shared/guards.ts';
+import { callerOf, fetchWithDeadline, reply } from '../_shared/http.ts';
 import { listUserObjects, removeObjects } from '../_shared/photoStore.ts';
-import {
-  restRows,
-  serviceHeaders,
-  type SupabaseEnv,
-  UpstreamError,
-  userHeaders,
-  userIdFromJwt,
-} from '../_shared/userContext.ts';
+import { restRows, serviceHeaders, UpstreamError, userHeaders } from '../_shared/userContext.ts';
 
 export type DeleteAccountDeps = { env: SupabaseEnv; apple: AppleEnv | null; fetch: typeof fetch; now?: () => number };
 
@@ -40,14 +35,8 @@ export { LIST_CONCURRENCY, LIST_PAGE, REMOVE_CHUNK } from '../_shared/photoStore
 
 type Revoke = 'revoked' | 'revoke_failed' | 'no_token' | 'skipped';
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
-
-function reply(outcome: string, status: number, body: unknown, revoke?: Revoke): Response {
-  console.info(JSON.stringify(revoke === undefined ? { outcome } : { outcome, revoke }));
-  return json(status, body);
-}
+/** Each Auth call (the caller check and the user deletion), the body included. */
+export const AUTH_TIMEOUT_MS = 10_000;
 
 /**
  * Whether Auth still knows the caller, asked with the caller's own token: true for the token's
@@ -56,7 +45,7 @@ function reply(outcome: string, status: number, body: unknown, revoke?: Revoke):
  * deleted on an answer that can't be trusted.
  */
 async function callerExists(env: SupabaseEnv, fetchFn: typeof fetch, auth: string, userId: string): Promise<boolean> {
-  const response = await fetchFn(`${env.supabaseUrl}/auth/v1/user`, { headers: userHeaders(env, auth) });
+  const response = await fetchWithDeadline(fetchFn, `${env.supabaseUrl}/auth/v1/user`, { headers: userHeaders(env, auth) }, AUTH_TIMEOUT_MS);
   let body: unknown = null;
   try {
     body = await response.json();
@@ -91,10 +80,12 @@ async function revokeApple(deps: DeleteAccountDeps, userId: string, now: number)
 
 /** Deletes the auth user: true when this call deleted it, false on a 404 (an earlier attempt did). */
 async function deleteUser(env: SupabaseEnv, fetchFn: typeof fetch, userId: string): Promise<boolean> {
-  const response = await fetchFn(`${env.supabaseUrl}/auth/v1/admin/users/${userId}`, {
-    method: 'DELETE',
-    headers: serviceHeaders(env),
-  });
+  const response = await fetchWithDeadline(
+    fetchFn,
+    `${env.supabaseUrl}/auth/v1/admin/users/${userId}`,
+    { method: 'DELETE', headers: serviceHeaders(env) },
+    AUTH_TIMEOUT_MS,
+  );
   if (response.status === 404) return false;
   if (!response.ok) throw new UpstreamError(`admin delete: HTTP ${String(response.status)}`);
   return true;
@@ -108,9 +99,9 @@ async function sweepStorage(env: SupabaseEnv, fetchFn: typeof fetch, userId: str
 export async function handleDeleteAccount(request: Request, deps: DeleteAccountDeps): Promise<Response> {
   const now = deps.now ?? Date.now;
   if (request.method !== 'POST') return reply('invalid', 405, { error: 'method_not_allowed' });
-  const auth = request.headers.get('authorization');
-  const userId = userIdFromJwt(auth);
-  if (auth === null || userId === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const caller = callerOf(request);
+  if (caller === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const { auth, userId } = caller;
 
   const { env, fetch: fetchFn } = deps;
   try {
@@ -130,15 +121,15 @@ export async function handleDeleteAccount(request: Request, deps: DeleteAccountD
   try {
     if (!(await deleteUser(env, fetchFn, userId))) {
       await sweepStorage(env, fetchFn, userId);
-      return reply('already_deleted', 200, { outcome: 'deleted' }, revoke);
+      return reply('already_deleted', 200, { outcome: 'deleted' }, { revoke });
     }
   } catch {
-    return reply('error', 500, { error: 'internal' }, revoke);
+    return reply('error', 500, { error: 'internal' }, { revoke });
   }
   try {
     await sweepStorage(env, fetchFn, userId);
   } catch {
     // Best effort: the user is gone either way, and a retry (step 0) sweeps again.
   }
-  return reply('deleted', 200, { outcome: 'deleted' }, revoke);
+  return reply('deleted', 200, { outcome: 'deleted' }, { revoke });
 }

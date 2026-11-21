@@ -36,8 +36,11 @@ function isIdea(value: unknown): boolean {
   );
 }
 
-/** A stored answer this app version can render; anything else (an older shape, a bad write) is dropped. */
-function isForYouResponse(value: unknown): value is ForYouResponse {
+/**
+ * An answer this app version can render: the function's answer is checked with it before it's
+ * shown or stored, and a stored one again when read (an older shape, a bad write).
+ */
+export function isForYouResponse(value: unknown): value is ForYouResponse {
   if (!isRecord(value)) return false;
   if (value.kind === 'too_small') return true;
   return value.kind === 'ok' && Array.isArray(value.ideas) && value.ideas.every(isIdea);

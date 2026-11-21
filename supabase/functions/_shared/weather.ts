@@ -1,9 +1,11 @@
 // Open-Meteo request URLs and response parsing: forecast/geocoding query builders, the WMO
 // weather-code and temperature-band mappings, and the location cache key.
 //
-// Runtime-neutral (no imports, nothing Deno- or Node-only) so Jest exercises it under Node and
-// the Edge Function runs it under Deno. It builds URLs and parses responses but never fetches, so
-// its tests never reach the real Open-Meteo service.
+// Runtime-neutral (no imports beyond the guards, nothing Deno- or Node-only) so Jest exercises it
+// under Node and the Edge Function runs it under Deno. It builds URLs and parses responses but
+// never fetches, so its tests never reach the real Open-Meteo service.
+
+import { isRecord } from './guards.ts';
 
 export type WeatherBand = 'cold' | 'cool' | 'mild' | 'hot';
 
@@ -33,10 +35,6 @@ export function forecastUrl(base: string, lat: number, lon: number): string {
 export function geocodeUrl(base: string, name: string): string {
   const params = new URLSearchParams({ name, count: '1', format: 'json' });
   return `${base}?${params.toString()}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function firstNumber(value: unknown): number | null {

@@ -1,7 +1,7 @@
 // Garment attribute extraction with Claude Haiku 5.5: the Messages API request body and the
 // sanitizer that turns its response into enum-only garment attributes.
 //
-// Runtime-neutral (no imports beyond the catalog, nothing Deno- or Node-only) so Jest exercises it
+// Runtime-neutral (no imports beyond the catalog and the guards, nothing Deno- or Node-only) so Jest exercises it
 // under Node and the Edge Function runs it under Deno. The model's output is untrusted: the
 // structured-output schema bounds it, and `parseExtraction` still re-checks every value against the
 // catalog, so only enum members (and the 1–5 / 1–3 scales) can ever reach the database.
@@ -27,6 +27,7 @@ import {
   type Season,
   SEASONS,
 } from './catalog.ts';
+import { isRecord } from './guards.ts';
 
 export const EXTRACTION_MODEL = 'claude-haiku-5-5';
 export const EXTRACTION_MAX_TOKENS = 600;
@@ -134,10 +135,6 @@ export function buildExtractionRequest(imageBase64: string, clothingType: Clothi
     ],
     output_config: { format: { type: 'json_schema', schema: extractionSchema(clothingType) } },
   };
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function memberOf<T extends string | number>(allowed: readonly T[], value: unknown): T | undefined {

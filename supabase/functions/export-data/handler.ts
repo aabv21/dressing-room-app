@@ -11,9 +11,11 @@
 // hosted, but the Edge Runtime's internal gateway address on the local stack, so a local export's
 // links only open after swapping in the local API URL. Upgrade path: a public-URL function secret.
 
-import { isRecord } from '../_shared/extraction.ts';
+import type { SupabaseEnv } from '../_shared/env.ts';
+import { isRecord, UUID } from '../_shared/guards.ts';
+import { callerOf, reply } from '../_shared/http.ts';
 import { PHOTO_KINDS, photoPath, signedUrls } from '../_shared/photoStore.ts';
-import { restRows, type SupabaseEnv, userHeaders, userIdFromJwt, UUID } from '../_shared/userContext.ts';
+import { restRows, userHeaders } from '../_shared/userContext.ts';
 
 export type ExportDataDeps = { env: SupabaseEnv; fetch: typeof fetch; now?: () => number };
 
@@ -38,15 +40,6 @@ export const SIGNED_URL_TTL_S = 7 * 24 * 60 * 60;
  * `max_rows` still reads every row.
  */
 export const PAGE = 1000;
-
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
-
-function reply(outcome: 'exported' | 'invalid' | 'error', status: number, body: unknown): Response {
-  console.info(JSON.stringify({ outcome }));
-  return json(status, body);
-}
 
 /** Every row of `table` the caller can read, `user_id = caller` and in a stable `order`, page by page. */
 async function readAll(
@@ -94,9 +87,9 @@ async function photosOf(
 export async function handleExportData(request: Request, deps: ExportDataDeps): Promise<Response> {
   const now = deps.now ?? Date.now;
   if (request.method !== 'POST') return reply('invalid', 405, { error: 'method_not_allowed' });
-  const auth = request.headers.get('authorization');
-  const userId = userIdFromJwt(auth);
-  if (auth === null || userId === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const caller = callerOf(request);
+  if (caller === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const { auth, userId } = caller;
 
   const { env, fetch: fetchFn } = deps;
   try {

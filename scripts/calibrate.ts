@@ -12,7 +12,8 @@ import { parseArgs } from 'node:util';
 
 import { isCompleteOutfit, seasonOf } from '../supabase/functions/_shared/outfitRules.ts';
 import { type GarmentCategory, SLOTS, slotOf } from '../supabase/functions/_shared/catalog.ts';
-import { isRecord } from '../supabase/functions/_shared/extraction.ts';
+import { readEnv } from '../supabase/functions/_shared/env.ts';
+import { isRecord, UUID } from '../supabase/functions/_shared/guards.ts';
 import {
   buildJevRequest,
   parseJevAnswers,
@@ -34,7 +35,6 @@ import {
   restRows,
   runJev,
   serviceHeaders,
-  UUID,
 } from '../supabase/functions/_shared/userContext.ts';
 import {
   type CalibrationReport,
@@ -49,7 +49,6 @@ import {
 const CALIBRATION_DIR = fileURLToPath(new URL('../calibration/', import.meta.url));
 const LABELS_PATH = resolve(CALIBRATION_DIR, 'labels.local.json');
 const ANSWERS_PATH = resolve(CALIBRATION_DIR, 'answers.local.json');
-const DEFAULT_TYPESAFE_BASE_URL = 'https://api.typesafe.ai';
 
 /** One outfit in a labels file; `label` is null until someone labels it. */
 export type LabelEntry = { id: string; labeler: string; label: Label | null; description: string; state: RatingState };
@@ -445,14 +444,13 @@ async function exportCommand(user: string | undefined, labeler: string | undefin
 }
 
 async function collectCommand(): Promise<number> {
-  const [typesafeApiKey = ''] = requireEnv({ TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY }, 'collect');
-  const typesafeBaseUrl = process.env.TYPESAFE_BASE_URL ?? DEFAULT_TYPESAFE_BASE_URL;
+  requireEnv({ TYPESAFE_API_KEY: process.env.TYPESAFE_API_KEY }, 'collect');
+  const env = readEnv((name) => new Map(Object.entries(process.env)).get(name), ['jev']);
   const labels = parseLabelsFile(await readRequired(LABELS_PATH, 'Run `pnpm calibrate export` first.'));
   if ('error' in labels) throw new UsageError(`Malformed labels file ${LABELS_PATH}: ${labels.detail}.`);
   const answersText = await readOptional(ANSWERS_PATH);
   const saved = answersText === undefined ? { bodies: {} } : parseAnswersFile(answersText);
   if ('error' in saved) throw new UsageError(`Malformed answers file ${ANSWERS_PATH}: ${saved.detail}. Fix or delete it first.`);
-  const env = { typesafeApiKey, typesafeBaseUrl };
   const result = await collectAnswers(labels.entries, saved.bodies, (state) =>
     runJev(env, fetch, buildJevRequest(state, Math.random)),
   );

@@ -13,9 +13,12 @@
 // function".
 
 import { OCCASIONS, type Occasion, type Slot, slotOf } from '../_shared/catalog.ts';
-import { isRecord } from '../_shared/extraction.ts';
+import type { JevEnv, SupabaseEnv, WeatherEnv } from '../_shared/env.ts';
+import { isRecord } from '../_shared/guards.ts';
+import { callerOf, readJson, reply } from '../_shared/http.ts';
 import {
   basePieces,
+  garmentFingerprint,
   generateCandidates,
   missingSlots,
   type Outfit,
@@ -29,7 +32,6 @@ import {
   cacheGet,
   cachePut,
   consumeQuota,
-  type FnEnv,
   getLocalWeather,
   isIsoDate,
   jevRating,
@@ -40,13 +42,14 @@ import {
   type ProfileRow,
   ratingState,
   sha256Hex,
-  userIdFromJwt,
   weatherSummaryFrom,
   profileIdentity,
 } from '../_shared/userContext.ts';
 import { locationKey, type WeatherSummary } from '../_shared/weather.ts';
 
-export type LuckyDeps = { env: FnEnv; fetch: typeof fetch; rand?: () => number };
+export type LuckyEnv = SupabaseEnv & JevEnv & WeatherEnv;
+
+export type LuckyDeps = { env: LuckyEnv; fetch: typeof fetch; rand?: () => number };
 
 export type LuckyOutfit = {
   garmentIds: string[];
@@ -71,44 +74,30 @@ type CachedLucky = OkResponse & { degraded: boolean };
 
 type Outcome = 'cached' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_quota' | 'invalid' | 'error';
 
-export const LUCKY_DAILY_LIMIT = 10;
+const LUCKY_DAILY_LIMIT = 10;
 /** How many of the best pre-scored candidates are rated with Jev. */
-export const MAX_RANKED = 30;
+const MAX_RANKED = 30;
 /**
  * At most this many of the ranked outfits share the same base (the same pieces but the extra), so
  * the list spreads.
  */
-export const MAX_PER_BASE = 2;
+const MAX_PER_BASE = 2;
 /**
  * The floor of the per-garment cap among the ranked outfits (raised for a slot with few
  * garments; see `selectForRanking`), applied while enough other candidates remain.
  */
-export const MAX_PER_PIECE = 4;
+const MAX_PER_PIECE = 4;
 /**
  * No Jev ranking call starts once this long has passed since the request arrived, so the answer
  * lands inside the app's function deadline.
  */
-export const RANK_BUDGET_MS = 15_000;
+const RANK_BUDGET_MS = 15_000;
 const CACHE_VERSION = 2;
 
 type LuckyInput = { date: string; occasion: Occasion | null };
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
-
-function reply(outcome: Outcome, status: number, body: unknown): Response {
-  console.info(JSON.stringify({ outcome }));
-  return json(status, body);
-}
-
 async function readInput(request: Request): Promise<LuckyInput | null> {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return null;
-  }
+  const body = await readJson(request);
   if (!isRecord(body)) return null;
   const { date, occasion } = body;
   const knownOccasion = OCCASIONS.find((candidate) => candidate === occasion);
@@ -123,9 +112,9 @@ const locationOf = (profile: ProfileRow | null): string | null =>
   locationKey({ name: profile?.city_name ?? null, lat: profile?.city_lat ?? null, lon: profile?.city_lon ?? null });
 
 /**
- * The cache key. The closet fingerprint hashes each candidate garment's id and rating-relevant
- * columns (not `updated_at` or `last_worn_at`, which logging a wear bumps), so wearing an outfit
- * doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit instead. The tuple
+ * The cache key. The closet fingerprint hashes each candidate garment's `garmentFingerprint`, so
+ * wearing an outfit doesn't reshuffle today's list; `freshThisWeek` is recomputed on every hit
+ * instead. The tuple
  * carries whether `pinned_on` equals *this request's* date, not the raw value: "Wear it" sets
  * `pinned_on` to tomorrow, and the raw date would otherwise change today's fingerprint too,
  * spending quota and re-ranking a list that "Wear it" was never meant to touch.
@@ -138,18 +127,7 @@ function cacheKey(garments: readonly RuleGarment[], profile: ProfileRow | null, 
   const fingerprint = garments
     .filter((g) => g.category !== null && g.status === 'available')
     .sort(byId)
-    .map((g) => [
-      g.id,
-      g.category,
-      g.colors,
-      g.pattern,
-      g.formality,
-      g.fit,
-      g.seasons,
-      g.warmth,
-      g.status,
-      g.pinned_on === input.date,
-    ]);
+    .map((g) => [...garmentFingerprint(g), g.status, g.pinned_on === input.date]);
   return sha256Hex(
     JSON.stringify({
       v: CACHE_VERSION,
@@ -215,7 +193,7 @@ function fromCache(
 }
 
 type RankContext = {
-  env: FnEnv;
+  env: JevEnv;
   fetch: typeof fetch;
   rand: () => number;
   profile: ProfileRow | null;
@@ -267,9 +245,9 @@ function capSlotOf(garment: RuleGarment): Slot | null {
  * lone top beside several dresses is not unavoidable. The few freshest pieces can't fill the
  * whole list, while a garment with no alternative (the one coat on a cold day, the one pair of
  * shoes) is never capped. A second pass fills what's left without that cap. Returned in
- * pre-score order. Exported for tests and probes.
+ * pre-score order.
  */
-export function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
+function selectForRanking(candidates: readonly Outfit[], date: string): Outfit[] {
   const sorted = candidates
     .map((outfit, index) => ({ outfit, index, pre: preScore(outfit, date), base: basePieces(outfit) }))
     .sort((a, b) => b.pre - a.pre || a.index - b.index);
@@ -316,9 +294,9 @@ function withoutMarker(result: CachedLucky): OkResponse {
 export async function handleLucky(request: Request, deps: LuckyDeps): Promise<Response> {
   const startedAt = Date.now();
   if (request.method !== 'POST') return reply('invalid', 405, { error: 'method_not_allowed' });
-  const auth = request.headers.get('authorization');
-  const userId = userIdFromJwt(auth);
-  if (auth === null || userId === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const caller = callerOf(request);
+  if (caller === null) return reply('invalid', 401, { error: 'unauthorized' });
+  const { auth, userId } = caller;
   const input = await readInput(request);
   if (input === null) return reply('invalid', 400, { error: 'invalid_input' });
 

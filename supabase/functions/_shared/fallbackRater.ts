@@ -7,7 +7,8 @@
 // output is untrusted: the schema bounds it and `parseFallback` re-checks every value. See
 // `docs/ai.md`'s "Outfit rating".
 
-import { firstText, isRecord } from './extraction.ts';
+import { firstText } from './extraction.ts';
+import { isRecord } from './guards.ts';
 import {
   type DimensionScores,
   HARD_FAILURES,

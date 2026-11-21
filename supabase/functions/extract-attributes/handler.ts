@@ -8,38 +8,28 @@
 // outcome word, never the photo, the prompt or the model's output.
 
 import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
-import { buildExtractionRequest, isRecord, parseExtraction } from '../_shared/extraction.ts';
+import type { ClaudeEnv, ServiceEnv, WebhookEnv } from '../_shared/env.ts';
+import { buildExtractionRequest, parseExtraction } from '../_shared/extraction.ts';
+import { isRecord, UUID } from '../_shared/guards.ts';
+import { json, readJson } from '../_shared/http.ts';
 import { downloadObject, photoPath } from '../_shared/photoStore.ts';
+import { consumeQuota, restJson, restRows, runClaude, serviceHeaders, UpstreamError } from '../_shared/userContext.ts';
 
-export type ExtractEnv = {
-  supabaseUrl: string;
-  serviceRoleKey: string;
-  webhookSecret: string;
-  anthropicApiKey: string;
-  anthropicBaseUrl: string;
-};
+export type ExtractEnv = ServiceEnv & ClaudeEnv & WebhookEnv;
 
 export type ExtractDeps = { env: ExtractEnv; fetch: typeof fetch };
 
 export type ExtractOutcome = 'done' | 'failed' | 'over_quota' | 'skipped';
 
-export const CLAUDE_TIMEOUT_MS = 30_000;
+/** Longer than the outfit functions' Claude calls: a photo request takes longer to answer. */
+export const EXTRACTION_CLAUDE_TIMEOUT_MS = 30_000;
 export const EXTRACTION_DAILY_LIMIT = 100;
-const ANTHROPIC_VERSION = '2023-06-01';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** `updatedAt` is the row's `updated_at` as PostgREST wrote it, matched exactly by the write-back. */
 type Garment = { id: string; userId: string; extractionStatus: string; reviewed: boolean; updatedAt: string };
 type WriteBack = { outcome: Exclude<ExtractOutcome, 'skipped'>; patch: Record<string, unknown> };
 
 const FAILED: WriteBack = { outcome: 'failed', patch: { extraction_status: 'failed' } };
-
-class UpstreamError extends Error {}
-
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
-}
 
 function log(garmentId: string, outcome: ExtractOutcome | 'error'): void {
   console.info(JSON.stringify({ garment_id: garmentId, outcome }));
@@ -60,13 +50,9 @@ function secretMatches(given: string | null, expected: string): boolean {
 }
 
 async function readGarmentId(request: Request): Promise<string | null> {
-  try {
-    const body: unknown = await request.json();
-    if (!isRecord(body) || typeof body.garment_id !== 'string' || !UUID.test(body.garment_id)) return null;
-    return body.garment_id.toLowerCase();
-  } catch {
-    return null;
-  }
+  const body = await readJson(request);
+  if (!isRecord(body) || typeof body.garment_id !== 'string' || !UUID.test(body.garment_id)) return null;
+  return body.garment_id.toLowerCase();
 }
 
 // Base64 of every 3-byte-aligned chunk concatenates into the base64 of the whole buffer; chunking
@@ -81,30 +67,10 @@ function toBase64(bytes: Uint8Array): string {
   return parts.join('');
 }
 
-function serviceRequest(deps: ExtractDeps, path: string, init: RequestInit = {}): Promise<Response> {
-  const { serviceRoleKey, supabaseUrl } = deps.env;
-  return deps.fetch(`${supabaseUrl}${path}`, {
-    ...init,
-    headers: {
-      apikey: serviceRoleKey,
-      authorization: `Bearer ${serviceRoleKey}`,
-      ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
-      ...Object.fromEntries(new Headers(init.headers)),
-    },
-  });
-}
-
-async function serviceJson(deps: ExtractDeps, path: string, init?: RequestInit): Promise<unknown> {
-  const response = await serviceRequest(deps, path, init);
-  if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
-  return (await response.json()) as unknown;
-}
-
 async function loadGarment(deps: ExtractDeps, garmentId: string): Promise<Garment | null> {
   const select = 'id,user_id,extraction_status,reviewed_at,updated_at';
-  const rows = await serviceJson(deps, `/rest/v1/garments?id=eq.${garmentId}&select=${select}`);
-  if (!Array.isArray(rows)) throw new UpstreamError('garments: not an array');
-  const [row] = rows as unknown[];
+  const url = `${deps.env.supabaseUrl}/rest/v1/garments?id=eq.${garmentId}&select=${select}`;
+  const [row] = await restRows(deps.fetch, url, serviceHeaders(deps.env));
   if (row === undefined) return null;
   if (
     !isRecord(row) ||
@@ -125,16 +91,10 @@ async function loadGarment(deps: ExtractDeps, garmentId: string): Promise<Garmen
   };
 }
 
-async function consumeQuota(deps: ExtractDeps, userId: string): Promise<boolean> {
-  const allowed = await serviceJson(deps, '/rest/v1/rpc/consume_quota', {
-    method: 'POST',
-    body: JSON.stringify({ p_user_id: userId, p_kind: 'extraction', p_limit: EXTRACTION_DAILY_LIMIT }),
-  });
-  return allowed === true;
-}
-
 async function loadClothingType(deps: ExtractDeps, userId: string): Promise<ClothingType> {
-  const rows = await serviceJson(deps, `/rest/v1/profiles?user_id=eq.${userId}&select=clothing_type`);
+  const rows = await restJson(deps.fetch, `${deps.env.supabaseUrl}/rest/v1/profiles?user_id=eq.${userId}&select=clothing_type`, {
+    headers: serviceHeaders(deps.env),
+  });
   const [row] = Array.isArray(rows) ? (rows as unknown[]) : [];
   const clothingType = isRecord(row) ? row.clothing_type : null;
   return CLOTHING_TYPES.find((candidate) => candidate === clothingType) ?? 'everything';
@@ -145,41 +105,16 @@ async function loadPhotoBase64(deps: ExtractDeps, garment: Garment): Promise<str
   return bytes === null ? null : toBase64(bytes);
 }
 
-/** The Messages API response body, or null on a non-2xx answer, a network error or the timeout. */
-async function askClaude(deps: ExtractDeps, payload: Record<string, unknown>): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => {
-    controller.abort();
-  }, CLAUDE_TIMEOUT_MS);
-  try {
-    const response = await deps.fetch(`${deps.env.anthropicBaseUrl.replace(/\/+$/, '')}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'x-api-key': deps.env.anthropicApiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!response.ok) return null;
-    return (await response.json()) as unknown;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function extract(deps: ExtractDeps, garment: Garment): Promise<WriteBack> {
   try {
-    if (!(await consumeQuota(deps, garment.userId))) {
+    // No day: the database counts extraction on the UTC day.
+    if (!(await consumeQuota(deps.env, deps.fetch, garment.userId, 'extraction', EXTRACTION_DAILY_LIMIT))) {
       return { outcome: 'over_quota', patch: { extraction_status: 'over_quota' } };
     }
     const clothingType = await loadClothingType(deps, garment.userId);
     const photo = await loadPhotoBase64(deps, garment);
     if (photo === null) return FAILED;
-    const body = await askClaude(deps, buildExtractionRequest(photo, clothingType));
+    const body = await runClaude(deps.env, deps.fetch, buildExtractionRequest(photo, clothingType), EXTRACTION_CLAUDE_TIMEOUT_MS);
     if (body === null) return FAILED;
     const parsed = parseExtraction(body, clothingType);
     if (parsed.kind === 'failed') return FAILED;
@@ -206,9 +141,9 @@ async function writeBack(deps: ExtractDeps, garment: Garment, patch: Record<stri
     `updated_at=eq.${encodeURIComponent(garment.updatedAt)}`,
     'select=id',
   ].join('&');
-  const rows = await serviceJson(deps, `/rest/v1/garments?${filter}`, {
+  const rows = await restJson(deps.fetch, `${deps.env.supabaseUrl}/rest/v1/garments?${filter}`, {
     method: 'PATCH',
-    headers: { prefer: 'return=representation' },
+    headers: { ...serviceHeaders(deps.env), 'content-type': 'application/json', prefer: 'return=representation' },
     body: JSON.stringify(patch),
   });
   if (!Array.isArray(rows)) throw new UpstreamError('PATCH: not an array');

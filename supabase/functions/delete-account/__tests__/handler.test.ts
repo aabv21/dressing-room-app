@@ -2,8 +2,9 @@
 // supabase/functions/delete-account/__tests__/handler.test.ts
 import { KeyObject } from 'node:crypto';
 
-import type { AppleEnv } from '../../_shared/apple.ts';
-import type { SupabaseEnv } from '../../_shared/userContext.ts';
+import type { AppleEnv } from '../../_shared/env.ts';
+import type { SupabaseEnv } from '../../_shared/env.ts';
+import { STORAGE_TIMEOUT_MS } from '../../_shared/photoStore.ts';
 import { handleDeleteAccount, LIST_CONCURRENCY, REMOVE_CHUNK } from '../handler.ts';
 
 const { jest } = import.meta;
@@ -60,6 +61,8 @@ type World = {
   users: Set<string>;
   failRemoveAt?: number;
   failList?: boolean;
+  /** Storage's list never answers; its calls end only when the caller aborts them. */
+  hangList?: boolean;
   /** The most storage list calls in flight at once, recorded by the fake. */
   listPeak?: number;
   revoke?: () => Response | Promise<Response>;
@@ -115,6 +118,13 @@ function fakeFetch(world: World): { fetch: typeof fetch; steps: Step[] } {
       const { prefix, limit, offset } = JSON.parse(body) as { prefix: string; limit: number; offset: number };
       steps.push({ kind: 'list', prefix, offset });
       if (world.failList === true) return json(500, { error: 'boom' });
+      if (world.hangList === true) {
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        });
+      }
       listsInFlight += 1;
       world.listPeak = Math.max(world.listPeak ?? 0, listsInFlight);
       await new Promise((resolve) => setTimeout(resolve, 1));
@@ -212,7 +222,8 @@ describe('delete-account', () => {
   });
 
   test('lists every page and removes in chunks of 1000 when there are more than 1000 objects', async () => {
-    // 1001 garment folders → two pages of the user folder, and 2002 objects → three remove calls.
+    // 1001 garment folders → two pages of the user folder and the empty one that ends it, and 2002
+    // objects → three remove calls.
     const state = world({ objects: new Set([...photoPaths(USER_ID, 1001), ...photoPaths(OTHER_ID, 2)]) });
     const { fetch: fetchFn, steps } = fakeFetch(state);
 
@@ -221,7 +232,7 @@ describe('delete-account', () => {
     expect(response.status).toBe(200);
     expect(REMOVE_CHUNK).toBe(1000);
     const userFolderPages = untilDeletion(steps).filter((step) => step.kind === 'list' && step.prefix === `${USER_ID}/`);
-    expect(userFolderPages.map((step) => (step.kind === 'list' ? step.offset : -1))).toEqual([0, 1000]);
+    expect(userFolderPages.map((step) => (step.kind === 'list' ? step.offset : -1))).toEqual([0, 1000, 1001]);
     const chunks = steps.flatMap((step) => (step.kind === 'remove' ? [step.paths.length] : []));
     expect(chunks).toEqual([1000, 1000, 2]);
     expect(removed(steps)).toHaveLength(2002);
@@ -320,8 +331,9 @@ describe('delete-account', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'deleted' });
     expect(state.objects.has(late)).toBe(false);
-    // The second sweep lists the caller's root and the late garment's folder, then removes.
-    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'remove']);
+    // The second sweep lists the caller's root and the late garment's folder, each until an empty
+    // page, then removes.
+    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'list', 'list', 'remove']);
   });
 
   test('sweeps the folder once more after deleting the user, removing a photo uploaded meanwhile', async () => {
@@ -343,7 +355,7 @@ describe('delete-account', () => {
     expect(await response.json()).toEqual({ outcome: 'deleted' });
     expect(state.objects.has(late)).toBe(false);
     expect([...state.objects].every((path) => path.startsWith(`${OTHER_ID}/`))).toBe(true);
-    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'remove']);
+    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'list', 'list', 'remove']);
   });
 
   test('a failed sweep after deleting the user still answers deleted', async () => {
@@ -416,7 +428,8 @@ describe('delete-account', () => {
     expect(state.listPeak).toBeGreaterThan(1);
     expect(state.listPeak).toBeLessThanOrEqual(LIST_CONCURRENCY);
     const sweep = untilDeletion(steps);
-    expect(sweep.filter((step) => step.kind === 'list')).toHaveLength(41);
+    // The root and 40 garment folders, each with the empty page that ends it.
+    expect(sweep.filter((step) => step.kind === 'list')).toHaveLength(82);
     expect(sweep.findLastIndex((step) => step.kind === 'list')).toBeLessThan(sweep.findIndex((step) => step.kind === 'remove'));
     expect(removed(steps)).toHaveLength(80);
   });
@@ -454,6 +467,31 @@ describe('delete-account', () => {
     expect(response.status).toBe(500);
     expect(kinds(steps)).toEqual(['whoami', 'list']);
     expect(state.users.has(USER_ID)).toBe(true);
+  });
+
+  test('a Storage listing that never answers ends at STORAGE_TIMEOUT_MS with a 500, deleting nothing', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    try {
+      const state = world({ hangList: true });
+      const { fetch: fetchFn, steps } = fakeFetch(state);
+      let settled = false;
+      const pending = handleDeleteAccount(request(), { env: ENV, apple, fetch: fetchFn, now: () => NOW }).finally(() => {
+        settled = true;
+      });
+
+      await jest.advanceTimersByTimeAsync(STORAGE_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      const response = await pending;
+
+      expect(STORAGE_TIMEOUT_MS).toBe(10_000);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: 'internal' });
+      expect(kinds(steps)).toEqual(['whoami', 'list']);
+      expect(state.users.has(USER_ID)).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a failed user deletion answers 500, so the app can retry', async () => {

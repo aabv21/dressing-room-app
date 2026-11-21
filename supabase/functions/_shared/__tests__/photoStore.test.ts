@@ -12,7 +12,6 @@ import {
   REMOVE_CHUNK,
   removeObjects,
   SIGN_CHUNK,
-  signedUrl,
   signedUrls,
   type StorageEnv,
 } from '../photoStore.ts';
@@ -125,9 +124,9 @@ describe('listUserObjects', () => {
       offset: 0,
       sortBy: { column: 'name', order: 'asc' },
     });
-    // The root, then each of the three garment folders.
+    // The root, then each of the three garment folders, each until its empty page.
     expect(calls.map((call) => (JSON.parse(call.body) as { prefix: string }).prefix).sort()).toEqual(
-      [`${USER_ID}/`, ...[0, 1, 2].map((n) => `${USER_ID}/${garmentId(n)}/`)].sort(),
+      [`${USER_ID}/`, ...[0, 1, 2].map((n) => `${USER_ID}/${garmentId(n)}/`)].flatMap((prefix) => [prefix, prefix]).sort(),
     );
   });
 
@@ -142,7 +141,24 @@ describe('listUserObjects', () => {
       .map((call) => JSON.parse(call.body) as { prefix: string; offset: number })
       .filter((body) => body.prefix === `${USER_ID}/`)
       .map((body) => body.offset);
-    expect(rootPages).toEqual([0, 1000]);
+    expect(rootPages).toEqual([0, 1000, 1001]);
+  });
+
+  test('keeps paging past a short page until an empty one, advancing by the rows received', async () => {
+    // A server that caps a page below `LIST_PAGE`: 2 entries, then 1, then none.
+    const pages = new Map<number, unknown[]>([
+      [0, [{ name: 'a.webp', id: 'obj-a' }, { name: 'b.webp', id: 'obj-b' }]],
+      [2, [{ name: 'c.webp', id: 'obj-c' }]],
+    ]);
+    const { fetch: fetchFn, calls } = fakeFetch((call) => {
+      const { offset } = JSON.parse(call.body) as { offset: number };
+      return json(200, pages.get(offset) ?? []);
+    });
+
+    const listed = await listUserObjects(ENV, fetchFn, USER_ID);
+
+    expect(listed).toEqual([`${USER_ID}/a.webp`, `${USER_ID}/b.webp`, `${USER_ID}/c.webp`]);
+    expect(calls.map((call) => (JSON.parse(call.body) as { offset: number }).offset)).toEqual([0, 2, 3]);
   });
 
   test('lists the garment folders at most 5 at a time', async () => {
@@ -212,45 +228,6 @@ describe('removeObjects', () => {
 
     await expect(removeObjects(ENV, fetchFn, paths)).rejects.toThrow();
     expect(calls).toHaveLength(1);
-  });
-});
-
-describe('signedUrl', () => {
-  const path = photoPath(USER_ID, GARMENT_ID, 'full');
-
-  test('signs one path for the given time and answers the full URL', async () => {
-    const { fetch: fetchFn, calls } = fakeFetch(() => json(200, { signedURL: `/object/sign/garments/${path}?token=t-1` }));
-
-    const url = await signedUrl(ENV, fetchFn, path, 600);
-
-    expect(url).toBe(`${ENV.supabaseUrl}/storage/v1/object/sign/garments/${path}?token=t-1`);
-    expectServiceRole(calls);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.method).toBe('POST');
-    expect(calls[0]?.url.href).toBe(`${ENV.supabaseUrl}/storage/v1/object/sign/garments/${path}`);
-    expect(calls[0]?.headers.get('content-type')).toBe('application/json');
-    expect(JSON.parse(calls[0]?.body ?? '')).toEqual({ expiresIn: 600 });
-  });
-
-  test('answers null on a 404', async () => {
-    const { fetch: fetchFn } = fakeFetch(() => json(404, { statusCode: '404', error: 'not_found', message: 'Object not found' }));
-
-    expect(await signedUrl(ENV, fetchFn, path, 600)).toBeNull();
-  });
-
-  test('answers null when Storage reports a missing object as a 400 with a 404 status code', async () => {
-    const { fetch: fetchFn } = fakeFetch(() => json(400, { statusCode: '404', error: 'not_found', message: 'Object not found' }));
-
-    expect(await signedUrl(ENV, fetchFn, path, 600)).toBeNull();
-  });
-
-  test.each([
-    ['a 5xx', () => json(500, { error: 'boom' })],
-    ['an answer without a URL', () => json(200, { nope: true })],
-  ])('throws on %s', async (_name, answer) => {
-    const { fetch: fetchFn } = fakeFetch(answer);
-
-    await expect(signedUrl(ENV, fetchFn, path, 600)).rejects.toThrow();
   });
 });
 
