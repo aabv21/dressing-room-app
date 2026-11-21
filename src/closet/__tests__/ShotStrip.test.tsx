@@ -21,3 +21,12 @@ test('no shots, no remove button', async () => {
   await render(<ShotStrip uris={[]} onRemoveLast={jest.fn()} />);
   expect(screen.queryByRole('button', { name: 'Remove the last photo' })).not.toBeOnTheScreen();
 });
+
+test('the remove button is visible on the newest shot and ticks on press', async () => {
+  const Haptics = jest.requireMock<typeof import('expo-haptics')>('expo-haptics');
+  jest.mocked(Haptics.selectionAsync).mockClear();
+  await render(<ShotStrip uris={['file:///a.jpg']} onRemoveLast={jest.fn()} />);
+  expect(screen.getByText('×')).toBeOnTheScreen();
+  await fireEvent.press(screen.getByRole('button', { name: 'Remove the last photo' }));
+  expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});

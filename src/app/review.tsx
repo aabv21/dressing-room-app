@@ -117,8 +117,8 @@ function ReviewCard(props: {
             {batch.count >= 2 ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: batch.running }}
-                disabled={batch.running}
+                accessibilityState={{ disabled: batch.running || saving }}
+                disabled={batch.running || saving}
                 onPress={batch.onPress}
                 style={({ pressed }) => [styles.batchButton, pressed || batch.running ? styles.batchButtonDim : null]}
               >
@@ -248,9 +248,19 @@ export default function ReviewScreen(): React.JSX.Element {
     setConfirmed((previous) => new Set(previous).add(id));
   }, []);
 
-  const sure = useMemo(() => sureGarments(queue, now), [queue, now]);
+  // The card on screen stays out of the batch: its draft may hold edits the batch would overwrite.
+  const currentId = current?.id;
+  const sure = useMemo(() => sureGarments(queue, now).filter((g) => g.id !== currentId), [queue, now, currentId]);
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchFailed, setBatchFailed] = useState(false);
+  // A card confirmed by hand after a failed batch clears the batch's error.
+  const onCardConfirmed = useCallback(
+    (id: string) => {
+      setBatchFailed(false);
+      onConfirmed(id);
+    },
+    [onConfirmed],
+  );
   // One garment at a time, stopping at the first failure: what was saved stays confirmed, and the
   // rest stays in the queue for another try or the card.
   const confirmSure = useCallback(async () => {
@@ -287,7 +297,7 @@ export default function ReviewScreen(): React.JSX.Element {
       index={confirmed.size + position + 1}
       total={confirmed.size + queue.length}
       onSkip={onSkip}
-      onConfirmed={onConfirmed}
+      onConfirmed={onCardConfirmed}
       batch={
         sure.length >= 2 || batchFailed
           ? { count: sure.length, running: batchRunning, failed: batchFailed, onPress: () => void confirmSure() }

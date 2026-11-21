@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useI18n } from '../i18n';
 
+import { tapHaptic } from '../ui/feedback';
 import { colors, layout } from '../ui/theme';
 
 const TILE_SIZE = 34;
@@ -51,10 +52,17 @@ export function ShotStrip({ uris, onRemoveLast }: { uris: readonly string[]; onR
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('camera.removeLast')}
-        onPress={onRemoveLast}
+        onPress={() => {
+          tapHaptic('selection');
+          onRemoveLast();
+        }}
         hitSlop={(layout.minHitTarget - TILE_SIZE) / 2}
         style={styles.removeLast}
-      />
+      >
+        <View style={styles.removeBadge}>
+          <Text style={styles.removeBadgeText}>×</Text>
+        </View>
+      </Pressable>
     </View>
   );
 }
@@ -82,6 +90,23 @@ const styles = StyleSheet.create({
     top: 0,
     width: TILE_SIZE,
     height: TILE_SIZE,
+  },
+  removeBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeBadgeText: {
+    color: '#0e0d12',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 15,
   },
   image: {
     width: '100%',
