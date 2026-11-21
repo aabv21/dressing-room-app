@@ -30,13 +30,9 @@ export async function getProfile(userId: string, client: Client = supabase): Pro
 }
 
 /**
- * Updates only the columns present in `patch` on the user's existing row (the signup trigger
- * creates it). Never an upsert: Postgres checks an `INSERT … ON CONFLICT DO UPDATE`'s proposed
- * insert row against every CHECK constraint, so a partial patch (e.g. only `city_lat`) failed the
- * lat/lon pair check even though the stored row satisfies it. An update that reaches no row (one
- * this session can't see) is reported as an error rather than a silent success. Un-completing
- * onboarding is never a client action: a `null` `onboarding_completed_at` is dropped rather than
- * written, so no screen can reset a finished profile back into onboarding.
+ * Updates only `patch`'s columns; never an upsert, and reaching no row is an error
+ * (docs/database.md#writing-a-profile-update-never-a-partial-upsert). A `null`
+ * `onboarding_completed_at` is dropped, so no screen can reset a finished profile into onboarding.
  */
 export async function saveProfile(userId: string, patch: ProfilePatch, client: Client = supabase): Promise<Result> {
   const { onboarding_completed_at: completedAt, ...rest } = patch;
@@ -47,13 +43,7 @@ export async function saveProfile(userId: string, patch: ProfilePatch, client: C
   );
 }
 
-/**
- * Marks onboarding complete with the server's clock: the `profiles_stamp_onboarding_completed_at`
- * trigger replaces any non-null value with `now()` (and `'now'` is also Postgres's own input
- * literal for the current time), so the device clock never reaches the row. The `is null` filter
- * (and the trigger) keep the original completion time if the profile was already complete, e.g.
- * onboarding shown again after a failed launch-time profile read.
- */
+/** Stamped by the server clock, keeping a first completion (docs/database.md#onboarding-completion-clock). */
 export async function completeOnboarding(userId: string, client: Client = supabase): Promise<Result> {
   return run(() =>
     client

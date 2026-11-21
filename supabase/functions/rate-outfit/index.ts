@@ -1,4 +1,3 @@
-// Deno entry point for `rate-outfit`; the logic is in `handler.ts`.
 import { readEnv } from '../_shared/env.ts';
 import { handleRate } from './handler.ts';
 

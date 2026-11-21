@@ -1,21 +1,5 @@
-// scripts/e2e.ts
-//
-// `pnpm e2e`: runs the Maestro flows in `.maestro/flows` on the booted iOS simulator (or, with
-// `E2E_PLATFORM=android`, the connected Android emulator), against the local Supabase stack and the
-// mocked AI and weather services, as a fresh `@example.com` user.
-// `node scripts/e2e.ts fixtures` regenerates the fictional garment photos in `.maestro/fixtures/`.
-//
-// Before the flows it checks Java, Maestro, the device (booted, with the dev build installed),
-// Metro and the local stack, so a missing piece fails with a message instead of a flow timeout.
-// On Android it also maps the emulator's Metro and Supabase ports to the Mac's (`adb reverse`),
-// since the app's 127.0.0.1 is the emulator itself. Then it starts `integration/mockServices.ts`
-// and `integration/mockAnthropic.ts`, adds the fixtures to the device's photo library and runs
-// Maestro. The mocks stop when it ends.
-//
-// Usage:
-//   node scripts/e2e.ts
-//   E2E_PLATFORM=android node scripts/e2e.ts
-//   node scripts/e2e.ts fixtures
+// `pnpm e2e` runs the Maestro flows (`E2E_PLATFORM=android` on the emulator); `node scripts/e2e.ts fixtures`
+// regenerates `.maestro/fixtures/`. Checks and steps: docs/testing.md#end-to-end-flows-maestro.
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -31,15 +15,9 @@ export const APP_ID = 'com.aabv21.dressingroom';
 /** Where Homebrew's keg-only `openjdk@17` lives on Apple silicon; used when `JAVA_HOME` is unset. */
 export const HOMEBREW_JAVA_HOME = '/opt/homebrew/opt/openjdk@17';
 export const METRO_STATUS_URL = 'http://127.0.0.1:8081/status';
-/**
- * The category the mocked Jev scores low and names as the weakest piece, so rating an outfit
- * with it offers a swap. `build-rate-swap.yaml` builds an outfit around the T-shirt and swaps it.
- */
+/** The mocked Jev scores this category low and names it weakest, so `build-rate-swap.yaml`'s outfit offers a swap. */
 export const WEAK_CATEGORY = 't_shirt';
-/**
- * A fresh random password for the run's throwaway user (16 URL-safe characters; the local stack
- * wants 8 or more), so no password is committed.
- */
+/** A fresh password per run (16 URL-safe characters; the local stack wants 8 or more), so none is committed. */
 export function e2ePassword(random: Uint8Array = randomBytes(12)): string {
   return Buffer.from(random).toString('base64url');
 }
@@ -59,16 +37,11 @@ export function e2eEmail(now: number): string {
   return `e2e-${String(now)}@example.com`;
 }
 
-/** Environment variables, as `process.env` holds them. */
 export type Env = Readonly<Record<string, string | undefined>>;
 
 export type JavaEnvironment = { ok: true; env: Env } | { ok: false; message: string };
 
-/**
- * The environment Maestro runs with: an existing `JAVA_HOME` is kept; with none, Homebrew's
- * `openjdk@17` is used (its `bin` first on `PATH`) when it exists; otherwise a message saying how
- * to get Java. Never touches the shell profile.
- */
+/** Maestro's environment: `JAVA_HOME`, else Homebrew's `openjdk@17`, else how to get Java; never the shell profile. */
 export function javaEnvironment(env: Env, exists: (path: string) => boolean): JavaEnvironment {
   const current = env.JAVA_HOME;
   if (current !== undefined && current !== '') return { ok: true, env };
@@ -102,7 +75,6 @@ export function maestroArgs(udid: string, email: string, password: string): stri
   ];
 }
 
-/** `xcrun simctl addmedia` for the simulator `udid`. */
 export function addMediaArgs(udid: string, files: readonly string[]): string[] {
   return ['simctl', 'addmedia', udid, ...files];
 }
@@ -153,9 +125,8 @@ export function bootedSimulators(listJson: string): Simulator[] {
 }
 
 /**
- * The simulator to run on: the one `requested` names (a UDID or a device name, from
- * `E2E_SIMULATOR`), else the only booted one. Several booted and none requested is an error, since
- * `booted` would pick one of them arbitrarily.
+ * The device `requested` (`E2E_SIMULATOR`: a UDID or name) names, else the only booted one. Several booted
+ * and none requested is an error, since `booted` would pick one arbitrarily.
  */
 export function pickSimulator(
   booted: readonly Simulator[],
@@ -231,7 +202,6 @@ export function androidPhotoPath(file: string): string {
   return `/sdcard/Pictures/${file}`;
 }
 
-/** The value of `key` in a dotenv file's text, or undefined. */
 export function envValue(text: string, key: string): string | undefined {
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
@@ -241,9 +211,8 @@ export function envValue(text: string, key: string): string | undefined {
 }
 
 /**
- * Why the local stack can't serve the flows, or null when it can: `statusJson` is `supabase status
- * -o json` output (undefined when the command failed, i.e. the stack is stopped) and `appUrl` the
- * `EXPO_PUBLIC_SUPABASE_URL` the app was bundled with.
+ * Why the local stack can't serve the flows, or null: `statusJson` is `supabase status -o json` output
+ * (undefined when the stack is stopped), `appUrl` the app's bundled `EXPO_PUBLIC_SUPABASE_URL`.
  */
 export function stackProblem(statusJson: string | undefined, appUrl: string | undefined): string | null {
   const start = 'Start the local stack with `pnpm db:start`, then run `pnpm env:local`.';
@@ -276,8 +245,6 @@ async function generateFixtures(): Promise<void> {
   // Imported here so `pnpm e2e` and the tests never load sharp's native binding.
   const sharp = (await import('sharp')).default;
   const dir = fixturesDir();
-  // The repo's own fixture folder.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await mkdir(dir, { recursive: true });
   for (const { file, spec } of FIXTURES) {
     // A plain, light product-shot background with room around the garment.
@@ -315,9 +282,8 @@ function run(
 }
 
 /**
- * Adds the fixtures to the simulator's photo library from a temporary copy: the simulator's media
- * bridge can't open files under a privacy-protected folder such as `~/Documents`, and
- * `simctl addmedia` then waits forever instead of failing.
+ * Adds the fixtures to the device's photo library. iOS gets a temporary copy: the media bridge can't open
+ * files under a privacy-protected folder such as `~/Documents`, and `simctl addmedia` then hangs.
  */
 async function addFixtures(device: Device, env: Env): Promise<void> {
   if (device.platform === 'android') {
@@ -326,8 +292,8 @@ async function addFixtures(device: Device, env: Env): Promise<void> {
       const target = androidPhotoPath(file);
       const pushed = adb(['push', join(fixturesDir(), file), target]);
       if (!pushed.ok) throw new CheckFailed(`adb couldn't copy ${file} to ${device.name}: ${pushed.stderr.trim()}`);
-      // `adb push` keeps the Mac file's (old) time; touching it makes the fixtures the newest photos,
-      // which are the ones the picker shows first and the flow picks. The scan indexes the new time.
+      // `adb push` keeps the Mac file's old time; touching makes them the newest photos, which the picker
+      // shows first and the flow picks. The scan indexes the new time.
       adb(['shell', 'touch', target]);
       adb(['shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', `file://${target}`]);
     }
@@ -395,8 +361,6 @@ async function checkPrerequisites(env: Env, platform: E2ePlatform): Promise<Devi
   if (!(await metroRunning())) throw new CheckFailed('Metro is not running on :8081: start it with `pnpm start`.');
   const status = run('pnpm', ['exec', 'supabase', 'status', '-o', 'json'], env);
   const envFile = join(repoRoot(), '.env.local');
-  // .env.local is this repo's own fixed path.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const envText = existsSync(envFile) ? readFileSync(envFile, 'utf8') : undefined;
   const appUrl = envText === undefined ? undefined : envValue(envText, 'EXPO_PUBLIC_SUPABASE_URL');
   const problem = stackProblem(status.ok ? status.stdout : undefined, appUrl);
@@ -491,7 +455,6 @@ async function main(argv: readonly string[]): Promise<void> {
   process.exitCode = await runFlows();
 }
 
-/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
 export function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
   return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
 }

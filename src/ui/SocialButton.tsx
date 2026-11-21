@@ -4,23 +4,11 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '../i18n';
 import { colors, layout, radii } from './theme';
 
-/**
- * Apple's guideline (and mockup 03's pin 2) requires offering "Continue with Apple" whenever
- * Google sign-in is offered on iOS; Android has no native Apple button, so it's hidden there
- * entirely rather than rendered disabled.
- *
- * Apple uses `AppleAuthentication.AppleAuthenticationButton`, not a custom button styled like the
- * Google one. A custom button only satisfies Apple's Human Interface Guidelines if it reproduces
- * their exact logo asset, approved title strings, and proportions, and a hand-traced path risks
- * getting those wrong in ways that are easy to miss in review. App Review safety wins over exact
- * mockup fidelity here: the native button is
- * automatically Apple-approved, accessible, and localizes via the device's own language list —
- * `app.json`'s `expo-localization` `supportedLocales: ["en", "es"]` makes that list (and thus
- * `CFBundleLocalizations`) include Spanish, so the button's text follows the *device* language.
- * Known, accepted deviation from an exact pixel match with the Google button: the native button's
- * label uses Apple's own type size/weight (not this app's 14pt/700), and it reads the device
- * locale rather than this app's in-app `LanguageToggle` preference.
- */
+// Apple requires "Continue with Apple" wherever Google sign-in is offered on iOS; Android has no
+// native Apple button, so it's hidden there. Apple's native button, not a custom one: it's
+// App Review-safe (exact logo, titles, proportions) and accessible. Accepted deviation: it uses
+// Apple's type size/weight and follows the device language (`supportedLocales` in `app.json`), not
+// the in-app `LanguageToggle`.
 export function SocialButton(props: {
   provider: 'apple' | 'google';
   onPress: () => void;

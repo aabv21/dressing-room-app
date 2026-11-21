@@ -1,8 +1,5 @@
-// The outfit AI client: thin wrappers over `supabase.functions.invoke('rate-outfit' | 'lucky-list' |
-// 'for-you')` that map the functions' HTTP error bodies (see `supabase/functions/*/handler.ts`)
-// onto a small translated-error union the UI renders through i18n, instead of leaking HTTP
-// status codes or Supabase's error classes into the screens. An answer of a shape this app version
-// doesn't know (a newer function) is `unknown` too, so nothing unchecked is rendered or stored.
+// Maps the outfit functions' errors to `AiError` (docs/api.md#how-the-app-maps-errors). An answer of a
+// shape this app version doesn't know is `unknown` too, so nothing unchecked is rendered or stored.
 
 import { FunctionsFetchError, FunctionsHttpError, type SupabaseClient } from '@supabase/supabase-js';
 

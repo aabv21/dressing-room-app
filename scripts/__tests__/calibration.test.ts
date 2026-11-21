@@ -47,7 +47,6 @@ import {
 const ROOT = new URL('../../', import.meta.url);
 const EXAMPLE_LABELS = new URL('calibration/example.labels.json', ROOT);
 const EXAMPLE_ANSWERS = new URL('calibration/example.answers.json', ROOT);
-// eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed repo files next to this test, not user input.
 const readText = (url: URL): string => readFileSync(url, 'utf8');
 
 const STATE: RatingState = {
@@ -642,14 +641,10 @@ describe('writeLocalJson', () => {
     const dir = await mkdtemp(join(tmpdir(), 'calibration-'));
     try {
       const path = join(dir, 'labels.local.json');
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- a temp directory this test created.
       await writeFile(path, '[]');
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- same temp file.
       await chmod(path, 0o644);
       await writeLocalJson(path, [{ id: 'a' }]);
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- same temp file.
       expect((await stat(path)).mode & 0o777).toBe(0o600);
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- same temp file.
       expect(JSON.parse(readFileSync(path, 'utf8')) as unknown).toEqual([{ id: 'a' }]);
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -684,7 +679,6 @@ describe('the CLI', () => {
     const dir = await mkdtemp(join(tmpdir(), 'calibration-'));
     try {
       const labelsPath = join(dir, 'labels.json');
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- a temp directory this test created.
       await writeFile(labelsPath, JSON.stringify((JSON.parse(readText(EXAMPLE_LABELS)) as unknown[]).slice(0, 3)));
       const result = cli(['eval', '--labels', labelsPath, '--answers', 'calibration/example.answers.json']);
       expect(result.status).toBe(2);

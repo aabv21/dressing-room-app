@@ -1,15 +1,7 @@
-// The `export-data` Edge Function's request handler: everything the signed-in caller owns, as one
-// JSON document `{ exportedAt, profile, garments, outfits (each with its items), wears, photos }`.
-// The rows are read with the caller's own token, so RLS applies (and any row that still isn't the
-// caller's is dropped); the photo URLs are signed for 7 days with the service role, through
-// `_shared/photoStore.ts`, only for `{uid}/{garmentId}/{full,thumb}.webp` paths built from the
-// caller's own garments.
-// Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
-// `index.ts` serves it under Deno. Logs carry only an outcome word.
-//
-// NOTE: the signed URLs start with the function's `SUPABASE_URL`: the public project URL when
-// hosted, but the Edge Runtime's internal gateway address on the local stack, so a local export's
-// links only open after swapping in the local API URL. Upgrade path: a public-URL function secret.
+// Everything the caller owns as one JSON document (docs/database.md, "Account deletion and data
+// export"). Logs carry only an outcome word.
+
+// NOTE: local exports' signed URLs use the internal gateway `SUPABASE_URL`; upgrade: a public-URL function secret.
 
 import type { SupabaseEnv } from '../_shared/env.ts';
 import { isRecord, UUID } from '../_shared/guards.ts';
@@ -34,11 +26,7 @@ export type DataExport = {
 };
 
 export const SIGNED_URL_TTL_S = 7 * 24 * 60 * 60;
-/**
- * PostgREST answers at most `max_rows` (1000 here) rows per request, so every table is read in pages
- * until one comes back empty; the offset advances by the rows received, so a smaller hosted
- * `max_rows` still reads every row.
- */
+/** PostgREST's `max_rows` (1000 here); paging by rows received still reads all under a smaller hosted cap. */
 export const PAGE = 1000;
 
 /** Every row of `table` the caller can read, `user_id = caller` and in a stable `order`, page by page. */

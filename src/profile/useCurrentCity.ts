@@ -10,11 +10,7 @@ function toCityPrecision(degrees: number): number {
   return Math.round(degrees * 100) / 100;
 }
 
-/**
- * Asks for when-in-use location permission, reads the current position once and reverse-geocodes
- * it to a city name (`city ?? subregion ?? region`). Only the city and its coordinates are kept, for
- * weather; nothing is tracked.
- */
+/** When-in-use permission, one position read, reverse-geocoded to a city; only the city is kept, for weather. */
 export function useCurrentCity(): { request: () => Promise<CurrentCityResult> } {
   const request = useCallback(async (): Promise<CurrentCityResult> => {
     try {

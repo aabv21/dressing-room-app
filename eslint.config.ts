@@ -27,4 +27,10 @@ export default defineConfig(
       },
     },
   },
+  {
+    // Node tooling reads and writes repo, temp and backup paths it builds itself, never a path from
+    // outside input; the one request-driven read (`perf-fixtures.ts`) maps a number to its file.
+    files: ['scripts/**/*.ts', 'integration/**/*.ts'],
+    rules: { 'security/detect-non-literal-fs-filename': 'off' },
+  },
 );

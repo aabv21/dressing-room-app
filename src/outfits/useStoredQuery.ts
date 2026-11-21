@@ -1,5 +1,4 @@
-// A function answer kept on the device: single-flight fetches for the latest query, shown over the
-// stored copy until this session has a good answer of its own. Used by Today's list and For you.
+// A function answer kept on the device (docs/app.md#outfits-srcoutfits); Today's list and For you use it.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AiError, AiOutcome } from './aiClient';
@@ -28,7 +27,7 @@ export type StoredQuery<T> = {
   error: AiError | null;
   /** Drops the answer and fetches again. */
   reload: () => void;
-  /** Fetches again, keeping what's shown. */
+  /** Keeps what's shown. */
   refetch: () => void;
   /** The latest settled answer when it was good, whatever its key. */
   lastData: T | null;
@@ -42,7 +41,7 @@ type Settled<T> = { key: string; outcome: AiOutcome<T>; failed: AiError | null }
  */
 export function useStoredQuery<T>({ key, enabled, fetch, readStored, store }: StoredQueryOptions<T>): StoredQuery<T> {
   const [settled, setSettled] = useState<Settled<T> | null>(null);
-  // Bumped by `reload`: the effect below fetches again.
+  // Bumped by `reload` to fetch again.
   const [attempt, setAttempt] = useState(0);
 
   // Declared before the fetch effect, so it's up to date when that runs in the same commit.

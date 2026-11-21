@@ -18,10 +18,7 @@ export type DeletionResult = 'deleted' | 'reauth' | AccountError | 'busy';
 
 const running = new Set<string>();
 
-/**
- * Whether the device's session is still `userId`'s, or there is none: a deletion's late answer
- * must never sign out, or speak to, another account that signed in meanwhile.
- */
+/** Session still `userId`'s, or none: a late answer must never sign out or speak to a newer account. */
 export function sessionStillFor(userId: string): boolean {
   try {
     const current = storedSessionUserId();
@@ -36,12 +33,7 @@ async function signOutIfStill(userId: string): Promise<void> {
   if (sessionStillFor(userId)) await signOutLocally();
 }
 
-/**
- * The device side of a confirmed deletion: clears the queue, signs out locally (unless another
- * account is signed in by now), drops the account's kv data and refuses any later write of it
- * (a request still in flight), then removes the data exports and the image caches. Each step runs
- * on its own, so a failing one never skips the rest.
- */
+/** The device side of a confirmed deletion; each step runs on its own, so a failing one never skips the rest. */
 async function finishLocally(userId: string, queue: QueueControl): Promise<void> {
   try {
     queue.clear();
@@ -59,14 +51,7 @@ async function finishLocally(userId: string, queue: QueueControl): Promise<void>
 }
 
 /**
- * Deletes `userId`'s account; only ever started by the user's tap:
- * 1. marks the deletion (`account.deleting.<id>`) and pauses the upload queue;
- * 2. calls `delete-account`;
- * 3. deleted: `finishLocally`;
- *    `reauth`: marks it `reauth` and signs out locally, keeping the data and photos;
- *    `network` or `unknown`: the server may have finished (a 500 or a gateway 502/504 can come
- *    after the user is gone), so the marker stays and keeps the queue blocked until the user taps
- *    again or the next launch confirms the account still exists (`confirmPendingDeletion`).
+ * Only ever started by the user's tap; each outcome: docs/app.md#account-deletion-on-the-device.
  * The queue is unpaused in every case, never with a run.
  */
 export async function runDeletion(userId: string, queue: QueueControl): Promise<DeletionResult> {
@@ -91,8 +76,7 @@ export async function runDeletion(userId: string, queue: QueueControl): Promise<
     }
     if (outcome.error === 'reauth') {
       try {
-        // Unless the sign-out supabase-js already did (a refused refresh) has dropped the account's
-        // data, marker included: then there is nothing left to retry from.
+        // Unless supabase-js's own sign-out (a refused refresh) already dropped the data, marker included.
         if (deletionState(userId) !== null) markDeletion(userId, 'reauth');
       } catch {
         // Left as `deleting`: the sign-out below then drops the device data instead.
@@ -111,12 +95,8 @@ export async function runDeletion(userId: string, queue: QueueControl): Promise<
 export { DELETION_SETTLE_MS };
 
 /**
- * While `userId`'s deletion is still marked (a launch, sign-in, foreground or reconnect): asks Auth,
- * without deleting anything, whether the account still exists. Gone → `finishLocally`, like a
- * confirmed deletion; still there more than `DELETION_SETTLE_MS` after the marker → the marker goes
- * and the queue runs again (deleting needs a new tap); anything else (offline, no usable session,
- * or still there right after the call) → the marker stays for the next check. A marker whose time
- * can't be trusted is stamped now, so the window starts over instead of being skipped.
+ * The verify-only check while a deletion is marked: docs/app.md#account-deletion-on-the-device. A marker
+ * time that can't be trusted is stamped now, so the settle window starts over instead of being skipped.
  */
 export async function confirmPendingDeletion(
   userId: string,

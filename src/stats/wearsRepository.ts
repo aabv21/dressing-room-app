@@ -1,6 +1,3 @@
-// The wears data layer: the signed-in user's logged wears (RLS limits it to their own) joined to
-// the garments worn, and deleting a logged wear (Diary's "Delete").
-
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Occasion } from '../closet/catalog';
@@ -28,19 +25,12 @@ type WearRow = {
 
 /** Rows per request: PostgREST's `max_rows`, Supabase's default 1000. */
 export const WEARS_PAGE_SIZE = 1000;
-/**
- * At most this many pages per call (20,000 wears, far above a year of daily outfits).
- * NOTE: a range holding more wears than that loses its oldest ones, and a hosted `max_rows` below
- * the page size would end the paging after the first page. Upgrade path: page by `worn_on` instead
- * of by offset, until a page comes back empty.
- */
+// NOTE: past 20,000 wears a range loses its oldest, and a hosted `max_rows` below the page size stops
+// after one page; upgrade path: page by `worn_on` instead of offset, until a page comes back empty.
+/** At most this many pages per call (20,000 wears, far above a year of daily outfits). */
 export const WEARS_MAX_PAGES = 20;
 
-/**
- * The signed-in user's wears (and their outfit's garment ids) with `worn_on` in `[from, to]`,
- * newest first (by day, then by when they were logged), read in pages of `WEARS_PAGE_SIZE` until
- * one comes back short. Throws if any page fails.
- */
+/** Wears with `worn_on` in `[from, to]`, newest first, paged until one comes back short; throws on failure. */
 export async function listWears(from: string, to: string, client: Client = supabase): Promise<WearWithItems[]> {
   // By id: a wear logged or deleted between two page reads shifts the pages, and a row can come back
   // twice; a repeat is kept once (a row skipped that way is the offset paging's known limit).
@@ -78,7 +68,7 @@ export async function listWears(from: string, to: string, client: Client = supab
 
 const reachedRow = ({ data }: { data?: unknown }): boolean => Array.isArray(data) && data.length > 0;
 
-/** Deletes a logged wear; the trigger that lowers the garments' wear counts runs on the row's removal. */
+/** A trigger lowers the garments' wear counts on removal. */
 export function deleteWear(id: string, client: Client = supabase): Promise<RequestResult> {
   return runRequest(() => client.from('wears').delete().eq('id', id).select('id'), reachedRow);
 }

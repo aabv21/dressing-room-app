@@ -1,6 +1,5 @@
-// The last good `lucky-list` answer per occasion, kept on the device for the day, so Today has
-// something to show at once on a cold start and stays readable offline (spec §5.4: "today's cached
-// suggestion stays readable").
+// The last good `lucky-list` answer per occasion for the day, so Today shows something at once on a
+// cold start and stays readable offline.
 import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { OCCASIONS, SLOTS, type Occasion } from '../closet/catalog';
 import { kvGetJson, kvSet } from '../lib/kv';
@@ -67,15 +66,11 @@ function readDay(userId: string, day: string): StoredList[] {
   return value.lists.filter(isStoredList);
 }
 
-/** The last good list `userId` got for `day` and `occasion`, or null. */
 export function readStoredLucky(userId: string, day: string, occasion: Occasion | null): LuckyResponse | null {
   return readDay(userId, day).find((list) => list.occasion === occasion)?.response ?? null;
 }
 
-/**
- * Keeps `response` as `userId`'s list for `day` and `occasion`. Earlier days' lists are dropped on
- * the way, so the record never holds more than one day (at most one list per occasion).
- */
+/** Earlier days' lists are dropped on the way: the record holds one day, one list per occasion. */
 export function storeLucky(userId: string, day: string, occasion: Occasion | null, response: LuckyResponse): void {
   const others = readDay(userId, day).filter((list) => list.occasion !== occasion);
   const record: StoredLucky = { day, lists: [...others, { occasion, response }] };

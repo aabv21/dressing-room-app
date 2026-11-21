@@ -1,6 +1,5 @@
-// Today's "feeling lucky" list: `lucky-list`'s ranked outfits for the day and occasion, walked one
-// at a time with "Another", plus the day's occasion kept on the device. The last good list per
-// occasion is kept on the device too (`storedLucky.ts`), so Today is readable offline.
+// Today's list: `lucky-list`'s ranked outfits walked with "Another", the day's occasion, and the last
+// good list per occasion (`storedLucky.ts`) so Today reads offline.
 import { useIsFocused } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
@@ -24,20 +23,16 @@ export type LuckyList = {
   outfits: LuckyOutfit[];
   /** The shown outfit's position in `outfits` (0 when the list is empty). */
   index: number;
-  /** Shows the next outfit, wrapping after the last. */
+  /** Wraps after the last. */
   next: () => void;
   weather: WeatherSummary | null;
   /** The slots a `too_small` closet lacks; empty otherwise. */
   missing: Slot[];
   error: AiError | null;
-  /**
-   * The list shown is the last one that came back (now or earlier today), because the latest fetch
-   * couldn't connect.
-   */
+  /** The list shown is an earlier one (from today) because the latest fetch couldn't connect. */
   offline: boolean;
   /** The error of the latest fetch when an earlier list is shown instead; null when it succeeded. */
   refetchError: AiError | null;
-  /** Fetches again after an error. */
   reload: () => void;
   /** The local day the list is for (`localDate()`, re-read on returning to the foreground). */
   day: string;
@@ -67,12 +62,8 @@ function readOccasion(userId: string | null, day: string): Occasion | null {
   return OCCASIONS.find((occasion) => occasion === stored) ?? null;
 }
 
-/**
- * The occasion chosen for today, kept in kv under `today.occasion.<userId>.<date>`, so it survives a
- * restart and starts empty the next day.
- * NOTE: past days' keys are never removed (one short row per day used); upgrade path: drop other
- * days' keys on write if the kv store ever needs trimming.
- */
+// NOTE: past days' keys are never removed (one short row per day); upgrade path: drop them on write if kv needs trimming.
+/** Today's occasion in kv `today.occasion.<userId>.<date>`: survives a restart, empty the next day. */
 export function useTodayOccasion(): [Occasion | null, (next: Occasion | null) => void] {
   const { userId } = useAuth();
   const day = useLocalDay();
@@ -98,10 +89,8 @@ export function useTodayOccasion(): [Occasion | null, (next: Occasion | null) =>
 export const CLOSET_REFETCH_DELAY_MS = 3_000;
 
 /**
- * `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): the candidate garments (a category
- * and `available`) and their rating columns, not wear counts or `last_worn_at` (logging a wear
- * bumps them, and wearing an outfit mustn't reshuffle today's list). A change here is one the
- * server's list can reflect.
+ * Mirrors `lucky-list`'s cache fingerprint (`lucky-list/handler.ts`): candidate garments and their rating
+ * columns, not wear counts or `last_worn_at` (wearing an outfit mustn't reshuffle today's list).
  */
 function closetFingerprint(garments: readonly Garment[]): string {
   return JSON.stringify(
@@ -115,11 +104,9 @@ function closetFingerprint(garments: readonly Garment[]): string {
 const outfitKey = (outfit: LuckyOutfit): string => outfit.garmentIds.join(',');
 
 /**
- * Fetches the list once the closet has loaded (never against a closet still on its way), and again
- * when the occasion or the day changes, when the screen comes back into focus (e.g. after the city
- * modal), after `reload`, and 3 s after the closet last changed in a way the list depends on. A
- * refetch keeps the shown outfit while it's still in the list; outfits with a piece that's no
- * longer available are hidden at once, before it lands.
+ * Fetches once the closet has loaded, and again on occasion or day change, refocus (e.g. after the city
+ * modal), `reload`, and 3 s after a relevant closet change. A refetch keeps the shown outfit while it's
+ * still listed; outfits with a no-longer-available piece hide at once.
  */
 export function useLuckyList(occasion: Occasion | null): LuckyList {
   const { userId } = useAuth();
@@ -155,7 +142,6 @@ export function useLuckyList(occasion: Occasion | null): LuckyList {
     },
   });
 
-  // Closet changes, debounced.
   useEffect(() => {
     if (!focused || !closetReady || fingerprint === fetchedFingerprint.current) return undefined;
     // Another trigger (focus, occasion) may fetch this same closet before the delay ends.

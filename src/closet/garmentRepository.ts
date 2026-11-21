@@ -63,10 +63,8 @@ export async function signedPhotoUrls(paths: readonly string[], client: Client =
 }
 
 /**
- * The status that describes a storage failure. Storage answers most client errors with HTTP 400
- * and the real status in the body (`{"statusCode":"413",...}` for a file over the bucket limit),
- * which storage-js exposes as `statusCode`; the body is trusted only on that HTTP 400, so a server
- * error's body can't turn it into a client error. A `fetch` that never got a response has neither.
+ * Storage answers most client errors with HTTP 400 and the real status in the body (`statusCode`, e.g.
+ * 413 over the bucket limit). The body is trusted only on a 400, so a server error can't pose as a 4xx.
  */
 function storageStatus(error: { status: number | undefined; statusCode: string | undefined }): number | undefined {
   const fromBody = Number(error.statusCode);
@@ -75,18 +73,14 @@ function storageStatus(error: { status: number | undefined; statusCode: string |
 }
 
 /**
- * A 4xx means this request will never succeed as sent; 408 (timeout) and 429 (rate limit) are worth
- * retrying, and so are 401 and 403: an expired session (refreshed on the next run) or the RLS check
- * failing under another account's session (`SessionMismatchError`'s case) aren't the photo's fault.
+ * A 4xx never succeeds as sent, except 408, 429, and 401/403: an expired session or RLS under another
+ * account's session (`SessionMismatchError`'s case) isn't the photo's fault.
  */
 function isPermanentStatus(status: number | undefined): boolean {
   return status !== undefined && status >= 400 && status < 500 && ![401, 403, 408, 429].includes(status);
 }
 
-/**
- * Upserts one photo variant from its bytes. Split from `uploadGarmentPhoto` so plain Node (the
- * integration tests) can drive the same storage call without expo-file-system.
- */
+/** Split from `uploadGarmentPhoto` so the integration tests drive the same call without expo-file-system. */
 export async function uploadGarmentPhotoBytes(
   userId: string,
   garmentId: string,
@@ -94,8 +88,7 @@ export async function uploadGarmentPhotoBytes(
   bytes: Uint8Array<ArrayBuffer>,
   client: Client = supabase,
 ): Promise<void> {
-  // An exact ArrayBuffer (not a view into a larger, pooled buffer), the body React Native's
-  // fetch sends as-is.
+  // An exact ArrayBuffer, not a view into a pooled buffer: React Native's fetch sends it as-is.
   const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const { error } = await client.storage
     .from(BUCKET)
@@ -123,11 +116,9 @@ export async function uploadGarmentPhoto(
 }
 
 /**
- * Creates the garment row from the client-generated id, owned by `userId` (every other column
- * takes its default). Stating the owner makes RLS reject the insert (42501) if another account is
- * signed in by the time it runs, instead of filing the garment under that account; the error is
- * thrown as is, so the queue retries it rather than failing the photo. A row that already exists
- * is left alone, so a commit retried after a lost response is harmless.
+ * Stating the owner makes RLS reject the insert (42501, thrown so the queue retries) if another account
+ * signed in meanwhile, instead of filing the garment under it. An existing row is left alone, so a
+ * commit retried after a lost response is harmless.
  */
 export async function insertGarment(id: string, userId: string, client: Client = supabase): Promise<void> {
   const { error } = await client
@@ -172,9 +163,8 @@ export function confirmReview(id: string, patch: GarmentPatch, client: Client = 
 }
 
 /**
- * Deletes both photos, then the row. Photos go first so a failure part-way leaves the row in
- * place and a retry finishes the job (a missing object is not an error), rather than orphaning
- * photos nobody can see. A row that is already gone also counts as deleted.
+ * Photos first, so a failure part-way leaves the row for a retry instead of orphaning invisible photos.
+ * A missing object or row counts as deleted.
  */
 export function deleteGarment(userId: string, id: string, client: Client = supabase): Promise<RequestResult> {
   return runRequest(async () => {

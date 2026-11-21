@@ -1,4 +1,3 @@
-// Deno entry point for `delete-account`; the logic is in `handler.ts`.
 import { appleEnvFrom, readEnv } from '../_shared/env.ts';
 import { handleDeleteAccount } from './handler.ts';
 

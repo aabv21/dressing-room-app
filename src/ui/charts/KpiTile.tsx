@@ -3,11 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useLargeText } from '../layout';
 import { colors, radii, spacing } from '../theme';
 
-/**
- * Mockup 04's `.kpi` tile: a big value over a small muted label, two to a row. Above
- * `LARGE_TEXT_FONT_SCALE` a tile takes the whole row, so the big value and the label's words don't
- * break mid-word.
- */
+/** Two to a row; above `LARGE_TEXT_FONT_SCALE` a tile takes the whole row so words don't break mid-word. */
 export function KpiTile(props: { value: string; label: string }): React.JSX.Element {
   const { value, label } = props;
   const largeText = useLargeText();

@@ -1,11 +1,8 @@
 import { kvKeys, kvRemove, kvSet } from '../../lib/kv';
 
 /**
- * Requests to drop an account's upload queue (`queue.purge.<userId>`), recorded when the device
- * forgets an account whose deletion was interrupted by a lost session (`forgetInterruptedDeletions`):
- * the queue store isn't loaded there, so the next `UploadQueueProvider` to mount clears that
- * account's rows and photo copies, then drops the request. Unlike the account's other kv keys, a
- * request survives `forgetAccountOnDevice` until it has been carried out.
+ * `queue.purge.<userId>`: drop an interrupted deletion's queue at the next `UploadQueueProvider` mount;
+ * it survives `forgetAccountOnDevice` until carried out (docs/app.md#account-deletion-on-the-device).
  */
 export const QUEUE_PURGE_PREFIX = 'queue.purge.';
 

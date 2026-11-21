@@ -10,7 +10,6 @@ const DEPENDENCIES = /android:name="com\.google\.mlkit\.vision\.DEPENDENCIES"[^>
 
 function mlkitModels(manifestPath: string): string[] {
   // Two fixed manifests inside this repo.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const xml = readFileSync(manifestPath, 'utf8');
   const match = DEPENDENCIES.exec(xml);
   if (match?.[1] === undefined) throw new Error(`${manifestPath} declares no ML Kit dependencies`);

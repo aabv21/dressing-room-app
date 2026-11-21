@@ -1,7 +1,5 @@
-// "How does it look?" (mockup 01 screen 3): the AI's rating of a picked outfit — the score ring and
-// label, the AI confidence, template reasons, a one-tap swap for a low score — and Save / I'll wear
-// it. Today and Build push it with the garment ids (`ids`, comma-separated) and an optional
-// `occasion`. A root Stack screen inside the tabs guard, so there's no tab bar.
+// "How does it look?": the AI's rating of an outfit (score ring, confidence, reasons, a one-tap swap
+// for a low score) with Save / I'll wear it. Pushed from Today and Build: `/rate?ids=…[&occasion=…]`.
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronLeft, CircleAlert, RotateCw, Sparkles } from 'lucide-react-native';
@@ -58,9 +56,8 @@ function parseIds(raw: string | string[] | undefined): string[] {
 }
 
 /**
- * Why a link's ids can't be rated, without asking the function: a malformed id can't be a garment
- * (`not_found`), and too few or too many pieces aren't an outfit (`incomplete`). Either way a retry
- * can't succeed, so the screen offers only "Go back".
+ * Why a link's ids can't be rated, without asking the function: a malformed id is `not_found`, a wrong
+ * piece count `incomplete`. A retry can't succeed, so the screen offers only "Go back".
  */
 function invalidIds(ids: readonly string[]): AiError | null {
   if (ids.some((id) => !UUID.test(id))) return 'not_found';
@@ -86,9 +83,8 @@ function joinColors(names: readonly string[], and: string, locale: Locale): stri
 }
 
 /**
- * A reason's text, or null for a key this app version doesn't know. color_harmony's good reason
- * carries `params.colors` as comma-separated enum values, localized here; with none it falls back
- * to a sentence without colors.
+ * A reason's text, or null for a key this app version doesn't know. color_harmony's good reason carries
+ * `params.colors` as comma-separated enum values, localized here (none: a sentence without colors).
  */
 function reasonText(reason: RatingReason, t: Translate, locale: Locale): string | null {
   if (!isMessageKey(reason.key)) return null;
@@ -153,7 +149,7 @@ function SwapCard({
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={onTry}
-        // 36 pt like the mockup's small button; the slop keeps the 44 pt target.
+        // A 36 pt button; the slop keeps the 44 pt target.
         hitSlop={{ top: 4, bottom: 4 }}
         style={[styles.swapButton, disabled ? styles.dimmed : null]}
       >
@@ -166,15 +162,11 @@ function SwapCard({
   );
 }
 
-/**
- * Mockup 01 screen 3's "Missing something? → For you": a low score with no swap to offer (none
- * beat it, or the fallback rater searched none) points to the pieces the closet lacks.
- */
+/** "Missing something? → For you": a low score with no swap (none beat it, or the fallback rater searched none). */
 function ForYouLink({ weakestSlot }: { weakestSlot: Slot | null }): React.JSX.Element {
   const { t, locale } = useI18n();
   const { userId } = useAuth();
-  // The piece comes from the last For you answer in this language (no model call); without one for
-  // the weakest slot, the line stays generic.
+  // The piece comes from the last stored For you answer in this language (no model call), else generic.
   const stored = userId === null ? null : readStoredForYou(userId, locale);
   const idea = stored?.kind === 'ok' ? missingPieceIdea(stored.ideas, weakestSlot) : null;
   const question = idea === null ? t('rate.forYou') : t('rate.forYou.named', { piece: pieceLabel(idea, t) });
@@ -219,8 +211,8 @@ function ResultBody({
   const from = swap === null ? undefined : byId.get(swap.fromId);
   const to = swap === null ? undefined : byId.get(swap.toId);
   const swapShown = swap !== null && from !== undefined && to !== undefined;
-  // A swap to a garment the local closet doesn't have yet (added on another device, or since the
-  // last refresh) would stay hidden: refresh the closet once per swap target, and the card appears.
+  // A swap to a garment the local closet lacks (added elsewhere or since the last refresh) would stay
+  // hidden: refresh the closet once per swap target.
   const { refresh } = useCloset();
   const refreshedFor = useRef<string | null>(null);
   const missingTarget = swap !== null && (from === undefined || to === undefined) ? swap.toId : null;
@@ -284,7 +276,7 @@ function RateOutfit({
   const rateable = initialError === null;
   const pieces = useMemo(() => ids.flatMap((id) => byId.get(id) ?? []), [ids, byId]);
 
-  // Bumped by "Try again": the effect below rates `ids` again.
+  // Bumped by "Try again" to rate `ids` again.
   const [attempt, setAttempt] = useState(0);
   const [rating, setRating] = useState<Rating>(() =>
     initialError === null ? { kind: 'loading' } : { kind: 'error', error: initialError },
@@ -481,8 +473,7 @@ export default function RateScreen(): React.JSX.Element {
   const params = useLocalSearchParams<{ ids?: string | string[]; occasion?: string | string[] }>();
   const ids = parseIds(params.ids);
   const occasion = parseOccasion(first(params.occasion));
-  // Keyed by the outfit: a link to this screen while it's open (new params, same instance) starts
-  // over with the new outfit instead of keeping the old one's rating and swap state.
+  // Keyed by the outfit: a link while open (new params, same instance) starts over with fresh state.
   return (
     <RateOutfit
       key={`${ids.join(',')}|${occasion ?? ''}`}

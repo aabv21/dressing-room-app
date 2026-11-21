@@ -1,6 +1,5 @@
-// The outfits logged with "I'll wear it" today, kept on the device so every screen that offers the
-// button (Today and the rating) shows "Logged ✓" for them, also after navigating away or a restart.
-// Without it each screen only knew its own taps, and the same outfit could be logged twice.
+// Today's "I'll wear it" outfits on the device, so Today and the rating both show "Logged ✓" (also
+// after a restart) and the same outfit isn't logged twice.
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
@@ -43,15 +42,11 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
-/** Whether `userId` logged the outfit `garmentIds` on `day`. */
 export function isWornToday(userId: string, day: string, garmentIds: readonly string[]): boolean {
   return parse(kvGet(wornTodayKey(userId)), day).has(outfitIdentity(garmentIds));
 }
 
-/**
- * Records that `userId` logged `garmentIds` on `day`. Earlier days' outfits are dropped on the way,
- * so the record never holds more than one day.
- */
+/** Earlier days' outfits are dropped on the way, so the record never holds more than one day. */
 export function markWornToday(userId: string, day: string, garmentIds: readonly string[]): void {
   const key = wornTodayKey(userId);
   const outfits = parse(kvGet(key), day);
@@ -63,9 +58,8 @@ export function markWornToday(userId: string, day: string, garmentIds: readonly 
 }
 
 /**
- * Forgets that `userId` logged the outfit `garmentIds` (its wear was deleted from the diary), so
- * Today and the rating offer "I'll wear it" again. The record keeps its day; mounted screens update
- * through the same subscription as a mark.
+ * For a wear deleted from the diary, so "I'll wear it" shows again. The record keeps its day; mounted
+ * screens update through the same subscription as a mark.
  */
 export function unmarkWornToday(userId: string, garmentIds: readonly string[]): void {
   const key = wornTodayKey(userId);
@@ -78,17 +72,13 @@ export function unmarkWornToday(userId: string, garmentIds: readonly string[]): 
   for (const listener of listeners) listener();
 }
 
-/**
- * The signed-in user's worn-today record for `day`, re-read whenever any screen marks an outfit,
- * so a screen left mounted under another (Today under the rating) updates too.
- */
+/** Re-read whenever any screen marks an outfit, so one mounted under another (Today under the rating) updates. */
 export function useWornToday(day: string): {
   isWorn: (garmentIds: readonly string[]) => boolean;
   markWorn: (garmentIds: readonly string[]) => void;
 } {
   const { userId } = useAuth();
-  // The raw stored string is the snapshot: equal strings compare equal, so nothing re-renders until
-  // the record really changes.
+  // The raw string is the snapshot, so nothing re-renders until the record really changes.
   const getSnapshot = useCallback(() => (userId === null ? null : kvGet(wornTodayKey(userId))), [userId]);
   const raw = useSyncExternalStore(subscribe, getSnapshot);
   const worn = useMemo(() => parse(raw, day), [raw, day]);

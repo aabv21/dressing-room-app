@@ -1,18 +1,11 @@
-// integration/mockAnthropic.ts
-//
-// A stand-in for the Anthropic Messages API, so the local `extract-attributes` Edge Function can run
-// end to end without a real key. The local Edge Runtime points `ANTHROPIC_BASE_URL` at
-// `http://host.docker.internal:54499` (see `supabase/config.toml`), so this listens on every
-// interface, not only loopback: the request comes from inside a container.
+// Mock Anthropic Messages API for the local `extract-attributes`. It listens on every interface since the Edge
+// Runtime calls from a container (docs/local-stack.md#mock-claude).
 
 import { readFile } from 'node:fs/promises';
 import { createServer, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
-/**
- * What the next `/v1/messages` calls get: a status and JSON body (sent after `delayMs`, if given),
- * or no answer at all.
- */
+/** What the next `/v1/messages` calls get: a status and JSON body (after `delayMs`, if given), or no answer. */
 export type MockReply = { status: number; body: unknown; delayMs?: number } | { hang: true };
 
 export type MockAnthropic = {
@@ -78,11 +71,7 @@ export function startMockAnthropic(port = 54499): Promise<MockAnthropic> {
   });
 }
 
-/**
- * `node integration/mockAnthropic.ts --serve <fixture>`: keeps the mock running for a manual
- * simulator check, answering every call with `supabase/functions/_shared/__tests__/fixtures/
- * claude-<fixture>.json` (e.g. `ok`, `low-confidence`). Stop it with Ctrl-C.
- */
+/** `node integration/mockAnthropic.ts --serve <fixture>`: answers every call with `claude-<fixture>.json` until Ctrl-C. */
 async function serveFromCli(argv: readonly string[]): Promise<void> {
   const fixture = argv[argv.indexOf('--serve') + 1];
   if (fixture === undefined || !/^[a-z-]+$/.test(fixture)) {
@@ -90,7 +79,6 @@ async function serveFromCli(argv: readonly string[]): Promise<void> {
   }
   const url = new URL(`../supabase/functions/_shared/__tests__/fixtures/claude-${fixture}.json`, import.meta.url);
   // The name is checked above and resolved inside the repo's fixtures folder.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const body: unknown = JSON.parse(await readFile(url, 'utf8'));
   const mock = await startMockAnthropic();
   mock.respondWith({ status: 200, body });

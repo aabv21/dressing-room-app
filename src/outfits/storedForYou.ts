@@ -1,8 +1,5 @@
-// The last good `for-you` answer per user and language, kept on the device, so For you has
-// something to show at once on a cold start, offline, and once the day's quota is spent.
-// NOTE: the stored ideas aren't checked against the closet as it is now (an idea bought since stays
-// until the next good answer); upgrade path: drop ideas the closet now owns (same category and
-// first color, as the function's `ownsArchetype`).
+// The last good `for-you` answer per language, for a cold start, offline, and a spent quota.
+// NOTE: a stored idea bought since stays until the next answer; upgrade path: drop owned ones as `ownsArchetype` does.
 import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { GARMENT_CATEGORIES, GARMENT_COLORS } from '../closet/catalog';
 import type { Locale } from '../i18n';
@@ -48,14 +45,12 @@ function readRecord(userId: string): Record<string, unknown> {
   return kvGetJson(storedForYouKey(userId), isRecord) ?? {};
 }
 
-/** The last good answer `userId` got in `language`, or null. */
 export function readStoredForYou(userId: string, language: Locale): ForYouResponse | null {
   const record = readRecord(userId);
   const response = language === 'es' ? record.es : record.en;
   return isForYouResponse(response) ? response : null;
 }
 
-/** Keeps `response` as `userId`'s last good answer in `language`, replacing the previous one. */
 export function storeForYou(userId: string, language: Locale, response: ForYouResponse): void {
   const record = { ...readRecord(userId), [language]: response };
   kvSet(storedForYouKey(userId), JSON.stringify(record));

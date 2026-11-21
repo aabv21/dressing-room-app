@@ -1,14 +1,5 @@
-// Shared garment catalog: the closet domain's enum tuples, their TS union types, and the
-// category/slot/availability derivations the app and the extraction function both need.
-//
-// No imports, and nothing Deno- or Node-only: this file is imported both by Supabase Edge
-// Functions (Deno) via its own path and by the Expo app (Node/Metro) via `src/closet/catalog.ts`'s
-// re-export, so it must run unmodified in both runtimes.
-//
-// Enum values here must match the Postgres enums in
-// `supabase/migrations/20261108021700_garments.sql` exactly — `src/closet/__tests__/catalog.test.ts`
-// compares every tuple against `Constants.public.Enums.*` in the generated
-// `src/lib/database.types.ts`.
+// The garment catalog shared by the functions and the app (`src/closet/catalog.ts` re-exports it,
+// so no imports). Tuples must match the Postgres enums; `catalog.test.ts` checks (docs/database.md).
 
 export const GARMENT_CATEGORIES = [
   // tops
@@ -148,7 +139,7 @@ export type Slot = (typeof SLOTS)[number];
 export const MIN_OUTFIT_PIECES = 2;
 export const MAX_OUTFIT_PIECES = 6;
 
-// `occasion` is Plan 2's Postgres enum, reused here rather than redefined.
+// `occasion` reuses the existing Postgres enum.
 export const OCCASIONS = ['office', 'university', 'going_out', 'home', 'event', 'sport'] as const;
 
 export type Occasion = (typeof OCCASIONS)[number];
@@ -174,7 +165,7 @@ export const CLOTHING_TYPES = ['feminine', 'masculine', 'everything'] as const;
 
 export type ClothingType = (typeof CLOTHING_TYPES)[number];
 
-/** Every category's slot, in `GARMENT_CATEGORIES` order. TS-only — `garments` has no `slot` column. */
+/** TS-only: `garments` has no `slot` column. */
 export const CATEGORY_SLOT: Record<GarmentCategory, Slot> = {
   t_shirt: 'top',
   blouse: 'top',

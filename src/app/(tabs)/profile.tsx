@@ -28,10 +28,7 @@ function SectionHeading({ children }: { children: string }): React.JSX.Element {
   );
 }
 
-/**
- * "Account": the signed-in email and Sign out. Sign out waits while an export or a deletion runs,
- * so a deletion's late answer can't land on the next account to sign in.
- */
+/** Sign out waits while an export or deletion runs, so a late answer can't land on the next account. */
 function AccountSection({ privacyBusy }: { privacyBusy: boolean }): React.JSX.Element {
   const { t } = useI18n();
   const { email } = useAuth();
@@ -69,10 +66,7 @@ function AccountSection({ privacyBusy }: { privacyBusy: boolean }): React.JSX.El
   );
 }
 
-/**
- * "Privacy": what happens to body data, then "Export my data" (a JSON file through the share
- * sheet) and the destructive "Delete account" (two confirms). Both stay disabled while either runs.
- */
+/** Export (a JSON file via the share sheet) and Delete account (two confirms); both disabled while either runs. */
 function PrivacySection({ exporting, deleting }: ReturnType<typeof usePrivacyActions>): React.JSX.Element {
   const { t } = useI18n();
   const busy = exporting.busy || deleting.busy;
@@ -117,7 +111,7 @@ function PrivacySection({ exporting, deleting }: ReturnType<typeof usePrivacyAct
   );
 }
 
-/** Account and Privacy, which share the Privacy actions' busy state. */
+/** Account and Privacy share the Privacy actions' busy state. */
 function AccountAndPrivacy(): React.JSX.Element {
   const privacy = usePrivacyActions();
   return (
@@ -129,11 +123,8 @@ function AccountAndPrivacy(): React.JSX.Element {
 }
 
 /**
- * "Language": the ES/EN toggle plus "Use device language". A change applies at once (the
- * I18nProvider preference) and is saved to `profile.language` on its own, outside the Save button.
- * `profile.language` is applied to the device preference on sign-in by `AuthProvider`, so this
- * section's own saves and that startup reconciliation share the same source of truth; a save that
- * fails is retried there rather than overwritten.
+ * A change applies at once and saves to `profile.language` on its own, outside the Save button.
+ * `AuthProvider` applies `profile.language` on sign-in and retries a failed save there.
  */
 function LanguageSection({ onSave }: { onSave: (language: 'en' | 'es' | null) => Promise<MessageKey | undefined> }) {
   const { t, locale } = useI18n();
@@ -191,12 +182,10 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [saveError, setSaveError] = useState<MessageKey | undefined>(undefined);
-  // Field errors show once a field is left (blur) or on a save attempt, not on every keystroke;
-  // a touched field's error then updates live, so fixing it clears it at once.
+  // Errors show once a field is left or on a save attempt, then update live so a fix clears them.
   const [touched, setTouched] = useState<ReadonlySet<BodyField>>(new Set());
   const [showAllErrors, setShowAllErrors] = useState(false);
-  // Language saves run one after another (so the server ends with the last choice), and only the
-  // latest one's outcome is reported.
+  // Language saves run in order (the server ends with the last choice); only the latest one reports.
   const languageQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const languageSeqRef = useRef(0);
 
@@ -216,8 +205,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
 
   async function handleSave(): Promise<void> {
     if (!validation.ok) {
-      // Save stays tappable while invalid so it can say why: every error shows and the first is
-      // announced.
+      // Save stays tappable while invalid so it can say why: every error shows, the first announced.
       setShowAllErrors(true);
       const first = Object.values(validation.errors)[0];
       if (first !== undefined) {
@@ -259,8 +247,7 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
       return undefined;
     }
     if (!result.ok) {
-      // The choice already applies on this device; AuthProvider retries the save on the next
-      // profile load instead of replacing it with the server's older value.
+      // AuthProvider retries the save on the next profile load instead of applying the server's older value.
       markLanguageSavePending(userId);
       announceForAccessibility(t(result.error));
       return result.error;
@@ -320,8 +307,8 @@ export default function ProfileScreen() {
     return <ProfileEditor key={userId} userId={userId} initial={profile} />;
   }
 
-  // Without the saved profile the form would show defaults (and saving them would overwrite real
-  // data), so a failed read offers a retry — and Sign out stays reachable either way.
+  // Without the saved profile the form would show defaults (saving them would overwrite real data),
+  // so a failed read offers a retry; Sign out stays reachable either way.
   return (
     <Screen
       title={t('screen.profile')}

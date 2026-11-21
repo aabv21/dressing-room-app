@@ -1,11 +1,5 @@
-// For you: which generic staples (`archetypes.ts`) the user is missing, ranked by how many new
-// outfits each would make with the closet they have, weighted by a Jev fit for their body and
-// styles, with one short Claude line per idea (or a template the app renders through i18n) and a
-// localized store-search query.
-//
-// Runtime-neutral (only the other `_shared` modules imported, nothing Deno- or Node-only). The
-// model inputs carry enum values and buckets only: the Jev state is the archetype plus the
-// rating's bucketed user, and the Claude request carries no user data at all. See `docs/ai.md`.
+// For you: missing staples ranked by gain × Jev fit, with Claude lines and store queries
+// (docs/ai.md#for-you). Model inputs carry enums and buckets only; Claude gets no user data.
 
 import { type Archetype, ARCHETYPES, archetypesFor } from './archetypes.ts';
 import { type ClothingType, type Season, type Slot, slotOf } from './catalog.ts';
@@ -21,16 +15,12 @@ export const GAIN_CAP = 5000;
 export const FIT_CANDIDATES = 10;
 /** The most fit candidates of one slot: one more than `MAX_PER_SLOT`, so a poor fit has a stand-in. */
 export const FIT_CANDIDATES_PER_SLOT = 3;
-/** The most ideas returned. */
 export const MAX_IDEAS = 5;
-/**
- * The most ideas returned for one slot. Layering pieces gain every outfit the closet can already
- * make, so without this cap a closet of a few pieces would get only coats and blazers.
- */
+/** Per slot: layering pieces gain every outfit, so without it a small closet gets only coats and blazers. */
 export const MAX_PER_SLOT = 2;
 /** The lowest fit an idea can rank with: a missing or poor Jev answer still leaves its gain in play. */
 export const FIT_FLOOR = 0.3;
-/** The widest formality gap (on the 1–5 scale) between two pieces that still combine. */
+/** On the 1–5 scale. */
 export const MAX_FORMALITY_SPREAD = 2;
 export const FIT_DIMENSIONS = ['body_flattery', 'style_match'] as const;
 
@@ -71,10 +61,8 @@ function archetypeGarment(archetype: Archetype): RuleGarment {
 }
 
 /**
- * True when no two pieces sit more than `MAX_FORMALITY_SPREAD` apart in formality (unknown
- * formality is ignored). For you only (lucky-list never applies it): gain checks `passesRules`
- * with no occasion, which accepts any mix of formality, so without this a ball gown with sneakers
- * or a blazer with gym shorts would count as a new outfit.
+ * No two pieces more than `MAX_FORMALITY_SPREAD` apart (unknown ignored). For you only: `passesRules`
+ * with no occasion accepts any formality mix, so a ball gown with sneakers would count as new.
  */
 function formalityCoherent(outfit: Outfit): boolean {
   const levels = outfit.flatMap((item) => (item.formality === null ? [] : [item.formality]));
@@ -82,10 +70,7 @@ function formalityCoherent(outfit: Outfit): boolean {
   return Math.max(...levels) - Math.min(...levels) <= MAX_FORMALITY_SPREAD;
 }
 
-/**
- * The user slots to fill around an archetype for a complete outfit: (top + bottom or a one-piece)
- * plus shoes. Outerwear (and any extra) layers over a complete outfit, so it fills none itself.
- */
+/** The user slots to fill around an archetype; outerwear and extras layer over and fill none. */
 function outfitShapes(slot: Slot): readonly (readonly Slot[])[] {
   switch (slot) {
     case 'top':
@@ -114,12 +99,7 @@ export function ownsArchetype(garments: readonly RuleGarment[], archetype: Pick<
   );
 }
 
-/**
- * The complete outfits the archetype would make with the user's available garments — each one the
- * archetype plus the user's pieces for the other required slots, passing `passesRules` with no
- * occasion, the given season and no weather, and `MAX_FORMALITY_SPREAD` — counted up to
- * `GAIN_CAP`, and the distinct user garments in the outfits counted.
- */
+/** The archetype's new complete outfits (up to `GAIN_CAP`) and distinct user garments in them (docs/ai.md#gain). */
 export function archetypeGain(archetype: Archetype, garments: readonly RuleGarment[], ctx: { season: Season | null }): Gain {
   // `passesRules` never reads `today`; it's only there for the lucky list's recent-wear checks.
   const rules: RuleContext = { occasion: null, season: ctx.season, weather: null, today: '' };
@@ -134,14 +114,11 @@ export function archetypeGain(archetype: Archetype, garments: readonly RuleGarme
     pools.set(slot, [...(pools.get(slot) ?? []), item]);
   }
 
-  // NOTE: GAIN_CAP bounds the count, not the work: outfits that fail only at their last piece
-  // are never counted, so a layering archetype can still try every top × bottom × shoes. Ceiling:
-  // about 0.3 s for all 58 archetypes on a 200-garment closet built to fail that way (vs ~15 ms on
-  // a random one). Upgrade path: a rule-check budget per archetype, or counting by color/pattern/formality signature.
+  // NOTE: GAIN_CAP bounds the count, not the work (~0.3 s worst case, 58 archetypes × 200 garments);
+  // upgrade: a per-archetype rule-check budget, or counting by color/pattern/formality signature.
   let newOutfits = 0;
   const combined = new Set<string>();
-  // Every rule only forbids (too many colors or patterns, too wide a formality gap; no weather means
-  // nothing is required), so an outfit that fails part-built fails complete: prune it there.
+  // Every rule only forbids (no weather means nothing is required), so prune part-built failures.
   const fill = (slots: readonly Slot[], outfit: RuleGarment[]): void => {
     const [slot, ...rest] = slots;
     if (slot === undefined) {
@@ -195,21 +172,17 @@ export function rankByGain(garments: readonly RuleGarment[], clothingType: Cloth
 }
 
 /**
- * The ideas that get a Jev fit: `rankByGain`'s order, at most `FIT_CANDIDATES_PER_SLOT` of one slot
- * and `FIT_CANDIDATES` in all. Use this, never a plain slice of the ranking: a slice is often all
- * coats and blazers (layering gains every outfit the closet can make), and `finalRank` keeps only
- * `MAX_PER_SLOT` of a slot, so the list would come back short. With these candidates `finalRank`
- * always returns min(`MAX_IDEAS`, what 2 per slot allows): stopping at 10 with at most 3 per slot
- * means at least 4 slots, so at least 7 ideas survive the cap.
+ * The ideas that get a Jev fit, capped per slot. Never use a plain slice (often all coats, and
+ * `finalRank` keeps `MAX_PER_SLOT` per slot): 10 with at most 3 per slot spans 4+ slots, so at
+ * least 7 ideas survive and `finalRank` always fills `MAX_IDEAS` when 2 per slot allows.
  */
 export function fitCandidates<T extends ForYouIdea>(ranked: readonly T[]): T[] {
   return capPerSlot(ranked, FIT_CANDIDATES_PER_SLOT, FIT_CANDIDATES);
 }
 
 /**
- * The Jev request for one archetype's fit: the rating's `body_flattery` and `style_match` Score
- * questions, asked about the archetype as a one-piece outfit. The user's fields are picked
- * explicitly, so a caller's object carrying more never reaches Jev.
+ * The rating's `body_flattery` and `style_match` questions about the archetype as a one-piece
+ * outfit. The user's fields are picked explicitly, so extra caller fields never reach Jev.
  */
 export function buildFitRequest(archetype: Archetype, user: RatingState['user']): JevRequest {
   return {
@@ -240,9 +213,8 @@ export function buildFitRequest(archetype: Archetype, user: RatingState['user'])
 const FIT_LEVELS = new Map<string, number>(Object.entries(RATING_LEVELS));
 
 /**
- * The fit (0..1): the mean of the two normalized scores (score ÷ (levels − 1)). Never throws; null
- * when either answer is missing, of the wrong type or out of range (beyond the rating's rounding
- * tolerance). The floor is `finalRank`'s.
+ * The fit (0..1): mean of the two normalized scores. Never throws; null when either answer is
+ * missing, mistyped or out of range (beyond the rating's rounding tolerance). `finalRank` floors it.
  */
 export function parseFit(body: unknown): number | null {
   if (!isRecord(body) || !isRecord(body.answers)) return null;
@@ -260,10 +232,8 @@ export function parseFit(body: unknown): number | null {
 }
 
 /**
- * The ideas to show: gain × fit, the fit floored at `FIT_FLOOR` (a null fit, Jev having failed,
- * ranks at the floor), best first (ties: more new outfits, then `compareTies`), at most
- * `MAX_PER_SLOT` per slot (the next best of other slots fills in) and at most `MAX_IDEAS` in all.
- * Pass it `fitCandidates`' ideas, so there are enough other slots to fill from.
+ * Gain × fit floored at `FIT_FLOOR` (a null fit ranks there), ties: more new outfits then
+ * `compareTies`; `MAX_PER_SLOT` per slot, `MAX_IDEAS` in all. Pass `fitCandidates`' ideas.
  */
 export function finalRank(items: readonly (ForYouIdea & { fit: number | null })[]): RankedIdea[] {
   const ranked = items
@@ -359,10 +329,9 @@ export function buildLinesRequest(ideas: readonly ForYouIdea[], language: Langua
 }
 
 /**
- * Maps a Messages API response body to each idea's line, whitespace collapsed and trimmed. Never
- * throws. A line for an unknown id, a repeated id (the first wins), an empty line or one over
- * `LINE_MAX_CHARS` characters is dropped, so that idea falls back to its template; null for a
- * refusal, unparseable output, or when no line survives.
+ * Each idea's line, whitespace collapsed. Never throws. Unknown or repeated ids (first wins), empty
+ * lines and lines over `LINE_MAX_CHARS` are dropped (template fallback); null for a refusal,
+ * unparseable output, or when no line survives.
  */
 export function parseLines(body: unknown, ids: readonly string[]): Map<string, string> | null {
   if (!isRecord(body) || body.stop_reason === 'refusal') return null;
@@ -389,12 +358,7 @@ export function parseLines(body: unknown, ids: readonly string[]): Map<string, s
   return lines.size > 0 ? lines : null;
 }
 
-/**
- * The store-search words for an archetype: its `search` phrase when it has one ("camisa de
- * franela"), otherwise "{category} {color}" in Spanish ("blazer camel") or "{color} {category}" in
- * English ("camel blazer"); then the audience word, none for `everything`. The app URL-encodes it
- * into the search URL.
- */
+/** The store-search words (docs/ai.md#store-search); the app URL-encodes them. */
 export function searchQuery(archetype: Archetype, clothingType: ClothingType, language: Language): string {
   const audience = audienceTerm(clothingType, language);
   const phrase = language === 'es' ? archetype.search?.es : archetype.search?.en;

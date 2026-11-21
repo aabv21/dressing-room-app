@@ -1,7 +1,5 @@
-// The Closet tab's Diary segment (mockup 04 screen 3, spec §3.6): a Monday-first month calendar
-// with each worn day's outfit thumbnail, and under it the selected day's wears with their pieces,
-// occasion and score. Deleting a wear lowers the pieces' wear counts (a database trigger) and, for
-// today's wear, clears Today's "Logged ✓" so the outfit can be logged again.
+// The Closet tab's Diary segment. Deleting a wear lowers its pieces' wear counts (a database trigger)
+// and, for today's wear, clears Today's "Logged ✓" so the outfit can be logged again.
 import { Image } from 'expo-image';
 import { useIsFocused } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
@@ -33,8 +31,7 @@ const NAV_SIZE = 32;
 const NAV_SLOP = (layout.minHitTarget - NAV_SIZE) / 2;
 const MINI_HEIGHT = 28;
 const MINI_SLOP = (layout.minHitTarget - MINI_HEIGHT) / 2;
-// Mockup 04's calendar greys (`.cal .h`, `.d`) and a worn day's darker number (`.d.w`). The light
-// grey is the theme's muted ink, the lightest that keeps 4.5:1 on the translucent day cells.
+// Calendar greys and a worn day's darker number; the muted ink is the lightest keeping 4.5:1 on the cells.
 const DAY_MUTED = colors.muted;
 const DAY_INK = '#4a4656';
 
@@ -55,10 +52,7 @@ function utcDate(day: string): Date {
   return new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))));
 }
 
-/**
- * "October 2026" / "Octubre 2026". The month name and the year are joined by hand: Spanish's
- * month-and-year pattern is "octubre de 2026", while mockup 04 reads "Octubre 2026".
- */
+/** "October 2026" / "Octubre 2026": joined by hand, since Spanish's own pattern is "octubre de 2026". */
 export function formatMonthTitle(locale: Locale, year: number, month: number): string {
   const name = dateFormat(locale, { month: 'long' }).format(new Date(Date.UTC(year, month - 1, 1)));
   return `${capitalize(name)} ${String(year)}`;
@@ -281,8 +275,7 @@ export function DiarySegment(): React.JSX.Element {
     setDeleteError(null);
   }, []);
 
-  // One delete at a time: a second tap on the confirm (Android lets one through) is ignored before
-  // the busy state renders.
+  // One delete at a time: a second confirm tap (Android lets one through) is ignored before busy renders.
   const deleting = useRef(false);
   const remove = useCallback(
     async (wear: WearWithItems) => {

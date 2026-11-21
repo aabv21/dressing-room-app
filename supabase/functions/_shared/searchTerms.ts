@@ -1,9 +1,5 @@
-// Store-search words for the For you ideas, in English and Spanish. The functions have no i18n
-// catalog, so this is a small word map over the catalog enums only; the Spanish words follow the
-// app's `garment.category.*` and `garment.color.*` labels, lowercased, with the color agreeing in
-// gender and number with the garment ("camisa blanca", "jeans negros").
-//
-// Runtime-neutral (only `catalog.ts` imported).
+// Store-search words in English and Spanish (the functions have no i18n): the app's garment labels,
+// lowercased, colors agreeing in gender and number ("camisa blanca", "jeans negros").
 
 import type { ClothingType, GarmentCategory, GarmentColor } from './catalog.ts';
 

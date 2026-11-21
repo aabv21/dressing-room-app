@@ -1,9 +1,5 @@
-// integration/helpers.ts
-//
-// Shared setup for the `integration` Jest project: loading `.env.local` (this project runs under
-// plain Node, not Expo, so nothing inlines `EXPO_PUBLIC_*` the way Metro does for the app), and
-// building the anon/service-role clients the auth and RLS integration suites drive against the
-// locally running Supabase stack.
+// Shared setup for the `integration` Jest project: loads `.env.local` (plain Node, so nothing inlines
+// `EXPO_PUBLIC_*` as Metro does) and builds the anon/service-role clients for the local stack.
 
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -40,17 +36,8 @@ function envMap(): Map<string, string | undefined> {
 }
 
 /**
- * Loads `.env.local` into `process.env` if the keys this project needs aren't already set.
- *
- * NOTE: this uses a tiny hand-rolled parser instead of Node 24's `process.loadEnvFile` — under
- * Jest's `node` test environment, `process.loadEnvFile` silently no-ops (no error, but
- * `process.env` is never updated; confirmed by direct test under this exact Jest config).
- * Upgrade path: switch back to `process.loadEnvFile` if a future Jest release fixes that
- * interaction, or drop this project onto a runner that doesn't sandbox `process`.
- *
- * Throws a clear, actionable error — naming the missing file or variable — rather than letting
- * every test fail with an opaque "fetch failed" once a client tries to reach a Supabase that was
- * never configured.
+ * Loads `.env.local` into `process.env` unless the keys are set; throws naming the missing file or key.
+ * NOTE: hand-rolled, as `process.loadEnvFile` no-ops under Jest's node env; upgrade path: use it once Jest fixes it.
  */
 export function loadIntegrationEnv(): void {
   if (REQUIRED_KEYS.every((key) => envMap().get(key) !== undefined)) {
@@ -59,9 +46,7 @@ export function loadIntegrationEnv(): void {
 
   let contents: string;
   try {
-    // ENV_LOCAL_URL is this file's own fixed, hardcoded path — never user input — so this isn't
-    // the path-traversal sink the rule guards against.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    // ENV_LOCAL_URL is this file's own fixed path, never user input.
     contents = readFileSync(ENV_LOCAL_URL, 'utf8');
   } catch (error) {
     throw new Error(
@@ -105,10 +90,7 @@ function memoryStorage(): SupportedStorage {
   };
 }
 
-/**
- * A service-role client: bypasses RLS, used only to seed/clean up test users and to read other
- * users' rows for assertions (e.g. "B's row is unchanged when read with the service role").
- */
+/** A service-role client (bypasses RLS): only seeds and cleans up test users and reads others' rows for assertions. */
 export function serviceClient(): SupabaseClient<Database> {
   return createClient<Database>(requiredEnv('EXPO_PUBLIC_SUPABASE_URL'), requiredEnv('SUPABASE_SERVICE_ROLE_KEY'), {
     auth: { storage: memoryStorage(), autoRefreshToken: false, persistSession: false },
@@ -185,11 +167,8 @@ async function findLatestMessageFor(email: string): Promise<MailpitMessageSummar
 }
 
 /**
- * Reads Mailpit's REST API (confirmed against the installed CLI's bundled version: `GET
- * /api/v1/messages` lists messages newest-first, `GET /api/v1/message/{ID}` returns the full
- * body) and extracts the 6-digit code from the newest message addressed to `email`. Polls briefly
- * (up to ~2s) since `resetPasswordForEmail`'s response can resolve a beat before Mailpit has
- * finished recording the message it just received.
+ * The 6-digit code in Mailpit's newest message to `email` (`GET /api/v1/messages` lists newest first). Polls up
+ * to ~2 s: `resetPasswordForEmail` can resolve before Mailpit has recorded the message.
  */
 export async function latestEmailCode(email: string): Promise<string> {
   let latest: MailpitMessageSummary | undefined;

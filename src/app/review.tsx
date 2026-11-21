@@ -1,6 +1,4 @@
-// Mockup 02 screen 3: the review queue. The AI has already filled in each garment; the user goes
-// through them one at a time and is only asked about what the AI doubted (`fieldsToAsk`). No tab
-// bar (the mockup's `.cta.nobar`): a root Stack screen registered inside the tabs guard.
+// The review queue: AI-filled garments one at a time, asking only what the AI doubted (`fieldsToAsk`).
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused } from 'expo-router';
 import { Check } from 'lucide-react-native';
@@ -27,7 +25,7 @@ import { colors, gradients, radii, spacing } from '../ui/theme';
 const CLOCK_TICK_MS = 30_000;
 const ERROR_ROOM = 56;
 
-// Mockup order: the basics as confirmed rows, then the questions, then the finer details.
+// The basics as confirmed rows, then the questions, then the finer details.
 const BASIC_FIELDS: readonly GarmentField[] = ['category', 'colors', 'seasons', 'formality'];
 const DETAIL_FIELDS: readonly GarmentField[] = GARMENT_FIELDS.filter((field) => !BASIC_FIELDS.includes(field));
 
@@ -156,7 +154,7 @@ function ReviewCard(props: {
       <CtaBackdrop />
       <AnchoredCta
         chrome="none"
-        // Next to the buttons, not at the end of the form, so it's on screen however far it scrolls.
+        // By the buttons, so it's on screen however far the form scrolls.
         {...(error === null
           ? {}
           : {
@@ -212,13 +210,12 @@ export default function ReviewScreen(): React.JSX.Element {
   const clothingType = useClothingType();
   // A pending garment joins the queue once it turns stale (10 minutes).
   const now = useNow(CLOCK_TICK_MS);
-  // Confirmed here: dropped from the queue even if a refresh that started earlier brings back the
-  // unreviewed row, and counted so "3 of 12" keeps moving forward.
+  // Confirmed here: dropped even if an older refresh brings the unreviewed row back, and counted so
+  // "3 of 12" keeps moving forward.
   const [confirmed, setConfirmed] = useState<ReadonlySet<string>>(() => new Set());
-  // The garment on screen, pinned by id from its first render: a garment joining the queue ahead
-  // of it (polling: an extraction finishing, or a pending one turning stale) never swaps the card
-  // and its draft. Its `created_at` places the next one when it leaves the queue (confirmed here or
-  // gone elsewhere): the queue is oldest first, so the next is the first garment no older than it.
+  // Pinned by id so a garment joining the queue ahead of it (an extraction finishing, a pending one
+  // going stale) never swaps the card and its draft. When it leaves, the queue being oldest first,
+  // the next is the first garment no older than its `created_at`.
   const [pinned, setPinned] = useState<{ id: string; createdAt: number } | null>(null);
 
   const queue = useMemo(
@@ -271,8 +268,7 @@ export default function ReviewScreen(): React.JSX.Element {
       mounted.current = false;
     };
   }, []);
-  // One garment at a time, stopping at the first failure: what was saved stays confirmed, and the
-  // rest stays in the queue for another try or the card.
+  // One garment at a time, stopping at the first failure; the rest stays queued for a retry or the card.
   const confirmSure = useCallback(async () => {
     if (batchLock.current) return;
     batchLock.current = true;

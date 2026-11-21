@@ -4,22 +4,20 @@ import { androidRipple, pressedStyle, tapHaptic } from './feedback';
 import { colors, layout, radii } from './theme';
 
 const CHIP_HEIGHT = 36;
-// The visible chip stays mockup-sized (`.chip`); hitSlop tops the tap area up to the 44pt minimum.
+// The visible chip stays small; hitSlop tops the tap area up to the 44pt minimum.
 const VERTICAL_SLOP = (layout.minHitTarget - CHIP_HEIGHT) / 2;
 
 export type ChipOption<T extends string> = {
   value: T;
   label: string;
-  /** A color dot before the label (mockup 02's palette chips). */
+  /** A color dot before the label. */
   swatch?: string;
   disabled?: boolean;
 };
 
 /**
- * A wrap of pill chips (mockup 03 screen 4's `.chips`). `multiple` (default) toggles each value;
- * otherwise it behaves as a radio group where tapping the selected chip clears it. `tone="accent"`
- * is mockup 02 review's `.pick` (violet selection, bold labels); `stretch` gives every chip an equal
- * share of the row, as `.pick` does for its three choices.
+ * Pill chips. `multiple` (default) toggles each value; otherwise a radio group where tapping the
+ * selected chip clears it. `tone="accent"`: violet selection, bold labels; `stretch`: equal shares.
  */
 export function ChipGroup<T extends string>(props: {
   options: readonly ChipOption<T>[];

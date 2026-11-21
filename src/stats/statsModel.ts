@@ -1,5 +1,4 @@
-// Pure stats derivations for the Stats and Diary segments: everything here is computed from
-// garments and wears already in memory, with no I/O and no AI cost (design spec §3.6).
+// Pure Stats and Diary derivations from garments and wears in memory: no I/O, no AI cost.
 
 import { PALETTE_HEX, slotOf, type GarmentColor } from '../closet/catalog';
 import { COUNTED_COLORS, isActive } from '../closet/closetSelectors';
@@ -16,10 +15,7 @@ export function activeGarments(garments: readonly Garment[]): Garment[] {
   return garments.filter(isActive);
 }
 
-/**
- * Ties within a stat are broken by what the row shows: garments have no name, and a row reads
- * "category · first color", so two pieces of one category still sort by their shown color.
- */
+/** Ties break by what the row shows ("category · first color"), since garments have no name. */
 function sortKey(garment: Garment): string {
   return `${garment.category ?? ''}|${garment.colors[0] ?? ''}`;
 }
@@ -42,9 +38,8 @@ function streakFrom(daysWithWear: ReadonlySet<string>, today: string): number {
 }
 
 /**
- * The period's headline numbers. `wears` is every wear this user ever logged (unfiltered): the
- * period's `[from, to]` range (from `periodRange`) scopes `wornPct`, `outfits` and `avgScore`,
- * while the streak looks at the full history so it can count back past the period's start.
+ * `wears` is the full, unfiltered history: the period's range scopes `wornPct`, `outfits` and
+ * `avgScore`, while the streak counts back past the period's start.
  */
 export function kpis(garments: readonly Garment[], wears: readonly WearWithItems[], period: Period, today: string): Kpis {
   const { from, to } = periodRange(period, today);
@@ -97,10 +92,7 @@ export type ColorShare = { color: GarmentColor | 'other'; pct: number; hex: stri
 
 const OTHER_HEX = '#d4d0dc';
 
-/**
- * Rounds shares so they sum to 100 (the largest-remainder method): each share gets its floor,
- * then the leftover points go to the entries with the biggest fractional part, largest first.
- */
+/** Rounds shares to sum to 100 (largest remainder: floors, then leftovers to the biggest fractions). */
 function roundSharesTo100(counts: readonly number[], total: number): number[] {
   if (total === 0) {
     return counts.map(() => 0);

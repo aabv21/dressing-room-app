@@ -1,5 +1,4 @@
-// "I'll wear it" for Today and the rating screen: one wear at a time, logged now or queued offline,
-// and recorded in the shared worn-today record so both screens show "Logged ✓".
+// "I'll wear it" for Today and the rating: one wear at a time, logged or queued, then marked worn today.
 import { randomUUID } from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 

@@ -1,5 +1,4 @@
-// The last good year of wears, kept on the device so Stats and Diary stay readable offline (spec
-// §5.4: "stats and diary stay readable"). One record per user, replaced by every successful fetch.
+// The last good year of wears, so Stats and Diary stay readable offline. One record per user.
 import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { OCCASIONS } from '../closet/catalog';
 import { kvGetJson, kvSet } from '../lib/kv';
@@ -29,7 +28,6 @@ function isWear(value: unknown): value is WearWithItems {
   );
 }
 
-/** The stored record, or null when there is none or it doesn't parse. */
 export function readStoredWears(userId: string): StoredWears | null {
   const parsed = kvGetJson(storedWearsKey(userId), isRecord);
   if (
@@ -58,9 +56,8 @@ export function wearsInRange(stored: StoredWears, from: string, to: string): Wea
 }
 
 /**
- * Folds one fetched range (Diary's month) into the stored record: inside or touching the stored
- * range, its days replace the stored ones and the range grows to cover both; a disjoint range
- * replaces the record only when it is newer, and starts one when nothing is stored.
+ * Folds a fetched range (Diary's month) in: inside or touching the stored range, its days replace the
+ * stored ones and the range grows; a disjoint range replaces the record only when newer.
  */
 export function mergeStoredWears(userId: string, from: string, to: string, wears: readonly WearWithItems[]): void {
   const stored = readStoredWears(userId);

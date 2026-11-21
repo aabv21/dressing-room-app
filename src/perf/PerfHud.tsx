@@ -34,11 +34,9 @@ async function clearImageCaches(): Promise<boolean> {
 }
 
 /**
- * On-device perf readout for the performance gate build. Not part of the shipped UI: only rendered
- * when `EXPO_PUBLIC_PERF_FIXTURES_URL` is set, see `src/app/(tabs)/closet.tsx`.
- *
- * Tap resets the stats. Long-press also clears expo-image's memory and disk caches, so a cold
- * pass can be repeated without reinstalling (the disk cache survives reinstalls).
+ * The performance gate's readout, shown only with `EXPO_PUBLIC_PERF_FIXTURES_URL` set. Tap resets
+ * the stats; long-press also clears expo-image's memory and disk caches, so a cold pass repeats
+ * without a reinstall (the disk cache survives one).
  */
 export function PerfHud(props: { stats: FrameStats; onReset: () => void }): React.JSX.Element {
   const { stats, onReset } = props;

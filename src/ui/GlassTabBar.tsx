@@ -9,9 +9,8 @@ import { tapHaptic } from './feedback';
 import { TABS, useBottomChrome } from './layout';
 import { textScale } from './theme';
 
-// NOTE: expo-blur only blurs on iOS out of the box; Android needs the blurred content wrapped in a
-// BlurTargetView, which isn't wired yet. Until then Android gets a near-opaque frosted fill.
-// Upgrade path: wrap the tab navigator's scenes in BlurTargetView and pass it as `blurTarget`.
+// NOTE: expo-blur blurs only on iOS, so Android gets a near-opaque frosted fill; upgrade path: wrap the
+// tab navigator's scenes in a BlurTargetView and pass it as `blurTarget`.
 const blurAvailable = Platform.OS === 'ios';
 
 function Material(): React.JSX.Element {
@@ -37,19 +36,13 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
   const { tabBarBottom } = useBottomChrome();
 
   return (
-    // The drop shadow lives on this transparent, non-clipping wrapper: `capsule` must clip
-    // (`overflow: 'hidden'`) to round the glass, which would also clip its own shadow. `boxShadow`
-    // has CSS outset semantics (drawn only outside the box), so the wrapper needs no fill and the
-    // content behind the capsule stays visible through the glass.
+    // The shadow lives on this non-clipping wrapper because `capsule` clips to round the glass. An
+    // outset `boxShadow` draws only outside the box, so the wrapper needs no fill.
     <View style={[styles.shadowFrame, { bottom: tabBarBottom }]} pointerEvents="box-none">
       <View style={styles.capsule}>
         <Material />
-        {/* NOTE: the end color is white at 0 alpha, not the `transparent` keyword — that keyword
-            is transparent BLACK, which would make the gradient interpolate through visible grey.
-            start/end approximate mockup 01's `.tabs::before` `linear-gradient(115deg, ...)`: they
-            are (0.5 - sin(115deg)/2, 0.5 + cos(115deg)/2) and its mirror, but expo-linear-gradient
-            applies those fractions per axis, so on a non-square capsule the rendered angle differs
-            from 115deg. */}
+        {/* NOTE: white at 0 alpha, not `transparent` (transparent BLACK, a grey blend); start/end aim at 115deg,
+            but expo-linear-gradient applies them per axis, so a non-square capsule renders another angle. */}
         <LinearGradient
           colors={['rgba(255,255,255,0.65)', 'rgba(255,255,255,0)']}
           start={{ x: 0.047, y: 0.289 }}

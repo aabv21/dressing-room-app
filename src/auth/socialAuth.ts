@@ -6,12 +6,7 @@ import { toAuthErrorKey } from './errors';
 import { createNonce } from './nonce';
 import type { Client, Result } from './emailAuth';
 
-/**
- * Apple/Google sign-in. Kept out of `emailAuth.ts` because `expo-apple-authentication` and
- * `@react-native-google-signin/google-signin` depend on Expo/React Native's native module
- * registry and cannot be loaded under plain Node (only under jest-expo or a real app bundle) —
- * see `emailAuth.ts`'s module doc.
- */
+/** Kept out of `emailAuth.ts`: the Apple and Google SDKs need React Native's native modules, not plain Node. */
 export async function signInWithApple(client: Client = supabase): Promise<Result> {
   try {
     const { raw, hashed } = await createNonce();
@@ -50,10 +45,8 @@ function logAppleTokenOutcome(outcome: string): void {
 }
 
 /**
- * Hands the credential's one-time authorization code to the `apple-token` function, which exchanges
- * it for the Apple refresh token account deletion revokes (`signInWithIdToken` keeps none).
- * Fire-and-forget: sign-in never waits on it or fails because of it, and only the outcome word is
- * logged (in dev), never the code.
+ * `apple-token` exchanges the one-time code for the refresh token account deletion revokes
+ * (`signInWithIdToken` keeps none). Fire-and-forget; only the outcome word is logged (dev), never the code.
  */
 function sendAppleAuthorizationCode(client: Client, code: string): void {
   try {
@@ -77,15 +70,12 @@ function sendAppleAuthorizationCode(client: Client, code: string): void {
 
 let googleConfigured = false;
 
-// `.env.example`'s placeholder values. A repo clone that copies `.env.example` to `.env.local`
-// without editing it would otherwise "configure" Google sign-in with these literal strings instead
-// of failing loudly — treat them the same as an unset variable.
+// `.env.example`'s placeholders count as unset, so an unedited copy fails loudly instead of "configuring".
 const PLACEHOLDER_VALUES: ReadonlySet<string> = new Set([
   'replace-with-google-web-client-id',
   'replace-with-google-ios-client-id',
 ]);
 
-/** True for a usable, real client id: not `undefined`, not blank, not one of `.env.example`'s placeholders. */
 function isConfiguredClientId(value: string | undefined): value is string {
   if (value === undefined) {
     return false;
@@ -95,16 +85,9 @@ function isConfiguredClientId(value: string | undefined): value is string {
 }
 
 /**
- * Configures `GoogleSignin` on first use only (configuring repeatedly is unnecessary and the
- * library doesn't expect it). Returns `false` without configuring when either public client ID is
- * missing, blank, or still a placeholder — a setup problem (copy the ids from `.env.example` into
- * `.env.local`), not a per-attempt user error, so it's logged once via `console.warn`.
- *
- * OAuth client IDs are not secrets — they identify the app to Google, the way a
- * bundle id does, and are meant to ship in the client. `EXPO_PUBLIC_*` inlines these at build time
- * (see Expo's docs and AGENTS.md's Guardrails); Expo's static analysis requires literal member
- * expressions wherever they're read, which is why they're read directly here rather than through a
- * helper that takes the key name as a variable.
+ * Configures once, on first use; a missing id is a setup problem, warned in dev, not a user error.
+ * OAuth client ids aren't secrets. `EXPO_PUBLIC_*` is inlined at build time only for literal member
+ * expressions, so they're read directly rather than through a helper taking the key name.
  */
 function ensureGoogleConfigured(): boolean {
   if (googleConfigured) {
@@ -126,16 +109,8 @@ function ensureGoogleConfigured(): boolean {
 }
 
 /**
- * `@react-native-google-signin/google-signin` v17's free `signIn()` sends no nonce on Android, and
- * on iOS the native SDK injects its own hidden nonce that this library doesn't expose — so a
- * custom nonce here would mean the raw value this app generates never matches what's actually in
- * the ID token. GoTrue's OIDC verification (`token_oidc.go`) rejects the sign-in outright when
- * only one side carries a nonce or the hashes don't match, so passing one here made every Google
- * sign-in fail. Passing none is therefore correct for this library version, not a regression in
- * security: see docs/red-team.md's "Parked" on `skip_nonce_check`, which the hosted project sets to
- * make the server-side match. NOTE: ceiling — Google sign-in on this app has no replay protection
- * from a custom nonce today. Upgrade path: a library version that exposes iOS's nonce, or Universal
- * Sign In (this package's paid tier), either of which would let a matching nonce be passed again.
+ * No nonce: the library can't send a matching one, so GoTrue would reject every sign-in (docs/red-team.md#parked).
+ * NOTE: no nonce replay protection for Google; upgrade: a library version exposing iOS's nonce, or Universal Sign In.
  */
 export async function signInWithGoogle(client: Client = supabase): Promise<Result> {
   try {

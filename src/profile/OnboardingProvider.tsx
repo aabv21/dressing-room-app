@@ -15,9 +15,8 @@ interface OnboardingContextValue {
   reload: () => void;
   save: (patch: ProfilePatch) => Promise<Result>;
   /**
-   * Stamps onboarding as complete, then asks AuthProvider to re-read it so the guard moves on. If
-   * that re-read fails the user would be stuck on the last step with no feedback, so it reports
-   * `onboarding.error.continue` (pressing Start again is safe: completion is idempotent).
+   * Stamps completion, then has AuthProvider re-read it so the guard moves on. A failed re-read reports
+   * `onboarding.error.continue` instead of leaving the user stuck (Start again is safe: idempotent).
    */
   finish: () => Promise<{ ok: true } | { ok: false; error: MessageKey }>;
 }
@@ -25,14 +24,9 @@ interface OnboardingContextValue {
 const OnboardingContext = createContext<OnboardingContextValue | undefined>(undefined);
 
 /**
- * Holds the onboarding steps' view of the profile. Steps only render once a fresh `getProfile`
- * succeeded (`status === 'ready'`): that read is what prefills a relaunch mid-onboarding, and it
- * also keeps a finished profile from being overwritten — `AuthProvider` can report "onboarding
- * incomplete" when its own launch-time read fails (for an account it has never loaded on this
- * device), so a finished user can land here. Without a
- * successful re-read the steps would show defaults (height 165, no styles) and saving them would
- * overwrite real data, so a failed read shows a retry instead, and a profile that turns out to be
- * complete hands straight back to `AuthProvider` without rendering any step.
+ * Steps render only after a fresh `getProfile` succeeds: it prefills a relaunch, and a finished user
+ * can land here when AuthProvider's launch read failed, so defaults must never be saved over real
+ * data. A failed read offers a retry; a complete profile hands back to AuthProvider.
  */
 export function OnboardingProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const { userId, refreshProfile, replaceProfileLocal } = useAuth();
@@ -61,8 +55,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }): React
         return;
       }
       if (profile !== null && profile.onboarding_completed_at !== null) {
-        // Already finished: AuthProvider's flag was stale. Re-read it there; if that read fails
-        // too, fall back to the retry screen rather than a spinner with no way out.
+        // AuthProvider's flag was stale: re-read it there; if that fails too, show the retry screen.
         await refreshProfile();
         if (isCurrent()) {
           setStatus('error');

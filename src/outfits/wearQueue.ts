@@ -1,7 +1,5 @@
-// "I'll wear it" while offline (spec §5.4: "writes queue until the connection returns"): a wear the
-// network couldn't send waits in kv, keyed by user, and `WearQueueFlusher` sends it on the next
-// launch, foreground or reconnect. `log_wear` is idempotent per client wear id, so a wear that did
-// reach the server before its answer was lost is never logged twice.
+// "I'll wear it" offline (docs/app.md#outfits-srcoutfits). `log_wear` is idempotent per client wear id,
+// so a wear that reached the server before its answer was lost is never logged twice.
 import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { OCCASIONS } from '../closet/catalog';
 import { kvGetJson, kvSet } from '../lib/kv';
@@ -108,10 +106,7 @@ export type FlushResult = { sent: number; dropped: number; remaining: number };
 type FlushDeps = {
   /** `logWear`, passed in by `WearQueueFlusher` like the session check below. */
   send: (input: LogWearInput) => Promise<RequestResult>;
-  /**
-   * The stored session's user (`storedSessionUserId`); nothing is sent under another account's
-   * session.
-   */
+  /** The stored session's user (`storedSessionUserId`); nothing is sent under another account's session. */
   sessionUserId: () => string | null;
 };
 

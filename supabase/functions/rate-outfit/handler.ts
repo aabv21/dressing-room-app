@@ -1,12 +1,5 @@
-// The `rate-outfit` Edge Function's request handler: rates the outfit a signed-in user picked
-// (2–6 of their garments) with Jev, falls back to Claude when Jev fails, and suggests a swap for
-// the weakest piece when the score is low. Runtime-neutral: every effect goes through the
-// injected `fetch`, so Jest drives it under Node and `index.ts` serves it under Deno.
-//
-// Garments and the profile are read with the caller's own token (RLS applies, so a foreign id
-// looks deleted); the quota, the caches and the weather cache use the service role. Logs carry
-// only an outcome word, never garments, the profile, prompts or model output. See `docs/ai.md`'s
-// "Outfit rating".
+// Rates a picked outfit with Jev (Claude fallback) and suggests a swap: docs/ai.md#the-rate-outfit-function.
+// Logs carry only an outcome word, never garments, the profile, prompts or model output.
 
 import {
   MAX_OUTFIT_PIECES,
@@ -67,21 +60,14 @@ export type RatingResult = {
   noBetterSwap: boolean;
 };
 
-/**
- * What `rating_cache` stores: the result plus an internal marker, stripped before answering. A
- * degraded result (a Claude estimate, or a swap search that was skipped or failed) is served from
- * the cache for an hour only, so a better result is tried again soon (see `cacheGet`).
- */
+/** The result plus the internal `degraded` marker (a Claude estimate, or a skipped or failed swap search), stripped before answering. */
 type CachedRating = RatingResult & { degraded: boolean };
 
 type Outcome = 'cached' | 'rated' | 'fallback' | 'over_quota' | 'unavailable' | 'invalid' | 'error';
 
 export const RATING_DAILY_LIMIT = 50;
 export const MAX_SWAP_CANDIDATES = 8;
-/**
- * No swap rating starts once this long has passed since the request arrived, so the answer lands
- * inside the app's function deadline.
- */
+/** No swap rating starts this long after the request arrived, so the answer beats the app's deadline. */
 export const SWAP_BUDGET_MS = 15_000;
 const CACHE_VERSION = 2;
 
@@ -123,11 +109,7 @@ async function readInput(request: Request): Promise<RateInput | null> {
   return { garmentIds, occasion: knownOccasion ?? null, date };
 }
 
-/**
- * The cache key: each garment's fingerprint and status, the profile's rating-relevant fields
- * (`profileIdentity`, so a language toggle keeps the entry), the occasion, the season and the
- * weather bucket.
- */
+/** The cache key; `profileIdentity`, so a language toggle keeps the entry. */
 function cacheKey(outfit: readonly RuleGarment[], ctx: RatingContext): Promise<string> {
   const items = [...outfit]
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
@@ -154,12 +136,9 @@ const slotOfGarment = (garment: RuleGarment): Slot | null => (garment.category =
 const overBudget = (ctx: RatingContext): boolean => Date.now() - ctx.startedAt >= SWAP_BUDGET_MS;
 
 /**
- * The best swap for the piece in `weakestSlot`: the caller's other available garments in that
- * slot that pass the occasion/season/weather rules on their own (Jev judges the combination),
- * least recently worn first, capped at `MAX_SWAP_CANDIDATES`, each rated with Jev (never the
- * fallback). A swap is offered only when it beats `current` by `swapMinGain`. No candidate
- * rating starts after `SWAP_BUDGET_MS`; a search cut short that way still offers a qualifying swap
- * it already found, and otherwise is `UNKNOWN_SWAP`; either way the result is cached as degraded.
+ * The best swap for the weakest piece (docs/ai.md#swaps): Jev-rated only, offered when it beats
+ * `current` by `swapMinGain`. A search cut short by `SWAP_BUDGET_MS` offers a qualifying swap it
+ * already found, else `UNKNOWN_SWAP`; either way it's cached as degraded.
  */
 async function findSwap(
   ctx: RatingContext,
@@ -167,8 +146,7 @@ async function findSwap(
   weakestSlot: Slot,
   current: number,
 ): Promise<SwapOutcome> {
-  // NOTE: when the slot holds several pieces (two accessories) the first one is swapped; Jev
-  // names a slot, not a piece. Upgrade path: ask Jev to name the piece by index.
+  // NOTE: Jev names a slot, not a piece, so a two-accessory slot swaps the first; upgrade: ask Jev for an index.
   const from = outfit.find((garment) => slotOfGarment(garment) === weakestSlot);
   if (from === undefined) return { swap: null, noBetterSwap: false, degraded: false };
   if (overBudget(ctx)) return UNKNOWN_SWAP;
@@ -205,7 +183,6 @@ async function findSwap(
     const rating = await jevRating(ctx.env, ctx.fetch, stateFor(ctx, variant), ctx.rand);
     return rating === null ? null : { toId: candidate.id, score: rating.score };
   });
-  // A search the budget cut short still offers a qualifying swap it already found (cached as degraded).
   const skipped = rated.includes('skipped');
   const scored = rated.filter((entry) => entry !== null && entry !== 'skipped');
   // Every candidate's rating failed: nothing is known about them, so don't claim none is better.
@@ -248,10 +225,7 @@ function withoutMarker(cached: unknown): unknown {
   return Object.fromEntries(Object.entries(cached).filter(([field]) => field !== 'degraded'));
 }
 
-/**
- * A cached swap points at a garment that may have been deleted or put away since: re-read it
- * with the caller's token and drop the swap (without rewriting the cache) unless it's available.
- */
+/** A cached swap's garment may be gone or put away since: re-read it and drop the swap (cache untouched) unless available. */
 async function recheckSwap(ctx: RatingContext, cached: unknown): Promise<unknown> {
   if (!isRecord(cached) || !isRecord(cached.swap)) return cached;
   const { toId } = cached.swap;

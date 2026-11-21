@@ -1,18 +1,5 @@
-// The `for-you` Edge Function's request handler: 3–5 "what you're missing" ideas for a signed-in
-// user. The archetypes the user doesn't own are ranked by how many new outfits each makes with
-// the wardrobe, every garment that isn't donated (`rankByGain`); up to 10 of them, spread over
-// the slots (`fitCandidates`), get a Jev fit for the user's body and styles; `finalRank` keeps
-// the best gain × fit, at most 2 per slot; then one Claude request writes every idea's line, with
-// a template key the app renders when a line is missing.
-// Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node
-// and `index.ts` serves it under Deno.
-//
-// Garments and the profile are read with the caller's own token (RLS applies); the quota and
-// `for_you_cache` use the service role. Each new entry replaces the user's older ones, so the cache
-// holds one entry per user. Once the daily quota is spent, a miss answers `stale` with the newest
-// entry still worth showing (`staleAnswer`) and 429 only when there's none. Logs carry only an
-// outcome word, never garments, the profile, ideas, prompts or model output. See `docs/ai.md`'s
-// "For you".
+// 3–5 "what you're missing" ideas: docs/ai.md#the-for-you-function. Logs carry only an outcome
+// word, never garments, the profile, ideas, prompts or model output.
 
 import {
   type ClothingType,
@@ -65,7 +52,6 @@ import {
 
 type Outcome = 'cached' | 'stale' | 'too_small' | 'ranked' | 'degraded' | 'empty' | 'over_quota' | 'invalid' | 'error';
 
-/** `reply`, limited to this function's outcome words. */
 const reply = (outcome: Outcome, status: number, body: unknown): Response => replyWith(outcome, status, body);
 
 export type ForYouEnv = SupabaseEnv & JevEnv & ClaudeEnv & GeocodingEnv;
@@ -74,7 +60,6 @@ export type ForYouDeps = { env: ForYouEnv; fetch: typeof fetch; now?: () => numb
 
 /** One idea card. `line` is Claude's; when it's null the app renders `lineKey` with `lineParams`. */
 export type ForYouCard = {
-  /** The archetype id. */
   id: string;
   category: GarmentCategory;
   colors: GarmentColor[];
@@ -91,27 +76,17 @@ export type ForYouResponse = { kind: 'too_small' } | { kind: 'ok'; ideas: ForYou
 
 type OkResponse = Extract<ForYouResponse, { kind: 'ok' }>;
 
-/**
- * What `for_you_cache` stores: the response plus an internal marker, stripped before answering. A
- * degraded answer (a failed or skipped Jev fit, or a template line where Claude's is missing) is
- * served from the cache for an hour only, so a better answer is tried again soon (see `cacheFresh`).
- */
+/** The response plus the internal `degraded` marker (a failed or skipped fit, or a template line), stripped before answering. */
 type CachedForYou = OkResponse & { degraded: boolean };
 
 export const FOR_YOU_DAILY_LIMIT = 1;
-/** An entry older than this is a miss, so the ideas follow the season and the user's taste at least weekly. */
+/** An older entry is a miss, so the ideas follow the user's taste at least weekly. */
 export const FOR_YOU_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 /** Fewer wardrobe garments (categorized, not donated) than this answer `too_small`, with no quota or model call. */
 export const MIN_GARMENTS = 3;
-/**
- * No Jev fit call starts once this long has passed since the request arrived (as lucky-list's), so
- * the slow calls can't push the answer past the app's deadline.
- */
+/** No Jev fit call starts this long after the request arrived (as lucky-list's). */
 export const FIT_BUDGET_MS = 15_000;
-/**
- * The Claude lines call must finish this long after the request arrived: its timeout is what's left,
- * at most `CLAUDE_TIMEOUT_MS`, so the answer lands well inside the app's 45 s function deadline.
- */
+/** The lines call's timeout is what's left of this (at most `CLAUDE_TIMEOUT_MS`), inside the app's 45 s deadline. */
 export const LINES_DEADLINE_MS = 38_000;
 /** With no more than this left before `LINES_DEADLINE_MS`, Claude is skipped and every idea gets its template. */
 export const MIN_LINES_TIMEOUT_MS = 2_000;
@@ -131,23 +106,14 @@ async function readInput(request: Request): Promise<{ language: Language; date: 
 
 const byId = (a: RuleGarment, b: RuleGarment): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-/**
- * For you looks at the wardrobe, not at today: a garment in the laundry or lent out is still the
- * user's, so it owns its archetype and combines in the gain like an available one, and a laundry
- * toggle doesn't spend the daily quota. Only a donated garment is out.
- */
+/** The wardrobe, not today: laundry and lent garments count as available; only donated ones are out (docs/ai.md#gain). */
 function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
   return garments
     .filter((g) => g.status !== 'donated')
     .map((g) => (g.status === 'available' ? g : { ...g, status: 'available' }));
 }
 
-/**
- * The cache key: the language, the season, `profileIdentity` (clothing type, body and styles)
- * and the `garmentFingerprint` of the wardrobe's categorized garments, without `status` (the
- * laundry and lending don't change For you). `pinned_on` is the lucky list's business and stays
- * out. The season is in the key so the ideas don't stay a season behind for up to a week.
- */
+/** The cache key (docs/ai.md#the-for-you-function, step 3); the season keeps ideas from lagging a week behind. */
 function cacheKey(
   wardrobe: readonly RuleGarment[],
   profile: ProfileRow | null,
@@ -211,11 +177,7 @@ type FitContext = {
   now: () => number;
 };
 
-/**
- * The candidates with their Jev fit (at most `MAX_CONCURRENT_JEV` calls at once): null when the call
- * failed, its answer didn't parse, or it never started because `FIT_BUDGET_MS` had passed.
- * `finalRank` ranks a null fit at the floor, so the idea keeps its gain.
- */
+/** Null fit when the call failed, didn't parse, or never started (`FIT_BUDGET_MS`); `finalRank` floors it. */
 function fitAll(ctx: FitContext, candidates: readonly ForYouIdea[]): Promise<(ForYouIdea & { fit: number | null })[]> {
   return mapLimit(candidates, MAX_CONCURRENT_JEV, async (idea) => {
     if (ctx.now() - ctx.startedAt >= FIT_BUDGET_MS) return { ...idea, fit: null };
@@ -223,10 +185,7 @@ function fitAll(ctx: FitContext, candidates: readonly ForYouIdea[]): Promise<(Fo
   });
 }
 
-/**
- * Every idea's Claude line by archetype id; empty when the request failed, timed out or nothing
- * parsed, or when `timeoutMs` is too short to be worth a call (`MIN_LINES_TIMEOUT_MS`).
- */
+/** Lines by archetype id; empty on failure, timeout, nothing parsed, or a `timeoutMs` below `MIN_LINES_TIMEOUT_MS`. */
 async function writeLines(
   env: ClaudeEnv,
   fetchFn: typeof fetch,
@@ -262,13 +221,9 @@ function withoutMarker(result: CachedForYou): OkResponse {
 }
 
 /**
- * What a spent quota answers instead of a 429: the expired entry for this same closet if there is
- * one (with one miss a day, the retry it was expired for has to wait anyway); otherwise the user's
- * newest entry under any key (an older closet, profile, season or language), minus the ideas the
- * wardrobe now owns. Null when nothing is left to show.
- * NOTE: an entry from another key may carry the other language's lines and store words, or counts
- * from an older closet, until the next day's quota. Upgrade path: store the language with the
- * entry and re-render its template lines.
+ * A spent quota's answer instead of a 429: this key's expired entry, else the user's newest under
+ * any key minus ideas the wardrobe now owns; null when nothing is left.
+ * NOTE: another key's entry may show old counts or language until tomorrow; upgrade: store its language, re-render lines.
  */
 async function staleAnswer(
   deps: { env: SupabaseEnv; fetch: typeof fetch },
@@ -313,8 +268,7 @@ export async function handleForYou(request: Request, deps: ForYouDeps): Promise<
     const [garments, profile] = await Promise.all([loadGarments(env, fetchFn, auth), loadProfile(env, fetchFn, auth)]);
 
     const wardrobe = wardrobeOf(garments);
-    // A garment still being read (no category yet) can't combine, so it doesn't count; one in the
-    // laundry or lent out does (the wardrobe view above).
+    // An uncategorized garment (still being read) can't combine.
     if (wardrobe.filter((g) => g.category !== null).length < MIN_GARMENTS) {
       return reply('too_small', 200, { kind: 'too_small' } satisfies ForYouResponse);
     }

@@ -83,7 +83,7 @@ export function AnchoredCta(props: {
   primary: CtaAction;
   secondary?: CtaAction;
   chrome?: ScreenChrome;
-  /** The screen under the zone: `dark` fades to near-black (the camera), as in mockup 02. */
+  /** The screen under the zone: `dark` fades to near-black (the camera). */
   surface?: 'light' | 'dark';
   /** Shown just above the buttons, inside the anchored zone, so it's always on screen (e.g. a save error). */
   notice?: React.ReactNode;
@@ -93,13 +93,10 @@ export function AnchoredCta(props: {
 
   return (
     <View style={[styles.zone, { bottom: ctaBottom }]} pointerEvents="box-none">
-      {/* NOTE: 'rgba(235,227,255,0)', not the `transparent` keyword — `transparent` is
-          transparent BLACK, which would make this interpolate through visible grey. Solid from
-          45% down, as in the mockups' `linear-gradient(to top, #ebe3ff 55%, transparent)`, so
-          content scrolling under the buttons doesn't show through them. */}
+      {/* NOTE: 0-alpha colors, not `transparent` (transparent BLACK, a grey blend); solid from 45% down
+          (dark: 40%) so content scrolling under the buttons doesn't show through. */}
       <LinearGradient
         colors={surface === 'dark' ? ['rgba(14,13,18,0)', '#0e0d12'] : ['rgba(235,227,255,0)', '#ebe3ff']}
-        // Mockup 02's dark zone is solid from 60% down, the light one from 55%.
         locations={surface === 'dark' ? [0, 0.4] : [0, 0.45]}
         testID="cta-fade"
         style={StyleSheet.absoluteFill}

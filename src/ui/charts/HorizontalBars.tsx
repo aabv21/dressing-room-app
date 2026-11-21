@@ -14,7 +14,7 @@ const GROW_DURATION_MS = 450;
 const LABEL_WIDTH = 92;
 const VALUE_WIDTH = 28;
 const BAR_HEIGHT = 9;
-// The visible track is mockup-thin (9pt); hitSlop tops the row's tap area up to the 44pt minimum.
+// The visible track is thin (9pt); hitSlop tops the row's tap area up to the 44pt minimum.
 const ROW_HEIGHT = 32;
 const VERTICAL_SLOP = (layout.minHitTarget - ROW_HEIGHT) / 2;
 
@@ -24,11 +24,8 @@ function Bar({ id, pct, color, stacked }: { id: string; pct: number; color: stri
   const reducedMotion = useReducedMotion();
   const width = useSharedValue(reducedMotion ? pct : 0);
 
-  // `width` is a shared value: mutating `.value` runs on the UI thread and never triggers a
-  // React re-render, so the growing width has to be read inside a worklet (`useAnimatedStyle`)
-  // rather than baked into a plain style object read once at mount. No deps array: reanimated
-  // ignores it on native and warns. Declared before the effect below so it subscribes to `width`
-  // before anything has a chance to write to it.
+  // A shared value never re-renders React, so the width is read in a worklet. No deps array (reanimated
+  // ignores it on native and warns); declared before the effect so it subscribes before any write.
   const fillStyle = useAnimatedStyle(() => ({ width: `${String(width.value)}%` }));
 
   useEffect(() => {
@@ -37,8 +34,7 @@ function Bar({ id, pct, color, stacked }: { id: string; pct: number; color: stri
       return;
     }
     width.value = withTiming(pct, { duration: GROW_DURATION_MS });
-    // Re-run only when the target percentage changes; `width` and `reducedMotion` are stable
-    // across the component's lifetime for a given row.
+    // Only `pct` changes; `width` and `reducedMotion` are stable for a row's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pct]);
 
@@ -50,15 +46,9 @@ function Bar({ id, pct, color, stacked }: { id: string; pct: number; color: stri
 }
 
 /**
- * Mockup 04's "Lo que más usas" bars: one accent hue, a thin track growing in on mount (skipped
- * under reduced motion), label left / value right. With `onSelect` each row is a button and the
- * selected one shows `detail` beneath it (the mockup's floating tip, flattened to an inline line
- * for touch); without it the rows are read-only (mockup 04's "Balance del clóset").
- * `valueWidth` widens the value column for spelled-out values ("21 wears").
- *
- * The text is never capped. Up to `LARGE_TEXT_FONT_SCALE` the label and value columns grow with it
- * (every row shares the same widths); above it a row stacks its label and value over a full-width
- * bar, the label wrapping as far as it needs.
+ * Bars that grow in on mount (not under reduced motion). With `onSelect` rows are buttons and the
+ * selected one shows `detail` inline; without it they're read-only. Text is never capped: columns grow
+ * up to `LARGE_TEXT_FONT_SCALE`, above it a row stacks label and value over a full-width bar.
  */
 export function HorizontalBars(props: {
   rows: readonly HorizontalBarRow[];

@@ -57,10 +57,9 @@ function saveDeviceLanguage(userId: string, preference: LocalePreference): void 
 type LocaleControl = { preference: LocalePreference; setPreference: (next: LocalePreference) => void };
 
 /**
- * After a successful profile read: a saved `profile.language` becomes this device's preference
- * (once per sign-in, so later re-reads never override a newer local choice); with none saved, an
- * explicit device choice (e.g. Welcome's toggle) is saved to the profile. A choice that failed to
- * save earlier (offline) is newer than the server's value, so it is retried instead of replaced.
+ * A saved `profile.language` becomes the device's preference once per sign-in (so a re-read never
+ * overrides a newer local choice); with none saved, an explicit device choice is saved. A choice that
+ * failed to save offline is newer than the server's, so it is retried instead of replaced.
  */
 function syncLanguage(
   userId: string,
@@ -95,14 +94,11 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [profile, setProfile] = useState<ProfilePatch | null>(null);
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>('loading');
-  // Guards against a slow `getProfile` resolving after the user has signed out or switched
-  // accounts, which would otherwise overwrite state with a stale profile.
+  // Drops a slow `getProfile` that resolves after a sign-out or an account switch.
   const currentUserIdRef = useRef<string | null>(null);
-  // True while the session comes from storage alone (see the INITIAL_SESSION branch below) and
-  // supabase-js hasn't yet confirmed it with a refreshed token.
+  // True while the session comes from storage alone (INITIAL_SESSION below), not yet refreshed.
   const unconfirmedSessionRef = useRef(false);
-  // The language preference lives on the device (I18nProvider) and in `profile.language`. They are
-  // reconciled once per sign-in; refs because the auth listener below is subscribed once.
+  // Device and profile languages are reconciled once per sign-in; refs since the listener subscribes once.
   const locale = useLocalePreference();
   const localeRef = useRef<LocaleControl>(locale);
   useEffect(() => {
@@ -119,9 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     } catch {
       row = undefined;
     }
-    // The signup trigger creates every account's row, so finding none while the session is still
-    // unconfirmed means the request went out without a valid token (RLS hid the row), not that
-    // onboarding is incomplete: it counts as a failed read.
+    // Every account has a row (signup trigger), so none under an unconfirmed session means RLS hid it
+    // for lack of a valid token: a failed read, not unfinished onboarding.
     const loaded = row !== undefined && !(row === null && unconfirmedSessionRef.current);
     if (currentUserIdRef.current !== nextUserId) {
       return false;
@@ -135,9 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setProfile(row ?? {});
       setProfileStatus('ready');
     } else {
-      // A failed read (e.g. offline) must not leave the app stuck on a loading screen, nor send a
-      // finished user back into onboarding: fall back to this account's last known status on this
-      // device, or false for an account never loaded here.
+      // A failed read (e.g. offline) must neither stall on loading nor send a finished user back to
+      // onboarding: use this device's last known status for the account.
       onboarding = cachedOnboarding(nextUserId) ?? false;
       // A failed re-read keeps the profile already shown.
       setProfileStatus((previous) => (previous === 'ready' ? previous : 'error'));
@@ -152,10 +146,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       let nextUserId = session?.user.id ?? null;
       let nextEmail = session?.user.email ?? null;
-      // Offline launch: when an expired access token can't be refreshed for lack of network,
-      // supabase-js reports INITIAL_SESSION as null but keeps the session stored and keeps retrying
-      // the refresh. Its user stays signed in meanwhile; a later TOKEN_REFRESHED confirms the
-      // session, and a rejected refresh token removes it and emits SIGNED_OUT.
+      // Offline launch: with an expired token supabase-js reports INITIAL_SESSION as null but keeps the
+      // session and retries; the user stays signed in until TOKEN_REFRESHED or SIGNED_OUT.
       const restored = nextUserId === null && event === 'INITIAL_SESSION' ? readStoredSession() : null;
       if (restored !== null) {
         nextUserId = restored.userId;
@@ -163,9 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       }
 
       if (nextUserId === null) {
-        // An account whose deletion was under way when its session ended (supabase-js signs out
-        // by itself once the account is gone) leaves no kv data on the device. Best effort: a
-        // storage error must never keep the app from reaching the signed-out state.
+        // A session that ended mid-deletion (supabase-js signs out once the account is gone) leaves
+        // no kv data. Best effort: a storage error must never block the signed-out state.
         try {
           forgetInterruptedDeletions(null);
         } catch {
@@ -185,9 +176,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         return;
       }
 
-      // A password-recovery session is not a normal sign-in: the reset screen (and its error
-      // state) must stay mounted, so status stays 'signedOut' until the user actually finishes
-      // (USER_UPDATED) or a real SIGNED_IN follows.
+      // A recovery session isn't a sign-in: the reset screen must stay mounted, so status stays
+      // 'signedOut' until USER_UPDATED or a real SIGNED_IN.
       if (event === 'PASSWORD_RECOVERY') {
         return;
       }
@@ -198,8 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
       setUserId(nextUserId);
       setEmail(nextEmail);
       if (userChanged) {
-        // A session for this account means it still exists: an earlier cleanup of an interrupted
-        // deletion stops refusing its kv writes.
+        // A session proves the account still exists, so its kv writes are allowed again.
         allowUserKeys(nextUserId);
         forgetOtherAccounts(nextUserId);
         try {
@@ -207,15 +196,13 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         } catch {
           // Best effort, as on sign-out: retried at the next sign-out or sign-in.
         }
-        // Clear any previous user's onboarding flag immediately, so a slow `loadProfile` for the
-        // new user can't leave the old user's value on screen in the meantime.
+        // Clear the previous user's state now so a slow `loadProfile` can't leave it on screen.
         setOnboardingComplete(false);
         setProfile(null);
         setProfileStatus('loading');
         setStatus('loading');
       }
-      // A token refresh changes nothing in the profile; it still loads one that never loaded (an
-      // offline launch settling once the network is back).
+      // A refresh skips the read, unless the profile never loaded (an offline launch reconnecting).
       if (event === 'TOKEN_REFRESHED' && !userChanged && profileLoadedForRef.current === nextUserId) {
         return;
       }

@@ -1,11 +1,5 @@
-// Outfit rating with TypeSafe's Jev (System One): the request (8 Score dimensions, 2 hard-failure
-// Nouls and a shuffled "weakest piece" Choice), the answer parser, the composite score and the
-// template reasons the app renders.
-//
-// Runtime-neutral (only the other `_shared` modules imported, nothing Deno- or
-// Node-only) so Jest exercises it under Node and the Edge Functions run it under Deno. The state
-// carries buckets and enum values only — never exact measurements. See `docs/ai.md`'s
-// "Outfit rating" for the levels verbatim, the weights and the bands.
+// Outfit rating with Jev: request, parser, composite score and template reasons
+// (docs/ai.md#outfit-rating). The state carries buckets and enum values only, never measurements.
 
 import {
   type AgeGroup,
@@ -268,11 +262,7 @@ export function weakestPieceOptions(outfit: readonly RatingPiece[]): (Slot | typ
   return [...new Set(outfit.map((piece) => piece.slot)), NO_WEAK_PIECE];
 }
 
-/**
- * The System One request body for one outfit. The weakest-piece options are shuffled with `rand`
- * on every request, since a Choice has a position bias; the option order is the key order of
- * `criteria`.
- */
+/** The weakest-piece options are shuffled with `rand` every request (a Choice has a position bias; key order is option order). */
 export function buildJevRequest(
   state: RatingState,
   rand: () => number,
@@ -314,10 +304,8 @@ export function slotFromAnswer(value: unknown): Slot | null | undefined {
 }
 
 /**
- * Maps a System One response body to normalized dimension scores (score ÷ (levels − 1), 0..1),
- * the hard-failure flags (each Noul above the threshold, and their OR) and the weakest slot.
- * Never throws; null when any answer is missing, of the wrong type or out of range by more than
- * a 1e-9 rounding tolerance (values within it are clamped).
+ * Normalized dimension scores (0..1), hard-failure flags and the weakest slot. Never throws; null
+ * when any answer is missing, mistyped or out of range beyond the rounding tolerance (else clamped).
  */
 export function parseJevAnswers(body: unknown, levels: Record<RatingDimension, number>): RatingAnswers | null {
   if (!isRecord(body) || !isRecord(body.answers)) return null;
@@ -351,7 +339,7 @@ export function parseJevAnswers(body: unknown, levels: Record<RatingDimension, n
   return withHardFailures(Object.fromEntries(dims) as DimensionScores, failures, weakestSlot);
 }
 
-/** Assembles `RatingAnswers` from per-Noul flags, deriving `hardFailure` as their OR. */
+/** `hardFailure` is the OR of the per-Noul flags. */
 export function withHardFailures(
   dims: DimensionScores,
   failures: readonly (readonly [HardFailure, boolean])[],
@@ -363,12 +351,7 @@ export function withHardFailures(
 
 const NEUTRAL_WEATHER_FIT = 0.5;
 
-/**
- * With no weather (no city, or one that can't be geocoded), the rating is neutral on weather
- * whatever the rater answered: `weather_fit` becomes the middle level (0.5, keeping the rater's
- * confidence in it) and `unsafe_for_weather` no longer caps the score. Known weather passes
- * through unchanged. Never mutates `answers`.
- */
+/** With no weather, neutral on weather (docs/ai.md#unknown-weather); known weather passes through. Never mutates. */
 export function neutralizeUnknownWeather(answers: RatingAnswers, weather: WeatherSummary | null): RatingAnswers {
   if (weather !== null) return answers;
   const dims: DimensionScores = {
@@ -393,10 +376,8 @@ export function labelOf(score: number, bands: RatingBands = RATING_CONFIG.bands)
 }
 
 /**
- * `score = round(100 · Σ wᵢ · normalizedᵢ)`, capped when a hard failure fired; the confidence is the
- * weighted mean (or, with `confidenceAggregate: 'min'`, the minimum) of the per-dimension
- * confidences, on 0..100. `config` defaults to `RATING_CONFIG`; the calibration script passes
- * candidate weights and bands.
+ * `score = round(100 · Σ wᵢ · normalizedᵢ)`, capped on a hard failure; confidence per
+ * `confidenceAggregate`, 0..100. The calibration script passes candidate weights and bands.
  */
 export function composeRating(
   dims: DimensionScores,
@@ -426,15 +407,7 @@ const MIN_REASONS = 2;
 const MAX_REASONS = 3;
 const MAX_REASON_COLORS = 3;
 
-/**
- * The template reasons, 2–3 of them (spec §3.5). First the two strongest dimensions at or above 0.6
- * (`good`) and the weakest below 0.5 (`warn`); then, while there are fewer than 2: the weakest as
- * `warn` if none is picked yet and it is below 0.6, the strongest unused one at 0.5 or above as
- * `good`, the next weakest as `warn`. Scores are compared at 3 decimals, so float noise can't flip a
- * tie, and ties keep `RATING_DIMENSIONS` order. color_harmony's good reason gets `params.colors`: the
- * outfit's first 3 distinct color enum values, comma-separated, in outfit order; the app localizes
- * each through `garment.color.*` before interpolating.
- */
+/** The 2–3 template reasons; the picking order: docs/ai.md#reasons. */
 export function pickReasons(dims: DimensionScores, outfitColors: readonly GarmentColor[]): RatingReason[] {
   const order = (dimension: RatingDimension): number => RATING_DIMENSIONS.indexOf(dimension);
   const scored = (Object.entries(dims) as [RatingDimension, { normalized: number }][]).map(

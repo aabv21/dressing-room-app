@@ -19,11 +19,7 @@ export const TABS: readonly { route: TabRoute; labelKey: MessageKey; icon: Lucid
 
 export type ScreenChrome = 'tabs' | 'none';
 
-/**
- * `chrome: 'none'` is for screens with no tab bar (auth, onboarding — mockup 03): their CTA is
- * anchored at the bottom with its button at `insets.bottom + 22`. `chrome: 'tabs'` (default) keeps
- * the existing tab-bar-aware offsets.
- */
+/** `chrome: 'none'` (no tab bar: auth, onboarding) puts the CTA button at `insets.bottom + 22`. */
 export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
   tabBarBottom: number;
   ctaBottom: number;
@@ -31,13 +27,8 @@ export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
 } {
   const insets = useSafeAreaInsets();
   if (chrome === 'none') {
-    // AnchoredCta's `zone` is `position: 'absolute', bottom: ctaBottom` with no explicit height,
-    // so its own bottom edge sits exactly `ctaBottom` above the screen bottom; the zone then adds
-    // `paddingBottom: ctaZoneBottomPadding` *inside* that, pushing the button row up by that much
-    // further — so the button's own rendered bottom edge ends up at `ctaBottom +
-    // ctaZoneBottomPadding`, not `ctaBottom` itself (subtracting instead would land the button
-    // about twice as high as intended). Solving for the target
-    // (`insets.bottom + 22`) means `ctaBottom` here must be that much *lower*.
+    // The zone sits at `bottom: ctaBottom` and pads `ctaZoneBottomPadding` inside, so the button's
+    // bottom edge is at `ctaBottom + ctaZoneBottomPadding`; hitting `insets.bottom + 22` means subtracting it.
     const ctaBottom = insets.bottom + 22 - layout.ctaZoneBottomPadding;
     return { tabBarBottom: ctaBottom, ctaBottom, contentPaddingBottom: ctaZoneTop(ctaBottom) };
   }
@@ -46,22 +37,18 @@ export function useBottomChrome(chrome: ScreenChrome = 'tabs'): {
   return { tabBarBottom, ctaBottom, contentPaddingBottom: ctaZoneTop(ctaBottom) };
 }
 
-/**
- * The top of AnchoredCta's zone, where its fade starts: content padded down to it ends above the
- * fade, so the last row (Build's grid, a long form) is never left under the buttons' backdrop.
- */
+/** Where the CTA fade starts: content padded to it never leaves its last row under the backdrop. */
 function ctaZoneTop(ctaBottom: number): number {
   return ctaBottom + layout.ctaZoneBottomPadding + layout.ctaHeight + layout.ctaZoneTopPadding;
 }
 
 /**
- * The system text scale (iOS Dynamic Type, Android font scale) above which side-by-side layouts
- * stack or take a full row, so their content text can keep growing without breaking mid-word. It
- * sits between iOS's largest standard size (about 1.35x) and its first accessibility size.
+ * The system text scale above which side-by-side layouts stack or take a full row, so text keeps
+ * growing without breaking mid-word. Between iOS's largest standard size (~1.35x) and its first
+ * accessibility size.
  */
 export const LARGE_TEXT_FONT_SCALE = 1.5;
 
-/** Whether the system text scale is above `LARGE_TEXT_FONT_SCALE`. */
 export function useLargeText(): boolean {
   return useWindowDimensions().fontScale > LARGE_TEXT_FONT_SCALE;
 }

@@ -1,6 +1,5 @@
 /** @jest-environment node */
 // scripts/__tests__/db-start.test.ts
-/* eslint-disable security/detect-non-literal-fs-filename -- every path is under this test's own mkdtemp folder. */
 import { createPrivateKey } from 'node:crypto';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

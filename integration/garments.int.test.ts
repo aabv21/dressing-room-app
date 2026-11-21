@@ -14,7 +14,6 @@ loadIntegrationEnv();
 
 const PASSWORD = 'Password123!';
 // A fixed path next to this file, never user input.
-// eslint-disable-next-line security/detect-non-literal-fs-filename
 const PHOTO = readFileSync(new URL('fixtures/garment.webp', import.meta.url));
 
 let userAId: string;

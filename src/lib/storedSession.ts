@@ -4,10 +4,9 @@ import { parseJson } from './kv';
 export type StoredSession = { userId: string; email: string | null };
 
 /**
- * Reads the session supabase-js persisted (its `sb-<ref>-auth-token` entry) without asking the
- * server. Only the user id and email are trusted from it, and only while it still holds a refresh
- * token: with one, supabase-js keeps retrying the refresh, and a rejected token removes the entry
- * and emits SIGNED_OUT.
+ * The session supabase-js persisted (`sb-<ref>-auth-token`), read without the server. Only its user
+ * id and email are trusted, and only while it holds a refresh token: supabase-js keeps retrying
+ * that refresh, and a rejected token removes the entry and emits SIGNED_OUT.
  */
 export function parseStoredSession(raw: string | null): StoredSession | null {
   const parsed = parseJson(raw, isRecord);

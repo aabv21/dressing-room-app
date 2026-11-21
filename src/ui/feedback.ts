@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 
 import { colors } from './theme';
 
-/** A light impact for commit actions, a selection tick for choices. Fire-and-forget: a device without haptics just stays still. */
+/** A light impact for commits, a selection tick for choices; fire-and-forget, silent without haptics. */
 export function tapHaptic(kind: 'selection' | 'commit'): void {
   try {
     const done = kind === 'commit' ? Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light) : Haptics.selectionAsync();

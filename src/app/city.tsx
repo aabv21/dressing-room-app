@@ -62,7 +62,7 @@ export default function CityScreen(): React.JSX.Element {
   const [message, setMessage] = useState<{ key: MessageKey; error: boolean } | undefined>(undefined);
   // Locks a second Save tap before the re-render that disables the button lands.
   const busy = useRef(false);
-  // Counts the user's own edits: a location lookup that resolves after they typed doesn't overwrite it.
+  // The user's edits: a slow location lookup must not overwrite what they typed.
   const edits = useRef(0);
   const mounted = useRef(true);
 

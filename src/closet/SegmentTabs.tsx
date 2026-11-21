@@ -5,12 +5,12 @@ import { colors, layout, radii, textScale } from '../ui/theme';
 
 const SEGMENT_HEIGHT = 34;
 const PADDING = 3;
-// The pill stays mockup-thin; hitSlop tops each segment up to the 44 pt minimum.
+// The pill stays thin; hitSlop tops each segment up to the 44 pt minimum.
 const VERTICAL_SLOP = (layout.minHitTarget - SEGMENT_HEIGHT) / 2;
 
 export type SegmentOption<T extends string> = { value: T; label: string };
 
-/** Mockup 04's `.seg`: a pill segmented control (Items | Stats | Diary), one tab per option. */
+/** A pill segmented control (Items | Stats | Diary), one tab per option. */
 export function SegmentTabs<T extends string>(props: {
   options: readonly SegmentOption<T>[];
   value: T;

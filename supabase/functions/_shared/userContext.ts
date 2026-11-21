@@ -1,11 +1,5 @@
-// What the user-called functions share: the caller's profile and garments (read with the caller's
-// own token, so RLS applies), today's weather (cached per location and UTC hour), the daily quota,
-// the result caches (service role), the Jev and Claude calls with their timeouts, and a
-// concurrency-limited map. The account functions use only the PostgREST helpers.
-//
-// Runtime-neutral: every effect goes through the injected `fetch`, and only web-standard globals
-// (`crypto.subtle`, `TextEncoder`) are used, so Jest drives it under Node and the Edge Functions
-// run it under Deno.
+// Shared by the user-called functions: profile and garments (caller's token, so RLS applies),
+// weather (cached per location and UTC hour), quota, result caches (service role), model calls.
 
 import {
   AGE_GROUPS,
@@ -57,7 +51,7 @@ export const CLAUDE_TIMEOUT_MS = 20_000;
 export const WEATHER_TIMEOUT_MS = 5_000;
 /** Every PostgREST call; the database answers in milliseconds, so this only bounds a hung connection. */
 export const POSTGREST_TIMEOUT_MS = 8_000;
-/** At most this many Jev requests at once per function invocation. */
+/** Per function invocation. */
 export const MAX_CONCURRENT_JEV = 5;
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -68,7 +62,6 @@ export function isIsoDate(value: unknown): value is string {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-/** A PostgREST or RPC call answered with something other than success. */
 export class UpstreamError extends Error {}
 
 // --- PostgREST ---------------------------------------------------------------------------------
@@ -83,10 +76,7 @@ export function serviceHeaders(env: Pick<ServiceEnv, 'serviceRoleKey'>): Record<
   return { apikey: env.serviceRoleKey, authorization: `Bearer ${env.serviceRoleKey}` };
 }
 
-/**
- * One call's JSON answer, the call bounded by `timeoutMs` (by default `POSTGREST_TIMEOUT_MS`, so a
- * hung database connection can't hold a function to its wall clock); throws on a non-2xx answer.
- */
+/** One call's JSON answer, bounded by `timeoutMs` (a hung connection can't hold the function); throws on non-2xx. */
 export async function restJson(fetchFn: FetchFn, url: string, init: RequestInit, timeoutMs = POSTGREST_TIMEOUT_MS): Promise<unknown> {
   const response = await fetchWithDeadline(fetchFn, url, init, timeoutMs);
   if (!response.ok) throw new UpstreamError(`HTTP ${String(response.status)}`);
@@ -99,7 +89,7 @@ export async function restRows(fetchFn: FetchFn, url: string, headers: Record<st
   return rows as unknown[];
 }
 
-/** POST with `Prefer: resolution=merge-duplicates`: an insert that updates the row on a primary-key conflict. */
+/** An insert that updates the row on a primary-key conflict. */
 export async function upsert(
   env: ServiceEnv,
   fetchFn: FetchFn,
@@ -154,9 +144,8 @@ export type ProfileRow = {
 export const PROFILE_COLUMNS = 'clothing_type,body_type,height_cm,age_group,styles,city_name,city_lat,city_lon,updated_at';
 
 /**
- * The profile fields an outfit result depends on, for the cache keys. `updated_at` would move with
- * any profile save (a language toggle included) and throw away cached results that still hold,
- * whose recompute spends quota; the city's name only labels the weather, so it's left out too.
+ * The profile fields an outfit result depends on, for the cache keys: not `updated_at` (a language
+ * toggle would throw away results and spend quota) nor the city name (it only labels the weather).
  */
 export function profileIdentity(profile: ProfileRow | null): string {
   if (profile === null) return 'null';
@@ -187,7 +176,7 @@ export function profileFrom(row: Record<string, unknown>): ProfileRow {
   };
 }
 
-/** The caller's profile, read with the caller's token; null when the row doesn't exist. */
+/** Null when the row doesn't exist. */
 export async function loadProfile(env: SupabaseEnv, fetchFn: FetchFn, auth: string): Promise<ProfileRow | null> {
   const userId = userIdFromJwt(auth);
   if (userId === null) return null;
@@ -230,10 +219,7 @@ export function garmentFrom(row: unknown): RuleGarment {
   };
 }
 
-/**
- * The caller's garments (only `ids` when given), read with the caller's token: RLS hides other
- * users' garments, so a foreign or deleted id is simply absent from the result.
- */
+/** The caller's garments (only `ids` when given); RLS drops a foreign or deleted id silently. */
 export async function loadGarments(
   env: SupabaseEnv,
   fetchFn: FetchFn,
@@ -303,7 +289,7 @@ async function readWeatherCache(
   }
 }
 
-/** A JSON body with a timeout; null on a non-2xx answer, a network error or the timeout. */
+/** Null on a non-2xx answer, a network error or the timeout. */
 async function fetchJson(fetchFn: FetchFn, url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
   try {
     const response = await fetchWithDeadline(fetchFn, url, init, timeoutMs);
@@ -314,13 +300,6 @@ async function fetchJson(fetchFn: FetchFn, url: string, init: RequestInit, timeo
   }
 }
 
-/**
- * Today's weather at the profile's city plus the latitude the season's hemisphere comes from
- * (the profile's, else the geocoded one; null when unknown). Reads `weather_cache` for the
- * current UTC hour first; on a miss it geocodes a city without coordinates, fetches the forecast
- * and upserts the cache (best effort: a failed write still returns the weather). No city, a
- * city that can't be geocoded, or any Open-Meteo failure gives `weather: null`, never a throw.
- */
 /** A typed city's latitude from Open-Meteo's geocoding, or null when it can't be found or the call fails. */
 export async function geocodedLatitude(env: GeocodingEnv, fetchFn: FetchFn, cityName: string): Promise<number | null> {
   try {
@@ -331,6 +310,11 @@ export async function geocodedLatitude(env: GeocodingEnv, fetchFn: FetchFn, city
   }
 }
 
+/**
+ * Today's weather plus the season's latitude (the profile's, else geocoded), via `weather_cache`
+ * for the UTC hour (a failed cache write still returns the weather). No city, no geocode or any
+ * Open-Meteo failure gives `weather: null`, never a throw.
+ */
 export async function getLocalWeather(
   env: ServiceEnv & WeatherEnv,
   fetchFn: FetchFn,
@@ -381,12 +365,9 @@ export async function getLocalWeather(
 // --- Quota and result caches -------------------------------------------------------------------
 
 /**
- * `public.consume_quota` for the user on `day`, the app's local calendar day (the database falls
- * back to the UTC day when it is more than a day off, or when there is none); throws when the RPC
- * itself fails.
- * NOTE: two identical requests that both miss the cache at once both spend quota and both call the
- * model (a double tap the app's busy locks already prevent). Upgrade path: an advisory lock on the
- * cache key around the miss.
+ * `public.consume_quota` on `day`, the app's local day (the database falls back to the UTC day when
+ * it's over a day off or absent); throws when the RPC fails. The app's busy locks stop double taps.
+ * NOTE: concurrent identical misses both spend quota and call the model; upgrade: an advisory lock on the cache key.
  */
 export async function consumeQuota(
   env: ServiceEnv,
@@ -406,7 +387,7 @@ export async function consumeQuota(
 
 export type ResultCache = 'rating_cache' | 'lucky_cache' | 'for_you_cache';
 
-/** How long a result marked `degraded: true` (a fallback, a skipped or failed step) is served from the cache. */
+/** How long a `degraded: true` result (a fallback, a skipped or failed step) is served from the cache. */
 export const DEGRADED_TTL_MS = 60 * 60 * 1000;
 
 /** A stored cache row: the result as stored (marker included) and its `created_at` in ms, null when unreadable. */
@@ -453,11 +434,7 @@ export function cacheReadNewest(
   );
 }
 
-/**
- * True when a row still counts as a hit: no older than `maxAgeMs`, and no older than
- * `DEGRADED_TTL_MS` when its result is marked `degraded: true`. A row of unknown age is fresh only
- * when neither limit applies to it.
- */
+/** A hit: within `maxAgeMs`, and `DEGRADED_TTL_MS` when degraded; an unknown age is fresh only with neither limit. */
 export function cacheFresh(row: CacheRow, now: number, maxAgeMs: number = Number.POSITIVE_INFINITY): boolean {
   const degraded = isRecord(row.result) && row.result.degraded === true;
   const limit = Math.min(maxAgeMs, degraded ? DEGRADED_TTL_MS : Number.POSITIVE_INFINITY);
@@ -466,10 +443,8 @@ export function cacheFresh(row: CacheRow, now: number, maxAgeMs: number = Number
 }
 
 /**
- * The cached `result`, or null on a miss or any error (a failed read just recomputes). A result
- * marked `degraded: true` counts as a miss once it is older than `DEGRADED_TTL_MS` (or its age is
- * unknown), so a better answer is tried again; any other result never expires. The marker is
- * returned as stored; callers strip it before answering.
+ * The cached `result`, or null on a miss or any error (a failed read just recomputes). A degraded
+ * result expires after `DEGRADED_TTL_MS` (or of unknown age); others never do. Callers strip the marker.
  */
 export async function cacheGet(env: ServiceEnv, fetchFn: FetchFn, table: ResultCache, userId: string, key: string): Promise<unknown> {
   const row = await cacheRead(env, fetchFn, table, userId, key);
@@ -477,9 +452,8 @@ export async function cacheGet(env: ServiceEnv, fetchFn: FetchFn, table: ResultC
 }
 
 /**
- * Upserts a cached result; false (never a throw) when the write fails. `created_at` is written
- * explicitly: a merge-duplicates upsert only updates the columns sent, so a recomputed entry
- * would otherwise keep its old age and a degraded one would never be served.
+ * False (never a throw) when the write fails. `created_at` is sent explicitly: a merge-duplicates
+ * upsert only updates the columns sent, so a recomputed entry would keep its old age.
  */
 export function cachePut(
   env: ServiceEnv,
@@ -540,10 +514,7 @@ export function runJev(env: JevEnv, fetchFn: FetchFn, request: unknown): Promise
   );
 }
 
-/**
- * The Messages API response body, or null on a non-2xx answer, a network error or `timeoutMs`
- * (default 20 s) passing.
- */
+/** The Messages API response body, or null on a non-2xx answer, a network error or `timeoutMs` passing. */
 export function runClaude(
   env: ClaudeEnv,
   fetchFn: FetchFn,
@@ -581,9 +552,8 @@ export async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (t:
 // --- Rating ------------------------------------------------------------------------------------
 
 /**
- * The `RatingState` for an outfit, picking each field explicitly: a profile row (or a garment
- * row) carrying more columns than these never leaks them to a model. Pieces without a category
- * are skipped; callers reject such outfits first.
+ * The `RatingState`, picking each field explicitly so extra profile or garment columns never reach
+ * a model. Pieces without a category are skipped; callers reject such outfits first.
  */
 export function ratingState(
   profile: ProfileRow | null,

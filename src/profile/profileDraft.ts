@@ -10,17 +10,13 @@ export type Style = Database['public']['Enums']['style'];
 export type Occasion = Database['public']['Enums']['occasion'];
 
 /**
- * The editable form state behind `ProfileForm`'s sections, shared by onboarding and Profile.
- * Measurements and sizes stay raw text (what the user typed, e.g. `'abc'` or `'  M '`) until
+ * `ProfileForm`'s state. Measurements and sizes stay raw text (e.g. `'abc'` or `'  M '`) until
  * `draftToPatch` validates them, so a failed save never rewrites the fields.
  */
 export type ProfileDraft = {
   clothingType: ClothingType | null;
   bodyType: BodyType | null;
-  /**
-   * The body type the last clothing-type switch cleared, so switching back restores it; form state
-   * only, never saved.
-   */
+  /** The body type the last clothing-type switch cleared, restored on switching back; never saved. */
   clearedBodyType?: BodyType | null;
   /** `null` until a height is saved or the slider moves; the slider shows `defaultHeightFor`. */
   heightCm: number | null;
@@ -56,8 +52,7 @@ export function draftFromProfile(profile: ProfilePatch): ProfileDraft {
   const lon = profile.city_lon ?? null;
   return {
     clothingType,
-    // A body type outside the clothing type's silhouette set (possible only through older data)
-    // would be invisible in the grid, so it is treated as unselected.
+    // A body type outside the clothing type's set (older data only) would be invisible in the grid.
     bodyType: bodyType !== null && silhouettesFor(clothingType ?? 'everything').includes(bodyType) ? bodyType : null,
     heightCm: profile.height_cm ?? null,
     chestCm: toText(profile.chest_cm),
@@ -75,9 +70,8 @@ export function draftFromProfile(profile: ProfilePatch): ProfileDraft {
 }
 
 /**
- * The change a new clothing type makes: a selected silhouette the new type doesn't offer is
- * cleared, so it is saved as null instead of lingering as a hidden, mismatched value, and
- * remembered, so switching back (a mis-tap) restores it unless another one was picked meanwhile.
+ * A silhouette the new clothing type doesn't offer is cleared (saved as null, not a hidden mismatch)
+ * and remembered, so switching back after a mis-tap restores it unless another was picked meanwhile.
  */
 export function withClothingType(draft: ProfileDraft, clothingType: ClothingType): Partial<ProfileDraft> {
   const offered = silhouettesFor(clothingType);
@@ -116,10 +110,7 @@ function unique<T>(values: readonly T[]): T[] {
 
 export type CityPatch = Required<Pick<ProfilePatch, 'city_name' | 'city_lat' | 'city_lon'>>;
 
-/**
- * The city columns: the name is trimmed and an empty one clears the name and coordinates. Callers
- * pass `coords` only with the name they were geocoded to; a typed name comes with `null`.
- */
+/** An empty name clears the coordinates too. Pass `coords` only with the name they were geocoded to. */
 export function cityToPatch(name: string, coords: ProfileDraft['cityCoords']): CityPatch {
   const cityName = name.trim();
   const kept = cityName === '' ? null : coords;
@@ -135,7 +126,6 @@ export function styleToPatch(draft: ProfileDraft): ProfilePatch {
   };
 }
 
-/** Validates the draft and maps it to every editable column. */
 export function draftToPatch(draft: ProfileDraft): DraftValidation {
   const body = bodyToPatch(draft);
   if (!body.ok) {
@@ -152,8 +142,8 @@ function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /**
- * The subset of `next` whose values differ from `saved` (a column absent from `saved` is null). The
- * coordinates are one value split over two columns, so a change to either sends both.
+ * The subset of `next` that differs from `saved` (an absent column is null). The coordinates are one
+ * value over two columns, so a change to either sends both.
  */
 export function changedFields(saved: ProfilePatch, next: ProfilePatch): ProfilePatch {
   const savedValues = new Map<string, unknown>(Object.entries(saved));

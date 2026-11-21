@@ -1,5 +1,4 @@
-// The wears of a day range for Stats and Diary: fetched while enabled, kept on the device, and
-// served from the stored copy when the fetch fails, so both stay readable offline.
+// A day range's wears for Stats and Diary, served from the stored copy when the fetch fails.
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
@@ -12,9 +11,8 @@ export type WearsOptions = {
   /** Fetches on enable, on a new range and after `reload`; Stats and Diary pass their focus. */
   enabled: boolean;
   /**
-   * `replace`: the range is the whole stored record (Stats' year), shown whole when offline.
-   * `merge`: the range is folded into it up to today (Diary's month), and shown offline only when
-   * the record covers the range's start.
+   * `replace`: the range is the whole record (Stats' year). `merge`: folded in up to today (Diary's
+   * month), shown offline only when the record covers the range's start.
    */
   record: 'replace' | 'merge';
 };

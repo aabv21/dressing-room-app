@@ -1,6 +1,5 @@
-// Today (mockup 01 screen 1): the day's weather, an optional occasion, and the "feeling lucky"
-// outfit with "Another" and "I'll wear it". The weather line opens the city modal; the card's
-// "How does it look?" chip opens the rating.
+// Today: the weather (opens the city modal), an optional occasion, and the day's outfit with
+// "Another", "I'll wear it" and "How does it look?" (the rating).
 import { router } from 'expo-router';
 import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
 import { useMemo } from 'react';
@@ -27,10 +26,7 @@ const WEATHER_LINE_HEIGHT = 18;
 // The weather line is one short text row; the slop tops its tap area up to the 44 pt minimum.
 const WEATHER_SLOP = (layout.minHitTarget - WEATHER_LINE_HEIGHT) / 2;
 
-/**
- * The weather line under the title, which opens the city modal: the day's weather; with none, why
- * (a city that gave no weather) or a prompt to add one; nothing while it's unknown.
- */
+/** The day's weather; with none, why (a city with no weather) or a prompt to add one. */
 function WeatherLine({
   weekday,
   text,
@@ -42,7 +38,7 @@ function WeatherLine({
 }): React.JSX.Element {
   const { t } = useI18n();
   if (text === null) {
-    // The day alone while the weather is unknown (mockup 01 screen 1 always names it).
+    // The day alone while the weather is unknown: the line always names it.
     return (
       <View style={styles.weatherLine}>
         <Text style={styles.weatherText}>{weekday}</Text>
@@ -64,10 +60,7 @@ function WeatherLine({
   );
 }
 
-/**
- * The profile's city name (null when there's none), `undefined` while the profile loads. A failed
- * read counts as no city, so the line still offers to set one.
- */
+/** Null for no city, `undefined` while loading. A failed read counts as no city, so the line offers one. */
 function useProfileCity(): string | null | undefined {
   const { profile, profileStatus } = useAuth();
   if (profileStatus === 'loading') return undefined;
@@ -117,7 +110,7 @@ function LoadingCard(): React.JSX.Element {
   );
 }
 
-/** A small line above the card when the list shown is the last one, because the fetch couldn't connect. */
+/** Shown when the list is an earlier one because the fetch couldn't connect. */
 function OfflineNote(): React.JSX.Element {
   const { t } = useI18n();
   return (
@@ -195,8 +188,7 @@ export default function TodayScreen(): React.JSX.Element {
       },
     };
   } else if (outfit === undefined && lucky.refetchError !== null) {
-    // Every listed outfit was hidden (a piece went to the laundry) and the refetch failed: the list
-    // isn't really empty, so say why and offer to try again.
+    // Every outfit was hidden (a piece went to the laundry) and the refetch failed: say why, offer a retry.
     const error = lucky.refetchError;
     body = <Message>{t(`today.error.${error}`)}</Message>;
     if (error !== 'over_quota') {

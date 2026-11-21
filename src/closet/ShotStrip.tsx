@@ -11,10 +11,8 @@ const OVERLAP = -10;
 const VISIBLE_SHOTS = 5;
 
 /**
- * Mockup 02 screen 2's `.strip`: the most recent shots as overlapping 34 pt squares, newest on top
- * (CSS flow stacks later siblings above earlier ones; `zIndex` recreates that under RN's own
- * paint order). Only the last 5 are kept on screen — older shots still count toward the total, just
- * not shown — since the strip has no scroll affordance in the mockup.
+ * The latest shots as overlapping 34 pt squares, newest on top (`zIndex`, against RN's paint order).
+ * Only the last 5 show, since the strip doesn't scroll; older shots still count toward the total.
  */
 export function ShotStrip({ uris, onRemoveLast }: { uris: readonly string[]; onRemoveLast?: () => void }): React.JSX.Element {
   const { t } = useI18n();
@@ -30,8 +28,7 @@ export function ShotStrip({ uris, onRemoveLast }: { uris: readonly string[]; onR
       importantForAccessibility="no-hide-descendants"
     >
       {visible.map((uri, offset) => {
-        // Keyed by the shot's position in the full list (not the URI, which the same photo could
-        // repeat, and not the on-screen offset, which shifts every shot left as new ones arrive).
+        // The position in the full list: a URI can repeat, and the on-screen offset shifts as shots arrive.
         const shotIndex = firstVisibleIndex + offset;
         return (
           <View

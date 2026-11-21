@@ -1,7 +1,5 @@
-// Build (mockup 01 screen 2): pick an outfit piece by piece. Slot rows show what's chosen; the active
-// row's available garments fill the grid, filtered by category chips; "How does it look?" opens the
-// rating once the outfit is complete. The selection lives in this tab's state, so it stays while
-// the tab is mounted.
+// Build: pick an outfit piece by piece (slot rows, the active row's garments in a grid), then "How
+// does it look?". The selection lives in this tab's state, so it stays while the tab is mounted.
 import { router } from 'expo-router';
 import { Sparkles } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
@@ -100,14 +98,12 @@ export default function BuildScreen(): React.JSX.Element {
   const usable = useMemo(() => new Set(byId.keys()), [byId]);
   // A piece deleted or sent to the laundry elsewhere leaves the outfit.
   const selection = useMemo(() => retainSelection(picked, usable), [picked, usable]);
-  // A piece that left (the laundry, lent, deleted) leaves the picks too, so it isn't picked again
-  // behind the user's back when it comes back. Adjusted while rendering, when the closet changes.
+  // A piece that left also leaves the picks, so it isn't re-picked behind the user's back on return.
   const [prunedFor, setPrunedFor] = useState(usable);
   if (prunedFor !== usable) {
     setPrunedFor(usable);
     setPicked(retainSelection(picked, usable));
   }
-  // The chosen garments, in slot order.
   const chosen = useMemo(() => selectionIds(selection).flatMap((id) => byId.get(id) ?? []), [selection, byId]);
   const selectedIds = useMemo(() => new Set(chosen.map((item) => item.id)), [chosen]);
 
@@ -251,7 +247,7 @@ const styles = StyleSheet.create({
   rows: {
     gap: 6,
   },
-  // Mockup 01's `.slot`, at least 44 pt tall to be tapped.
+  // At least 44 pt tall to be tapped.
   slot: {
     minHeight: layout.minHitTarget,
     flexDirection: 'row',
@@ -271,7 +267,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 2,
   },
-  // `.slot.empty`: no fill, a dashed outline.
   slotEmpty: {
     backgroundColor: 'transparent',
     borderStyle: 'dashed',

@@ -3,11 +3,7 @@ import type { StyleProp, TextStyle } from 'react-native';
 
 import { layout } from './theme';
 
-/**
- * A text link with a guaranteed 44pt tap target — plain `Text` with `onPress` doesn't accept
- * `hitSlop` in this RN version's types (and visually its hit area is just the glyph bounds), so
- * every tappable auth-screen link goes through this `Pressable` wrapper instead.
- */
+/** A text link with a 44pt tap target: `Text` doesn't take `hitSlop` in this RN version's types. */
 export function LinkText(props: {
   children: string;
   onPress: () => void;

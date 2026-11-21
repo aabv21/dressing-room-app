@@ -1,6 +1,4 @@
-// The Closet tab's Stats segment (mockup 04 screens 1–2, spec §3.6): period chips, four KPI
-// tiles, most worn, colors, closet balance and the unused-for-6-months list. Everything is
-// computed on the device from the closet and the wear history; nothing here costs AI.
+// The Closet tab's Stats segment, computed on the device from the closet and the wear history; no AI cost.
 import { Image } from 'expo-image';
 import { router, useIsFocused } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -174,10 +172,7 @@ function UnusedRow({
   );
 }
 
-/**
- * The Stats segment's body, rendered under the Closet title and segment tabs. A color tap hands
- * `onColorSelect` the colors to filter Items by ("Other" stands for every color not shown).
- */
+/** A color tap hands `onColorSelect` the colors to filter Items by ("Other": every color not shown). */
 export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorFilter) => void }): React.JSX.Element {
   const { t, locale } = useI18n();
   const { garments, thumbUrls, replaceLocal } = useCloset();

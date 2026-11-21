@@ -1,5 +1,4 @@
-// For you's ideas: `for-you`'s answer in the app's language, with the last good one kept on the
-// device (`storedForYou.ts`), so the tab is readable offline and once the day's quota is spent.
+// For you's ideas in the app's language, with the last good answer kept on the device (`storedForYou.ts`).
 import { useIsFocused } from 'expo-router';
 import { useCallback } from 'react';
 
@@ -21,15 +20,13 @@ export type ForYouIdeas = {
   error: AiError | null;
   /** The latest fetch failed with this, and the ideas shown are the last good ones. */
   failed: AiError | null;
-  /** Fetches again after an error. */
   reload: () => void;
 };
 
 /**
- * Fetches the ideas when the tab is focused (so a closet change made elsewhere is picked up on
- * return), when the language changes, and after `reload`, one request at a time: a second
- * concurrent call would spend the day's single For you quota twice and get a 429. The function's
- * cache makes these refetches cheap. Until this session has an answer, the stored one is shown.
+ * Fetches on focus (picking up closet changes), on a language change and on `reload`, one request at a
+ * time: a concurrent call would spend the day's single quota twice and get a 429. The cache makes
+ * refetches cheap.
  */
 export function useForYou(): ForYouIdeas {
   const { userId } = useAuth();

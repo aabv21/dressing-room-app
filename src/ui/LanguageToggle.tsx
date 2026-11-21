@@ -10,10 +10,8 @@ const SEGMENTS: readonly Locale[] = ['es', 'en'];
 const MIN_HIT_TARGET = layout.minHitTarget;
 
 /**
- * A two-segment ES/EN control (mockup 03, top right). Choosing a language sets an explicit
- * preference via `useLocalePreference`, overriding the device-locale default until the user picks
- * again (there's no "follow system" segment here; Profile pairs it with a "Use device language"
- * option). `onChange` fires only when the preference actually changes, e.g. so Profile can save it.
+ * ES/EN: sets an explicit preference over the device locale (Profile adds "Use device language").
+ * `onChange` fires only when the preference actually changes, e.g. so Profile can save it.
  */
 export function LanguageToggle(props: { onChange?: (locale: Locale) => void } = {}): React.JSX.Element {
   const { onChange } = props;

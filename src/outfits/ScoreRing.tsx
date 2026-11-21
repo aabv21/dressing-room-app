@@ -1,5 +1,4 @@
-// Mockup 01 screen 3's `.ring`: the score as an arc stroked in the ai gradient over a light track,
-// with the percentage and the label in the middle.
+// The score as an arc in the ai gradient over a light track, with the percentage and label inside.
 import { ActivityIndicator, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 
@@ -55,10 +54,8 @@ function AiGradient(): React.JSX.Element {
 }
 
 /**
- * The score (0–100) as a progress ring, drawn at its final value (it never animates). The ring and
- * its number are one accessible progressbar named "Score", whose value carries the score, so a
- * screen reader says it once; the caption under the number (the label, e.g. "Looks good") sits
- * outside it, so it's read as its own text instead of being lost inside the progressbar.
+ * Drawn at its final value (never animated). Ring and number are one progressbar named "Score", read
+ * once; the caption (e.g. "Looks good") sits outside it so it's read as its own text.
  */
 export function ScoreRing({ score, caption }: { score: number; caption: string }): React.JSX.Element {
   const { t } = useI18n();
@@ -88,7 +85,7 @@ export function ScoreRing({ score, caption }: { score: number; caption: string }
               strokeLinecap="round"
               strokeDasharray={`${String(g.circumference)} ${String(g.circumference)}`}
               strokeDashoffset={g.circumference * (1 - value / 100)}
-              // Starts the arc at 12 o'clock, like the mockup's conic gradient.
+              // Starts the arc at 12 o'clock.
               transform={`rotate(-90 ${String(g.center)} ${String(g.center)})`}
               fill="none"
             />

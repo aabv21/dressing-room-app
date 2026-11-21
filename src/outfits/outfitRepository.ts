@@ -1,7 +1,3 @@
-// The outfit data layer's writes: logging a wear (idempotent per client-generated `wearId`, so a
-// retried request never logs it twice) and saving a built outfit. Both go through `rpc`, with
-// errors mapped through `requestResult.ts` the same way `garmentRepository.ts`'s writes are.
-
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Occasion } from '../closet/catalog';
@@ -12,8 +8,7 @@ import { supabase } from '../lib/supabase';
 type Client = SupabaseClient<Database>;
 
 export type LogWearInput = {
-  /** Generated once per tap with expo-crypto's `randomUUID` and reused on retry, so a lost
-   * response can't double-log the wear (`log_wear` is idempotent per `p_wear_id`). */
+  /** Generated once per tap and reused on retry: `log_wear` is idempotent per `p_wear_id`. */
   wearId: string;
   garmentIds: readonly string[];
   wornOn: string;
@@ -22,13 +17,12 @@ export type LogWearInput = {
 };
 
 /**
- * `log_wear`'s own refusals (a garment that isn't the caller's own, or gone; too few garments):
- * retrying the same wear can't succeed. Matched by the function's message, since its 42501 would
- * otherwise read like a missing session's "permission denied", which a retry can fix.
+ * `log_wear`'s own refusals (a garment not the caller's or gone; too few garments) can't succeed on
+ * retry. Matched by message: its 42501 would otherwise read like a missing session's, which can.
  */
 const isLogWearRefusal = (error: { message?: string }): boolean => error.message?.startsWith('log_wear') === true;
 
-/** Logs a wear of `input.garmentIds` on `input.wornOn`; retrying with the same `wearId` is safe. */
+/** Retrying with the same `wearId` is safe. */
 export function logWear(input: LogWearInput, client: Client = supabase): Promise<RequestResult> {
   return runRequest(
     () =>
@@ -44,7 +38,6 @@ export function logWear(input: LogWearInput, client: Client = supabase): Promise
   );
 }
 
-/** Saves the picked garments as a reusable outfit. */
 export function saveOutfit(garmentIds: readonly string[], client: Client = supabase): Promise<RequestResult> {
   return runRequest(() => client.rpc('save_outfit', { p_garment_ids: [...garmentIds] }));
 }

@@ -1,6 +1,5 @@
-// Sends the "I'll wear it"s queued offline (`wearQueue.ts`) on mount, on returning to the
-// foreground and when the network comes back, the same triggers `ClosetProvider` refreshes on;
-// once any was sent, the closet refreshes so the wear counts move. Renders nothing.
+// Flushes the offline wear queue on mount, foreground and reconnect (`ClosetProvider`'s triggers);
+// once any was sent, the closet refreshes so the wear counts move.
 import { useCallback, useEffect } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';

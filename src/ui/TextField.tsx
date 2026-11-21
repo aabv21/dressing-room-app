@@ -12,15 +12,9 @@ type TextFieldProps = {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
-  /**
-   * The input's placeholder text. Defaults to `label` so existing callers that only pass a label
-   * keep working, but mockup 03 screen 1's fields show no separate bold label above them — only a
-   * placeholder (e.g. "correo@ejemplo.com") — so callers matching that mockup pass both `label`
-   * (for the hidden accessibility label) and a distinct `placeholder`, and set `showLabel={false}`.
-   */
+  /** Defaults to `label`; a placeholder-only field passes its own with `showLabel={false}`. */
   placeholder?: string;
-  /** Whether to render `label` visibly above the field. Default true; false shows it as a
-   * placeholder-only field (mockup 03) while keeping it as the accessibility label. */
+  /** False hides `label`, which stays the accessibility label. */
   showLabel?: boolean;
   secureTextEntry?: boolean;
   keyboardType?: KeyboardTypeOptions;
@@ -30,9 +24,7 @@ type TextFieldProps = {
   returnKeyType?: TextInputProps['returnKeyType'];
   onSubmitEditing?: () => void;
   onBlur?: () => void;
-  /** 'submit' keeps focus in this field after `onSubmitEditing` fires (focus-chaining fields
-   * call this, then move focus themselves); default (unset) is the platform's normal
-   * blur-and-submit behavior. Replaces the deprecated `blurOnSubmit` prop. */
+  /** 'submit' keeps focus after `onSubmitEditing` (focus-chaining fields move it themselves). */
   submitBehavior?: TextInputProps['submitBehavior'];
   error?: string | undefined;
   /** Help shown under the field (e.g. a password rule) until there is an error to show instead. */
@@ -40,14 +32,12 @@ type TextFieldProps = {
   testID?: string;
   /** Default 'none' (emails, codes); free-text fields such as a city name pass 'words'. */
   autoCapitalize?: TextInputProps['autoCapitalize'];
-  /** Rendered inside the field's frame, before / after the input (e.g. a pin icon, a "use my
-   * location" action). The frame then wraps all three, so the field still reads as one box. */
+  /** Inside the field's frame, before / after the input, so the field still reads as one box. */
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
 };
 
-/** `ref` forwards to the underlying `TextInput` so a screen can chain focus between fields
- * (email → password → submit) with `onSubmitEditing`/`ref.current?.focus()`. */
+/** `ref` forwards to the `TextInput` so a screen can chain focus between fields. */
 export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function TextField(props, ref) {
   const {
     label,
@@ -72,8 +62,7 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
     trailing,
   } = props;
   const { t } = useI18n();
-  // Secure fields start masked; a visibility toggle reveals the typed value without changing
-  // `secureTextEntry`'s default, matching the mockup's password field.
+  // Secure fields start masked; the visibility toggle reveals the typed value.
   const [revealed, setRevealed] = useState(false);
   const isPassword = secureTextEntry;
   const framed = leading !== undefined || trailing !== undefined;
