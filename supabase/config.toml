@@ -200,7 +200,7 @@ password_requirements = ""
 [auth.rate_limit]
 # NOTE: `requestPasswordReset` reports `over_email_send_rate_limit` as success (a code was already
 # sent), but GoTrue returns that same code when this project-wide hourly email cap is reached, so
-# a user past the cap is told a code is on its way when none is. The integration session must set
+# a user past the cap is told a code is on its way when none is. The owner runbook sets
 # this (and the hosted SMTP sending limits) generously for the family's real usage.
 # Number of emails that can be sent per hour. Requires auth.email.smtp to be enabled.
 email_sent = 2
@@ -331,8 +331,8 @@ max_frequency = "5s"
 # Use an external OAuth provider. The full list of providers are: `apple`, `azure`, `bitbucket`,
 # `discord`, `facebook`, `github`, `gitlab`, `google`, `keycloak`, `linkedin_oidc`, `notion`, `twitch`,
 # `twitter`, `x`, `slack`, `spotify`, `workos`, `zoom`.
-# Disabled locally: ID-token sign-in is unit-tested with mocks here. The integration session
-# enables this with real client IDs once the owner has registered the app with Apple/Google.
+# Disabled locally: ID-token sign-in is unit-tested with mocks here. The hosted project enables
+# it with real client IDs (docs/owner-runbook.md).
 [auth.external.apple]
 enabled = false
 client_id = ""
@@ -348,8 +348,8 @@ skip_nonce_check = false
 # If enabled, it will allow the user to successfully authenticate when the provider does not return an email address.
 email_optional = false
 
-# Disabled locally: ID-token sign-in is unit-tested with mocks here. The integration session
-# enables this with real client IDs once the owner has registered the app with Apple/Google.
+# Disabled locally: ID-token sign-in is unit-tested with mocks here. The hosted project enables
+# it with real client IDs (docs/owner-runbook.md).
 [auth.external.google]
 enabled = false
 client_id = ""

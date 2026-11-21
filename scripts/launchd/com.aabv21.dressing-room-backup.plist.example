@@ -3,7 +3,7 @@
 <!--
   The nightly hosted backup (scripts/backup.ts). Copy to
   ~/Library/LaunchAgents/com.aabv21.dressing-room-backup.plist, replace every /ABSOLUTE/PATH
-  placeholder, and load it as docs/database.md's "Hosted backups" describes. The secrets stay in
+  placeholder, and load it as docs/owner-runbook.md's "7. Backups" describes. The secrets stay in
   the env file (chmod 600), never in this plist.
 -->
 <plist version="1.0">

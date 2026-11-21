@@ -153,5 +153,5 @@ as final.
   after trying these, **stop**. Record the final result in the table above and bring the owner the
   native SwiftUI + Jetpack Compose alternative (spec §5.1) before building anything further.
 
-**Deferred to the integration session:** the same protocol on a family Android phone, if
+**Deferred to the owner runbook's live checks:** the same protocol on a family Android phone, if
 one is available, using `pnpm expo run:android --device --variant release`.

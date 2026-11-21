@@ -5,7 +5,7 @@ Guidance for anyone, human or AI, working in this repository.
 ## Project
 
 Dressing Room is a digital closet and AI outfit rater for iPhone and Android, built as a portfolio demo with Expo (SDK 58) and Supabase.
-The app talks only to one Supabase project (Auth, Postgres with RLS, a private photo bucket, seven Edge Functions); only the functions call Claude, Jev (TypeSafe), Open-Meteo and Apple.
+The app talks only to one Supabase project (Auth, Postgres with RLS, a private photo bucket, seven Edge Functions); only the functions call Claude, Jev (TypeSafe), Open-Meteo and Apple. Auth sends email through Brevo.
 What it does and what works now: [`README.md`](README.md). How it works: [`docs/architecture.md`](docs/architecture.md).
 
 ## Expo has changed — do not trust your training data
@@ -50,10 +50,11 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 ## Guardrails
 
 - Never create or edit `ios/` or `android/`: they are generated and gitignored. Configure native behavior in `app.json` and config plugins ([`docs/native-config.md`](docs/native-config.md)).
-- Add a native dependency with `pnpm expo install`, then rebuild with `pnpm expo run:ios` / `pnpm expo run:android`. Prefer Expo modules over third-party libraries.
+- Add a native dependency with `pnpm expo install`, then rebuild with `pnpm expo run:ios` / `pnpm expo run:android`. Prefer Expo modules over third-party libraries, and check the available skills before adding a dependency.
 - pnpm only (never npm, yarn or bun), and never weaken `pnpm-workspace.yaml`'s supply-chain settings ([`CONTRIBUTING.md`](CONTRIBUTING.md#supply-chain-hardening)).
 - Change `pnpm-lock.yaml` only through a local `pnpm install` or `pnpm update`, never by hand.
-- `EXPO_PUBLIC_*` is inlined into the bundle: only the Supabase URL and anon key and the two Google OAuth client ids go there. The service-role key never goes in `src/`.
+- `EXPO_PUBLIC_*` is inlined into the bundle, so no secrets: the Supabase URL and anon key, the two Google OAuth client ids, and the dev-only `EXPO_PUBLIC_PERF_FIXTURES_URL`. The service-role key never goes in `src/`.
+- `app.json` never gains `ios.buildNumber` or `android.versionCode` (EAS owns them), and after `eas init` keeps only `owner` and `extra.eas.projectId` ([`docs/owner-runbook.md`](docs/owner-runbook.md#4-eas-project-and-builds)).
 - Run `supabase secrets set` for the hosted project only from an empty directory, never from this repo ([`docs/owner-runbook.md`](docs/owner-runbook.md#setting-a-hosted-secret)).
 - Edge Functions: no third-party imports, logic in `handler.ts` with `index.ts` Deno-only, and Storage only through `_shared/photoStore.ts` (a test enforces it).
 - A schema change is a new migration (never edit a merged one), `pnpm db:types` and pgTAP ([`docs/database.md`](docs/database.md#new-table-checklist)).

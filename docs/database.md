@@ -458,7 +458,7 @@ function keeps running, finishes its own 30 s Claude timeout and writes the resu
 the db container, where `127.0.0.1:54421` is the container itself, so the URL uses Kong's container
 name on the stack's Docker network. `integration/extraction.int.test.ts` proves the whole path.
 
-**Hosted values** are set by hand in the owner's integration session, never from a file in this
+**Hosted values** are set by hand from the owner runbook (`docs/owner-runbook.md`), never from a file in this
 repo:
 
 ```sql

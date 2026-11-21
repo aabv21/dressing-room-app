@@ -277,7 +277,7 @@ The descriptions:
 ### Composite score, confidence and labels
 
 Weights are configuration (`RATING_CONFIG`), to be tuned against the owner-labeled set in the
-owner session (see "Calibration" below):
+owner runbook (see "Calibration" below):
 
 | Dimension | Weight |
 | --- | --- |

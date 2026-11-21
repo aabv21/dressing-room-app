@@ -65,7 +65,7 @@ init`, the OAuth clients and the store records.
 
 ## 3. Secrets, keys and spend caps
 
-**Status: Blocked on Apple; the rest Done except spend caps and the sign-up decision.**
+**Status (2026-11-21): Blocked on Apple; Pending: the TypeSafe rate-limit check and the sign-up decision; the rest Done.**
 
 - **Done.** Hosted secrets: the Vault secrets `extract_attributes_url` (the deployed
   `extract-attributes` URL) and `extract_webhook_secret` (a random secret), and the function secrets
@@ -81,9 +81,9 @@ init`, the OAuth clients and the store records.
 - **Pending.** TypeSafe rate limits: check them against a lucky list's up to 30 ratings (5 at once),
   a rating's up to 8 swap checks and For you's up to 10 fits (5 at once); a 429 from Jev looks like
   a failure.
-- **Pending.** Spend caps: a monthly limit and an alert in the Anthropic console; confirm how
-  TypeSafe bills Jev (per request or per question; [`ai.md`](ai.md#quota-and-cost) assumes per
-  request) and set an alert if it offers one. The quotas allow about $6 a month of Jev for 4 users at
+- **Done (2026-11-17).** Spend caps: a monthly limit on the Anthropic organization. TypeSafe's
+  console offers no spend limit or alert, so watch its usage by hand the first month
+  ([`ai.md`](ai.md#quota-and-cost) assumes per-request billing). The quotas allow about $6 a month of Jev for 4 users at
   worst; typical use is about $0.65.
 - **Blocked (Apple enrollment failed; ticket open with Apple).** Sign in with Apple and token
   revocation: create a Sign in with Apple key (a `.p8` file and its Key ID) for the bundle id, then
