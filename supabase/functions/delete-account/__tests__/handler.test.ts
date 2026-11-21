@@ -212,7 +212,8 @@ describe('delete-account', () => {
   });
 
   test('lists every page and removes in chunks of 1000 when there are more than 1000 objects', async () => {
-    // 1001 garment folders → two pages of the user folder, and 2002 objects → three remove calls.
+    // 1001 garment folders → two pages of the user folder and the empty one that ends it, and 2002
+    // objects → three remove calls.
     const state = world({ objects: new Set([...photoPaths(USER_ID, 1001), ...photoPaths(OTHER_ID, 2)]) });
     const { fetch: fetchFn, steps } = fakeFetch(state);
 
@@ -221,7 +222,7 @@ describe('delete-account', () => {
     expect(response.status).toBe(200);
     expect(REMOVE_CHUNK).toBe(1000);
     const userFolderPages = untilDeletion(steps).filter((step) => step.kind === 'list' && step.prefix === `${USER_ID}/`);
-    expect(userFolderPages.map((step) => (step.kind === 'list' ? step.offset : -1))).toEqual([0, 1000]);
+    expect(userFolderPages.map((step) => (step.kind === 'list' ? step.offset : -1))).toEqual([0, 1000, 1001]);
     const chunks = steps.flatMap((step) => (step.kind === 'remove' ? [step.paths.length] : []));
     expect(chunks).toEqual([1000, 1000, 2]);
     expect(removed(steps)).toHaveLength(2002);
@@ -320,8 +321,9 @@ describe('delete-account', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'deleted' });
     expect(state.objects.has(late)).toBe(false);
-    // The second sweep lists the caller's root and the late garment's folder, then removes.
-    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'remove']);
+    // The second sweep lists the caller's root and the late garment's folder, each until an empty
+    // page, then removes.
+    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'list', 'list', 'remove']);
   });
 
   test('sweeps the folder once more after deleting the user, removing a photo uploaded meanwhile', async () => {
@@ -343,7 +345,7 @@ describe('delete-account', () => {
     expect(await response.json()).toEqual({ outcome: 'deleted' });
     expect(state.objects.has(late)).toBe(false);
     expect([...state.objects].every((path) => path.startsWith(`${OTHER_ID}/`))).toBe(true);
-    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'remove']);
+    expect(kinds(steps).slice(kinds(steps).indexOf('deleteUser'))).toEqual(['deleteUser', 'list', 'list', 'list', 'list', 'remove']);
   });
 
   test('a failed sweep after deleting the user still answers deleted', async () => {
@@ -416,7 +418,8 @@ describe('delete-account', () => {
     expect(state.listPeak).toBeGreaterThan(1);
     expect(state.listPeak).toBeLessThanOrEqual(LIST_CONCURRENCY);
     const sweep = untilDeletion(steps);
-    expect(sweep.filter((step) => step.kind === 'list')).toHaveLength(41);
+    // The root and 40 garment folders, each with the empty page that ends it.
+    expect(sweep.filter((step) => step.kind === 'list')).toHaveLength(82);
     expect(sweep.findLastIndex((step) => step.kind === 'list')).toBeLessThan(sweep.findIndex((step) => step.kind === 'remove'));
     expect(removed(steps)).toHaveLength(80);
   });

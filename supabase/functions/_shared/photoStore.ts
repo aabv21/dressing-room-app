@@ -58,17 +58,23 @@ async function isNotFound(response: Response): Promise<boolean> {
   }
 }
 
-/** The entries one level under `prefix` (which ends in `/`): files by path, folders by their own prefix. */
+/**
+ * The entries one level under `prefix` (which ends in `/`): files by path, folders by their own
+ * prefix. Paged until an empty page, the offset advancing by the rows received: a short page alone
+ * doesn't prove the end, since the server may cap a page below `LIST_PAGE`.
+ */
 async function listLevel(env: StorageEnv, fetchFn: typeof fetch, prefix: string): Promise<{ files: string[]; folders: string[] }> {
   const files: string[] = [];
   const folders: string[] = [];
-  for (let offset = 0; ; offset += LIST_PAGE) {
+  for (let offset = 0; ; ) {
     const page = await restJson(fetchFn, storageUrl(env, `object/list/${BUCKET}`), {
       method: 'POST',
       headers: { ...serviceHeaders(env), 'content-type': 'application/json' },
       body: JSON.stringify({ prefix, limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } }),
     });
     if (!Array.isArray(page)) throw new UpstreamError('storage list: not an array');
+    if (page.length === 0) return { files, folders };
+    offset += page.length;
     for (const entry of page as unknown[]) {
       if (!isRecord(entry) || typeof entry.name !== 'string' || entry.name === '' || entry.name.includes('/')) {
         throw new UpstreamError('storage list: unexpected entry');
@@ -76,13 +82,12 @@ async function listLevel(env: StorageEnv, fetchFn: typeof fetch, prefix: string)
       if (entry.id === null) folders.push(`${prefix}${entry.name}/`);
       else files.push(`${prefix}${entry.name}`);
     }
-    if (page.length < LIST_PAGE) return { files, folders };
   }
 }
 
 /**
  * Every object path under `prefix`. Storage's list answers one level at a time, a folder with a
- * null `id`, so each level is paged until a short page and its folders are listed
+ * null `id`, so each level is paged until an empty page and its folders are listed
  * `LIST_CONCURRENCY` at a time.
  */
 async function listObjects(env: StorageEnv, fetchFn: typeof fetch, prefix: string): Promise<string[]> {
