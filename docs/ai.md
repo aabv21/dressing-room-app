@@ -762,8 +762,10 @@ quota, then the Jev fits (5 at once, 10 s timeout each, none started after 15 s,
 run to about 25 s), then the Claude lines. The lines call has a deadline of its own: its timeout is
 what's left before 38 s from the request's arrival, at most 20 s, and with 2 s or less left Claude
 is skipped and every idea gets its template (degraded). So the answer lands by about 38 s plus the
-cache write, inside the app's 45 s function deadline. The database reads have no timeout of their
-own: a stalled read can still exceed it, as in the other functions.
+cache write, inside the app's 45 s function deadline. Each database read gives up after 8 s
+(`POSTGREST_TIMEOUT_MS`, as in the other user-called functions), so a stalled connection can't hold
+the function to its wall clock. `extract-attributes` makes its own PostgREST calls, which have no
+timeout of their own.
 
 A city typed without coordinates is geocoded (`geocodedLatitude`, Open-Meteo, 5 s) for its
 latitude; when that fails, there is no season rule for that request.

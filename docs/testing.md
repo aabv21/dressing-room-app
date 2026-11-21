@@ -42,8 +42,12 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   reconnect, never deleted and with no Alert; on mount, each other account's `queue.purge.<id>`
   request clears that queue and is dropped, the provider's own user's is dropped without a clear,
   and a request whose clear failed stays), `ClosetScreen.test.tsx` (the goal card, slot chips,
-  the review banner, the processing and failed tiles, the gallery picker, opening a garment) and
-  `GoalCard.test.tsx` (the progress wraps under the title at a large text size).
+  the review banner, the processing and failed tiles, opening a garment, and the gallery through
+  `useGalleryImport`: a multi-select picker of up to 30 photos whose picks are enqueued, a cancelled
+  picker enqueuing nothing, and a picker that fails to open showing its error),
+  `GoalCard.test.tsx` (the progress wraps under the title at a large text size) and
+  `ShotStrip.test.tsx` (the shot tiles are hidden from screen readers; the camera announces the
+  count).
 - `src/closet/upload/__tests__/` — `queueStore.test.ts` (SQLite rows through a fake database:
   enqueue, replacements, conditional saves, `clearQueue` dropping one user's rows and copies),
   `runQueue.test.ts` (stages, resuming an interrupted item, backoff, failing after 8 attempts or a
@@ -55,7 +59,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   or the source photo), `cutout.test.ts` (the native module present, missing, or throwing) and
   `queueSteps.test.ts` (the real steps, the session check, replacements).
 - `src/__tests__/camera.test.tsx` — the burst camera: permissions, the shutter and shot strip, Done,
-  and the Discard / Keep shooting confirm on Close and on a back gesture.
+  the Discard / Keep shooting confirm on Close and on a back gesture, and "Choose from gallery"
+  (`useGalleryImport`: the picks are enqueued and the screen goes back; a cancelled picker stays).
 - `src/__tests__/review.test.tsx` — the review queue: only the doubted fields are asked, Skip and
   Confirm, the card stays pinned while polling reorders the queue, a save error by the buttons, and
   the caught-up button goes back (or to the closet with no history).
@@ -137,7 +142,10 @@ Accounts, onboarding and the profile:
   ok) and its confirmation, against a fake client. `errors.test.ts` maps Auth and native errors to
   message keys, `nonce.test.ts` checks the Apple nonce and its SHA-256, and
   `signOutOffline.test.ts` signs out offline with an expired session and clears only the session's
-  storage keys.
+  storage keys. `useSignOut.test.tsx`: an explicit sign-out drops the display caches but keeps the
+  upload and wear queues, and a failed one keeps everything.
+- `src/__tests__/auth-keyboard.test.tsx` — Welcome, Sign in and Forgot password avoid the keyboard
+  once on Android: only `Screen` sets a `KeyboardAvoidingView` behavior (`padding`).
 - `src/__tests__/onboarding.test.tsx` and `onboarding-arrival.test.tsx` — each step's saves, skips
   and errors, the body-type helper and height slider, a relaunch mid-onboarding, never overwriting
   a finished profile, and landing on the Closet after the last step.
@@ -167,6 +175,12 @@ Outfits, Stats and Diary:
 - `src/__tests__/wornToday.test.tsx` and `src/outfits/__tests__/wornToday.test.ts` — "Logged ✓"
   shared by Today and the rating per user and day, also after a restart, and cleared for a deleted
   wear.
+- `src/outfits/__tests__/wearQueue.test.ts` — "I'll wear it" offline: a network failure queues the
+  wear and any other failure doesn't, one entry per wear id, the flush in order (an invalid wear
+  dropped, a network error stopping it, nothing sent under another user's session, two flushes at
+  once sending each wear once), `withQueuedWears` for Stats and Diary, and a wear being sent that
+  can't be dequeued. `WearQueueFlusher.test.tsx`: flushes on mount with the stored session as the
+  guard, on foreground and reconnect, and refreshes the closet after a send.
 - `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping and
   `localDate`), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
@@ -183,14 +197,19 @@ Outfits, Stats and Diary:
 - `src/stats/__tests__/` — `periods.test.ts` (the period ranges and the Monday-first month grid),
   `statsModel.test.ts` (the KPIs, most worn, color shares and slot balance) and
   `wearsRepository.test.ts` (the wears query, its paging in ranges of 1000 until a short page,
-  at most 20 pages, a failed later page throwing, and Diary's delete).
+  at most 20 pages, a failed later page throwing, and Diary's delete) and `storedWears.test.ts` (the
+  stored year round-trips, a malformed value reads as null, `wearsInRange` refuses a range before
+  the stored one, and a fetched month merges into the stored range).
 
 Shared UI, the app shell and helpers:
 
 - `src/ui/__tests__/` — `AnchoredCta.test.tsx` and `ChipGroup.test.tsx` (roles, states and the CTA
   label's cap), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection and the
   large content viewer), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
-  (`useBottomChrome` and `useLargeText`) and `theme.test.ts` (error text contrast).
+  (`useBottomChrome` and `useLargeText`), `theme.test.ts` (error text contrast), `Screen.test.tsx`
+  (the status-bar scrim above scrolled content, the CTA backdrop with no chrome) and
+  `feedback.test.ts` (`tapHaptic`: a light impact for a commit, a selection tick for a choice, and
+  a device that rejects haptics neither throws nor leaves the rejection unhandled).
 - `src/ui/charts/__tests__/charts.test.tsx` — `HorizontalBars` (rows as buttons, selection, the
   columns growing with the text and the stacked rows above the large-text threshold),
   `ProportionBar` (widths, each color read once, 44 pt targets) and `KpiTile` (a full row at a large
@@ -220,6 +239,8 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
 - `scripts/__tests__/check-supply-chain.test.ts` — the repo's `pnpm-workspace.yaml` passes; a
   missing or weakened `trustPolicy`, a missing `minimumReleaseAge` or any `trustPolicyExclude`
   fails.
+- `scripts/__tests__/mlkit-manifest.test.ts` — `modules/garment-cutout`'s Android manifest replaces
+  the merged ML Kit dependencies value, so it must keep every model `expo-camera` declares.
 - `scripts/__tests__/perf-fixtures.test.ts` — the 500 fixture specs and file names, a transparent
   SVG, and `perf:serve` refusing paths outside the fixtures folder.
 - `scripts/__tests__/calibration.test.ts` — the Jev calibration: Spearman's ρ on a hand-computed set
@@ -481,6 +502,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
   is executable by a client role, and no index is made redundant by another that starts with the
   same columns.
+- `keep_alive.test.sql` — `anon` can execute `public.keep_alive()`, which answers the server time
+  and reads no table.
 
 See `docs/database.md` for how these tests impersonate a user and create test rows without a real
 JWT.

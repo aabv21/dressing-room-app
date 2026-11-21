@@ -42,7 +42,7 @@ Untrusted input reaches those calls only as:
   array; there is no free-text column.
 
 What a model can do at worst: write wrong enum values onto the caller's own garment (which the
-review queue shows them), mark it `failed` or `not_garment`, or rate an outfit wrongly. It can't
+review queue shows them), mark it `failed`, or rate an outfit wrongly. It can't
 reach another user's data, call a tool, write a column outside the attribute set, or put free text
 anywhere but a For you card.
 

@@ -97,9 +97,8 @@ function isConfiguredClientId(value: string | undefined): value is string {
 /**
  * Configures `GoogleSignin` on first use only (configuring repeatedly is unnecessary and the
  * library doesn't expect it). Returns `false` without configuring when either public client ID is
- * missing, blank, or still the `.env.example` placeholder — this is a setup problem (the
- * integration session fills these in; see AGENTS.md), not a per-attempt user error, so it's logged
- * once via `console.warn` rather than silently retried every tap.
+ * missing, blank, or still a placeholder — a setup problem (copy the ids from `.env.example` into
+ * `.env.local`), not a per-attempt user error, so it's logged once via `console.warn`.
  *
  * OAuth client IDs are not secrets — they identify the app to Google, the way a
  * bundle id does, and are meant to ship in the client. `EXPO_PUBLIC_*` inlines these at build time

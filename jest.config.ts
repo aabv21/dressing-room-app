@@ -4,14 +4,10 @@ import type { Config } from 'jest';
 
 const require = createRequire(import.meta.url);
 
-// Two projects: the app runs under jest-expo's React Native environment; `scripts/` is plain
-// Node tooling (no React Native, no Expo globals) and runs under Jest's standard node
-// environment. Keeping `scripts/` out of the jest-expo project matters because jest-expo's
-// preset setupFile installs Expo's lazy globals (`fetch`, `structuredClone`, ...) through
-// getters that `require()` on first access; those getters are incompatible with a test file's
-// own `@jest-environment node` docblock (`You are trying to require a file outside of the scope
-// of the test code` during teardown), so `scripts/__tests__` needs a project that never loads
-// that preset in the first place.
+// Four projects (docs/testing.md): `app` under jest-expo's React Native environment, and
+// `scripts`, `functions` and `integration` under plain Node. The Node ones stay out of jest-expo
+// because its preset's lazy globals (`fetch`, `structuredClone`, ...) break a file's own
+// `@jest-environment node` docblock at teardown.
 const config: Config = {
   projects: [
     {

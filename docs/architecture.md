@@ -28,7 +28,8 @@ It runs in three places:
   API gateway with the user's session token; the app holds no other credential.
 - **Three AI and data services,** called only from the Edge Functions: Anthropic (Claude Haiku
   5.5), TypeSafe (its Jev judgment model) and Open-Meteo (weather and geocoding). Apple and Google
-  only take part in sign-in, and Apple once more when an account is deleted.
+  only take part in sign-in, and Apple once more when an account is deleted. Auth sends its emails
+  (the password-reset code) through Brevo's SMTP relay.
 
 Locally, the same Supabase stack runs in Docker (`pnpm db:start`), and every Claude, Jev,
 Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic.ts`,
@@ -41,13 +42,13 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 | Expo app | Phone | Five tabs (Today, Closet, Build, For you, Profile) plus the camera, review, garment detail, rating and city screens. Keeps the closet, today's lucky list, the last For you ideas and the last fetched wear history in a key-value store for offline reading. |
 | Upload queue | Phone | `src/closet/upload/`: a SQLite queue that takes each photo through prepare, upload and commit, saving the stage reached before the next starts. Two items at a time, backoff from 5 s doubling to 10 min, 8 attempts. |
 | `garment-cutout` | Phone | A local native module: iOS 17+ Vision foreground masks and Android ML Kit subject segmentation remove the photo's background. Without it, the original photo is kept. |
-| Auth | Supabase | Email and password (8 characters or more), Sign in with Apple and Sign in with Google through native ID tokens, and a 6-digit password-reset code by email. |
+| Auth | Supabase | Email and password (8 characters or more), Sign in with Apple and Sign in with Google through native ID tokens, and a 6-digit password-reset code by email, sent through Brevo's SMTP relay (Mailpit catches it locally). |
 | Postgres 17 | Supabase | Profiles, garments, outfits, wears, the daily quota counters, the AI result caches and the Apple refresh tokens. RLS on every table. Garment writes are narrowed by column grants; the app creates outfits and wears through the `log_wear` and `save_outfit` RPCs, and RLS limits any direct insert, or a wear's delete, to the caller's own rows. |
 | Storage | Supabase | The private `garments` bucket: `{user id}/{garment id}/full.webp` and `thumb.webp`, 2 MiB at most per object, with folder policies that match RLS. |
 | `extract-attributes` | Edge Function | Called by the garment insert trigger through `pg_net`, with a shared secret header. Sends the photo to Claude and writes back enum-only attributes and the fields Claude doubted. |
 | `rate-outfit` | Edge Function | Rates a built outfit with Jev, falls back to Claude, and searches a swap for a weak outfit. |
 | `lucky-list` | Edge Function | Generates up to 200 candidate outfits from the closet, ranks the top 30 with Jev, and returns them with the day's weather. |
-| `for-you` | Edge Function | Ranks about 40 wardrobe staples by how many new outfits each opens, weighted by a Jev fit, and returns 3–5 with a Claude line and a store-search query. |
+| `for-you` | Edge Function | Ranks the wardrobe staples for the user's clothing type (41–58) by how many new outfits each opens, weighted by a Jev fit, and returns 3–5 with a Claude line and a store-search query. |
 | `apple-token` | Edge Function | Exchanges a Sign in with Apple authorization code for the refresh token deletion needs, and stores it only when the token's Apple user is the caller. |
 | `delete-account` | Edge Function | Removes the caller's photos, revokes the Apple token and deletes the auth user, whose rows cascade. Safe to retry. |
 | `export-data` | Edge Function | Returns the caller's profile, garments, outfits, wears and 7-day signed photo URLs as one JSON document. |
@@ -107,7 +108,8 @@ optional occasion:
    comes from `weather_cache` or Open-Meteo (5 s each). With no city, the weather is unknown and
    rates as neutral.
 4. **Cache and quota.** The cache key hashes each garment's rating-relevant columns, the profile's
-   `updated_at`, the occasion, the season and the weather band. A hit answers at once and calls no
+   rating-relevant fields (`profileIdentity()`, not its `updated_at`), the occasion, the season, the
+   weather band and rain. A hit answers at once and calls no
    model. A miss counts against 50 ratings a day; over it, the answer is 429.
 5. **Jev.** One TypeSafe request holds eight Score questions, two hard-failure Nouls and the
    weakest-piece Choice, about a state of buckets and enum values only (10 s timeout). Code turns
@@ -235,7 +237,10 @@ limits it would meet first:
 
 - **Supabase free tier.** At the time of writing it allows 500 MB of database, 1 GB of storage and
   5 GB of egress, and the family needs about 100 MB of photos. Thumbnails download once into expo-image's
-  disk cache. Free projects pause after a week without use. The upgrade is Supabase Pro.
+  disk cache. Free projects pause after a week without use, so
+  `.github/workflows/keepalive.yml` calls `public.keep_alive()` daily with the anon key. GitHub stops
+  scheduled workflows after 60 days without repository activity (Dependabot's weekly pull requests
+  normally prevent that). The upgrade is Supabase Pro, which never pauses.
 - **Cache tables.** A daily `pg_cron` job prunes them (`prune_expired_caches()`), so they stay at
   about a month of rows. Its deletes scan each table, which is fine at a few thousand rows; an index
   on `created_at` would be the upgrade if they ever grow far larger.

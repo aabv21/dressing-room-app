@@ -85,7 +85,7 @@ pnpm install
 pnpm db:start     # Postgres, Auth, Storage, Studio, Mailpit and the Edge Runtime in Docker (first run pulls images)
 pnpm db:reset     # the migrations and the local seed
 pnpm env:local    # writes .env.local with the app's Supabase URL and anon key
-pnpm expo run:ios # builds the dev client and opens it in the simulator (keeps Metro running)
+pnpm expo run:ios # builds the debug app with expo run and opens it in the simulator (keeps Metro running)
 ```
 
 Local sign-up confirmations and password-reset codes are caught by Mailpit at `http://127.0.0.1:54424` instead of being emailed. `pnpm db:stop` stops the stack when you're done.
