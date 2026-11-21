@@ -24,7 +24,7 @@ test.each([
 
 test('translate interpolates params and never returns a raw key for a known key', () => {
   expect(translate('es', 'tabs.closet')).toBe('Clóset');
-  expect(translate('en', 'grid.empty', { count: 10 })).toBe('Add your 10 favorites to get started.');
+  expect(translate('en', 'grid.empty')).toBe('Take photos of a top, a bottom and shoes to start.');
 });
 
 test('number params reuse one Intl.NumberFormat per locale', () => {

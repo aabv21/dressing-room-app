@@ -80,6 +80,18 @@ export function sureGarments(queue: readonly Garment[], now: number): Garment[] 
   return queue.filter((g) => g.category !== null && fieldsToAsk(g, now).length === 0);
 }
 
+export type FirstOutfitProgress = { top: boolean; bottom: boolean; onePiece: boolean; shoes: boolean; complete: boolean };
+
+/** Which slots of a first outfit the active closet already covers: (top + bottom, or a one-piece) plus shoes. */
+export function firstOutfitProgress(garments: readonly Garment[]): FirstOutfitProgress {
+  const slots = new Set(garments.flatMap((g) => (isActive(g) && g.category !== null ? [slotOf(g.category)] : [])));
+  const top = slots.has('top');
+  const bottom = slots.has('bottom');
+  const onePiece = slots.has('one_piece');
+  const shoes = slots.has('shoes');
+  return { top, bottom, onePiece, shoes, complete: shoes && (onePiece || (top && bottom)) };
+}
+
 /** Active garments per slot; slots with none are absent, and uncategorized garments aren't counted. */
 export function slotCounts(garments: readonly Garment[]): Partial<Record<Slot, number>> {
   const counts = new Map<Slot, number>();

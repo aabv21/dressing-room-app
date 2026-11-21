@@ -4,6 +4,7 @@ import {
   categoryCounts,
   fieldsToAsk,
   sureGarments,
+  firstOutfitProgress,
   isLivePending,
   isStalePending,
   reviewQueue,
@@ -252,5 +253,33 @@ describe('sureGarments', () => {
 
   test('a garment with no category is never sure', () => {
     expect(sureGarments([sure('a', { category: null })], NOW)).toEqual([]);
+  });
+});
+
+describe('firstOutfitProgress', () => {
+  const piece = (category: NonNullable<Garment['category']>, overrides: Partial<Garment> = {}): Garment =>
+    garment({ category, extraction_status: 'done', ...overrides });
+
+  test('a top, a bottom and shoes complete the first outfit', () => {
+    expect(firstOutfitProgress([piece('t_shirt'), piece('jeans'), piece('sneakers')])).toEqual({
+      top: true,
+      bottom: true,
+      onePiece: false,
+      shoes: true,
+      complete: true,
+    });
+  });
+
+  test('a dress and shoes complete it without a top or a bottom', () => {
+    expect(firstOutfitProgress([piece('dress'), piece('heels')]).complete).toBe(true);
+  });
+
+  test('a top and shoes are not enough', () => {
+    expect(firstOutfitProgress([piece('t_shirt'), piece('sneakers')]).complete).toBe(false);
+  });
+
+  test('donated and uncategorized pieces do not count', () => {
+    const progress = firstOutfitProgress([piece('t_shirt'), piece('jeans', { status: 'donated' }), garment({ category: null })]);
+    expect(progress).toMatchObject({ top: true, bottom: false, complete: false });
   });
 });
