@@ -1,3 +1,4 @@
+import { useNetworkState } from 'expo-network';
 import { router, useIsFocused } from 'expo-router';
 import { Camera, ChevronRight, ImageIcon, X } from 'lucide-react-native';
 import { useCallback, useMemo, useState } from 'react';
@@ -214,15 +215,18 @@ function ItemsSegment({
   }, [t, retryFailed, discardFailed]);
 
   const { pending, failed } = queue;
+  const network = useNetworkState();
+  // Unknown counts as online, so the usual label stays until the device says otherwise.
+  const offline = network.isConnected === false || network.isInternetReachable === false;
   const leadingTile = useMemo<LeadingTile | undefined>(() => {
     if (pending > 0) {
-      return { label: t(pluralKey('closet.processing', pending), { count: pending }) };
+      return { label: t(pluralKey(offline ? 'closet.waiting' : 'closet.processing', pending), { count: pending }) };
     }
     if (failed > 0) {
       return { label: t(pluralKey('closet.failed', failed), { count: failed }), tone: 'error', onPress: showFailedOptions };
     }
     return undefined;
-  }, [pending, failed, t, showFailedOptions]);
+  }, [pending, failed, offline, t, showFailedOptions]);
 
   const header = (
     <View style={styles.header}>

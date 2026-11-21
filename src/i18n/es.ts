@@ -33,6 +33,8 @@ export const es: Record<MessageKey, string> = {
   'closet.chip.slot': '{label} {count}',
   'closet.processing.one': 'Procesando {count} foto…',
   'closet.processing.other': 'Procesando {count} fotos…',
+  'closet.waiting.one': 'Esperando internet · {count} foto',
+  'closet.waiting.other': 'Esperando internet · {count} fotos',
   'closet.failed.one': '{count} foto no se subió',
   'closet.failed.other': '{count} fotos no se subieron',
   'closet.failed.title': 'Algunas fotos no se subieron',

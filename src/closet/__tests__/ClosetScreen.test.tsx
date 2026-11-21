@@ -34,6 +34,8 @@ jest.mock('../../outfits/aiClient', () => require('../../test/outfitClientsMock'
 jest.mock('../../stats/wearsRepository', () => require('../../test/statsClientsMock'));
 // The Diary segment reads the signed-in user (its deletes clear Today's worn record).
 jest.mock('../../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
+const mockNetwork: { current: { isConnected?: boolean; isInternetReachable?: boolean } } = { current: {} };
+jest.mock('expo-network', () => ({ useNetworkState: () => mockNetwork.current }));
 jest.mock('../garmentRepository', () => ({ updateGarment: jest.fn() }));
 
 type ClosetState = {
@@ -105,6 +107,7 @@ beforeEach(() => {
   setFixturesUrl(undefined);
   setCloset([]);
   mockQueue.current = { pending: 0, failed: 0 };
+  mockNetwork.current = {};
 });
 
 afterEach(() => {
@@ -253,6 +256,18 @@ describe('real mode', () => {
 
     expect(screen.getByText('Processing 3 photos…')).toBeOnTheScreen();
     expect(screen.getByTestId('grid-leading-tile')).toBeOnTheScreen();
+  });
+
+  test('offline, the pending tile says it is waiting for the internet, and says Processing again once back', async () => {
+    setCloset(closetOf(SEVEN));
+    mockQueue.current = { pending: 2, failed: 0 };
+    mockNetwork.current = { isConnected: false, isInternetReachable: false };
+    const view = await render(<ClosetScreen />);
+    expect(screen.getByText('Waiting for internet · 2 photos')).toBeOnTheScreen();
+
+    mockNetwork.current = { isConnected: true, isInternetReachable: true };
+    await view.rerender(<ClosetScreen />);
+    expect(screen.getByText('Processing 2 photos…')).toBeOnTheScreen();
   });
 
   test('failed uploads show a tile whose alert offers retry or discard', async () => {

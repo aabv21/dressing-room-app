@@ -31,6 +31,8 @@ export const en = {
   'closet.chip.slot': '{label} {count}',
   'closet.processing.one': 'Processing {count} photo…',
   'closet.processing.other': 'Processing {count} photos…',
+  'closet.waiting.one': 'Waiting for internet · {count} photo',
+  'closet.waiting.other': 'Waiting for internet · {count} photos',
   'closet.failed.one': "{count} photo didn't upload",
   'closet.failed.other': "{count} photos didn't upload",
   'closet.failed.title': "Some photos didn't upload",
