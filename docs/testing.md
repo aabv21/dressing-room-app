@@ -331,13 +331,19 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `mapLimit`, the
   profile and garments read with the user's token (enums checked, non-uuid ids refused before any
   request), and the cached weather.
-- `supabase/functions/_shared/__tests__/apple.test.ts` — `appleEnvFrom`, the ES256 client secret
-  (a PEM with literal `\n`s too), the id_token's Apple user, and the token exchange and revoke
-  calls.
+- `supabase/functions/_shared/__tests__/env.test.ts` — `readEnv`: only the asked capabilities'
+  variables, a throw naming a missing one, the real API hosts as fallbacks for unset or empty base
+  URLs, trailing slashes trimmed, and `appleEnvFrom`'s trimmed base URL.
+- `supabase/functions/_shared/__tests__/http.test.ts` — `fetchWithDeadline` (an abort once the
+  deadline passes, the body read inside it, the response passed through intact, a body-less answer),
+  `callerOf`, `readJson` and `reply` (it logs only the outcome word).
+- `supabase/functions/_shared/__tests__/apple.test.ts` — `appleEnvFrom` (from `env.ts`), the ES256
+  client secret (a PEM with literal `\n`s too), the id_token's Apple user, and the token exchange
+  and revoke calls.
 - `supabase/functions/_shared/__tests__/photoStore.test.ts` — the Storage boundary against a fake
   `fetch`: photo paths (non-uuid ids refused), the URL, method and service-role headers of every
   call, listing past 1000 entries and at most 5 folders at a time, removal in chunks of 1000,
-  signing one path or 500 per call, a missing object as `null` (a 404, or Storage's 400 with
+  signing 500 paths per call, a missing object as `null` (a 404, or Storage's 400 with
   `"statusCode": "404"`), a throw on a 5xx, and that no function file outside `photoStore.ts`
   contains `/storage/v1/`.
 - `supabase/functions/_shared/__tests__/gateway.test.ts` — the gateway's JWT check, read from
