@@ -414,7 +414,7 @@ inspector_port = 8183
 deno_version = 2
 
 # Local-only values; the hosted project sets its own with `supabase secrets set`, run from an empty
-# directory: from this repo the CLI pushes these values to the hosted project too (AGENTS.md).
+# directory: from this repo the CLI pushes these values to the hosted project too (docs/owner-runbook.md).
 # EXTRACT_WEBHOOK_SECRET must match the `extract_webhook_secret` Vault secret in
 # seed.sql. ANTHROPIC_BASE_URL points at integration/mockAnthropic.ts on the
 # host, so local runs never reach the real Claude API. The TypeSafe (Jev) and
@@ -435,7 +435,7 @@ OPEN_METEO_GEOCODING_URL = "http://host.docker.internal:54498"
 # as LOCAL_APPLE_PRIVATE_KEY. No key is ever committed. A bare `supabase start` without it leaves
 # APPLE_PRIVATE_KEY unset or, depending on the CLI, the literal "env(LOCAL_APPLE_PRIVATE_KEY)";
 # appleEnvFrom treats both as missing, so apple-token answers `skipped` and deletion skips the
-# revoke. Hosted projects set their own with `supabase secrets set` (AGENTS.md).
+# revoke. Hosted projects set their own with `supabase secrets set` (docs/owner-runbook.md).
 APPLE_TEAM_ID = "LOCALTEAM0"
 APPLE_KEY_ID = "LOCALKEY00"
 APPLE_CLIENT_ID = "local.dressing-room.test"

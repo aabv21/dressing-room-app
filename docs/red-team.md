@@ -137,6 +137,13 @@ Owner decisions or accepted limits, not code changes:
   is open with no email confirmation, and GoTrue limits sign-ups and sign-ins to 30 per IP per
   5 minutes. On the hosted project, email confirmation, a CAPTCHA, or closing sign-ups to the
   owner's household are dashboard settings for the owner.
+- **Google sign-in has no nonce replay protection.** `@react-native-google-signin/google-signin`
+  v17's free `signIn()` sends no nonce on Android and a hidden one on iOS that the library doesn't
+  expose; sending a custom one made every sign-in fail GoTrue's OIDC check. So `signInWithIdToken`
+  gets no nonce for Google, and `[auth.external.google].skip_nonce_check` is `true` locally and on
+  the hosted project (without it every Google sign-in fails). Apple's flow still uses a nonce.
+  Upgrade path: a library version that exposes iOS's nonce, or Universal Sign In (the package's paid
+  tier). See `src/auth/socialAuth.ts`'s `signInWithGoogle`.
 - **Storage per user.** The bucket caps each photo at 2 MiB and three image types, but not a
   user's total, and a photo uploads before its garment row exists, so a policy can't require the
   row. Accepted at 4 users on the free tier's 1 GB. Upgrade path: a per-folder object count in the

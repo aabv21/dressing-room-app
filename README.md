@@ -67,8 +67,10 @@ How it works, how it fails, and why it's built this way: [`docs/architecture.md`
 | Document | Covers |
 | --- | --- |
 | [`docs/architecture.md`](docs/architecture.md) | Components, request lifecycles, data model, failures, security, scaling and costs, design decisions |
+| [`docs/api.md`](docs/api.md) | Every endpoint: request, response, statuses, auth, timeouts, quotas and the outside providers |
 | [`docs/ai.md`](docs/ai.md) | Every prompt, schema, Jev question and weight, the calibration workflow, quotas and costs |
-| [`docs/database.md`](docs/database.md) | Tables, enums, RLS and grants, storage rules, account deletion and export, hosted backups |
+| [`docs/database.md`](docs/database.md) | Tables, enums, RLS and grants, storage rules, account deletion and export |
+| [`docs/owner-runbook.md`](docs/owner-runbook.md) | The owner's steps with their status, the release config, hosted backups and the tested restore |
 | [`docs/red-team.md`](docs/red-team.md) | Prompt injection, the output sanitizers, quota abuse and cross-user access, each with the test that pins it |
 | [`docs/testing.md`](docs/testing.md) | Every test suite, the end-to-end flows and what CI runs |
 | [`docs/performance-gate.md`](docs/performance-gate.md) | The on-device scroll-performance go/no-go protocol (status: pending) |
@@ -95,7 +97,7 @@ node integration/mockServices.ts --serve --level 0.8 --temp 14   # mock Jev and 
 node integration/mockAnthropic.ts --serve ok                      # mock Claude: every photo gets the `ok` fixture's attributes
 ```
 
-Without them, a new garment goes to review with empty fields, a rating falls back and then fails, and the weather is unknown. See [`AGENTS.md`](./AGENTS.md)'s "Local backend" for the stack's ports, secrets and mocks, and its "Commands" for the full list.
+Without them, a new garment goes to review with empty fields, a rating falls back and then fails, and the weather is unknown. See [`docs/local-stack.md`](docs/local-stack.md) for the stack's ports, secrets and mocks, and [`AGENTS.md`](./AGENTS.md)'s "Commands" for the full list.
 
 Closet grid with performance fixtures (iOS simulator):
 

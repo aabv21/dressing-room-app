@@ -2,7 +2,7 @@
 
 Four Jest projects, one pgTAP suite and three Maestro end-to-end flows. `pnpm test` runs the
 three Jest projects that need no Docker; `pnpm test:int` and `pnpm db:test` need a running local
-Supabase stack (see `AGENTS.md`'s "Local backend"), and `pnpm e2e` also needs an iOS simulator.
+Supabase stack (see [`local-stack.md`](local-stack.md)), and `pnpm e2e` also needs an iOS simulator.
 
 ## Jest projects (`jest.config.ts`)
 
@@ -422,36 +422,14 @@ profile or garment persistence, the extraction function, the outfit functions or
 functions; `--runInBand` because the suites share one database and create/delete real
 `auth.users` rows.
 
-`integration/mockAnthropic.ts` is the mock Claude: `startMockAnthropic(port = 54499)` serves
-`POST /v1/messages` on `0.0.0.0` (the function calls it from inside a container, as
-`http://host.docker.internal:54499`, the local `ANTHROPIC_BASE_URL` in `supabase/config.toml`).
-`respondWith({ status, body })` (with an optional `delayMs` before the answer) or
-`respondWith({ hang: true })` sets the reply for every following call; `calls()` counts the calls; `close()` also drops hung connections. Replies reuse the recorded
-fixtures in `supabase/functions/_shared/__tests__/fixtures/`, so the real API is never called.
-`integration/mockServices.ts` stands in for TypeSafe's System One API (Jev) and Open-Meteo:
-`startMockServices(port = 54498)` serves `POST /v1/systemone`, `GET /v1/forecast` and
-`GET /v1/search` (geocoding) on `0.0.0.0`, where the local `TYPESAFE_BASE_URL`, `OPEN_METEO_URL`
-and `OPEN_METEO_GEOCODING_URL` point (`http://host.docker.internal:54498`). `jev(next)`,
-`forecast(next)` and `geocode(next)` set each route's reply (`MockReply`, the same shape as the
-mock Claude's); `jev` also takes a function of the request body, and `jevAnswers(request, level)`
-builds a well-formed answer to every question in it (each Score at `level` of its range, so the
-composite score is `round(100 · level)`; each Noul at 0.02; each Choice `none`, using the
-`criteria` keys). `calls(path)` counts the calls on a path; `close()` drops hung connections.
-Until set, Jev answers every Score at its best level, the forecast is `MILD_FORECAST` (a dry 19 °C
-day, band `mild`) and geocoding finds Madrid. For a manual simulator check,
-`node integration/mockServices.ts --serve [--level <0..1> | --weak <category>] [--temp <°C>]` keeps
-it running with every Jev answer at `level` (default 1) or, with `--weak`, the weak-piece answers
-`pnpm e2e` uses (the two can't be combined), and, with `--temp`, a clear, dry day around that
-temperature.
+The mock Claude (`integration/mockAnthropic.ts`, port 54499) and the mock Jev, Open-Meteo and
+Apple (`integration/mockServices.ts`, port 54498), their helpers and their `--serve` modes are in
+[`local-stack.md`](local-stack.md#mocks).
 
 `integration/fixtures/garment.webp` is a 784 px, ~9 KB WebP of a garment silhouette, encoded once
 with sharp from `scripts/perf-fixtures.ts`'s `fixtureSvg` and committed.
 
-Function logs (one line per call: an outcome word, plus the garment id for `extract-attributes`;
-the words are listed in `docs/ai.md`) are in
-`docker logs supabase_edge_runtime_dressing-room-app`; pg_net's view of each call is in
-`net._http_response` (a `timed_out` row is expected for the hang case, since pg_net stops waiting
-after 5 s while the function carries on).
+Function logs and pg_net's responses: [`local-stack.md`](local-stack.md#logs).
 
 `integration/lib-supabase.stub.ts` is mapped (via `jest.config.ts`'s `moduleNameMapper`) over
 `src/lib/supabase.ts` for this project only: `emailAuth.ts`/`socialAuth.ts` default their `client`
@@ -627,7 +605,7 @@ platforms.
 
 ## Reading reset codes from Mailpit
 
-Local email (signup confirmations — currently off; see `AGENTS.md` — and password-reset codes) is
+Local email (signup confirmations, currently off, and password-reset codes) is
 caught by Mailpit instead of being sent, at `http://127.0.0.1:54424` (this repo's `+100` port
 block). `integration/helpers.ts`'s `latestEmailCode(email)`:
 

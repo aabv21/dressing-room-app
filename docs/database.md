@@ -1,6 +1,6 @@
 # Database: schema, RLS and storage
 
-The local backend is Supabase (Postgres 17) run via `pnpm db:*` scripts (see `AGENTS.md`). This
+The local backend is Supabase (Postgres 17) run via `pnpm db:*` scripts (see [`local-stack.md`](local-stack.md)). This
 document covers the `public.profiles`, `public.garments` and `public.usage_counters` tables, their
 enums, the signup trigger, row level security, the `garments` storage bucket, and what account
 deletion and data export do to them. See
@@ -469,7 +469,7 @@ select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'extrac
 and the function's own secrets with
 `supabase secrets set --project-ref <ref> EXTRACT_WEBHOOK_SECRET=<same random secret> ANTHROPIC_API_KEY=<key>`,
 run from an empty directory: from the repo, the CLI also pushes `config.toml`'s local-only
-`[edge_runtime.secrets]` (AGENTS.md). `ANTHROPIC_BASE_URL` stays unset there, so the function uses
+`[edge_runtime.secrets]` ([`owner-runbook.md`](owner-runbook.md#setting-a-hosted-secret)). `ANTHROPIC_BASE_URL` stays unset there, so the function uses
 `https://api.anthropic.com`.
 
 ### Logging a wear
@@ -662,44 +662,8 @@ inside them, never in `src/`.
   verified JWT's `sub`. Storage objects are removed first because nothing cascades into
   `storage.objects`.
 
-  The app (`src/account/`) first writes the kv marker `account.deleting.<uid>`, then pauses its
-  upload queue (a stage in flight finishes), so no photo lands after the listing, and sends the
-  session's access token explicitly. It reports the account deleted only on
-  `{ outcome: 'deleted' }`, or on a 401 for which Auth's `GET /user` with that same token answers
-  `user_not_found` (a retry after a lost 200). Any other 401 (an expired token,
-  `session_not_found`, a refresh token that's gone) or no session at all doesn't prove the account
-  is gone, so the app tells the user to sign in again and then delete the account again
-  (`reauth`), and signs out locally, keeping the queue and the kv entries (the marker turns
-  `reauth`). Signing in doesn't finish anything by itself: the check below sees the account still
-  there and removes the marker, and the user taps "Delete account" again. On a deletion the app
-  clears the queue, signs out locally, clears every kv key under the user's id (the marker
-  included) and refuses that user's later kv writes for the rest of the process, so a request still
-  in flight can't write them back; then it removes the data exports from the cache directory and
-  clears expo-image's memory and disk caches. Either sign-out happens only while the stored session
-  is still that user's (or there is none): an answer that arrives after another account signed in
-  never signs it out, and the Profile tab's Sign out is disabled while a deletion runs.
-  Any other failure (network, a 500, a gateway 502/504) may come after the server already deleted
-  the user, so the marker stays: the user stays signed in, is told the deletion couldn't be
-  confirmed and that photo uploads are paused, and can tap again.
-
-  While the marker exists that user's queue never runs. The marker holds its state and the time it
-  was written (`deleting:<ms>` / `reauth:<ms>`). Any value whose state is `deleting` or `reauth`
-  counts, whatever its time; a missing or malformed time, or one more than the settle window in the
-  future, is stamped anew at the next check, so the window below starts over instead of being
-  skipped.
-  A launch, sign-in, return to the foreground or reconnect with the marker present only asks Auth,
-  with that session's token, whether the account still exists, and never deletes anything without a
-  tap: `user_not_found` gets the same local cleanup and sign-out as a confirmed deletion; the same
-  user, more than 10 minutes after the marker (the function may still be sweeping storage after the
-  app's 45 s timeout, up to the Edge Functions wall clock), removes the marker and lets the queue
-  run; anything else keeps the marker for the next check. A session that ends while the marker says
-  `deleting` (supabase-js signs out by itself once the account is gone) drops that account's kv
-  data and records the kv request `queue.purge.<uid>` (the queue store isn't loaded at that point).
-  The next upload queue provider to mount, for whichever user signs in next, clears that account's
-  queued rows and photo copies and then drops the request; a failed clear keeps it for the next
-  mount. Until then the photos never upload without that user's session. If that same account signs
-  in again before another account does, its session shows the account still exists, so the
-  request is only dropped and its queue runs as before. The request survives the account's kv cleanup until it has been carried out.
+  What the app does around the call (the marker, the paused queue, `reauth`, the local cleanup and
+  the later checks) is in [`app.md`](app.md#account-deletion-on-the-device).
 - **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
   and `wears` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
