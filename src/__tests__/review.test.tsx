@@ -283,3 +283,56 @@ test('a deep-linked caught-up screen with no history lands on the closet', async
   expect(router.replace).toHaveBeenCalledWith('/closet');
   expect(router.back).not.toHaveBeenCalled();
 });
+
+describe('confirming the garments the AI was sure of', () => {
+  const sureOne = (id: string, minute: number): Garment => extracted(id, minute, { uncertain_fields: [] });
+
+  test('confirms them in one tap, in order, then shows the doubted one', async () => {
+    mockCloset.garments = [sureOne('s-1', 1), sureOne('s-2', 2), extracted('d-1', 3), sureOne('s-3', 4)];
+    mockedConfirmReview.mockResolvedValue({ ok: true });
+    await renderReview();
+
+    // The card on screen (s-1) stays out of the batch, so an edit on it can't be overwritten.
+    await fireEvent.press(screen.getByRole('button', { name: 'Confirm the 2 the AI was sure of' }));
+
+    await waitFor(() => {
+      expect(mockedConfirmReview).toHaveBeenCalledTimes(2);
+    });
+    expect(mockedConfirmReview.mock.calls.map((call) => call[0])).toEqual(['s-2', 's-3']);
+    expect(screen.queryByRole('button', { name: /AI was sure of/ })).not.toBeOnTheScreen();
+  });
+
+  test('the bulk button is disabled while the card is saving', async () => {
+    mockCloset.garments = [sureOne('s-1', 1), sureOne('s-2', 2), sureOne('s-3', 3)];
+    mockedConfirmReview.mockImplementation(() => new Promise(() => undefined));
+    await renderReview();
+    await fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
+    expect(screen.getByRole('button', { name: 'Confirm the 2 the AI was sure of' })).toBeDisabled();
+  });
+
+  test('one sure garment gets no bulk button', async () => {
+    mockCloset.garments = [sureOne('s-1', 1), extracted('d-1', 2)];
+    await renderReview();
+    expect(screen.queryByRole('button', { name: /AI was sure of/ })).not.toBeOnTheScreen();
+  });
+
+  test('a failure stops the loop: what was saved stays, the rest stays queued, and it says so', async () => {
+    mockCloset.garments = [sureOne('s-0', 0), sureOne('s-1', 1), sureOne('s-2', 2), sureOne('s-3', 3)];
+    mockedConfirmReview.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: false, error: 'network' });
+    await renderReview();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Confirm the 3 the AI was sure of' }));
+
+    expect(await screen.findByText("Some couldn't be saved. The rest are still here.")).toBeOnTheScreen();
+    expect(mockedConfirmReview).toHaveBeenCalledTimes(2);
+    expect(mockReplaceLocal).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('2 of 4')).toBeOnTheScreen();
+
+    // Confirming a card afterwards clears the stale error.
+    mockedConfirmReview.mockResolvedValue({ ok: true });
+    await fireEvent.press(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => {
+      expect(screen.queryByText("Some couldn't be saved. The rest are still here.")).not.toBeOnTheScreen();
+    });
+  });
+});

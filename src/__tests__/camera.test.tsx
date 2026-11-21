@@ -169,6 +169,43 @@ describe('granted', () => {
     expect(mockRouter.back).toHaveBeenCalledTimes(1);
   });
 
+  test('each shot is a light haptic, and the count is a polite live region', async () => {
+    const Haptics = jest.requireMock<typeof import('expo-haptics')>('expo-haptics');
+    jest.mocked(Haptics.impactAsync).mockClear();
+    await render(<CameraScreen />);
+    await fireEvent.press(screen.getByTestId('camera-shutter'));
+    await waitFor(() => {
+      expect(screen.getByText('1 photo')).toBeOnTheScreen();
+    });
+    expect(Haptics.impactAsync).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('1 photo')).toHaveProp('accessibilityLiveRegion', 'polite');
+  });
+
+  test('removing the last photo keeps the earlier one, and Add sends only that', async () => {
+    mockTakePictureAsync
+      .mockResolvedValueOnce({ uri: 'file:///a.jpg' })
+      .mockResolvedValueOnce({ uri: 'file:///b.jpg' });
+    await render(<CameraScreen />);
+    await fireEvent.press(screen.getByTestId('camera-shutter'));
+    await waitFor(() => {
+      expect(screen.getByText('1 photo')).toBeOnTheScreen();
+    });
+    await fireEvent.press(screen.getByTestId('camera-shutter'));
+    await waitFor(() => {
+      expect(screen.getByText('2 photos')).toBeOnTheScreen();
+    });
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Remove the last photo' }));
+    expect(screen.getByText('1 photo')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Add 1 to closet' }));
+    expect(mockEnqueue).toHaveBeenCalledWith(['file:///a.jpg']);
+  });
+
+  test('with no shots there is nothing to remove', async () => {
+    await render(<CameraScreen />);
+    expect(screen.queryByRole('button', { name: 'Remove the last photo' })).not.toBeOnTheScreen();
+  });
+
   test('Close with 0 shots goes back directly', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
     await render(<CameraScreen />);

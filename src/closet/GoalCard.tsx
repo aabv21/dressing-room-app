@@ -1,36 +1,55 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { useI18n } from '../i18n';
+import { useI18n, type MessageKey } from '../i18n';
 import { colors, gradients, radii, spacing } from '../ui/theme';
+import type { FirstOutfitProgress } from './closetSelectors';
 
-export const CLOSET_GOAL = 10;
+const STEPS = 3;
 
-/** Mockup 02 screen 1's goal card: the first 10 garments, with a progress bar. */
-export function GoalCard({ count }: { count: number }): React.JSX.Element {
+/** The empty closet's goal: the first outfit (top, bottom and shoes, or a one-piece and shoes), with a three-step bar. */
+export function GoalCard({ progress }: { progress: FirstOutfitProgress }): React.JSX.Element {
   const { t } = useI18n();
-  const reached = Math.min(count, CLOSET_GOAL);
-  const progress = t('closet.goal.progress', { count: reached, goal: CLOSET_GOAL });
-
+  const bodyDone = progress.onePiece || (progress.top && progress.bottom);
+  const topDone = progress.top || progress.onePiece;
+  const bottomDone = progress.bottom || progress.onePiece;
+  const done = Number(topDone) + Number(bottomDone) + Number(progress.shoes);
+  const text = t('closet.goal.progress', { count: done, goal: STEPS });
+  const step = (key: MessageKey, isDone: boolean): React.JSX.Element => (
+    <Text
+      key={key}
+      style={[styles.step, isDone ? styles.stepDone : null]}
+      accessibilityLabel={`${t(key)}, ${t(isDone ? 'closet.goal.done' : 'closet.goal.todo')}`}
+    >
+      {isDone ? '✓ ' : ''}
+      {t(key)}
+    </Text>
+  );
   return (
     <View style={styles.card}>
       <View style={styles.row}>
         <Text style={styles.title}>{t('closet.goal.title')}</Text>
-        <Text style={styles.muted}>{progress}</Text>
+        <Text style={styles.muted}>{text}</Text>
       </View>
       <View
         style={styles.track}
         accessible
         accessibilityRole="progressbar"
         accessibilityLabel={t('closet.goal.title')}
-        accessibilityValue={{ min: 0, max: CLOSET_GOAL, now: reached, text: progress }}
+        accessibilityValue={{ min: 0, max: STEPS, now: done, text }}
       >
         <LinearGradient
           colors={gradients.ai}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
-          style={[styles.fill, { width: `${String((reached / CLOSET_GOAL) * 100)}%` }]}
+          style={[styles.fill, { width: `${String((done / STEPS) * 100)}%` }]}
         />
+      </View>
+      <View style={styles.steps}>
+        {step('closet.goal.top', topDone)}
+        {step('closet.goal.bottom', bottomDone)}
+        {bodyDone ? null : <Text style={styles.muted}>{t('closet.goal.onePiece')}</Text>}
+        {step('closet.goal.shoes', progress.shoes)}
       </View>
       <Text style={styles.muted}>{t('closet.goal.body')}</Text>
     </View>
@@ -38,6 +57,21 @@ export function GoalCard({ count }: { count: number }): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
+  steps: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    columnGap: spacing.sm,
+    rowGap: spacing.xs,
+  },
+  step: {
+    color: colors.muted,
+    fontSize: 14,
+  },
+  stepDone: {
+    color: colors.accentText,
+    fontWeight: '700',
+  },
   card: {
     backgroundColor: 'rgba(255,255,255,0.8)',
     borderWidth: 1,
