@@ -92,10 +92,10 @@ A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-w
 | `POST /functions/v1/delete-account` | `src/account/accountClient.ts` `deleteAccount` | User JWT (sent explicitly) | `{}` | 200 `{ outcome: 'deleted' }` | 401, 405, 500 |
 | `POST /functions/v1/export-data` | `accountClient.ts` `exportData` | User JWT | `{}` | 200 `DataExport` | 401, 405, 500 |
 | `POST /rest/v1/rpc/log_wear` | `src/outfits/outfitRepository.ts` `logWear` | User JWT | wear id, garment ids, day, occasion?, score? | the wear id | `22023`, `42501`, `23505` |
-| `POST /rest/v1/rpc/save_outfit` | `outfitRepository.ts` `saveOutfit` | User JWT | garment ids | the outfit id | `22023`, `42501` |
+| `POST /rest/v1/rpc/save_outfit` | `outfitRepository.ts` `saveOutfit` | User JWT | garment ids, score? | the outfit id | `22023`, `42501` |
 | `POST /rest/v1/rpc/keep_alive` | `.github/workflows/keepalive.yml` | Anon key | `{}` | the server time | none |
 | `POST /rest/v1/rpc/consume_quota` | The functions | Service role | user, kind, limit, day? | `true` / `false` | — |
-| `/rest/v1/profiles`, `garments`, `wears` | The repositories | User JWT + RLS | select, update, insert, delete | rows | `42501` |
+| `/rest/v1/profiles`, `garments`, `wears`, `outfits`, `dismissed_outfits` | The repositories | User JWT + RLS | select, update, insert, delete | rows | `42501`, `23514` |
 | `/storage/v1/object/garments/…` | Upload queue, `garmentRepository.ts`, functions, backup | User JWT or service role | upload, sign, remove, download | — | Storage error statuses ([Storage](#storage)) |
 | `/auth/v1/*` | `src/auth/emailAuth.ts`, `socialAuth.ts`, `accountClient.ts` | Anon key or session | sign-up, sign-in, recovery, ID tokens | session | Auth error codes |
 
@@ -222,7 +222,7 @@ never waits for it.
 | RPC | Signature | Who may call | Notes |
 | --- | --- | --- | --- |
 | `log_wear` | `(p_wear_id uuid, p_garment_ids uuid[], p_worn_on date, p_occasion occasion default null, p_score smallint default null) returns uuid` | `authenticated` | `security invoker`. Idempotent on `p_wear_id`. `22023` for fewer than 2 or duplicate ids, `42501` for a garment that isn't the caller's, `23505` for another user's wear id |
-| `save_outfit` | `(p_garment_ids uuid[]) returns uuid` | `authenticated` | Same validation; stamps `saved_at`, logs no wear |
+| `save_outfit` | `(p_garment_ids uuid[], p_score smallint default null) returns uuid` | `authenticated` | Same validation; stamps `saved_at` and stores `p_score` (0–100), logs no wear. A call with `p_garment_ids` alone (older builds) still resolves to it |
 | `keep_alive` | `() returns timestamptz` | `anon` (the only anon grant) | Answers `now()`, reads no table |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer) returns boolean` | `service_role` | The UTC day; extraction only |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer, p_day date) returns boolean` | `service_role` | `p_day` when within one day of the UTC date, else the UTC day (`20261120120000_quota_local_day.sql`) |
@@ -237,9 +237,10 @@ All through PostgREST with the user's JWT; RLS limits every row to the caller's 
 | Table | App calls | Client grants beyond RLS | Module |
 | --- | --- | --- | --- |
 | `profiles` | select own; update changed columns only (never upsert); `completeOnboarding` sends `'now'` | No insert or delete policy; `created_at` kept and `onboarding_completed_at` stamped by triggers | `src/profile/profileRepository.ts` |
-| `garments` | select all own, newest first; upsert `{ id, user_id }` ignoring duplicates; update attributes, status, `pinned_on`, `photo_version`, `reviewed_at`; delete | Insert only `id`, `user_id`; update only the attribute columns, `status`, `photo_version`, `reviewed_at`, `pinned_on` | `src/closet/garmentRepository.ts`, `src/closet/upload/queueSteps.ts` |
+| `garments` | select all own, newest first; upsert `{ id, user_id }` ignoring duplicates; update attributes, status, `pinned_on`, `suggest`, `photo_version`, `reviewed_at`; delete | Insert only `id`, `user_id`; update only the attribute columns, `status`, `photo_version`, `reviewed_at`, `pinned_on`, `suggest` | `src/closet/garmentRepository.ts`, `src/closet/upload/queueSteps.ts` |
 | `wears` | select by `worn_on` range with `outfits(outfit_items(garment_id))`, pages of 1000, at most 20; delete own | No update; insert only through `log_wear` in practice | `src/stats/wearsRepository.ts` |
-| `outfits`, `outfit_items` | none directly (through the RPCs; read inside `wears` selects) | No update or delete | — |
+| `outfits`, `outfit_items` | select saved outfits with `outfit_items(garment_id)`, newest first; delete a saved one (its items cascade); otherwise through the RPCs and inside `wears` selects | No update; delete only on `outfits`, and only a saved outfit no wear points at | `src/outfits/savedOutfits.ts` |
+| `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` |
 
 The caches, `usage_counters` and `apple_tokens` have no client grants at all.
 

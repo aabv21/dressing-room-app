@@ -427,7 +427,7 @@ Supabase stack:
   Apple token with the mock and deletes the auth user, whose rows cascade, and a retry with the
   same token answers `deleted` without calling Apple again. A second user is untouched throughout.
 - `rls.int.test.ts` — the cross-user RLS boundary: user A can never read, update, list or delete
-  user B's `profiles` row or storage objects. Also: A can't insert a profile row or delete their own,
+  user B's `profiles` row, storage objects or `dismissed_outfits` rows (nor dismiss one for B). Also: A can't insert a profile row or delete their own,
   and uploads outside the three image MIME types or over 2 MiB are rejected.
 - `profile.int.test.ts` — `profileRepository`'s server-clock `onboarding_completed_at` stamping,
   `saveProfile` updating only the given columns (one coordinate of a stored pair saves on its own),
@@ -524,8 +524,14 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `outfits_wears.test.sql` — `log_wear()` and `save_outfit()`: one outfit, its items and a wear,
   `wear_count` and `last_worn_at` kept on insert and delete, idempotent on the wear id (never
   adopting another user's), another user's garments or outfit refused, too few or duplicate items
-  refused, cross-user isolation on `outfits`, `outfit_items` and `wears`, no client update, a wear
-  deleted only by its owner, and a garment delete cascading its outfit items.
+  refused, cross-user isolation on `outfits`, `outfit_items` and `wears`, no client update, no
+  delete of a worn outfit, a wear deleted only by its owner, and a garment delete cascading its
+  outfit items.
+- `suggestion_feedback.test.sql` — `dismissed_outfits`: own rows only between two users, no
+  update, no anon access, the key's shape check and the cascade on user delete; `garments.suggest`
+  defaults to true and is client-writable on the caller's own garments only; `save_outfit` stores
+  its score; a saved outfit is deleted only by its owner, only while no wear points at it, with its
+  items cascading, while `outfit_items` keeps delete revoked.
 - `insights_account.test.sql` — the `donated` status and the client-writable `pinned_on`, the
   `for_you` quota kind, the server-only `for_you_cache` and `apple_tokens`, and that every public
   table with a `user_id` cascades from `auth.users` (deleting a user empties them all).

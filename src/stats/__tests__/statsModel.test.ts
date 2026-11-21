@@ -35,6 +35,7 @@ function garment(overrides: Partial<Garment> = {}): Garment {
     reviewed_at: '2026-01-01T00:00:00Z',
     last_worn_at: null,
     pinned_on: null,
+    suggest: true,
     photo_version: 1,
     wear_count: 0,
     ...overrides,

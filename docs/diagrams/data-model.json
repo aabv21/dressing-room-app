@@ -105,6 +105,18 @@
       ]
     },
     {
+      "id": "dismissed",
+      "type": "database",
+      "label": "dismissed_outfits",
+      "sublabel": "RLS: own insert, delete",
+      "row": 3,
+      "col": 0,
+      "size": [
+        160,
+        64
+      ]
+    },
+    {
       "id": "usage",
       "type": "database",
       "label": "usage_counters",
@@ -163,7 +175,8 @@
         "objects",
         "outfits",
         "items",
-        "wears"
+        "wears",
+        "dismissed"
       ],
       "pad": 20
     },
@@ -208,6 +221,14 @@
       "label": "cascade",
       "fromSide": "bottom",
       "toSide": "right"
+    },
+    {
+      "id": "own-dismissed",
+      "from": "users",
+      "to": "dismissed",
+      "label": "cascade",
+      "fromSide": "bottom",
+      "toSide": "bottom"
     },
     {
       "id": "own-usage",
