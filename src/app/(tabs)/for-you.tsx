@@ -1,13 +1,17 @@
 // For you: 3–5 "what you're missing" ideas from `for-you`, each with how many pieces it combines with,
-// a line (Claude's or a template) and "Search in stores" (a web search in the system browser).
+// a line (Claude's or a template) and "Search in stores" (the region's stores, in the system browser).
+import { getLocales } from 'expo-localization';
 import { router } from 'expo-router';
 import { RotateCw, Search, Shirt, Sparkles, TriangleAlert, WifiOff } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { PALETTE_HEX } from '../../closet/catalog';
-import { isMessageKey, pluralKey, useI18n, type Locale } from '../../i18n';
+import { isMessageKey, pluralKey, useI18n } from '../../i18n';
 import type { AiError } from '../../outfits/aiClient';
 import { pieceLabel } from '../../outfits/outfitDisplay';
+import { StoreSheet } from '../../outfits/StoreSheet';
+import { storeLinksFor, type StoreLink } from '../../outfits/storeLinks';
 import type { ForYouCard } from '../../outfits/types';
 import { useForYou } from '../../outfits/useForYou';
 import type { CtaAction } from '../../ui/AnchoredCta';
@@ -19,11 +23,6 @@ type Translate = ReturnType<typeof useI18n>['t'];
 
 const SEARCH_HEIGHT = 40;
 const SWATCH_HEX = new Map(Object.entries(PALETTE_HEX));
-
-/** The Google search for an idea, in the app's language. */
-function storeSearchUrl(searchQuery: string, locale: Locale): string {
-  return `https://www.google.com/search?q=${encodeURIComponent(searchQuery)}&hl=${locale}`;
-}
 
 /** Claude's line, else the template key rendered here; null for a key this app version doesn't know. */
 function lineText(idea: ForYouCard, t: Translate): string | null {
@@ -43,6 +42,16 @@ function IdeaCard({ idea }: { idea: ForYouCard }): React.JSX.Element {
   const line = lineText(idea, t);
   const swatch = idea.colors[0] === undefined ? undefined : SWATCH_HEX.get(idea.colors[0]);
   const search = t('forYou.search');
+  const [storesOpen, setStoresOpen] = useState(false);
+  // NOTE: the region is read when the card renders, not on an OS change; upgrade: expo-localization's `useLocales()` if a traveler's stores ever lag.
+  const links = useMemo(() => storeLinksFor(getLocales()[0].regionCode, idea.searchQuery, locale), [idea.searchQuery, locale]);
+  const open = (link: StoreLink): void => {
+    setStoresOpen(false);
+    // A device with no browser (or one that refuses) rejects: say so rather than doing nothing.
+    Linking.openURL(link.url).catch(() => {
+      Alert.alert(t('forYou.openFailed'));
+    });
+  };
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -63,16 +72,22 @@ function IdeaCard({ idea }: { idea: ForYouCard }): React.JSX.Element {
         accessibilityLabel={`${search}, ${name}`}
         hitSlop={{ top: (layout.minHitTarget - SEARCH_HEIGHT) / 2, bottom: (layout.minHitTarget - SEARCH_HEIGHT) / 2 }}
         onPress={() => {
-          // A device with no browser (or one that refuses) rejects: say so rather than doing nothing.
-          Linking.openURL(storeSearchUrl(idea.searchQuery, locale)).catch(() => {
-            Alert.alert(t('forYou.openFailed'));
-          });
+          setStoresOpen(true);
         }}
         style={({ pressed }) => [styles.search, pressed ? styles.pressed : null]}
       >
         <Search size={14} color={colors.accentText} strokeWidth={2.5} />
         <Text style={styles.searchLabel}>{search}</Text>
       </Pressable>
+      <StoreSheet
+        visible={storesOpen}
+        piece={name}
+        links={links}
+        onPick={open}
+        onClose={() => {
+          setStoresOpen(false);
+        }}
+      />
     </View>
   );
 }

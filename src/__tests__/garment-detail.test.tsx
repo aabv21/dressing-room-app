@@ -8,6 +8,8 @@ import { Alert, type AlertButton } from 'react-native';
 import GarmentDetailScreen from '../app/garment/[id]';
 import { usePendingPolling } from '../closet/ClosetProvider';
 import { deleteGarment, updateGarment, type Garment } from '../closet/garmentRepository';
+import { I18nProvider } from '../i18n/I18nProvider';
+import { kvSet } from '../lib/kv';
 import { garment } from '../test/garmentFixture';
 
 const mockParams: { id: string } = { id: 'g-1' };
@@ -651,5 +653,138 @@ describe('leaving with unsaved edits', () => {
       expect(router.back).toHaveBeenCalled();
     });
     alert.mockRestore();
+  });
+});
+
+describe('price and cost per wear', () => {
+  test('a priced garment shows its price, its currency and the cost per wear', async () => {
+    mockCloset.garments = [jeans({ price: 30, currency: 'USD', wear_count: 12 })];
+    await renderDetail();
+
+    expect(screen.getByLabelText('Price')).toHaveDisplayValue('30');
+    expect(screen.getByRole('radio', { name: 'USD' })).toBeChecked();
+    expect(screen.getByText('Cost per wear: $2.50 after 12 wears')).toBeOnTheScreen();
+  });
+
+  test('a row cached by an older build (no price fields) shows an empty price and no cost per wear', async () => {
+    mockCloset.garments = [{ ...jeans(), price: undefined, currency: undefined } as unknown as Garment];
+    await renderDetail();
+
+    expect(screen.getByLabelText('Price')).toHaveDisplayValue('');
+    expect(screen.queryByText(/^Cost per wear/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  test('a never-worn priced garment costs its price per wear', async () => {
+    mockCloset.garments = [jeans({ price: 30, currency: 'USD', wear_count: 0 })];
+    await renderDetail();
+
+    expect(screen.getByText('Cost per wear: $30.00, never worn')).toBeOnTheScreen();
+  });
+
+  test('an unpriced garment shows no cost per wear and offers the common currencies', async () => {
+    await renderDetail();
+
+    expect(screen.queryByText(/^Cost per wear/)).toBeNull();
+    for (const code of ['USD', 'COP', 'MXN', 'EUR', 'VES', 'ARS', 'CLP', 'PEN', 'BRL']) {
+      expect(screen.getByRole('radio', { name: code })).toBeOnTheScreen();
+    }
+  });
+
+  test("Save sends a typed price with the device's currency", async () => {
+    mockedUpdateGarment.mockResolvedValue({ ok: true });
+    await renderDetail();
+
+    await fireEvent.changeText(screen.getByLabelText('Price'), '49,90');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockReplaceLocal).toHaveBeenCalledWith({ ...jeans(), price: 49.9, currency: 'USD' });
+    });
+    expect(mockedUpdateGarment).toHaveBeenCalledWith('g-1', { price: 49.9, currency: 'USD' });
+  });
+
+  test('a picked currency is saved with the price', async () => {
+    mockedUpdateGarment.mockResolvedValue({ ok: true });
+    await renderDetail();
+
+    await fireEvent.changeText(screen.getByLabelText('Price'), '120.000');
+    await fireEvent.press(screen.getByRole('radio', { name: 'COP' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockedUpdateGarment).toHaveBeenCalledWith('g-1', { price: 120000, currency: 'COP' });
+    });
+  });
+
+  test('changing only the currency of a priced garment saves both', async () => {
+    mockedUpdateGarment.mockResolvedValue({ ok: true });
+    mockCloset.garments = [jeans({ price: 30, currency: 'USD' })];
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'EUR' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockedUpdateGarment).toHaveBeenCalledWith('g-1', { price: 30, currency: 'EUR' });
+    });
+  });
+
+  test('clearing the price clears the currency too', async () => {
+    mockedUpdateGarment.mockResolvedValue({ ok: true });
+    mockCloset.garments = [jeans({ price: 30, currency: 'USD' })];
+    await renderDetail();
+
+    await fireEvent.changeText(screen.getByLabelText('Price'), '');
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(mockedUpdateGarment).toHaveBeenCalledWith('g-1', { price: null, currency: null });
+    });
+  });
+
+  test('picking a currency with no price has nothing to save', async () => {
+    await renderDetail();
+
+    await fireEvent.press(screen.getByRole('radio', { name: 'COP' }));
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  test('a price that is not a number disables Save and says why', async () => {
+    await renderDetail();
+
+    await fireEvent.changeText(screen.getByLabelText('Price'), '12a');
+
+    expect(screen.getByText('Enter a price like 49.90.')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  test('a typed price counts as an unsaved edit', async () => {
+    await renderDetail();
+    expect(attemptRemove()).toBe(false);
+
+    await fireEvent.changeText(screen.getByLabelText('Price'), '10');
+
+    expect(attemptRemove()).toBe(true);
+  });
+
+  test('in Spanish: the field, the decimal comma and the cost per wear', async () => {
+    kvSet('locale-preference', 'es');
+    mockCloset.garments = [jeans({ price: 30, currency: 'USD', wear_count: 12 })];
+    try {
+      await render(
+        <I18nProvider>
+          <GarmentDetailScreen />
+        </I18nProvider>,
+      );
+      expect(await screen.findByLabelText('Precio')).toHaveDisplayValue('30');
+      expect(screen.getByText(/^Costo por uso: 2,50\sUS\$ tras 12 usos$/)).toBeOnTheScreen();
+
+      await fireEvent.changeText(screen.getByLabelText('Precio'), 'abc');
+      expect(screen.getByText('Escribe un precio como 49,90.')).toBeOnTheScreen();
+    } finally {
+      kvSet('locale-preference', 'system');
+    }
   });
 });

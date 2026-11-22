@@ -727,8 +727,9 @@ through its i18n catalogs. With a Claude line, `lineKey` is null and `lineParams
 `searchQuery` gives the store-search words in the request's language: the archetype's own phrase
 when it has one, else "{color} {category}" in English ("camel blazer") or "{category} {color}" in
 Spanish ("blazer camel"), then the audience word ("women"/"mujer", "men"/"hombre", none for
-`everything`). The app URL-encodes it into `https://www.google.com/search?q=<words>&hl=<locale>`
-and opens it in the system browser.
+`everything`). The app URL-encodes it into the search URL of each store for the device's region
+(Falabella, Mercado Libre, Google Shopping or Google; `src/outfits/storeLinks.ts`,
+[`app.md`](app.md#outfits-srcoutfits)) and opens the one the user picks in the system browser.
 
 ### The `for-you` function
 
@@ -800,8 +801,8 @@ the app's current language whenever the tab gains focus or the language changes,
 time: a second call while the first is still ranking would miss the cache too and get a 429. Each
 good answer is kept in kv `forYou.ideas.<userId>`, one per language, and shown at once on the next
 cold start, offline (with a note) and over the quota (with the quota note). A card's line is
-Claude's, or its template key (`forYou.line.*`) rendered through i18n; "Search in stores" opens
-`https://www.google.com/search?q=<encoded searchQuery>&hl=<language>` in the system browser. The
+Claude's, or its template key (`forYou.line.*`) rendered through i18n; "Search in stores" opens a
+sheet of the region's stores, each searching for the encoded `searchQuery` in the system browser. The
 rating screen links to For you ("Missing something?") when the score is under 70 and no swap is
 shown. When the last For you answer stored on the device in the app's language has an idea for the
 rating's `weakestSlot`, the line names it ("Missing something? Try: Boots · Camel"), as mockup 01

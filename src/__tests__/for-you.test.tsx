@@ -1,6 +1,6 @@
 // The For you tab: 3–5 "what you're missing" ideas from `for-you`, each with "Search in stores".
 // Rendered directly with auth, focus and the AI client mocked; kv is the in-memory test store.
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import { Alert, Linking } from 'react-native';
 
@@ -25,6 +25,12 @@ jest.mock('../outfits/aiClient', () => ({
   fetchForYou: jest.fn(),
 }));
 jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-20' }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- the share and store sheets read Reduce Motion; see src/test/reanimatedMock.ts's module doc
+jest.mock('react-native-reanimated', () => require('../test/reanimatedMock'));
+const mockRegion: { code: string | null } = { code: 'US' };
+jest.mock('expo-localization', () => ({
+  getLocales: () => [{ languageTag: 'en-US', languageCode: 'en', regionCode: mockRegion.code, currencyCode: 'USD' }],
+}));
 
 const mockedFetch = jest.mocked(fetchForYou);
 const mockedPush = jest.mocked(router.push);
@@ -76,10 +82,13 @@ let openURL: jest.SpyInstance;
 
 beforeEach(() => {
   mockFocus.focused = true;
+  mockRegion.code = 'US';
   mockedFetch.mockReset();
   mockedPush.mockClear();
   kvRemove(storedForYouKey('user-1'));
   openURL = jest.spyOn(Linking, 'openURL').mockImplementation(() => Promise.resolve());
+  // A spy restored in afterEach is the same function next time: start each test with no calls.
+  openURL.mockClear();
 });
 
 afterEach(() => {
@@ -104,7 +113,7 @@ describe('the ideas', () => {
     expect(mockedFetch).toHaveBeenCalledWith({ language: 'en', date: '2026-11-20' });
   });
 
-  test('render in Spanish, and "Buscar en tiendas" opens the encoded Google search with hl=es', async () => {
+  test('render in Spanish, and "Buscar en tiendas" lists the stores; Google opens the encoded search with hl=es', async () => {
     const es: ForYouResponse = {
       kind: 'ok',
       ideas: [{ ...BLAZER, line: null, lineKey: 'forYou.line.outerwear', searchQuery: 'blazer camel mujer' }],
@@ -118,8 +127,48 @@ describe('the ideas', () => {
     expect(mockedFetch).toHaveBeenCalledWith({ language: 'es', date: '2026-11-20' });
 
     await fireEvent.press(screen.getByRole('button', { name: /^Buscar en tiendas/ }));
+    expect(openURL).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Google Shopping' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Google' }));
 
     expect(openURL).toHaveBeenCalledWith('https://www.google.com/search?q=blazer%20camel%20mujer&hl=es');
+    expect(screen.queryByRole('button', { name: 'Google Shopping' })).not.toBeOnTheScreen();
+  });
+
+  test("in Colombia the sheet lists Falabella, Mercado Libre and Google Shopping, each opening its search", async () => {
+    mockRegion.code = 'CO';
+    mockedFetch.mockReturnValue(ok({ kind: 'ok', ideas: [{ ...BLAZER, searchQuery: 'blazer camel mujer' }] }));
+    await renderIn('es');
+
+    await fireEvent.press(await screen.findByRole('button', { name: /^Buscar en tiendas/ }));
+
+    const sheet = screen.getByTestId('store-sheet');
+    expect(within(sheet).getByText('Blazer · Camel')).toBeOnTheScreen();
+    expect(within(sheet).getAllByRole('button').map((button) => button.props.accessibilityLabel as string)).toEqual([
+      'Falabella',
+      'Mercado Libre',
+      'Google Shopping',
+      'Cancelar',
+    ]);
+    await fireEvent.press(screen.getByRole('button', { name: 'Falabella' }));
+    expect(openURL).toHaveBeenCalledWith('https://www.falabella.com.co/falabella-co/search?Ntt=blazer%20camel%20mujer');
+
+    await fireEvent.press(screen.getByRole('button', { name: /^Buscar en tiendas/ }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Mercado Libre' }));
+    expect(openURL).toHaveBeenLastCalledWith('https://listado.mercadolibre.com.co/blazer-camel-mujer');
+  });
+
+  test('Cancel closes the sheet without opening anything', async () => {
+    mockedFetch.mockReturnValue(ok({ kind: 'ok', ideas: [BLAZER] }));
+    await renderIn('en');
+
+    await fireEvent.press(await screen.findByRole('button', { name: /^Search in stores/ }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByTestId('store-sheet')).not.toBeOnTheScreen();
+    expect(openURL).not.toHaveBeenCalled();
   });
 
   test("a browser that won't open says so instead of failing silently", async () => {
@@ -129,6 +178,7 @@ describe('the ideas', () => {
     await renderIn('en');
 
     await fireEvent.press(await screen.findByRole('button', { name: /^Search in stores/ }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Google Shopping' }));
 
     await waitFor(() => {
       expect(alert).toHaveBeenCalledWith("Couldn't open the browser. Try again.");

@@ -2,6 +2,7 @@ import type { Garment } from '../../closet/garmentRepository';
 import {
   activeGarments,
   colorShares,
+  costPerWearByCurrency,
   diaryByDay,
   kpis,
   mostWorn,
@@ -36,6 +37,8 @@ function garment(overrides: Partial<Garment> = {}): Garment {
     last_worn_at: null,
     pinned_on: null,
     suggest: true,
+    price: null,
+    currency: null,
     photo_version: 1,
     wear_count: 0,
     ...overrides,
@@ -309,5 +312,48 @@ describe('diaryByDay', () => {
 
   test('empty history gives an empty map', () => {
     expect(diaryByDay([]).size).toBe(0);
+  });
+});
+
+describe('costPerWearByCurrency', () => {
+  test('the best value is the lowest cost per wear among worn pieces', () => {
+    const jeans = garment({ category: 'jeans', price: 60, currency: 'USD', wear_count: 30 });
+    const blazer = garment({ category: 'blazer', price: 120, currency: 'USD', wear_count: 4 });
+    const groups = costPerWearByCurrency([blazer, jeans]);
+    expect(groups).toEqual([{ currency: 'USD', best: { garment: jeans, costPerWear: 2 }, forgotten: null }]);
+  });
+
+  test('a never-worn piece is never the best value: it is the forgotten one, the most expensive first', () => {
+    const tee = garment({ category: 't_shirt', price: 10, currency: 'USD', wear_count: 0 });
+    const coat = garment({ category: 'coat', price: 200, currency: 'USD', wear_count: 0 });
+    const jeans = garment({ category: 'jeans', price: 60, currency: 'USD', wear_count: 2 });
+    expect(costPerWearByCurrency([tee, coat, jeans])).toEqual([
+      { currency: 'USD', best: { garment: jeans, costPerWear: 30 }, forgotten: { garment: coat, price: 200 } },
+    ]);
+  });
+
+  test('currencies are grouped, never mixed: the most priced pieces first, then by code', () => {
+    const copA = garment({ price: 50000, currency: 'COP', wear_count: 5 });
+    const copB = garment({ price: 80000, currency: 'COP', wear_count: 0 });
+    const usd = garment({ price: 5, currency: 'USD', wear_count: 1 });
+    const eur = garment({ price: 1000, currency: 'EUR', wear_count: 0 });
+    expect(costPerWearByCurrency([usd, eur, copA, copB])).toEqual([
+      { currency: 'COP', best: { garment: copA, costPerWear: 10000 }, forgotten: { garment: copB, price: 80000 } },
+      { currency: 'EUR', best: null, forgotten: { garment: eur, price: 1000 } },
+      { currency: 'USD', best: { garment: usd, costPerWear: 5 }, forgotten: null },
+    ]);
+  });
+
+  test('donated and unpriced pieces, and rows cached without the columns, are left out', () => {
+    const donated = garment({ price: 1, currency: 'USD', wear_count: 50, status: 'donated' });
+    const unpriced = garment({ wear_count: 3 });
+    const cached = { ...garment({ wear_count: 3 }), price: undefined, currency: undefined } as unknown as Garment;
+    expect(costPerWearByCurrency([donated, unpriced, cached])).toEqual([]);
+  });
+
+  test('ties break by what the row shows', () => {
+    const shirt = garment({ category: 'shirt', price: 20, currency: 'USD', wear_count: 2 });
+    const blouse = garment({ category: 'blouse', price: 20, currency: 'USD', wear_count: 2 });
+    expect(costPerWearByCurrency([shirt, blouse])[0]?.best?.garment).toBe(blouse);
   });
 });

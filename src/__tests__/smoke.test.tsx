@@ -12,6 +12,8 @@ jest.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' })
 jest.mock('../profile/profileRepository', () => ({ getProfile: jest.fn() }));
 // Rendered outside a navigator, so there's no focus state to read.
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useIsFocused: () => true }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- Today's share sheet reads Reduce Motion; see src/test/reanimatedMock.ts's module doc
+jest.mock('react-native-reanimated', () => require('../test/reanimatedMock'));
 
 import { render, screen } from '@testing-library/react-native';
 

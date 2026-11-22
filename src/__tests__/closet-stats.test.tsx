@@ -9,7 +9,8 @@ import { Alert } from 'react-native';
 import BuildScreen from '../app/(tabs)/build';
 import ClosetScreen from '../app/(tabs)/closet';
 import { updateGarment, type Garment } from '../closet/garmentRepository';
-import { kvRemove } from '../lib/kv';
+import { I18nProvider } from '../i18n/I18nProvider';
+import { kvRemove, kvSet } from '../lib/kv';
 import { enqueueWear, wearQueueKey } from '../outfits/wearQueue';
 import { localDate } from '../lib/localDate';
 import { readStoredWears, storedWearsKey, storeWears } from '../stats/storedWears';
@@ -511,5 +512,68 @@ describe('donated garments', () => {
 
     expect(screen.getByRole('button', { name: 'Blouse, 7 wears' })).toBeOnTheScreen();
     expect(screen.queryByLabelText(/^T-shirt/)).not.toBeOnTheScreen();
+  });
+});
+
+describe('cost per wear', () => {
+  const priced = (id: string, price: number, currency: string) => (g: Garment) =>
+    g.id === id ? { ...g, price, currency } : g;
+
+  test('shows the best value and the forgotten priced piece, each opening its garment', async () => {
+    mockSetGarments(CLOSET.map(priced(JEANS, 42, 'USD')).map(priced(OLD_COAT, 150, 'USD')));
+    await openStats();
+
+    expect(screen.getByRole('header', { name: 'Cost per wear' })).toBeOnTheScreen();
+    expect(screen.getByText('Best value: Jeans · Blue, $2.00 per wear')).toBeOnTheScreen();
+    expect(screen.getByText('Forgotten: Coat · Green, $150.00 and never worn')).toBeOnTheScreen();
+    // One currency: no currency heading.
+    expect(screen.queryByText('USD')).not.toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Best value: Jeans · Blue, $2.00 per wear' }));
+    expect(mockedPush).toHaveBeenCalledWith(`/garment/${JEANS}`);
+    await fireEvent.press(screen.getByRole('link', { name: 'Forgotten: Coat · Green, $150.00 and never worn' }));
+    expect(mockedPush).toHaveBeenCalledWith(`/garment/${OLD_COAT}`);
+  });
+
+  test('keeps each currency apart, under its code', async () => {
+    mockSetGarments(CLOSET.map(priced(JEANS, 42, 'USD')).map(priced(SNEAKERS, 280000, 'COP')));
+    await openStats();
+
+    expect(screen.getByText('USD')).toBeOnTheScreen();
+    expect(screen.getByText('COP')).toBeOnTheScreen();
+    expect(screen.getByText('Best value: Jeans · Blue, $2.00 per wear')).toBeOnTheScreen();
+    expect(screen.getByText(/^Best value: Sneakers · White, COP\s20,000 per wear$/)).toBeOnTheScreen();
+  });
+
+  test('no priced garment, no card', async () => {
+    await openStats();
+
+    expect(screen.queryByText('Cost per wear')).not.toBeOnTheScreen();
+  });
+
+  test('a donated priced garment does not count', async () => {
+    mockSetGarments(CLOSET.map(priced(DONATED_TEE, 5, 'USD')));
+    await openStats();
+
+    expect(screen.queryByText('Cost per wear')).not.toBeOnTheScreen();
+  });
+
+  test('in Spanish', async () => {
+    kvSet('locale-preference', 'es');
+    mockSetGarments(CLOSET.map(priced(JEANS, 42, 'USD')).map(priced(OLD_COAT, 150, 'USD')));
+    try {
+      await render(
+        <I18nProvider>
+          <ClosetScreen />
+        </I18nProvider>,
+      );
+      await fireEvent.press(screen.getByRole('tab', { name: 'Estadísticas' }));
+
+      expect(await screen.findByRole('header', { name: 'Costo por uso' })).toBeOnTheScreen();
+      expect(screen.getByText(/^Mejor valor: .+, 2,00\sUS\$ por uso$/)).toBeOnTheScreen();
+      expect(screen.getByText(/^Olvidada: .+, 150,00\sUS\$ y sin usar$/)).toBeOnTheScreen();
+    } finally {
+      kvSet('locale-preference', 'system');
+    }
   });
 });

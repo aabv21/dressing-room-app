@@ -22,6 +22,8 @@ export function garment(overrides: Partial<Garment> = {}): Garment {
     last_worn_at: null,
     pinned_on: null,
     suggest: true,
+    price: null,
+    currency: null,
     reviewed_at: null,
     created_at: '2026-11-08T12:00:00.000Z',
     updated_at: '2026-11-08T12:00:00.000Z',

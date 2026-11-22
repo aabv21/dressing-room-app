@@ -76,6 +76,8 @@ desc)` backs the closet grid's per-user, newest-first query.
 | `last_worn_at`                | `timestamptz`              | nullable; server/function-only (Plan 4)                             |
 | `pinned_on`                   | `date`                     | nullable; client-writable (Plan 5)                                   |
 | `suggest`                     | `boolean`                  | `not null default true`; client-writable; false keeps the piece out of suggested outfits |
+| `price`                       | `numeric(10,2)`            | nullable; CHECK `>= 0`; client-writable; what the user paid, for cost per wear |
+| `currency`                    | `text`                     | nullable; CHECK `~ '^[A-Z]{3}$'` (an ISO 4217 code); client-writable; set exactly when `price` is (CHECK `(price is null) = (currency is null)`) |
 | `created_at`, `updated_at`   | `timestamptz`              | `not null default now()`; kept/set by the same triggers as `profiles` |
 
 Enums added here (exact values):
@@ -325,6 +327,11 @@ privileges), the client gets back only:
 - `grant update (suggest)` (`20261121120000_suggestion_feedback.sql`) — Today's "Don't suggest
   this piece" sets it to false, and the garment detail's "Use in suggestions" switch sets it either
   way. `lucky-list` and `for-you` build no outfit with a garment whose `suggest` is false.
+- `grant update (price, currency)` (`20261121130000_garment_price.sql`) — the garment detail's
+  optional price. Both change in the same update: the pair CHECK rejects a price without its
+  currency, and the app clears both together. Cost per wear (`price / max(wear_count, 1)`) is
+  computed on the device; nothing on the server reads the price, and amounts in different
+  currencies are never summed ([`app.md`](app.md#the-closet-srccloset)).
 
 `created_at`/`updated_at` follow the same pair of trigger functions `profiles` uses:
 `garments_set_updated_at` (`public.set_updated_at()`) sets `updated_at = now()` before every
@@ -701,7 +708,7 @@ inside them, never in `src/`.
 
   What the app does around the call (the marker, the paused queue, `reauth`, the local cleanup and
   the later checks) is in [`app.md`](app.md#account-deletion-on-the-device).
-- **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`),
+- **`export-data`** — reads `profiles`, `garments` (every column, so `price` and `currency` too), `outfits` (with `items:outfit_items(garment_id)`),
   `wears` and `dismissed_outfits` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
   caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still

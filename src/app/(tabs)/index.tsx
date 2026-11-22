@@ -1,7 +1,7 @@
 // Today: the weather (opens the city modal), an optional occasion, and the day's outfit with
 // "Another", "I'll wear it" and "How does it look?" (the rating).
 import { router } from 'expo-router';
-import { Check, Dices, Layers, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
+import { Check, Dices, Layers, RotateCw, Share2, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -13,6 +13,7 @@ import { useI18n } from '../../i18n';
 import type { RequestError } from '../../lib/requestResult';
 import { formatWeather, formatWeekday, orderPieces, pieceLabel } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
+import { ShareOutfitSheet } from '../../outfits/ShareOutfitSheet';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
 import { UNDO_WINDOW_MS, useWearLog } from '../../outfits/useWearLog';
 import { dismissOutfit, resumeSuggesting, stopSuggesting, undismissOutfit } from '../../outfits/suggestionFeedback';
@@ -29,6 +30,7 @@ import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 // Room for a message shown above the buttons, so it never covers the card's last row.
 const NOTICE_ROOM = 56;
 const CHIP_AI_HEIGHT = 28;
+const CHIP_SLOP = (layout.minHitTarget - CHIP_AI_HEIGHT) / 2;
 const WEATHER_LINE_HEIGHT = 18;
 // The weather line is one short text row; the slop tops its tap area up to the 44 pt minimum.
 const WEATHER_SLOP = (layout.minHitTarget - WEATHER_LINE_HEIGHT) / 2;
@@ -75,7 +77,7 @@ function useProfileCity(): string | null | undefined {
   return name === '' ? null : name;
 }
 
-function CardHeader({ onRate }: { onRate?: () => void }): React.JSX.Element {
+function CardHeader({ onRate, onShare }: { onRate?: () => void; onShare?: () => void }): React.JSX.Element {
   const { t } = useI18n();
   return (
     <View style={styles.cardHeader}>
@@ -83,18 +85,32 @@ function CardHeader({ onRate }: { onRate?: () => void }): React.JSX.Element {
         <Dices size={14} color={colors.muted} />
         <Text style={styles.muted}>{t('today.lucky')}</Text>
       </View>
-      {onRate === undefined ? null : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('today.rate')}
-          onPress={onRate}
-          hitSlop={{ top: (layout.minHitTarget - CHIP_AI_HEIGHT) / 2, bottom: (layout.minHitTarget - CHIP_AI_HEIGHT) / 2 }}
-          style={styles.chipAi}
-        >
-          <Sparkles size={11} color={colors.accentText} fill={colors.accentText} />
-          <Text style={styles.chipAiLabel}>{t('today.rate')}</Text>
-        </Pressable>
-      )}
+      <View style={styles.cardActions}>
+        {onShare === undefined ? null : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('share.action')}
+            onPress={onShare}
+            // A 28 pt circle: the slop reaches 44 pt everywhere but toward the rate chip beside it.
+            hitSlop={{ top: CHIP_SLOP, bottom: CHIP_SLOP, left: CHIP_SLOP, right: spacing.xs }}
+            style={styles.shareChip}
+          >
+            <Share2 size={13} color={colors.accentText} />
+          </Pressable>
+        )}
+        {onRate === undefined ? null : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('today.rate')}
+            onPress={onRate}
+            hitSlop={{ top: (layout.minHitTarget - CHIP_AI_HEIGHT) / 2, bottom: (layout.minHitTarget - CHIP_AI_HEIGHT) / 2 }}
+            style={styles.chipAi}
+          >
+            <Sparkles size={11} color={colors.accentText} fill={colors.accentText} />
+            <Text style={styles.chipAiLabel}>{t('today.rate')}</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -249,6 +265,8 @@ export default function TodayScreen(): React.JSX.Element {
 
   const outfit = lucky.state === 'ready' ? lucky.outfits[lucky.index] : undefined;
   const pieces = useMemo(() => outfit?.garmentIds.flatMap((id) => byId.get(id) ?? []) ?? [], [outfit, byId]);
+
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Keyed by outfit: a failed or queued wear's note stays with the outfit it was for.
   const wearLog = useWearLog(lucky.day);
@@ -428,8 +446,20 @@ export default function TodayScreen(): React.JSX.Element {
               params: { ids: outfit.garmentIds.join(','), ...(occasion === null ? {} : { occasion }) },
             });
           }}
+          onShare={() => {
+            setShareOpen(true);
+          }}
         />
         <OutfitStack garments={pieces} thumbUrls={thumbUrls} />
+        <ShareOutfitSheet
+          visible={shareOpen}
+          garments={pieces}
+          thumbUrls={thumbUrls}
+          score={outfit.score}
+          onClose={() => {
+            setShareOpen(false);
+          }}
+        />
         <View style={styles.cardFooter}>
           {outfit.freshThisWeek ? <Text style={[styles.muted, styles.fresh]}>{t('today.fresh')}</Text> : <View />}
           {feedbackOpen ? null : (
@@ -589,6 +619,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    borderRadius: radii.pill,
+  },
+  // The share and rate chips stay together on the right, wrapping under the label at a large text size.
+  cardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+  },
+  shareChip: {
+    minHeight: CHIP_AI_HEIGHT,
+    minWidth: CHIP_AI_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.accentBorder,

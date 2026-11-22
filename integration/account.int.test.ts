@@ -136,7 +136,7 @@ async function userWithCloset(label: string): Promise<SignedInUser> {
   expect(await signInWithEmail(email, PASSWORD, client)).toEqual({ ok: true });
   const user = { id, client };
   const garmentIds = [
-    await addGarment(user, { category: 't_shirt', colors: ['white'], formality: 2, warmth: 1, fit: 'regular' }),
+    await addGarment(user, { category: 't_shirt', colors: ['white'], formality: 2, warmth: 1, fit: 'regular', price: 19.99, currency: 'USD' }),
     await addGarment(user, { category: 'jeans', colors: ['navy'], formality: 2, warmth: 2, fit: 'regular' }),
   ];
   const wear = await client.rpc('log_wear', {
@@ -253,14 +253,14 @@ test('apple-token stores nothing for a code whose Apple user isn’t the caller�
   expect(revokes.map((form) => form.get('token'))).toEqual([mockAppleRefreshToken(code)]);
 }, FUNCTION_TIMEOUT_MS);
 
-test('export-data holds the caller’s profile, garments, outfits with items, wears, dismissed outfits and photo URLs, and nothing of B', async () => {
+test('export-data holds the caller’s profile, garments (with their prices), outfits with items, wears, dismissed outfits and photo URLs, and nothing of B', async () => {
   const { status, body } = await invoke(userA.client, 'export-data', {});
 
   expect(status).toBe(200);
   const data = body as {
     exportedAt: string;
     profile: { user_id: string } | null;
-    garments: { id: string; user_id: string }[];
+    garments: { id: string; user_id: string; price: number | null; currency: string | null }[];
     outfits: { id: string; user_id: string; items: { garment_id: string }[] }[];
     wears: { outfit_id: string; user_id: string; occasion: string | null; score: number | null }[];
     dismissedOutfits: { user_id: string; outfit_key: string }[];
@@ -269,6 +269,12 @@ test('export-data holds the caller’s profile, garments, outfits with items, we
   expect(Number.isNaN(Date.parse(data.exportedAt))).toBe(false);
   expect(data.profile?.user_id).toBe(userA.id);
   expect(data.garments.map((garment) => garment.id).sort()).toEqual([...userA.garmentIds].sort());
+  expect(data.garments.map(({ price, currency }) => ({ price, currency }))).toEqual(
+    expect.arrayContaining([
+      { price: 19.99, currency: 'USD' },
+      { price: null, currency: null },
+    ]),
+  );
   expect(data.outfits).toHaveLength(1);
   expect(data.outfits[0]?.items.map((item) => item.garment_id).sort()).toEqual([...userA.garmentIds].sort());
   expect(data.wears).toHaveLength(1);

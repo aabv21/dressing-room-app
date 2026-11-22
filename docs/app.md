@@ -25,7 +25,7 @@ code (components, hooks, utils) stays outside `src/app/`.
 
 Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
 handling; `ScreenTitle` shows the title upper-cased but gives screen readers the words as written), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
-(`useBottomChrome`, `useLargeText`), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
+(`useBottomChrome`, `useLargeText`), `BottomSheet` (React Native's `Modal` sliding up, or fading in with Reduce Motion on, with a title over a `scrim`, at most 90% of the screen tall; a tap outside or the back button closes it; For you's stores and the share sheet use it), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
 `theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
 `fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. `useWaitStage` times an
@@ -62,7 +62,7 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
   slot, category and color filters (a category chip row appears when the slot holds more than one
   category).
 - **The Closet tab's segments** (`SegmentTabs.tsx`): Items (the grid, with `GoalCard`'s first-10
-  goal), Stats (`StatsSegment.tsx`: period chips, KPI tiles, most worn, colors, balance and the
+  goal), Stats (`StatsSegment.tsx`: period chips, KPI tiles, most worn, colors, balance, cost per wear and the
   unused-for-6-months list with Suggest tomorrow and Donate, computed by `src/stats/`) and Diary
   (`DiarySegment.tsx`: a Monday-first month calendar with each worn day's thumbnail; a tapped day's
   wears with their pieces, occasion and score, and Delete) and Saved (`SavedSegment.tsx`: the saved
@@ -81,6 +81,21 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
 - **Capture:** `src/app/camera.tsx` is the burst camera, with `ShotStrip` showing the latest shots;
   `useGalleryImport` picks up to 30 photos and hands them to the queue (the camera and the Closet
   share it).
+- **`price.ts`**: the optional price. `parsePrice` reads either decimal style ("12,50" and "12.50"
+  are 12.5; one separator followed by exactly three digits groups thousands, so "250.000" is
+  250000, but a first group starting with 0 is refused, so "0.500" and "00,500" never read as 500)
+  up to `numeric(10,2)`'s ceiling; `priceOf` pairs the price with its currency (null for an
+  unpriced row or one cached before the columns existed); `deviceCurrency` is expo-localization's
+  `getLocales()[0].currencyCode` (USD when missing); `currencyChoices` is the picker's list
+  (`COMMON_CURRENCIES`: USD, COP, MXN, EUR, VES, ARS, CLP, PEN, BRL, with the device's or the stored
+  code first when it's another); `costPerWear` is `price / max(wear_count, 1)`; and `formatMoney`
+  uses `Intl.NumberFormat` in the app locale and the garment's own currency, with the fraction
+  digits set by `moneyFormatOptions` rather than the device's ICU data (which disagree on COP and
+  CLP): 0 for COP, CLP and VES (VES keeps céntimos on paper, but prices aren't quoted in them), 2
+  for USD, MXN, EUR, ARS, PEN and BRL, and the currency's own standard for any other code. Amounts in different
+  currencies are never summed or compared. The garment detail's Price field and currency chips join
+  its Save (an invalid price disables it with a hint; clearing the price clears the currency), and
+  the detail shows "Cost per wear: $2.50 after 12 wears" for a priced garment.
 - **`garmentRepository.ts`**: the garment data layer: list, signed photo URLs, photo uploads,
   insert, edits, review confirmation, and delete (photos before the row).
 
@@ -198,6 +213,15 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   `outfitIdentity.ts` is the shared outfit key.
 - `useForYou.ts` and `storedForYou.ts`: For you's ideas in the app's language, fetched on focus one
   request at a time, with the last good answer per language in kv `forYou.ideas.<userId>`.
+- `storeLinks.ts` and `StoreSheet.tsx`: For you's "Search in stores" opens a sheet of the stores
+  for the device's region (expo-localization's `regionCode`). `storeLinksFor(region, query,
+  language)` is pure: CO Falabella, Mercado Libre and Google Shopping; MX and AR Mercado Libre and
+  Google Shopping; CL Falabella, Mercado Libre and Google Shopping; PE Falabella and Mercado Libre;
+  BR Mercado Livre; anywhere else (or no region) Google Shopping and Google, in the app language.
+  Each URL is a fixed host with the idea's `searchQuery` URL-encoded (Mercado Libre's listing URLs
+  join the words with hyphens), so nothing in the query changes where a link goes. There are no
+  affiliate tags; `storeUrl` holds the one `NOTE:` where a tag would be appended. A store the
+  browser refuses to open says so (`forYou.openFailed`).
 - `wearQueue.ts`: "I'll wear it" offline. `logWearOrQueue` logs the wear or, on a network failure,
   queues it in kv `wear.queue.<userId>` and reports it logged; `flushWearQueue` sends the queue in
   order, one flush per user, only under that user's stored session, drops a wear the server refuses
@@ -212,6 +236,22 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   says "Couldn't undo" and offers Undo again for a new window.
 - `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
   Today and the rating screen; Diary's Delete and the undo call `unmarkWornToday`.
+- `ShareCard.tsx`, `ShareOutfitSheet.tsx` and `shareOutfit.ts`: "Share" on the rating result (the
+  header's share icon) and on Today's card opens a sheet with the card the outfit is shared as: the
+  pieces' cut-out thumbnails stacked as a look on a light background, the score when known, and a
+  small "Dressing Room" footer. The card scrolls inside the sheet, and the capture targets the card's
+  own view, not the scroll viewport, so a tall look is captured whole. "Share image" is enabled once
+  every thumbnail has loaded or failed (or after `IMAGE_WAIT_MS`, 3 s), so a capture never shares an
+  empty card; the wait starts over each time the sheet opens. It calls `shareOutfitImage`, which checks
+  `Sharing.isAvailableAsync()`, captures the card with `react-native-view-shot`'s `captureRef`
+  (`format: 'png'`, `result: 'tmpfile'`) and opens `Sharing.shareAsync(uri, { mimeType: 'image/png',
+  UTI: 'public.png' })`, then `releaseCapture(uri)` deletes the temporary PNG; it never throws, so a capture or share-sheet failure (or no sharing on the
+  device) stays in the sheet as an announced message. The card's view has `collapsable={false}` so
+  Android keeps it for the capture. `react-native-view-shot` is a native module (added with
+  `pnpm expo install`; a new build is needed). Its `react-native` export is the raw `.tsx` source,
+  which fails this repo's strict compiler flags, so `tsconfig.json`'s `paths` points the package at
+  its compiled `lib/index`: TypeScript reads `lib/index.d.ts`, and Metro (which honors the same
+  `paths`) bundles `lib/index.js`. Drop that entry once the package's source passes the flags.
 - `OutfitStack.tsx`, `ScoreRing.tsx` (the number and arc count up to the score, or show it at once
   with Reduce Motion; the rating screen adds a success haptic as the result arrives), and `types.ts`
   (the functions' response types, re-exported from their `handler.ts`).
@@ -220,11 +260,18 @@ the button's notice slot until the next edit, and lists household mode as "Comin
 
 All computed on the device. `periods.ts` (local `YYYY-MM-DD` day math anchored in UTC, the period
 ranges and the Monday-first month grid), `statsModel.ts` (the KPIs, most worn, color shares, slot
-balance, the unused list and the diary by day), `wearsRepository.ts` (`listWears` in pages of 1000,
+balance, the unused list, `costPerWearByCurrency` and the diary by day), `wearsRepository.ts` (`listWears` in pages of 1000,
 at most 20, and `deleteWear`; the trigger lowers the counts), `storedWears.ts` (the last fetched
 wears in kv `wears.v1.<userId>` with the range they cover, read when a fetch fails) and
 `useWears.ts` (a range's wears for Stats' year and Diary's month, fetched on focus with the queued
 ones added, stored, and served from the stored copy offline).
+
+Stats' "Cost per wear" card (`costPerWearByCurrency`) groups the active priced garments by
+currency, the groups with the most priced pieces first, and shows each group's best value (the
+lowest cost per wear among worn pieces) and its "forgotten and priced" piece (the most expensive one
+never worn); a never-worn piece is never the best value, since its cost per wear is its whole
+price. With several currencies each group is headed by its code; amounts are never summed or
+compared across them. Each line opens the garment, and the card is hidden with no priced garment.
 
 ## Account privacy (`src/account/`)
 

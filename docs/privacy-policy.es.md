@@ -30,7 +30,8 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   lee de ella más que las fotos que eliges.
 - **Tu clóset.** Los atributos de cada prenda (categoría, colores, estampado, material, formalidad,
   temporadas, abrigo, corte, ocasiones), su estado (disponible, en la lavandería, en préstamo o
-  donada), cuántas veces la usas y si la sacaste de las sugerencias.
+  donada), cuántas veces la usas, si la sacaste de las sugerencias y, solo si lo escribes, cuánto
+  pagaste por ella y en qué moneda (para mostrar su costo por uso).
 - **Lo que usas.** Los outfits que guardas o registras como usados, con el día, la ocasión y el
   puntaje.
 - **Lo que no quieres que te sugiera.** Las combinaciones de outfit que marcaste con "No es para
@@ -68,9 +69,10 @@ subirse se guarda en la carpeta propia de la app hasta que se sube.
 
 Los servicios de IA reciben estas solicitudes desde el servidor de la app, nunca directamente desde
 tu teléfono, y el servidor nunca les envía tus fotos salvo para el reconocimiento de prendas descrito
-arriba. Cuando tocas "Buscar en tiendas" en una idea de "Para ti", tu navegador abre una búsqueda de
-Google con palabras genéricas como "blazer camel mujer"; a esa búsqueda se aplica la política de
-privacidad de Google.
+arriba. Cuando tocas "Buscar en tiendas" en una idea de "Para ti" y eliges una tienda (Falabella, Mercado
+Libre, Google Shopping o Google, según tu país), tu navegador abre la búsqueda de esa tienda con
+palabras genéricas como "blazer camel mujer"; a esa búsqueda se aplica la política de privacidad de
+la tienda.
 
 ## Cuánto tiempo se guardan
 
@@ -88,7 +90,7 @@ Cada proveedor de arriba aplica sus propias reglas de conservación a lo que rec
 ## Tus opciones: exportar y eliminar
 
 - **Exportar.** Perfil → Privacidad → "Exportar mis datos" te da un archivo con tu perfil, tus
-  prendas, tus outfits, tus usos y las combinaciones que marcaste con "No es para mí", más enlaces a
+  prendas (con los precios que hayas escrito), tus outfits, tus usos y las combinaciones que marcaste con "No es para mí", más enlaces a
   tus fotos que funcionan durante 7 días.
 - **Eliminar tu cuenta.** Perfil → Privacidad → "Eliminar cuenta", confirmado dos veces, borra tus
   fotos, revoca Iniciar sesión con Apple si lo usaste, y elimina tu cuenta y cada fila que le
