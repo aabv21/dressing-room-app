@@ -370,7 +370,10 @@ only: leaving the screen or "New chat" forgets it, and the server keeps nothing 
   characters), a mic ("Dictate a message", whose transcript fills or extends the field; a problem
   such as nothing heard shows above it) and Send.
   Each reply has a Listen button; with "Speak replies" on, a reply that arrives then reads itself
-  once (`ListenButton`'s `autoPlay`), and starting dictation stops it. A reply carrying an outfit
+  once (`ListenButton`'s `autoPlay`), except one that arrives while dictation is listening (skipped,
+  not read later); starting dictation or turning the switch off stops it. Each new reply is
+  announced to VoiceOver (`announceForAccessibility`) unless it's being read aloud, and its text is a
+  polite live region for TalkBack. A reply carrying an outfit
   shows its pieces still in the closet as an `OutfitStack`, with "Rate it" (`/rate?ids=…`) and
   "I'll wear it" (`useWearLog`, on the local day). Over the quota the field and Send are disabled
   with "You've used today's 20 messages. Come back tomorrow."; offline, unavailable and unknown
@@ -452,7 +455,8 @@ fills the city, Today's occasion and the stylist's message ([Ask your stylist](#
 - `ListenButton.tsx`: the round Listen / Stop button (Volume2 / Square), on Today's card header,
   the rating's header (once a result is shown), each For you card and each stylist reply. With
   `autoPlay`, it reads its text once by itself as soon as the voices are known and the screen is
-  focused (the stylist's "Speak replies").
+  focused (the stylist's "Speak replies"), unless a mic is listening then (`dictation.ts` keeps
+  `speech.ts`'s `setMicListening` current), in which case it skips that reply.
 
 Dictation uses the community module `expo-speech-recognition` (the phone's own recognizer):
 

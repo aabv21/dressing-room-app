@@ -266,8 +266,9 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
   turn are the user's (two user turns in a row are fine). The app sends the last turns that fit.
   `date` is the app's local day (the quota's day); `language` is the reply's.
 - Response: `StylistResponse` (`stylist/handler.ts`): `{ kind: 'ok', reply, outfit?: { garment_ids } }`.
-  `reply` is plain text of at most 500 characters; `outfit` is present when Claude asked for an outfit
-  this turn, and holds only the caller's own available garment ids. Nothing is stored or cached.
+  `reply` is plain text of at most 500 characters; `outfit` is present when Claude's latest outfit
+  request this turn found one (a later "none fits" clears it), and holds only the caller's own
+  available garment ids, which never pass through the model. Nothing is stored or cached.
 - Reads the caller's garments and profile with the user's token (8 s each), then the quota (once per
   request), then up to 4 Claude calls (at most 3 tool rounds) within 25 s of the request's arrival;
   the weather tools read through `weather_cache` like the other functions. Prompt, tools and loop:
@@ -280,6 +281,7 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | 429 | `{ error: 'over_quota' }` | `over_quota` | 20 messages already today; Claude isn't called |
 | 503 | `{ error: 'analysis_unavailable' }` | `unavailable` / `unreadable` | Claude failed or timed out, or the deadline left no time for another call / refused, answered no text, or still asked for a tool on the last call (the quota is spent) |
 | 200 | the reply | `answered` with `rounds` (the tool rounds used, 0–3) | Answered |
+| 200 / 503 | the reply's complete sentences / `{ error: 'analysis_unavailable' }` | `truncated` (with `rounds` on a 200) | The reply stopped at `max_tokens` (4,096): it's cut to its last complete sentence, or 503 when none is left (the quota is spent) |
 | 500 | `{ error: 'internal' }` | `error` | Loading garments or the profile, or the quota RPC, failed (no quota spent on a failed read) |
 
 ### `apple-token`

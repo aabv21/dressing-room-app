@@ -8,6 +8,7 @@ import StylistScreen from '../app/stylist';
 import type { Garment } from '../closet/garmentRepository';
 import type { AiOutcome } from '../outfits/aiClient';
 import { askStylist, type StylistResponse } from '../stylist/stylistClient';
+import { announceForAccessibility } from '../ui/a11y';
 import { emitRecognition, hear, recognition } from '../test/dictation';
 import { garment } from '../test/garmentFixture';
 
@@ -17,6 +18,7 @@ jest.mock('expo-localization', () => ({
   getLocales: () => mockLocales.tags.map((languageTag) => ({ languageTag, languageCode: languageTag.slice(0, 2) })),
 }));
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
+jest.mock('../ui/a11y', () => ({ announceForAccessibility: jest.fn() }));
 jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-21' }));
 jest.mock('../stylist/stylistClient', () => ({ ...jest.requireActual<object>('../stylist/stylistClient'), askStylist: jest.fn() }));
 const mockLog = jest.fn<Promise<string>, [readonly string[], unknown]>(() => Promise.resolve('logged'));
@@ -46,6 +48,7 @@ jest.mock('../closet/ClosetProvider', () => ({
 const mockedAsk = jest.mocked(askStylist);
 const mockedPush = jest.mocked(router.push);
 const mockedSpeak = jest.mocked(Speech.speak);
+const mockedAnnounce = jest.mocked(announceForAccessibility);
 
 const reply = (text: string, outfit?: string[]): AiOutcome<StylistResponse> => ({
   ok: true,
@@ -160,6 +163,64 @@ test('with "Speak replies" on, a new reply is read aloud in the app language', a
   await waitFor(() => {
     expect(mockedSpeak).toHaveBeenCalledWith('Try your navy jeans with the white tee.', expect.objectContaining({ language: 'en-US' }));
   });
+});
+
+test('a new reply is announced to VoiceOver and is a polite live region for TalkBack', async () => {
+  await render(<StylistScreen />);
+  await send('What should I wear today?');
+  const replyText = await screen.findByText('Try your navy jeans with the white tee.');
+  expect(replyText).toHaveProp('accessibilityLiveRegion', 'polite');
+  expect(mockedAnnounce).toHaveBeenCalledWith('Stylist: Try your navy jeans with the white tee.');
+});
+
+test('with "Speak replies" on, the reply is read aloud instead of announced', async () => {
+  await render(<StylistScreen />);
+  await fireEvent(screen.getByRole('switch', { name: 'Speak replies' }), 'valueChange', true);
+  await send('What should I wear today?');
+  await waitFor(() => {
+    expect(mockedSpeak).toHaveBeenCalled();
+  });
+  expect(mockedAnnounce).not.toHaveBeenCalledWith('Stylist: Try your navy jeans with the white tee.');
+});
+
+test('"Speak replies" doesn’t read a reply that arrives while dictation is listening, not even afterwards', async () => {
+  let answer: (outcome: AiOutcome<StylistResponse>) => void = () => undefined;
+  mockedAsk.mockReturnValue(
+    new Promise((resolve) => {
+      answer = resolve;
+    }),
+  );
+  await render(<StylistScreen />);
+  await fireEvent(screen.getByRole('switch', { name: 'Speak replies' }), 'valueChange', true);
+  await send('What should I wear today?');
+  await fireEvent.press(screen.getByRole('button', { name: 'Dictate a message' }));
+  await waitFor(() => {
+    expect(recognition.start).toHaveBeenCalled();
+  });
+  await act(() => {
+    answer(reply('Try your navy jeans with the white tee.'));
+  });
+  await screen.findByText('Try your navy jeans with the white tee.');
+  await act(() => {
+    hear('and shoes');
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mockedSpeak).not.toHaveBeenCalled();
+});
+
+test('turning "Speak replies" off stops the reply being read', async () => {
+  await render(<StylistScreen />);
+  const toggle = screen.getByRole('switch', { name: 'Speak replies' });
+  await fireEvent(toggle, 'valueChange', true);
+  await send('What should I wear today?');
+  await waitFor(() => {
+    expect(mockedSpeak).toHaveBeenCalled();
+  });
+  await fireEvent(toggle, 'valueChange', false);
+  expect(Speech.stop).toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
 });
 
 test('with "Speak replies" off, nothing is read until Listen is tapped', async () => {

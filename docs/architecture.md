@@ -256,7 +256,8 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 - **What reaches the models.** Claude sees a garment photo (cut out where possible, 784 px) and the
   clothing type for extraction (and a "Should I buy it?" photo the same way, never stored), and the same bucketed state as Jev for a fallback rating.
   For the stylist it sees the user's own chat turns, the clothing type and styles, an enum-only
-  closet summary without ids, and tool results with enum values and the caller's garment ids; never
+  closet summary without ids, and tool results with enum values only (the server keeps a suggested
+  outfit's ids); never
   photos, measurements or anyone else's rows. Jev sees
   only buckets and enum values: clothing type, body type, a height bucket, age group, styles,
   occasion, a weather band, season and each piece's attributes. Exact measurements, sizes, names and
@@ -308,7 +309,7 @@ Costs, from [`ai.md`](ai.md)'s "Quota and cost":
 | Jev, worst case at the quotas | about $6 a month for 4 users |
 | For you | about $0.0005 per cache miss, at most about $0.06 a month for 4 users |
 | Should I buy it? | about $0.0003 per check, at most about $0.18 a month for 4 users |
-| Ask your stylist | about $0.0013 per typical message, $0.0073 at worst; at most 20 a day per user |
+| Ask your stylist | about $0.0013 per typical message, $0.0134 at worst; at most 20 a day per user |
 | Open-Meteo | free, no key |
 | Supabase | free tier |
 

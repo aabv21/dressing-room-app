@@ -148,7 +148,7 @@ Sized for a family of about 4 on Supabase's free tier. From [`docs/ai.md`](docs/
 | Ratings and lucky lists (Jev) | about $0.65 a month for 4 users in typical use; about $6 at worst, with every daily quota used up |
 | For you | at most one cache miss per user a day, about $0.0005 each: at most about $0.06 a month for 4 users |
 | Should I buy it? (Claude Haiku 5.5) | about $0.0003 per check; at most about $0.18 a month for 4 users with every daily check used |
-| Ask your stylist (Claude Haiku 5.5) | about $0.0013 per typical message (about $0.0073 at worst); five a day is about $0.78 a month for 4 users, and every daily message at the worst case about $18 |
+| Ask your stylist (Claude Haiku 5.5) | about $0.0013 per typical message (about $0.0134 at worst); five a day is about $0.78 a month for 4 users, and every daily message at the worst case about $32 |
 | Weather (Open-Meteo) | free, no key; trip packing uses it and no model |
 | Supabase | free tier |
 

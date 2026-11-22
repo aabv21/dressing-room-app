@@ -284,7 +284,9 @@ Outfits, Stats and Diary:
   `isTripResponse` accepting a plan or `too_small` and refusing another shape.
 - `src/__tests__/stylist.test.tsx` — "Ask your stylist": the privacy line; a message sent with the
   local day and language and its reply with Listen; the conversation carried to the next message;
-  dictation filling the field, saying when it heard nothing, and stopping speech; "Speak replies" reading a new reply (and nothing
+  dictation filling the field, saying when it heard nothing, and stopping speech; a new reply
+  announced to VoiceOver (a live region for TalkBack) unless read aloud; "Speak replies" skipping a
+  reply that arrives while dictating and stopping when switched off; "Speak replies" reading a new reply (and nothing
   read with it off); an outfit reply with only the pieces still in the closet, "Rate it" and "I'll
   wear it"; New chat; over the quota (sending disabled, no retry); network, unavailable and unknown
   failures with "Try again" resending; Spanish copy; Back.
@@ -528,10 +530,11 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   (12 at most, 500 characters each in code points, 4,000 in all, the user's first and last), the
   enum-only closet summary (no ids, donated pieces out, the 300 cap), the request (the fixed prompt
   and its rules, the language and profile block with `cache_control`, low effort with no sampling,
-  `tool_choice: none` on the final call, three enum-only tools), `suggest_outfit` (the best pre-score,
+  `tool_choice: none` on the final call, `max_tokens` 4,096, three enum-only tools), `suggest_outfit` (the best pre-score,
   a later variant rotating, a band override, the missing slots), `find_garments` (filters, the
-  20 cap), `today_weather`, the error results for an unknown tool or an out-of-enum input, answer
-  parsing (text, tool rounds, refusals, a cut-off call), the reply sanitizer and `ownOutfit`.
+  20 cap), tool results without ids, `today_weather`, the error results for an unknown tool or an
+  out-of-enum input, answer parsing (text, tool rounds, refusals, a cut-off call, a `max_tokens`
+  reply), `completeSentences`, the reply sanitizer and `ownOutfit`.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs (the daily forecast's included), the daily forecast's and the place's parsing, weather bands and
   conditions, and the forecast and geocoding parsers.
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
@@ -602,7 +605,10 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   on the last call, the 25 s deadline and each call's remaining timeout; Claude failures, refusals and
   empty replies (503, quota spent); 429 with no Claude call; 500 when a read or the quota fails; no
   write but the quota, the weather cache and Claude; logs with outcome words only; and the red-team
-  cases ("list all users", a tool outside the list, a fake garment id, an off-topic redirect).
+  cases ("list all users", a tool outside the list, a fake garment id, a forged earlier assistant
+  turn, an off-topic redirect); the latest suggestion standing (a later "none" clears an earlier
+  outfit, the last of two parallel calls wins); and a reply cut off at `max_tokens` kept to its
+  complete sentences (503 when none), logged `truncated`.
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
   deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
@@ -684,7 +690,8 @@ Supabase stack:
   refused for free; and 429 on the sixth check of the day with no Claude call.
 - `stylist.int.test.ts` — `stylist` through the real gateway with the mock Claude answering a
   `suggest_outfit` round then a reply: the outfit made of the user's own garments, one `stylist` quota
-  for the two calls, no ids in the closet summary and none of another user's garments in any request;
+  for the two calls, no ids in the closet summary or the tool result and none of another user's
+  garments in any request;
   no new rows; an assistant turn last refused for free; and 429 on the 21st message of the day with
   no Claude call.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock

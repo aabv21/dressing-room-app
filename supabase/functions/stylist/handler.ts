@@ -7,6 +7,7 @@ import { callerOf, readJson, reply } from '../_shared/http.ts';
 import type { Language } from '../_shared/searchTerms.ts';
 import {
   buildStylistRequest,
+  completeSentences,
   MAX_TOOL_ROUNDS,
   ownOutfit,
   parseStep,
@@ -91,17 +92,22 @@ export async function handleStylist(request: Request, deps: StylistDeps): Promis
     if (step.kind === 'failed') return reply('unreadable', 503, { error: 'analysis_unavailable' });
 
     if (step.kind === 'reply') {
-      const text = sanitizeReply(step.text);
-      if (text === '') return reply('unreadable', 503, { error: 'analysis_unavailable' });
+      const text = sanitizeReply(step.truncated ? completeSentences(step.text) : step.text);
+      const outcome = step.truncated ? 'truncated' : 'answered';
+      if (text === '') return reply(step.truncated ? 'truncated' : 'unreadable', 503, { error: 'analysis_unavailable' });
       const outfit = suggested === null ? null : ownOutfit(suggested, garments);
       const result: StylistResponse = { kind: 'ok', reply: text, ...(outfit === null ? {} : { outfit: { garment_ids: outfit } }) };
-      return reply('answered', 200, result, { rounds: String(round) });
+      return reply(outcome, 200, result, { rounds: String(round) });
     }
 
     // A tool call on the last call (which allows none) means the model won't answer.
     if (round === MAX_TOOL_ROUNDS) return reply('unreadable', 503, { error: 'analysis_unavailable' });
     const outcomes = await Promise.all(step.calls.map((call) => runTool(call.name, call.input, tools)));
-    for (const outcome of outcomes) if (outcome.outfit !== undefined) suggested = outcome.outfit;
+    // The latest suggestion stands, a "none fits" included, so a stale outfit never sits beside it.
+    for (const [index, call] of step.calls.entries()) {
+      const outcome = outcomes.at(index);
+      if (call.name === 'suggest_outfit' && outcome !== undefined && !outcome.isError) suggested = outcome.outfit ?? null;
+    }
     // The assistant turn goes back unchanged (thinking blocks included), then every result in one user turn.
     messages.push({ role: 'assistant', content: step.content });
     messages.push({

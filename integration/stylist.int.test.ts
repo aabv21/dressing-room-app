@@ -121,9 +121,10 @@ test('a tool round then an answer: the outfit is the user’s own, and one styli
 
   const sent = mock.requests().slice(before) as { system: { text: string }[]; messages: { role: string; content: unknown }[] }[];
   expect(sent).toHaveLength(2);
-  // The summary carries no ids; the tool result carries only this user's ids.
+  // Neither the summary nor the tool result carries an id; the tool result carries the user's pieces.
   expect(JSON.stringify(sent[0]?.system)).not.toContain(closet.tee);
-  expect(JSON.stringify(sent[1]?.messages[2])).toContain(closet.tee);
+  expect(JSON.stringify(sent[1]?.messages[2])).not.toContain(closet.tee);
+  expect(JSON.stringify(sent[1]?.messages[2])).toContain('t_shirt');
   expect(JSON.stringify(sent)).not.toContain(othersGarment);
   expect(sent[0]?.system[1]?.text).not.toContain('"category":"dress"');
 }, FUNCTION_TIMEOUT_MS);

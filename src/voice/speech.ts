@@ -38,6 +38,13 @@ function setSpeaking(next: { owner: symbol; utterance: symbol } | null): void {
   for (const listener of listeners) listener();
 }
 
+// Set by dictation while a mic listens, so an `autoPlay` reply never talks over it.
+let micListening = false;
+
+export function setMicListening(listening: boolean): void {
+  micListening = listening;
+}
+
 /** Stops whatever "Listen" is reading (dictation calls it, so the recognizer never hears the app). */
 export function stopSpeaking(): void {
   if (speaking === null) return;
@@ -57,7 +64,7 @@ type VoiceState = { status: 'unknown' } | { status: 'none' } | { status: 'ready'
 /**
  * `hidden` when the phone lists voices but none in the app language. An empty list (an engine not
  * ready yet) keeps the button, and a speak error then says there's no voice. `autoPlay` reads `text`
- * once, as soon as the voices are known (the stylist's "Speak replies").
+ * once, as soon as the voices are known (the stylist's "Speak replies"), unless a mic is listening.
  */
 export function useSpeaker(
   text: string,
@@ -125,6 +132,8 @@ export function useSpeaker(
   useEffect(() => {
     if (!autoPlay || !settled || !focused || autoPlayed.current || voice.status === 'none') return;
     autoPlayed.current = true;
+    // Skipped, not deferred: read later, it would land in the middle of whatever comes next.
+    if (micListening) return;
     toggle();
   }, [autoPlay, settled, focused, voice, toggle]);
 

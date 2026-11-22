@@ -2,7 +2,7 @@
 // request (docs/app.md#ask-your-stylist-srcstylist). Pushed from For you; nothing is kept.
 import { router } from 'expo-router';
 import { Check, Lock, RotateCw, Send, SquarePen, Star } from 'lucide-react-native';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ScrollViewInstance } from 'react-native';
 import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,12 +15,14 @@ import { OutfitStack } from '../outfits/OutfitStack';
 import { useWearLog } from '../outfits/useWearLog';
 import { TURN_MAX_CHARS } from '../stylist/stylistClient';
 import { type ChatMessage, useStylist } from '../stylist/useStylist';
+import { announceForAccessibility } from '../ui/a11y';
 import { BackChevron } from '../ui/BackChevron';
 import { Screen, ScreenTitle } from '../ui/Screen';
 import { colors, fontSizes, layout, radii, spacing } from '../ui/theme';
 import { useDictation } from '../voice/dictation';
 import { ListenButton } from '../voice/ListenButton';
 import { MicButton } from '../voice/MicButton';
+import { stopSpeaking } from '../voice/speech';
 
 /** The errors the screen has copy for; the rest read as "unknown". */
 function errorCopy(error: AiError): 'over_quota' | 'network' | 'unavailable' | 'unknown' {
@@ -101,7 +103,11 @@ function Bubble({ message, autoPlay }: { message: ChatMessage; autoPlay: boolean
   return (
     <View style={[styles.bubble, styles.stylistBubble]}>
       <View style={styles.replyRow}>
-        <Text style={styles.replyText} accessibilityLabel={t('stylist.saidStylist', { text: message.text })}>
+        <Text
+          style={styles.replyText}
+          accessibilityLabel={t('stylist.saidStylist', { text: message.text })}
+          accessibilityLiveRegion="polite"
+        >
           {message.text}
         </Text>
         <ListenButton text={message.text} autoPlay={autoPlay} />
@@ -123,6 +129,16 @@ export default function StylistScreen(): React.JSX.Element {
   const dictation = useDictation((text) => {
     setDraft((current) => (current.trim() === '' ? text : `${current.trimEnd()} ${text}`).slice(0, TURN_MAX_CHARS));
   });
+
+  // VoiceOver hears each new reply, unless "Speak replies" is already reading it aloud.
+  const announced = useRef(0);
+  const latest = stylist.messages.at(-1);
+  useEffect(() => {
+    if (latest?.role !== 'assistant' || latest.id <= announced.current) return;
+    announced.current = latest.id;
+    const spoken = speakReplies && autoPlayFrom !== null && latest.id >= autoPlayFrom;
+    if (!spoken) announceForAccessibility(t('stylist.saidStylist', { text: latest.text }));
+  }, [latest, speakReplies, autoPlayFrom, t]);
 
   const overQuota = stylist.error === 'over_quota';
   const canSend = draft.trim() !== '' && !stylist.sending && !overQuota;
@@ -180,7 +196,10 @@ export default function StylistScreen(): React.JSX.Element {
               accessibilityLabel={t('stylist.speakReplies')}
               value={speakReplies}
               trackColor={{ true: colors.accent, false: colors.track }}
-              onValueChange={setSpeakReplies}
+              onValueChange={(next) => {
+                setSpeakReplies(next);
+                if (!next) stopSpeaking();
+              }}
             />
           </View>
           {stylist.messages.map((message) => (
