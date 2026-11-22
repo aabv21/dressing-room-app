@@ -6,6 +6,11 @@ import type { Garment } from './garmentRepository';
 
 /** Pure derivations of the closet's garment list for the Closet and Review screens. */
 
+/** Whether suggestions may use the garment: a row cached by an older build has no `suggest`, which counts as on. */
+export function isSuggestable(garment: { suggest?: boolean | undefined }): boolean {
+  return garment.suggest !== false;
+}
+
 /** A donated garment has left the active closet: no grid, counts, goal or review (its wears stay in the history). */
 export function isActive(g: Garment): boolean {
   return g.status !== 'donated';

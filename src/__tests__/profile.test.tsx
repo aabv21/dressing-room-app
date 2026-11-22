@@ -27,6 +27,8 @@ jest.mock('../account/accountClient', () => ({
 
 jest.mock('expo-sharing', () => ({ shareAsync: jest.fn() }));
 
+jest.mock('../outfits/suggestionFeedback', () => ({ countDismissed: jest.fn(), restoreDismissed: jest.fn() }));
+
 jest.mock('expo-splash-screen', () => ({
   preventAutoHideAsync: jest.fn(() => Promise.resolve()),
   hideAsync: jest.fn(() => Promise.resolve()),
@@ -57,7 +59,7 @@ jest.mock('expo-location', () => ({
 }));
 
 import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Alert, type AlertButton } from 'react-native';
 import { renderRouter } from 'expo-router/testing-library';
 
 import { signOut } from '../auth/authService';
@@ -65,6 +67,8 @@ import { translate } from '../i18n';
 import { kvGet, kvRemove, kvSet } from '../lib/kv';
 import { SAVED_NOTE_MS } from '../app/(tabs)/profile';
 import { saveProfile } from '../profile/profileRepository';
+import { countDismissed, restoreDismissed } from '../outfits/suggestionFeedback';
+import { addDismissed, readDismissed } from '../outfits/storedDismissed';
 import type { Profile } from '../profile/profileRepository';
 import { currentAuth, resetAuth, setAuth } from '../test/authMock';
 
@@ -115,6 +119,7 @@ function saveButton() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(countDismissed).mockResolvedValue(0);
   kvRemove(LOCALE_PREFERENCE_KEY);
   kvRemove(LANGUAGE_PENDING_KEY);
   resetAuth({ userId: USER_ID, email: 'ana@example.com' });
@@ -438,4 +443,49 @@ test('editing after a failed save clears its error', async () => {
   await fireEvent.press(screen.getByRole('checkbox', { name: 'Elegant' }));
 
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+describe('Restore hidden suggestions', () => {
+  test('shows how many combinations are hidden, asks first, then restores them all', async () => {
+    jest.mocked(countDismissed).mockResolvedValue(3);
+    jest.mocked(restoreDismissed).mockResolvedValue({ ok: true });
+    addDismissed(USER_ID, 'a,b');
+    const alert = jest.spyOn(Alert, 'alert');
+    await openProfile();
+
+    expect(await screen.findByText('3 hidden combinations')).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Restore hidden suggestions' }));
+    expect(alert).toHaveBeenCalledWith('Restore 3 hidden combinations?', expect.any(String), expect.any(Array));
+    expect(restoreDismissed).not.toHaveBeenCalled();
+
+    const buttons = (alert.mock.calls.at(-1) as [string, string, AlertButton[]])[2];
+    await act(async () => {
+      buttons.find((button) => button.text === 'Restore')?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(restoreDismissed).toHaveBeenCalledWith(USER_ID);
+    expect(await screen.findByText('No hidden combinations')).toBeOnTheScreen();
+    expect(readDismissed(USER_ID)).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Restore hidden suggestions' })).toBeDisabled();
+    alert.mockRestore();
+  });
+
+  test('a failed restore keeps the count and says why', async () => {
+    jest.mocked(countDismissed).mockResolvedValue(2);
+    jest.mocked(restoreDismissed).mockResolvedValue({ ok: false, error: 'network' });
+    const alert = jest.spyOn(Alert, 'alert');
+    await openProfile();
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Restore hidden suggestions' }));
+    const buttons = (alert.mock.calls.at(-1) as [string, string, AlertButton[]])[2];
+    await act(async () => {
+      buttons.find((button) => button.text === 'Restore')?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("Couldn't restore them. Check your internet and try again.")).toBeOnTheScreen();
+    expect(screen.getByText('2 hidden combinations')).toBeOnTheScreen();
+    alert.mockRestore();
+  });
 });

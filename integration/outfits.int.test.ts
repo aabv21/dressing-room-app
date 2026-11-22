@@ -5,7 +5,8 @@
 // `functions.invoke`; the functions read the closet and the profile with the caller's token (RLS),
 // spend the daily quota, fill `lucky_cache`/`rating_cache`/`weather_cache`/`for_you_cache`, and
 // call Jev and Open-Meteo, here `mockServices.ts` on the host, and Claude, here `mockAnthropic.ts`.
-// Also: `log_wear` from supabase-js bumps the garments' wear count.
+// Also: `log_wear` from supabase-js bumps the garments' wear count, and the Saved list's repository
+// lists, scores and deletes saved outfits; "Not for me" stores a dismissal and turns a piece off.
 //
 // Needs the Edge Runtime: `pnpm db:start` (or `db:start:ci`, which keeps it) and `pnpm env:local`.
 
@@ -15,7 +16,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { signInWithEmail } from '../src/auth/emailAuth';
 import type { Database } from '../src/lib/database.types';
-import { logWear } from '../src/outfits/outfitRepository';
+import { logWear, saveOutfit } from '../src/outfits/outfitRepository';
+import { deleteSavedOutfit, listSavedOutfits } from '../src/outfits/savedOutfits';
+import { countDismissed, dismissOutfit, restoreDismissed, stopSuggesting, undismissOutfit } from '../src/outfits/suggestionFeedback';
 import { ARCHETYPES } from '../supabase/functions/_shared/archetypes.ts';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, serviceClient, uniqueEmail } from './helpers';
 import { type MockAnthropic, startMockAnthropic } from './mockAnthropic';
@@ -211,6 +214,28 @@ describe('lucky-list', () => {
     expect(mock.calls('/v1/systemone')).toBe(jevCalls);
   }, FUNCTION_TIMEOUT_MS);
 
+  test('a dismissed combination leaves the next list, served from the same cache entry with no quota or Jev', async () => {
+    const outfits = firstOutfits as { garmentIds: string[] }[];
+    const [first] = outfits;
+    if (first === undefined) throw new Error('no outfit to dismiss');
+    const key = [...first.garmentIds].sort().join(',');
+    const insert = await userA.client.from('dismissed_outfits').insert({ outfit_key: key });
+    expect(insert.error).toBeNull();
+    const jevCalls = mock.calls('/v1/systemone');
+
+    const { status, body } = await invoke(userA.client, 'lucky-list', { date: today(), occasion: null });
+
+    expect(status).toBe(200);
+    const next = (body as { outfits: { garmentIds: string[] }[] }).outfits;
+    expect(next.length).toBe(outfits.length - 1);
+    expect(next.map((outfit) => [...outfit.garmentIds].sort().join(','))).not.toContain(key);
+    expect(mock.calls('/v1/systemone')).toBe(jevCalls);
+    const counter = await serviceClient().from('usage_counters').select('count').eq('user_id', userA.id).eq('kind', 'lucky');
+    expect(counter.data).toEqual([{ count: 1 }]);
+    const removed = await userA.client.from('dismissed_outfits').delete().eq('outfit_key', key);
+    expect(removed.error).toBeNull();
+  }, FUNCTION_TIMEOUT_MS);
+
   test("the forecast lands in weather_cache for the hour, and later calls don't fetch it again", async () => {
     const hourAfter = utcHour(new Date());
 
@@ -351,4 +376,58 @@ test('log_wear from supabase-js bumps wear_count, and the garments select shows 
   expect(Object.values(closet).map((id) => counts.get(id))).toEqual(
     Object.values(closet).map((id) => (worn.includes(id) ? 1 : 0)),
   );
+});
+
+test('saved outfits: listed newest first with their score, deleted by their owner only, never a worn one', async () => {
+  const first = [closet.whiteTee, closet.navyJeans, closet.whiteSneakers];
+  const second = [closet.grayShirt, closet.blackPants, closet.blackLoafers];
+  expect(await saveOutfit(first, null, userA.client)).toEqual({ ok: true });
+  expect(await saveOutfit(second, 84, userA.client)).toEqual({ ok: true });
+
+  const saved = await listSavedOutfits(userA.client);
+  expect(saved.map((outfit) => [[...outfit.garmentIds].sort(), outfit.score])).toEqual([
+    [[...second].sort(), 84],
+    [[...first].sort(), null],
+  ]);
+  // Worn outfits never list, and B sees none of A's.
+  expect(await listSavedOutfits(userB.client)).toEqual([]);
+
+  const [newest] = saved;
+  if (newest === undefined) throw new Error('nothing saved');
+  expect(await deleteSavedOutfit(newest.id, userB.client)).toEqual({ ok: false, error: 'unknown' });
+  expect(await deleteSavedOutfit(newest.id, userA.client)).toEqual({ ok: true });
+  expect((await listSavedOutfits(userA.client)).map((outfit) => outfit.id)).not.toContain(newest.id);
+  const items = await serviceClient().from('outfit_items').select('garment_id').eq('outfit_id', newest.id);
+  expect(items.data).toEqual([]);
+
+  const worn = await serviceClient().from('wears').select('outfit_id').eq('user_id', userA.id).limit(1).single();
+  expect(worn.error).toBeNull();
+  expect(await deleteSavedOutfit(String(worn.data?.outfit_id), userA.client)).toEqual({ ok: false, error: 'unknown' });
+});
+
+test('"Not for me": dismissOutfit stores the sorted key once, and stopSuggesting turns only the caller’s piece off', async () => {
+  const ids = [closet.whiteSneakers, closet.whiteTee, closet.navyJeans];
+  expect(await dismissOutfit(ids, userA.client)).toEqual({ ok: true });
+  // A second tap is a no-op, not a conflict error.
+  expect(await dismissOutfit([...ids].reverse(), userA.client)).toEqual({ ok: true });
+  const rows = await userA.client.from('dismissed_outfits').select('outfit_key');
+  expect(rows.error).toBeNull();
+  expect(rows.data).toContainEqual({ outfit_key: [...ids].sort().join(',') });
+  expect(rows.data?.filter((row) => row.outfit_key === [...ids].sort().join(','))).toHaveLength(1);
+
+  expect(await stopSuggesting(closet.blackLoafers, userB.client)).toEqual({ ok: false, error: 'unknown' });
+  expect(await stopSuggesting(closet.blackLoafers, userA.client)).toEqual({ ok: true });
+  const piece = await serviceClient().from('garments').select('suggest').eq('id', closet.blackLoafers).single();
+  expect(piece.data?.suggest).toBe(false);
+  await serviceClient().from('garments').update({ suggest: true }).eq('id', closet.blackLoafers);
+
+  // Undo takes one back; Profile's restore clears the rest, only the caller's.
+  expect(await dismissOutfit([closet.grayShirt, closet.blackPants, closet.blackLoafers], userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(2);
+  expect(await undismissOutfit([closet.blackLoafers, closet.blackPants, closet.grayShirt], userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(1);
+  expect(await restoreDismissed(userB.id, userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(1);
+  expect(await restoreDismissed(userA.id, userA.client)).toEqual({ ok: true });
+  expect(await countDismissed(userA.client)).toBe(0);
 });

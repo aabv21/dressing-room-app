@@ -169,7 +169,10 @@ async function findSwap(
   const candidates = closet
     .filter(
       (garment) =>
-        !inOutfit.has(garment.id) && slotOfGarment(garment) === weakestSlot && passesRules([garment], rules),
+        garment.suggest &&
+        !inOutfit.has(garment.id) &&
+        slotOfGarment(garment) === weakestSlot &&
+        passesRules([garment], rules),
     )
     .map((garment) => ({ garment, freshness: preScore([garment], ctx.date) }))
     .sort((a, b) => b.freshness - a.freshness || (a.garment.id < b.garment.id ? -1 : 1))

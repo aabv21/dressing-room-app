@@ -253,6 +253,18 @@ test("a swap whose target isn't in the local closet refreshes the closet once an
   expect(mockRefresh).toHaveBeenCalledTimes(1);
 });
 
+test('a swap to a garment taken out of suggestions (a cached rating) is hidden', async () => {
+  mockCloset.garments = CLOSET.map((g) => (g.id === BOOTS ? { ...g, suggest: false } : g));
+  mockedRate.mockReturnValue(
+    ok(result({ score: 62, label: 'fair', weakestSlot: 'shoes', swap: { fromId: HEELS, toId: BOOTS, score: 81 } })),
+  );
+  await render(<RateScreen />);
+  await screen.findByText('62%');
+
+  expect(screen.queryByRole('button', { name: 'Try the swap' })).toBeNull();
+  expect(mockRefresh).not.toHaveBeenCalled();
+});
+
 test('"Try the swap" re-rates the outfit with the swapped id on the same screen', async () => {
   mockedRate
     .mockReturnValueOnce(
@@ -431,12 +443,23 @@ test('Save calls saveOutfit with the ids once, then shows Saved ✓', async () =
   await fireEvent.press(save);
   await fireEvent.press(save);
   expect(mockedSaveOutfit).toHaveBeenCalledTimes(1);
-  expect(mockedSaveOutfit).toHaveBeenCalledWith([TOP, SKIRT, HEELS]);
+  expect(mockedSaveOutfit).toHaveBeenCalledWith([TOP, SKIRT, HEELS], 78);
   expect(screen.getByRole('button', { name: "I'll wear it" })).toBeDisabled();
 
   resolveSave({ ok: true });
   expect(await screen.findByRole('button', { name: 'Saved ✓' })).toBeDisabled();
   expect(screen.getByRole('button', { name: "I'll wear it" })).toBeEnabled();
+});
+
+test('after Save, the confirmation links to the Closet’s Saved segment', async () => {
+  mockedRate.mockReturnValue(ok(result()));
+  mockedSaveOutfit.mockResolvedValue({ ok: true });
+  await render(<RateScreen />);
+
+  await fireEvent.press(await screen.findByRole('button', { name: 'Save' }));
+  await fireEvent.press(await screen.findByRole('link', { name: 'See it in Saved' }));
+
+  expect(router.dismissTo).toHaveBeenCalledWith({ pathname: '/closet', params: { segment: 'saved' } });
 });
 
 test('a failed save shows the error in the CTA notice and can be tried again', async () => {
@@ -683,7 +706,7 @@ test('after a swap, Save sends the swapped ids', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
 
   expect(await screen.findByRole('button', { name: 'Saved ✓' })).toBeOnTheScreen();
-  expect(mockedSaveOutfit).toHaveBeenCalledWith([TOP, SKIRT, BOOTS]);
+  expect(mockedSaveOutfit).toHaveBeenCalledWith([TOP, SKIRT, BOOTS], 81);
 });
 
 test('after a swap, "I\'ll wear it" sends the swapped ids, the new score and a new wear id', async () => {

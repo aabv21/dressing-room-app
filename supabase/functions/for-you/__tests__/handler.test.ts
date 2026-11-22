@@ -59,6 +59,8 @@ const garment = (n: number, category: GarmentCategory | null, extra: Row = {}): 
   fit: 'regular',
   status: 'available',
   last_worn_at: null,
+  wear_count: 0,
+  suggest: true,
   updated_at: '2026-11-01T00:00:00Z',
   pinned_on: null,
   ...extra,
@@ -597,6 +599,15 @@ describe('donated garments', () => {
     expect(withDonated).toEqual(without);
   });
 
+  test('unsuggesting a garment changes the key, and its archetype stays owned', async () => {
+    const w = world();
+    await forYou(w);
+    w.garments = closet().map((row) => (row.category === 'sneakers' ? { ...row, suggest: false } : row));
+    const { body, calls } = await forYou(w);
+    expect(count(calls, 'quota')).toBe(1);
+    expect(ids(body)).not.toContain('white-sneakers');
+  });
+
   test('donating a garment changes the key; editing a donated one does not', async () => {
     const w = world({ garments: [...closet(), garment(20, 'skirt', { colors: ['black'] })] });
     await forYou(w);
@@ -948,10 +959,10 @@ describe('logging', () => {
 });
 
 describe('the cache key', () => {
-  test('stays the key stored before the shared garment fingerprint, so no cached answer is lost', async () => {
+  test('is pinned, so only a deliberate change (a CACHE_VERSION bump) drops the stored answers', async () => {
     const { calls } = await forYou(world());
     expect(calls.find((call) => call.route === 'cacheGet')?.url.searchParams.get('cache_key')).toBe(
-      'eq.2e9ac9b9bd5d2f65e8064f5f5e787d57deaaa9ac160dec0f3ff533861ae3e31a',
+      'eq.57455162c9524b4d62c85569373b7a987616257c5228cbcdd915c39fd0f0f66a',
     );
   });
 });

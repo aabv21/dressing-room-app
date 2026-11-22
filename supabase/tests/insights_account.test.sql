@@ -11,7 +11,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(25);
+select plan(26);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values ('11111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-a@example.com', crypt('password', gen_salt('bf')), '{}', '{}');
@@ -175,7 +175,7 @@ select is(
       and att.attnum > 0
       and not att.attisdropped
   ),
-  array['apple_tokens', 'for_you_cache', 'garments', 'lucky_cache', 'outfits', 'profiles', 'rating_cache', 'usage_counters', 'wears']::text[],
+  array['apple_tokens', 'dismissed_outfits', 'for_you_cache', 'garments', 'lucky_cache', 'outfits', 'profiles', 'rating_cache', 'usage_counters', 'wears']::text[],
   'the set of public tables with a user_id column is the expected list'
 );
 
@@ -211,6 +211,9 @@ values ('22222222-2222-2222-2222-222222222222', 'k', '{}'::jsonb);
 
 insert into public.apple_tokens (user_id, refresh_token)
 values ('22222222-2222-2222-2222-222222222222', 'tok');
+
+insert into public.dismissed_outfits (user_id, outfit_key)
+values ('22222222-2222-2222-2222-222222222222', 'bbbbbbbb-0000-0000-0000-000000000001,bbbbbbbb-0000-0000-0000-000000000002');
 
 delete from auth.users where id = '22222222-2222-2222-2222-222222222222';
 
@@ -266,6 +269,12 @@ select is(
   (select count(*)::int from public.apple_tokens where user_id = '22222222-2222-2222-2222-222222222222'),
   0,
   'deleting the user leaves 0 apple_tokens rows'
+);
+
+select is(
+  (select count(*)::int from public.dismissed_outfits where user_id = '22222222-2222-2222-2222-222222222222'),
+  0,
+  'deleting the user leaves 0 dismissed_outfits rows'
 );
 
 select * from finish();

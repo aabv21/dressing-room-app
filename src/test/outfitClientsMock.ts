@@ -1,9 +1,10 @@
-// Stand-ins for the outfit AI client and repository in suites that render the root layout or a whole
-// route tree (which lands on Today) but don't test outfits. The real modules load the Supabase client
-// at import time. Use with:
+// Stand-ins for the outfit AI client, repository and suggestion feedback in suites that render the
+// root layout, a whole route tree (which lands on Today) or the Closet tab (whose Saved segment logs
+// wears), but don't test outfits. The real modules load the Supabase client at import time. Use with:
 //
 //   jest.mock('../outfits/aiClient', () => require('../test/outfitClientsMock'));
 //   jest.mock('../outfits/outfitRepository', () => require('../test/outfitClientsMock'));
+//   jest.mock('../outfits/suggestionFeedback', () => require('../test/outfitClientsMock'));
 //
 // The AI calls never settle, so Today stays on its loading card; the writes succeed.
 
@@ -13,3 +14,9 @@ export const fetchLuckyList = jest.fn(never);
 export const rateOutfit = jest.fn(never);
 export const logWear = jest.fn(() => Promise.resolve({ ok: true as const }));
 export const saveOutfit = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const dismissOutfit = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const stopSuggesting = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const undismissOutfit = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const resumeSuggesting = jest.fn(() => Promise.resolve({ ok: true as const }));
+export const countDismissed = jest.fn(() => Promise.resolve(0));
+export const restoreDismissed = jest.fn(() => Promise.resolve({ ok: true as const }));

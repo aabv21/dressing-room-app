@@ -11,6 +11,8 @@ const mockQueue = {
 };
 // The signed-in layout mounts it; it would load the Supabase client through logWear.
 jest.mock('../outfits/WearQueueFlusher', () => ({ WearQueueFlusher: () => null }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- see src/test/outfitClientsMock.ts
+jest.mock('../outfits/suggestionFeedback', () => require('../test/outfitClientsMock'));
 jest.mock('../closet/UploadQueueProvider', () => ({
   UploadQueueProvider: ({ children }: { children?: React.ReactNode }) => children,
   useUploadQueue: () => ({
@@ -155,6 +157,7 @@ const EXPORT: DataExport = {
   garments: [],
   outfits: [],
   wears: [],
+  dismissedOutfits: [],
   photos: [],
 };
 

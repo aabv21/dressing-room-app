@@ -55,6 +55,8 @@ function archetypeGarment(archetype: Archetype): RuleGarment {
     fit: archetype.fit,
     status: 'available',
     last_worn_at: null,
+    wear_count: 0,
+    suggest: true,
     updated_at: '1970-01-01T00:00:00Z',
     pinned_on: null,
   };
@@ -162,11 +164,15 @@ function capPerSlot<T extends ForYouIdea>(ranked: readonly T[], perSlot: number,
   return kept;
 }
 
-/** The clothing type's archetypes the user doesn't own, with gain > 0, best gain first (ties: `compareTies`). */
+/**
+ * The clothing type's archetypes the user doesn't own, with gain > 0, best gain first (ties:
+ * `compareTies`). An unsuggested garment still owns its archetype but combines in no outfit.
+ */
 export function rankByGain(garments: readonly RuleGarment[], clothingType: ClothingType, season: Season | null): ForYouIdea[] {
+  const suggestable = garments.filter((g) => g.suggest);
   return archetypesFor(clothingType)
     .filter((archetype) => !ownsArchetype(garments, archetype))
-    .map((archetype) => ({ archetype, gain: archetypeGain(archetype, garments, { season }) }))
+    .map((archetype) => ({ archetype, gain: archetypeGain(archetype, suggestable, { season }) }))
     .filter(({ gain }) => gain.newOutfits > 0)
     .sort((x, y) => y.gain.newOutfits - x.gain.newOutfits || compareTies(x, y));
 }

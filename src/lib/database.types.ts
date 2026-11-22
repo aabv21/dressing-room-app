@@ -37,6 +37,20 @@ export type Database = {
                   Relationships: [
                     
                   ]
+                },"dismissed_outfits": {
+                  Row: {
+                    "created_at": string,"outfit_key": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"outfit_key": string,"user_id"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"outfit_key"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"for_you_cache": {
                   Row: {
                     "cache_key": string,"created_at": string,"result": NonNullable<Json>,"user_id": string
@@ -53,14 +67,14 @@ export type Database = {
                   ]
                 },"garments": {
                   Row: {
-                    "category": Database["public"]['Enums']["garment_category"] | null,"colors": (Database["public"]['Enums']["garment_color"])[],"created_at": string,"extraction_status": Database["public"]['Enums']["extraction_status"],"fit": Database["public"]['Enums']["garment_fit"] | null,"formality": number | null,"id": string,"last_worn_at": string | null,"material": Database["public"]['Enums']["garment_material"] | null,"occasions": (Database["public"]['Enums']["occasion"])[],"pattern": Database["public"]['Enums']["garment_pattern"] | null,"photo_version": number,"pinned_on": string | null,"reviewed_at": string | null,"seasons": (Database["public"]['Enums']["season"])[],"status": Database["public"]['Enums']["garment_status"],"uncertain_fields": (Database["public"]['Enums']["garment_field"])[],"updated_at": string,"user_id": string,"warmth": number | null,"wear_count": number
+                    "category": Database["public"]['Enums']["garment_category"] | null,"colors": (Database["public"]['Enums']["garment_color"])[],"created_at": string,"extraction_status": Database["public"]['Enums']["extraction_status"],"fit": Database["public"]['Enums']["garment_fit"] | null,"formality": number | null,"id": string,"last_worn_at": string | null,"material": Database["public"]['Enums']["garment_material"] | null,"occasions": (Database["public"]['Enums']["occasion"])[],"pattern": Database["public"]['Enums']["garment_pattern"] | null,"photo_version": number,"pinned_on": string | null,"reviewed_at": string | null,"seasons": (Database["public"]['Enums']["season"])[],"status": Database["public"]['Enums']["garment_status"],"suggest": boolean,"uncertain_fields": (Database["public"]['Enums']["garment_field"])[],"updated_at": string,"user_id": string,"warmth": number | null,"wear_count": number
                   }
                   ComputedFields: never
                   Insert: {
-                    "category"?: Database["public"]['Enums']["garment_category"] | null,"colors"?: (Database["public"]['Enums']["garment_color"])[],"created_at"?: string,"extraction_status"?: Database["public"]['Enums']["extraction_status"],"fit"?: Database["public"]['Enums']["garment_fit"] | null,"formality"?: number | null,"id": string,"last_worn_at"?: string | null,"material"?: Database["public"]['Enums']["garment_material"] | null,"occasions"?: (Database["public"]['Enums']["occasion"])[],"pattern"?: Database["public"]['Enums']["garment_pattern"] | null,"photo_version"?: number,"pinned_on"?: string | null,"reviewed_at"?: string | null,"seasons"?: (Database["public"]['Enums']["season"])[],"status"?: Database["public"]['Enums']["garment_status"],"uncertain_fields"?: (Database["public"]['Enums']["garment_field"])[],"updated_at"?: string,"user_id"?: string,"warmth"?: number | null,"wear_count"?: number
+                    "category"?: Database["public"]['Enums']["garment_category"] | null,"colors"?: (Database["public"]['Enums']["garment_color"])[],"created_at"?: string,"extraction_status"?: Database["public"]['Enums']["extraction_status"],"fit"?: Database["public"]['Enums']["garment_fit"] | null,"formality"?: number | null,"id": string,"last_worn_at"?: string | null,"material"?: Database["public"]['Enums']["garment_material"] | null,"occasions"?: (Database["public"]['Enums']["occasion"])[],"pattern"?: Database["public"]['Enums']["garment_pattern"] | null,"photo_version"?: number,"pinned_on"?: string | null,"reviewed_at"?: string | null,"seasons"?: (Database["public"]['Enums']["season"])[],"status"?: Database["public"]['Enums']["garment_status"],"suggest"?: boolean,"uncertain_fields"?: (Database["public"]['Enums']["garment_field"])[],"updated_at"?: string,"user_id"?: string,"warmth"?: number | null,"wear_count"?: number
                   }
                   Update: {
-                    "category"?: Database["public"]['Enums']["garment_category"] | null,"colors"?: (Database["public"]['Enums']["garment_color"])[],"created_at"?: string,"extraction_status"?: Database["public"]['Enums']["extraction_status"],"fit"?: Database["public"]['Enums']["garment_fit"] | null,"formality"?: number | null,"id"?: string,"last_worn_at"?: string | null,"material"?: Database["public"]['Enums']["garment_material"] | null,"occasions"?: (Database["public"]['Enums']["occasion"])[],"pattern"?: Database["public"]['Enums']["garment_pattern"] | null,"photo_version"?: number,"pinned_on"?: string | null,"reviewed_at"?: string | null,"seasons"?: (Database["public"]['Enums']["season"])[],"status"?: Database["public"]['Enums']["garment_status"],"uncertain_fields"?: (Database["public"]['Enums']["garment_field"])[],"updated_at"?: string,"user_id"?: string,"warmth"?: number | null,"wear_count"?: number
+                    "category"?: Database["public"]['Enums']["garment_category"] | null,"colors"?: (Database["public"]['Enums']["garment_color"])[],"created_at"?: string,"extraction_status"?: Database["public"]['Enums']["extraction_status"],"fit"?: Database["public"]['Enums']["garment_fit"] | null,"formality"?: number | null,"id"?: string,"last_worn_at"?: string | null,"material"?: Database["public"]['Enums']["garment_material"] | null,"occasions"?: (Database["public"]['Enums']["occasion"])[],"pattern"?: Database["public"]['Enums']["garment_pattern"] | null,"photo_version"?: number,"pinned_on"?: string | null,"reviewed_at"?: string | null,"seasons"?: (Database["public"]['Enums']["season"])[],"status"?: Database["public"]['Enums']["garment_status"],"suggest"?: boolean,"uncertain_fields"?: (Database["public"]['Enums']["garment_field"])[],"updated_at"?: string,"user_id"?: string,"warmth"?: number | null,"wear_count"?: number
                   }
                   Relationships: [
                     
@@ -107,14 +121,14 @@ isOneToOne: false
                   ]
                 },"outfits": {
                   Row: {
-                    "created_at": string,"id": string,"saved_at": string | null,"user_id": string
+                    "created_at": string,"id": string,"saved_at": string | null,"score": number | null,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"id"?: string,"saved_at"?: string | null,"user_id"?: string
+                    "created_at"?: string,"id"?: string,"saved_at"?: string | null,"score"?: number | null,"user_id"?: string
                   }
                   Update: {
-                    "created_at"?: string,"id"?: string,"saved_at"?: string | null,"user_id"?: string
+                    "created_at"?: string,"id"?: string,"saved_at"?: string | null,"score"?: number | null,"user_id"?: string
                   }
                   Relationships: [
                     
@@ -216,7 +230,7 @@ isOneToOne: false
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },
 "save_outfit":
-{ Args: { "p_garment_ids": (string)[] }; Returns: string
+{ Args: { "p_garment_ids": (string)[],"p_score"?: number }; Returns: string
                            }
           }
           Enums: {

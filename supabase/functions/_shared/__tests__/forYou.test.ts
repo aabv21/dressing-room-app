@@ -53,6 +53,8 @@ function garment(category: GarmentCategory, overrides: Partial<RuleGarment> = {}
     fit: 'regular',
     status: 'available',
     last_worn_at: null,
+    wear_count: 0,
+    suggest: true,
     updated_at: '2026-11-01T00:00:00Z',
     pinned_on: null,
     ...overrides,
@@ -252,6 +254,14 @@ describe('rankByGain', () => {
     const gains = ranked.map((item) => item.gain.newOutfits);
     expect(gains).toEqual([...gains].sort((a, b) => b - a));
     for (const item of ranked) expect(archetypesFor('feminine')).toContain(item.archetype);
+  });
+
+  it('counts no outfit with an unsuggested garment, which still owns its archetype', () => {
+    const off = closet().map((g) => (g.category === 'sneakers' ? { ...g, suggest: false } : g));
+    const without = closet().filter((g) => g.category !== 'sneakers');
+    const ranked = rankByGain(off, 'feminine', 'autumn');
+    expect(ranked.map((item) => item.archetype.id)).not.toContain('white-sneakers');
+    for (const item of ranked) expect(item.gain).toEqual(archetypeGain(item.archetype, without, { season: 'autumn' }));
   });
 
   it('never counts a donated garment', () => {

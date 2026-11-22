@@ -191,7 +191,8 @@ export async function loadProfile(env: SupabaseEnv, fetchFn: FetchFn, auth: stri
 
 // --- Garments ----------------------------------------------------------------------------------
 
-export const GARMENT_COLUMNS = 'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,updated_at,pinned_on';
+export const GARMENT_COLUMNS =
+  'id,category,colors,pattern,formality,seasons,warmth,fit,status,last_worn_at,wear_count,suggest,updated_at,pinned_on';
 const GARMENT_STATUSES = ['available', 'laundry', 'lent', 'donated'] as const satisfies readonly GarmentStatus[];
 
 /** `pinned_on`, read as a plain `YYYY-MM-DD` the way the lucky-list cache key and request dates are compared. */
@@ -214,6 +215,9 @@ export function garmentFrom(row: unknown): RuleGarment {
     fit: oneOf(GARMENT_FITS, row.fit),
     status,
     last_worn_at: stringOrNull(row.last_worn_at),
+    wear_count: typeof row.wear_count === 'number' && Number.isInteger(row.wear_count) && row.wear_count > 0 ? row.wear_count : 0,
+    // Only an explicit false opts out: the column is `not null default true`.
+    suggest: row.suggest !== false,
     updated_at: row.updated_at,
     pinned_on: pinnedOnOf(row.pinned_on),
   };
@@ -234,6 +238,13 @@ export async function loadGarments(
     userHeaders(env, auth),
   );
   return rows.map(garmentFrom);
+}
+
+// NOTE: reads one page (PostgREST's max_rows, 1000 here), so later dismissals past it are ignored; upgrade: page like export-data.
+/** The caller's dismissed outfit keys (sorted garment ids joined by commas), read under RLS. */
+export async function loadDismissed(env: SupabaseEnv, fetchFn: FetchFn, auth: string): Promise<Set<string>> {
+  const rows = await restRows(fetchFn, `${env.supabaseUrl}/rest/v1/dismissed_outfits?select=outfit_key`, userHeaders(env, auth));
+  return new Set(rows.flatMap((row) => (isRecord(row) && typeof row.outfit_key === 'string' ? [row.outfit_key] : [])));
 }
 
 // --- Weather -----------------------------------------------------------------------------------

@@ -205,6 +205,51 @@ test('a status that fails to save reverts and shows the message', async () => {
   expect(mockReplaceLocal).not.toHaveBeenCalled();
 });
 
+test('the "Use in suggestions" switch is on by default and saves suggest at once', async () => {
+  mockedUpdateGarment.mockResolvedValue({ ok: true });
+  await renderDetail();
+
+  const toggle = screen.getByRole('switch', { name: 'Use in suggestions' });
+  expect(toggle).toBeChecked();
+  await fireEvent(toggle, 'valueChange', false);
+
+  expect(mockedUpdateGarment).toHaveBeenCalledWith('g-1', { suggest: false });
+  await waitFor(() => {
+    expect(mockReplaceLocal).toHaveBeenCalledWith({ ...jeans(), suggest: false });
+  });
+  expect(screen.getByRole('switch', { name: 'Use in suggestions' })).not.toBeChecked();
+});
+
+test('a row cached by an older build (no suggest field) shows the switch on', async () => {
+  mockCloset.garments = [{ ...jeans(), suggest: undefined } as unknown as Garment];
+  await renderDetail();
+
+  expect(screen.getByRole('switch', { name: 'Use in suggestions' })).toBeChecked();
+});
+
+test('a garment taken out of suggestions can be put back', async () => {
+  mockCloset.garments = [jeans({ suggest: false })];
+  mockedUpdateGarment.mockResolvedValue({ ok: true });
+  await renderDetail();
+
+  const toggle = screen.getByRole('switch', { name: 'Use in suggestions' });
+  expect(toggle).not.toBeChecked();
+  await fireEvent(toggle, 'valueChange', true);
+
+  expect(mockedUpdateGarment).toHaveBeenCalledWith('g-1', { suggest: true });
+});
+
+test('a suggestions switch that fails to save reverts and shows the message', async () => {
+  mockedUpdateGarment.mockResolvedValue({ ok: false, error: 'network' });
+  await renderDetail();
+
+  await fireEvent(screen.getByRole('switch', { name: 'Use in suggestions' }), 'valueChange', false);
+
+  expect(await screen.findByText(NETWORK_ERROR)).toBeOnTheScreen();
+  expect(screen.getByRole('switch', { name: 'Use in suggestions' })).toBeChecked();
+  expect(mockReplaceLocal).not.toHaveBeenCalled();
+});
+
 test('the selected status can not be cleared', async () => {
   await renderDetail();
 

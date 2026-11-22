@@ -27,12 +27,17 @@ jest.mock('../perf/useFrameStats', () => ({
   }),
 }));
 jest.mock('expo-router', () => ({
-  router: { push: jest.fn() },
+  router: { push: jest.fn(), setParams: jest.fn() },
   useIsFocused: jest.fn(() => true),
+  useLocalSearchParams: () => ({}),
 }));
 jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn() }));
 jest.mock('../lib/localDate', () => ({ localDate: jest.fn(() => '2026-11-08') }));
 jest.mock('../stats/wearsRepository', () => ({ listWears: jest.fn() }));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- see src/test/savedClientsMock.ts
+jest.mock('../outfits/savedOutfits', () => require('../test/savedClientsMock'));
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- see src/test/outfitClientsMock.ts
+jest.mock('../outfits/outfitRepository', () => require('../test/outfitClientsMock'));
 // The Diary segment reads the signed-in user (its deletes clear Today's worn record).
 jest.mock('../auth/AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
 jest.mock('../closet/garmentRepository', () => ({ updateGarment: jest.fn() }));

@@ -75,6 +75,7 @@ desc)` backs the closet grid's per-user, newest-first query.
 | `wear_count`                 | `integer`                  | `not null default 0`; CHECK `>= 0`; server/function-only (Plan 4)    |
 | `last_worn_at`                | `timestamptz`              | nullable; server/function-only (Plan 4)                             |
 | `pinned_on`                   | `date`                     | nullable; client-writable (Plan 5)                                   |
+| `suggest`                     | `boolean`                  | `not null default true`; client-writable; false keeps the piece out of suggested outfits |
 | `created_at`, `updated_at`   | `timestamptz`              | `not null default now()`; kept/set by the same triggers as `profiles` |
 
 Enums added here (exact values):
@@ -116,8 +117,9 @@ generated `Constants.public.Enums.*`.
 One outfit is a set of garments, logged either through a wear (`public.log_wear()`) or saved on its
 own (`public.save_outfit()`). `public.outfits (id uuid primary key default gen_random_uuid(),
 user_id uuid not null default auth.uid() references auth.users on delete cascade, saved_at
-timestamptz, created_at timestamptz not null default now())` — `saved_at` is null unless the outfit
-was explicitly saved. `public.outfit_items (outfit_id uuid references public.outfits on delete
+timestamptz, created_at timestamptz not null default now(), score smallint check (score between 0
+and 100))` — `saved_at` is null unless the outfit was explicitly saved, and `score` is the rating
+shown when it was saved (null for a worn outfit, or one an older build saved). `public.outfit_items (outfit_id uuid references public.outfits on delete
 cascade, garment_id uuid references public.garments on delete cascade, primary key (outfit_id,
 garment_id))` is the join table between an outfit and its garments; it has no `user_id` of its own,
 so its policies check the referenced outfit/garment instead. `public.wears (id uuid primary key
@@ -133,14 +135,17 @@ on `outfit_items (garment_id)` — no separate index on `outfit_id` alone, since
 user's wears by date, `src/stats/wearsRepository.ts`'s `listWears`, and every other lookup by
 `user_id`, which is why `20261109151326_drop_redundant_wears_user_id_idx.sql` dropped the plain
 `wears (user_id)` index Plan 4 also created) and `wears_outfit_id_idx` on `wears (outfit_id)` (backs the wear-count trigger's and
-the RPCs' per-outfit lookups).
+the RPCs' per-outfit lookups). `outfits_user_id_saved_at_idx` on `outfits (user_id, saved_at desc)
+where saved_at is not null` backs the Closet's Saved list; it's partial, so worn outfits add nothing
+to it (`20261121120000_suggestion_feedback.sql`).
 
 **Clients never insert or update these tables directly in the documented path** —
 `public.log_wear()` and `public.save_outfit()` (below) are the RPCs the app calls. Clients may
-`select` all three (own rows only) and `delete` their own `wears` rows (Plan 5's diary undo); there
-is no delete policy on `outfits` or `outfit_items` (and `delete` is revoked outright on both — see
-"RLS and storage rules" below), and no update policy anywhere on any of the three (`update` is
-revoked outright on all three). Because both RPCs are `security invoker`, the privilege to insert is
+`select` all three (own rows only), `delete` their own `wears` rows (Plan 5's diary undo) and
+`delete` their own saved outfits that no wear points at (the Saved list's Delete; its
+`outfit_items` go with it through the FK cascade). `outfit_items` has no delete policy (`delete` is
+revoked outright on it — see "RLS and storage rules" below), and no table of the three has an
+update policy (`update` is revoked outright on all three). Because both RPCs are `security invoker`, the privilege to insert is
 still there — gated by each table's own insert policy — so a direct client insert of the caller's
 own row is technically possible; it's just never the app's path, and it carries its own self-only
 integrity gaps (see "RLS and storage rules" below). See [Logging a wear](#logging-a-wear) and
@@ -153,11 +158,26 @@ references public.outfits on delete cascade`'s cascade into `wears` and fires
 `wears_maintain_counts` for each deleted wear. By the time that trigger runs, the `outfit_items`
 rows it would join through to find "which garments" are already gone, so its `where … and g.id in
 (select oi.garment_id from public.outfit_items oi where oi.outfit_id = old.outfit_id)` matches
-nothing and no garment's `wear_count`/`last_worn_at` moves. There is no client path to delete an
-`outfits` row (no delete policy, and delete is revoked outright — see above), so this can't happen.
-Diary's Delete (`deleteWear`) deletes only the `wears` row, through `wears_delete_own`, and the
-trigger lowers the counts; the outfit stays. Any future outfit deletion must delete its `wears`
-rows first and only then the `outfits` row — never the other order.
+nothing and no garment's `wear_count`/`last_worn_at` moves. The only client path to delete an
+`outfits` row, `outfits_delete_saved_own`, allows it only for a saved outfit that no `wears` row
+references, so this can't happen: `save_outfit()` never creates a wear, and `log_wear()` always
+creates a new, unsaved outfit. Diary's Delete (`deleteWear`) deletes only the `wears` row, through
+`wears_delete_own`, and the trigger lowers the counts; the outfit stays. Any future deletion of a
+worn outfit must delete its `wears` rows first and only then the `outfits` row — never the other
+order.
+
+### `public.dismissed_outfits`
+
+The combinations the user asked Today not to suggest again ("Not for me" → "Don't suggest this
+combination"; `20261121120000_suggestion_feedback.sql`). `(user_id uuid not null default auth.uid()
+references auth.users on delete cascade, outfit_key text not null, created_at timestamptz not null
+default now())`, primary key `(user_id, outfit_key)`, which leads with `user_id` and so serves the
+per-user read without another index. `outfit_key` is the app's outfit identity: the garment ids
+sorted and joined by commas (`outfitIdentity` in `src/outfits/wornToday.ts`); a check constraint
+holds it to 2–6 lowercase uuids. `lucky-list` reads the caller's rows with the user's token and
+leaves those combinations out of its candidates ([`ai.md`](ai.md#the-lucky-list-function)). A
+deleted garment leaves its keys behind; they never match again, and the cascade from `auth.users`
+removes them with the account.
 
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5)
 
@@ -302,6 +322,9 @@ privileges), the client gets back only:
   set `pinned_on` on their own garment. Unused-for-6-months' "Suggest tomorrow" sets it to tomorrow's local
   date; `lucky-list` includes the garment in that day's outfits when any complete outfit with it
   passes the rules. Nothing clears it automatically — the day simply passes.
+- `grant update (suggest)` (`20261121120000_suggestion_feedback.sql`) — Today's "Don't suggest
+  this piece" sets it to false, and the garment detail's "Use in suggestions" switch sets it either
+  way. `lucky-list` and `for-you` build no outfit with a garment whose `suggest` is false.
 
 `created_at`/`updated_at` follow the same pair of trigger functions `profiles` uses:
 `garments_set_updated_at` (`public.set_updated_at()`) sets `updated_at = now()` before every
@@ -313,8 +336,11 @@ back over whatever an update sends — both revoked from direct `execute` by cli
 
 RLS is enabled on all three, all comparing against `(select auth.uid())`:
 
-- `outfits` — `outfits_select_own` (select), `outfits_insert_own` (insert, `with check`). No update
-  or delete policy, and (see below) `update`/`delete` are also revoked at the table-privilege level.
+- `outfits` — `outfits_select_own` (select), `outfits_insert_own` (insert, `with check`) and
+  `outfits_delete_saved_own` (delete): own, `saved_at is not null`, and `not exists` a `wears` row
+  for it, which keeps the cascade trap above out of reach. No update policy, and `update` is revoked
+  at the table-privilege level (see below); `delete` was revoked too until
+  `20261121120000_suggestion_feedback.sql` granted it back for this policy.
 - `outfit_items` — `outfit_items_select_own` (select) via `exists (select 1 from public.outfits o
   where o.id = outfit_id and o.user_id = (select auth.uid()))`; `outfit_items_insert_own` (insert,
   `with check`) requiring both the referenced outfit and the referenced garment to be the caller's.
@@ -338,10 +364,12 @@ not what blocks `update`/`delete` here.** Supabase's default ACL (`pg_default_ac
 policy for either, an `update` with no matching row count (not a `42501`) rather than a policy
 error, exactly like `garments_rls.test.sql`'s cross-user update/delete demonstrates for a table that
 *does* have other policies. Since there is no legitimate update path on any of the three tables, and
-no delete path on `outfits`/`outfit_items`, the migration also runs `revoke update, delete on
-public.outfits, public.outfit_items from authenticated` and `revoke update on public.wears from
-authenticated` — so a client `update` anywhere, or a `delete` on `outfits`/`outfit_items`, raises
-`42501` (a real privilege error) rather than silently touching zero rows. There is no column-grant
+no delete path on `outfit_items`, the migrations run `revoke update, delete on public.outfits,
+public.outfit_items from authenticated` and `revoke update on public.wears from authenticated` —
+so a client `update` anywhere, or a `delete` on `outfit_items`, raises `42501` (a real privilege
+error) rather than silently touching zero rows. `20261121120000_suggestion_feedback.sql` grants
+`delete` on `outfits` back for `outfits_delete_saved_own`, so deleting a worn outfit (or someone
+else's) now matches zero rows instead of raising. There is no column-grant
 narrowing here the way `garments` has: `insert` stays at the row-policy level because
 `public.log_wear()`/`public.save_outfit()` are `security invoker` and rely on the caller's own
 insert privilege and policies (see below) — the policies above are the only gate on insert, and
@@ -356,6 +384,14 @@ row at all. Every one of those rows would still only ever be the caller's own (R
 part), so this is a self-inflicted data-integrity gap, never a cross-tenant one — but it's real, and
 it's the reason `log_wear()`/`save_outfit()` are documented as the only intended path rather than
 merely "a convenience."
+
+### `public.dismissed_outfits`
+
+RLS is enabled with three policies for `authenticated`, all comparing `user_id = (select
+auth.uid())`: `dismissed_outfits_select_own`, `dismissed_outfits_insert_own` (`with check`) and
+`dismissed_outfits_delete_own`. `revoke all from anon`, and `revoke update, truncate, trigger,
+references from authenticated`: a dismissal is added or removed, never edited, so an update raises
+`42501` instead of matching zero rows.
 
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache`, `public.apple_tokens` (Plan 5)
 
@@ -511,7 +547,7 @@ overwrite someone else's wear."
 `public.save_outfit()` is the sibling RPC for saving a combination
 without logging a wear: same garment-array validation and ownership check as steps 2–3 above (not
 idempotent — it has no caller-supplied id to check against), but it inserts only `outfits` (with
-`saved_at = now()`) and `outfit_items`, no `wears` row, and returns the outfit id instead. Calling
+`saved_at = now()` and the optional `p_score`, the rating the app showed) and `outfit_items`, no `wears` row, and returns the outfit id instead. Calling
 it never creates a `wears` row and never fires `wears_maintain_counts`, so it never changes any
 garment's `wear_count`/`last_worn_at`.
 
@@ -647,7 +683,8 @@ inside them, never in `src/`.
      failed read of the row) is logged as `revoke_failed` and never blocks the deletion;
   3. with the service role, `DELETE /auth/v1/admin/users/{uid}`, after which every public table cascades away:
      `profiles`, `garments` (and through them `outfit_items`), `outfits`, `wears`,
-     `usage_counters`, `rating_cache`, `lucky_cache`, `for_you_cache` and `apple_tokens` all
+     `dismissed_outfits`, `usage_counters`, `rating_cache`, `lucky_cache`, `for_you_cache` and
+     `apple_tokens` all
      reference `auth.users` with `on delete cascade` (pinned by `insights_account.test.sql`).
   4. once this call has deleted the user, sweeps `garments/{uid}/` one last time, best effort:
      another device (or a token that is still valid) can upload between steps 1 and 3, because the
@@ -664,8 +701,8 @@ inside them, never in `src/`.
 
   What the app does around the call (the marker, the paused queue, `reauth`, the local cleanup and
   the later checks) is in [`app.md`](app.md#account-deletion-on-the-device).
-- **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`)
-  and `wears` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
+- **`export-data`** — reads `profiles`, `garments`, `outfits` (with `items:outfit_items(garment_id)`),
+  `wears` and `dismissed_outfits` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
   caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still
   reads every row. Photo URLs are signed with the service role for 7 days,

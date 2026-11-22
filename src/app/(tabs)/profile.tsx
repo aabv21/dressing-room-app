@@ -1,13 +1,14 @@
-import { Check, Download, LogOut, Trash2, Users } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useIsFocused } from 'expo-router';
+import { Check, Download, Eye, LogOut, Trash2, Users } from 'lucide-react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { usePrivacyActions } from '../../account/usePrivacyActions';
 import { useAuth } from '../../auth/AuthProvider';
 import { clearLanguageSavePending, markLanguageSavePending } from '../../auth/deviceState';
 import { useSignOut } from '../../auth/useSignOut';
 import type { MessageKey } from '../../i18n';
-import { useI18n } from '../../i18n';
+import { pluralKey, useI18n } from '../../i18n';
 import { useLocalePreference } from '../../i18n/I18nProvider';
 import { changedFields, draftFromProfile, draftToPatch } from '../../profile/profileDraft';
 import type { BodyErrors, ProfileDraft } from '../../profile/profileDraft';
@@ -20,6 +21,9 @@ import { ActionNotice } from '../../ui/ActionNotice';
 import { Screen } from '../../ui/Screen';
 import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 import { LanguageToggle } from '../../ui/LanguageToggle';
+import type { RequestError } from '../../lib/requestResult';
+import { clearDismissed } from '../../outfits/storedDismissed';
+import { countDismissed, restoreDismissed } from '../../outfits/suggestionFeedback';
 
 /** How long "Saved" stays on the button after a save. */
 export const SAVED_NOTE_MS = 2000;
@@ -115,6 +119,83 @@ function PrivacySection({ exporting, deleting }: ReturnType<typeof usePrivacyAct
   );
 }
 
+/** Today's "Not for me" combinations, counted on focus and restored all at once after a confirm. */
+function HiddenSuggestionsSection(): React.JSX.Element {
+  const { t } = useI18n();
+  const { userId } = useAuth();
+  const focused = useIsFocused();
+  const [count, setCount] = useState<number | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [error, setError] = useState<RequestError | null>(null);
+
+  useEffect(() => {
+    if (!focused) return undefined;
+    let current = true;
+    void countDismissed().then((value) => {
+      if (current && value !== null) setCount(value);
+    });
+    return () => {
+      current = false;
+    };
+  }, [focused]);
+
+  const restore = useCallback(async () => {
+    if (userId === null) return;
+    setRestoring(true);
+    setError(null);
+    const result = await restoreDismissed(userId);
+    setRestoring(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    clearDismissed(userId);
+    setCount(0);
+    announceForAccessibility(t('profile.hidden.restored'));
+  }, [userId, t]);
+
+  const confirm = useCallback(() => {
+    if (count === null || count === 0) return;
+    Alert.alert(t(pluralKey('profile.hidden.confirmTitle', count), { count }), t('profile.hidden.confirmMessage'), [
+      { text: t('profile.hidden.cancel'), style: 'cancel' },
+      {
+        text: t('profile.hidden.restore'),
+        onPress: () => {
+          void restore();
+        },
+      },
+    ]);
+  }, [count, restore, t]);
+
+  const disabled = restoring || count === null || count === 0;
+  const label = t('profile.hidden.action');
+  return (
+    <View style={styles.card}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled, busy: restoring }}
+        disabled={disabled}
+        onPress={confirm}
+        style={[styles.signOut, disabled ? styles.disabled : null]}
+      >
+        {restoring ? <ActivityIndicator size="small" color={colors.ink} /> : <Eye size={16} color={colors.ink} />}
+        <Text style={styles.signOutLabel}>{label}</Text>
+      </Pressable>
+      {count === null ? null : (
+        <Text style={[styles.muted, styles.hiddenCount]}>
+          {count === 0 ? t('profile.hidden.none') : t(pluralKey('profile.hidden.count', count), { count })}
+        </Text>
+      )}
+      {error === null ? null : (
+        <Text style={styles.error} accessibilityLiveRegion="polite">
+          {t(`profile.hidden.error.${error}`)}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 /** A preview of a later feature: one row, not a control. */
 function HouseholdSection(): React.JSX.Element {
   const { t } = useI18n();
@@ -144,6 +225,7 @@ function AccountAndPrivacy(): React.JSX.Element {
     <>
       <AccountSection privacyBusy={privacy.exporting.busy || privacy.deleting.busy} />
       <PrivacySection {...privacy} />
+      <HiddenSuggestionsSection />
     </>
   );
 }
@@ -436,6 +518,10 @@ const styles = StyleSheet.create({
   muted: {
     color: colors.muted,
     fontSize: fontSizes.caption,
+  },
+  hiddenCount: {
+    textAlign: 'center',
+    paddingBottom: 6,
   },
   household: {
     flexDirection: 'row',

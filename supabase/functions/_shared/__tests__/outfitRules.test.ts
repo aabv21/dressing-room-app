@@ -8,6 +8,7 @@ import {
   missingSlots,
   passesRules,
   preScore,
+  ROTATION_BONUS,
   type RuleContext,
   type RuleGarment,
   seasonOf,
@@ -32,6 +33,8 @@ function garment(overrides: Partial<RuleGarment> = {}): RuleGarment {
     fit: 'regular',
     status: 'available',
     last_worn_at: null,
+    wear_count: 0,
+    suggest: true,
     updated_at: '2026-01-01T00:00:00Z',
     pinned_on: null,
     ...overrides,
@@ -307,27 +310,30 @@ describe('passesRules', () => {
 });
 
 describe('preScore', () => {
-  test('never worn scores 30 days', () => {
+  /** The rotation bonus of one piece worn `wears` times. */
+  const rotation = (wears: number): number => ROTATION_BONUS / (1 + wears);
+
+  test('never worn scores 30 days plus the full rotation bonus', () => {
     const outfit = [garment({ last_worn_at: null, colors: ['red'] })];
-    expect(preScore(outfit, TODAY)).toBe(30);
+    expect(preScore(outfit, TODAY)).toBe(30 + ROTATION_BONUS);
   });
 
   test('worn 2 days ago scores 2 days plus neutral bonus for a neutral color', () => {
-    const outfit = [garment({ last_worn_at: '2026-11-06T00:00:00Z', colors: ['black'] })];
-    expect(preScore(outfit, TODAY)).toBe(2 + 5);
+    const outfit = [garment({ last_worn_at: '2026-11-06T00:00:00Z', wear_count: 1, colors: ['black'] })];
+    expect(preScore(outfit, TODAY)).toBe(2 + 5 + rotation(1));
   });
 
   test('days since last worn is capped at 30', () => {
-    const outfit = [garment({ last_worn_at: '2025-01-01T00:00:00Z', colors: ['red'] })];
-    expect(preScore(outfit, TODAY)).toBe(30);
+    const outfit = [garment({ last_worn_at: '2025-01-01T00:00:00Z', wear_count: 1, colors: ['red'] })];
+    expect(preScore(outfit, TODAY)).toBe(30 + rotation(1));
   });
 
   test('averages across the base pieces, so a one-piece outfit is not behind for having fewer pieces', () => {
     const outfit = [
       garment({ last_worn_at: null, colors: ['red'] }),
-      garment({ category: 'jeans', last_worn_at: '2026-11-06T00:00:00Z', colors: ['navy'] }),
+      garment({ category: 'jeans', last_worn_at: '2026-11-06T00:00:00Z', wear_count: 1, colors: ['navy'] }),
     ];
-    expect(preScore(outfit, TODAY)).toBe((30 + 2 + 5) / 2);
+    expect(preScore(outfit, TODAY)).toBe((30 + ROTATION_BONUS + 2 + 5 + rotation(1)) / 2);
     const dress = [garment({ category: 'dress', colors: ['black'] }), garment({ category: 'sneakers', colors: ['white'] })];
     const separates = [...dress.slice(1), garment({ colors: ['black'] }), garment({ category: 'jeans', colors: ['navy'] })];
     expect(preScore(dress, TODAY)).toBe(preScore(separates, TODAY));
@@ -342,12 +348,38 @@ describe('preScore', () => {
 
   test('outerwear counts as a base piece', () => {
     const base = [garment({ colors: ['red'] }), garment({ category: 'jeans', colors: ['red'] }), garment({ category: 'sneakers', colors: ['red'] })];
-    expect(preScore([...base, garment({ category: 'coat', colors: ['black'] })], TODAY)).toBe((30 * 4 + 5) / 4);
+    expect(preScore([...base, garment({ category: 'coat', colors: ['black'] })], TODAY)).toBe(
+      (30 * 4 + 5) / 4 + ROTATION_BONUS,
+    );
   });
 
   test('an outfit of extras only (a single swap candidate) scores those pieces', () => {
-    expect(preScore([garment({ category: 'belt', colors: ['black'], last_worn_at: '2026-11-06T00:00:00Z' })], TODAY)).toBe(2 + 5);
+    expect(
+      preScore([garment({ category: 'belt', colors: ['black'], last_worn_at: '2026-11-06T00:00:00Z', wear_count: 1 })], TODAY),
+    ).toBe(2 + 5 + rotation(1));
     expect(preScore([], TODAY)).toBe(0);
+  });
+
+  test('between two otherwise-equal candidates, the one with the less-worn pieces ranks first', () => {
+    const lastWorn = '2026-09-01T00:00:00Z';
+    const outfit = (wears: number): RuleGarment[] => [
+      garment({ colors: ['white'], last_worn_at: lastWorn, wear_count: wears }),
+      garment({ category: 'jeans', colors: ['navy'], last_worn_at: lastWorn, wear_count: wears }),
+      garment({ category: 'sneakers', colors: ['white'], last_worn_at: lastWorn, wear_count: wears }),
+    ];
+    const ranked = [outfit(12), outfit(1)].sort((a, b) => preScore(b, TODAY) - preScore(a, TODAY));
+    expect(ranked[0]?.[0]?.wear_count).toBe(1);
+    const neverWorn = [garment({ colors: ['white'] }), garment({ category: 'jeans', colors: ['navy'] }), garment({ category: 'sneakers', colors: ['white'] })];
+    expect(preScore(neverWorn, TODAY)).toBeGreaterThan(preScore(outfit(1), TODAY));
+  });
+
+  test('the rotation bonus stays small: at most ROTATION_BONUS, under one neutral color', () => {
+    const fresh = [garment({ colors: ['red'], last_worn_at: '2026-11-01T00:00:00Z', wear_count: 0 })];
+    const worn = [garment({ colors: ['red'], last_worn_at: '2026-11-01T00:00:00Z', wear_count: 1000 })];
+    const gap = preScore(fresh, TODAY) - preScore(worn, TODAY);
+    expect(gap).toBeGreaterThan(0);
+    expect(gap).toBeLessThanOrEqual(ROTATION_BONUS);
+    expect(ROTATION_BONUS).toBeLessThan(5);
   });
 });
 

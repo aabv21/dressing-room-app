@@ -5,7 +5,7 @@
 -- outfits/outfit_items/wears (including a real outfit_items assertion, not
 -- a vacuous one hidden by the outfits join), save_outfit stamping saved_at
 -- and never touching wears/counts, no client update anywhere (now a real
--- 42501, not a silently-filtered no-op), wear deletion (B can't delete A's
+-- 42501, not a silently-filtered no-op), no delete of a worn outfit, wear deletion (B can't delete A's
 -- wear; A's own delete as authenticated decrements counts), a garment
 -- delete cascading its outfit_items rows, and the cross-tenant
 -- direct-insert paths a security review flagged: a wear naming another
@@ -487,13 +487,16 @@ select throws_ok(
   'authenticated updating outfit_items raises a policy error'
 );
 
--- No client delete on outfits or outfit_items either (delete is revoked
--- outright, same as update).
-select throws_ok(
-  format($$ delete from public.outfits where id = %L $$, current_setting('pgtap.a_outfit_id')::uuid),
-  '42501',
-  null,
-  'authenticated deleting outfits raises a policy error'
+-- A worn outfit can't be deleted: outfits only allows deleting a saved,
+-- never-worn one (suggestion_feedback.test.sql), so this reaches no row.
+-- outfit_items keeps delete revoked outright, same as update.
+with deleted as (
+  delete from public.outfits where id = current_setting('pgtap.a_outfit_id')::uuid returning 1
+)
+select is(
+  (select count(*)::int from deleted),
+  0,
+  'authenticated deleting a worn outfit removes nothing'
 );
 
 select throws_ok(

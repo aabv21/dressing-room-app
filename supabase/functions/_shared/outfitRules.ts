@@ -27,6 +27,10 @@ export type RuleGarment = {
   fit: GarmentFit | null;
   status: GarmentStatus;
   last_worn_at: string | null;
+  /** Kept by the wears trigger; feeds only `preScore`'s rotation bonus, never a cache key. */
+  wear_count: number;
+  /** False when the user took the piece out of suggestions: lucky-list and for-you build no outfit with it. */
+  suggest: boolean;
   updated_at: string;
   /** Set by Unused-for-6-months' "Wear it" to tomorrow's local date; null otherwise. */
   pinned_on: string | null;
@@ -61,6 +65,8 @@ const NEUTRAL_COLORS = new Set<GarmentColor>(['black', 'white', 'gray', 'navy', 
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_PRE_SCORE_DAYS = 30;
+/** A never-worn piece's pre-score bonus, worth this many days unworn (docs/ai.md#the-lucky-list-function). */
+export const ROTATION_BONUS = 3;
 const RECENT_WEAR_DAYS = 7;
 const MAX_NON_NEUTRAL_COLORS = 3;
 const MIN_FALLBACK_CANDIDATES = 3;
@@ -213,9 +219,9 @@ export function basePieces(outfit: Outfit): RuleGarment[] {
 }
 
 /**
- * Mean over the base pieces of days since last worn (capped at 30) plus 5 for a neutral color
- * (docs/ai.md#the-lucky-list-function). An extras-only outfit (rate-outfit's freshness of a single
- * swap candidate) scores those pieces instead.
+ * Mean over the base pieces of days since last worn (capped at 30), plus 5 for a neutral color, plus
+ * `ROTATION_BONUS / (1 + wear_count)` (docs/ai.md#the-lucky-list-function). An extras-only outfit
+ * (rate-outfit's freshness of a single swap candidate) scores those pieces instead.
  */
 export function preScore(outfit: Outfit, today: string): number {
   const base = basePieces(outfit);
@@ -225,7 +231,7 @@ export function preScore(outfit: Outfit, today: string): number {
   for (const item of pieces) {
     const daysSinceWorn =
       item.last_worn_at === null ? MAX_PRE_SCORE_DAYS : Math.min(MAX_PRE_SCORE_DAYS, daysBetween(item.last_worn_at, today));
-    score += daysSinceWorn;
+    score += daysSinceWorn + ROTATION_BONUS / (1 + item.wear_count);
     if (item.colors.some((color) => NEUTRAL_COLORS.has(color))) score += 5;
   }
   return score / pieces.length;

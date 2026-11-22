@@ -1,7 +1,7 @@
 import { useNetworkState } from 'expo-network';
-import { router, useIsFocused } from 'expo-router';
+import { router, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { Camera, ChevronRight, ImageIcon, X } from 'lucide-react-native';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ClosetGrid, type LeadingTile } from '../../closet/ClosetGrid';
@@ -9,6 +9,7 @@ import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
 import { categoryCounts, type ColorFilter, firstOutfitProgress, hasAnyColor, isActive, toGridItems, reviewQueue, slotCounts } from '../../closet/closetSelectors';
 import { GARMENT_CATEGORIES, PALETTE_HEX, SLOTS, type GarmentCategory, type Slot } from '../../closet/catalog';
 import { DiarySegment } from '../../closet/DiarySegment';
+import { SavedSegment } from '../../closet/SavedSegment';
 import { SegmentTabs } from '../../closet/SegmentTabs';
 import { StatsSegment } from '../../closet/StatsSegment';
 import { GoalCard } from '../../closet/GoalCard';
@@ -96,9 +97,9 @@ function ReviewBanner({ count }: { count: number }): React.JSX.Element {
   );
 }
 
-type Segment = 'items' | 'stats' | 'diary';
+type Segment = 'items' | 'stats' | 'diary' | 'saved';
 
-const SEGMENTS: readonly Segment[] = ['items', 'stats', 'diary'];
+const SEGMENTS: readonly Segment[] = ['items', 'stats', 'diary', 'saved'];
 
 function ClosetTabs({ value, onChange }: { value: Segment; onChange: (next: Segment) => void }): React.JSX.Element {
   const { t } = useI18n();
@@ -313,11 +314,20 @@ function ItemsSegment({
   );
 }
 
-/** Items | Stats | Diary, each under the same title and pills. */
+/** Items | Stats | Diary | Saved, each under the same title and pills. `?segment=` opens one (the rating's "See it in Saved"). */
 function RealCloset(): React.JSX.Element {
   const { t } = useI18n();
   const focused = useIsFocused();
   const [segment, setSegment] = useState<Segment>('items');
+  const { segment: requested } = useLocalSearchParams<{ segment?: string }>();
+  const opened = SEGMENTS.find((value) => value === requested);
+  if (opened !== undefined && opened !== segment) {
+    // Storing derived state during render (React's documented pattern); the effect clears the param.
+    setSegment(opened);
+  }
+  useEffect(() => {
+    if (opened !== undefined) router.setParams({ segment: undefined });
+  }, [opened]);
   const [colorFilter, setColorFilter] = useState<ColorFilter | null>(null);
   // Polls pending extractions whichever segment shows, so Items is current on return.
   usePendingPolling(focused);
@@ -339,7 +349,9 @@ function RealCloset(): React.JSX.Element {
     <Screen title={t('screen.closet')}>
       <View style={styles.segmentBody}>
         {tabs}
-        {segment === 'stats' ? <StatsSegment onColorSelect={onColorSelect} /> : <DiarySegment />}
+        {segment === 'stats' ? <StatsSegment onColorSelect={onColorSelect} /> : null}
+        {segment === 'diary' ? <DiarySegment /> : null}
+        {segment === 'saved' ? <SavedSegment /> : null}
       </View>
     </Screen>
   );

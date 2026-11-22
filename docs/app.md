@@ -65,7 +65,12 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
   goal), Stats (`StatsSegment.tsx`: period chips, KPI tiles, most worn, colors, balance and the
   unused-for-6-months list with Suggest tomorrow and Donate, computed by `src/stats/`) and Diary
   (`DiarySegment.tsx`: a Monday-first month calendar with each worn day's thumbnail; a tapped day's
-  wears with their pieces, occasion and score, and Delete).
+  wears with their pieces, occasion and score, and Delete) and Saved (`SavedSegment.tsx`: the saved
+  outfits newest first with the saved date and score; Rate opens `/rate?ids=…`, "I'll wear it" goes
+  through `useWearLog` with its Undo, logging only the pieces still there and available, and
+  disabled with "Some pieces aren't available" when those no longer make a complete outfit; Delete
+  asks first; offline, the stored list with a note).
+  `/closet?segment=saved` opens Saved (the rating's "See it in Saved") and then clears the param.
 - **`GarmentFields.tsx`**: the per-field chip editors (`FieldEditor`, which can be disabled), the
   read-only `ConfirmedRow` and `changedFields` (the save patch: only the fields that differ), used by
   the review queue (`src/app/review.tsx`) and the garment detail (`src/app/garment/[id].tsx`).
@@ -158,7 +163,11 @@ the button's notice slot until the next edit, and lists household mode as "Comin
 - `aiClient.ts`: `rateOutfit`, `fetchLuckyList` and `fetchForYou` with their `AiError` mapping
   ([`api.md`](api.md#how-the-app-maps-errors)).
 - `outfitRepository.ts`: `logWear` (the idempotent `log_wear` RPC with a client wear id reused on
-  retry) and `saveOutfit`.
+  retry) and `saveOutfit` (with the score the rating showed).
+- `savedOutfits.ts`, `storedSaved.ts` and `useSavedOutfits.ts`: the Saved list: `listSavedOutfits`
+  (at most 200, newest first) and `deleteSavedOutfit` (only a saved outfit no wear points at), the
+  last good list in kv `outfits.saved.v1.<userId>`, and the hook that fetches it on focus and falls
+  back to the stored copy.
 - `outfitDisplay.ts`: the pieces' display order, `pieceLabel` ("Blusa · Negro") and Today's weather
   line.
 - `buildSelection.ts`: Build's selection: one garment per slot, a one-piece and top/bottom exclude
@@ -171,6 +180,22 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   connect); Today's list and For you are built on it.
 - `useLuckyList.ts` and `storedLucky.ts`: Today's list with debounced closet-driven refetches, the
   last good list per occasion for the day in kv `today.lucky.<userId>`, and `useTodayOccasion`.
+  The list hides at once an outfit with a piece that's unavailable or out of suggestions
+  (`isSuggestable`: only an explicit `suggest = false`, so a closet row cached by an older build
+  without the field counts as on) or that was dismissed; `skip` and `dismiss` show the next one.
+  A dismissal refetches only when fewer than 3 outfits are left; a piece turned off changes the
+  closet fingerprint, so the list refetches 3 s later, and `lucky-list` answers from its cache
+  minus those outfits.
+- `storedDismissed.ts`: the dismissed combinations on the device, in kv `outfits.dismissed.<userId>`
+  (the latest 500), read through `useDismissed`, so a stored or older list never shows one again,
+  also after a restart. Profile's restore clears it.
+- `suggestionFeedback.ts`: Today's "Not for me". `dismissOutfit` stores the outfit's sorted ids in
+  `dismissed_outfits` (a repeat is a no-op) and `stopSuggesting` sets a garment's `suggest` to
+  false. For 5 seconds after either, Today offers Undo (`undismissOutfit`, `resumeSuggesting`) in
+  the CTA notice slot. The garment detail's "Use in suggestions" switch turns a piece back on
+  through `updateGarment`, and Profile's "Restore hidden suggestions" (`countDismissed`,
+  `restoreDismissed`, after a confirm with the count) deletes every dismissed combination.
+  `outfitIdentity.ts` is the shared outfit key.
 - `useForYou.ts` and `storedForYou.ts`: For you's ideas in the app's language, fetched on focus one
   request at a time, with the last good answer per language in kv `forYou.ideas.<userId>`.
 - `wearQueue.ts`: "I'll wear it" offline. `logWearOrQueue` logs the wear or, on a network failure,

@@ -1,9 +1,9 @@
 // integration/rls.int.test.ts
 //
 // Verifies the cross-user RLS boundary actually holds against a running Postgres, not just in
-// pgTAP: two signed-in anon clients, A can only ever see or touch A's own `profiles` row and
-// `garments` storage objects. Also pins what a user can't do to their own row (insert, delete) and
-// the bucket's upload limits.
+// pgTAP: two signed-in anon clients, A can only ever see or touch A's own `profiles` row,
+// `garments` storage objects and `dismissed_outfits` rows. Also pins what a user can't do to their
+// own row (insert, delete) and the bucket's upload limits.
 
 import { signInWithEmail } from '../src/auth/emailAuth';
 import { anonClient, createUser, deleteUser, loadIntegrationEnv, serviceClient, uniqueEmail } from './helpers';
@@ -152,4 +152,29 @@ test('an upload over the 2 MiB limit is rejected, and one at the limit is accept
     .upload(`${userAId}/at-limit.webp`, Buffer.alloc(limit), { contentType: 'image/webp' });
   expect(atLimit.error).toBeNull();
   uploadedStoragePaths.push(`${userAId}/at-limit.webp`);
+});
+
+test("A can't see, edit or delete B's dismissed outfits, and can't dismiss one for B", async () => {
+  const keyB = `${'b'.repeat(8)}-0000-4000-8000-000000000001,${'b'.repeat(8)}-0000-4000-8000-000000000002`;
+  const keyA = `${'a'.repeat(8)}-0000-4000-8000-000000000001,${'a'.repeat(8)}-0000-4000-8000-000000000002`;
+  expect((await clientB.from('dismissed_outfits').insert({ outfit_key: keyB })).error).toBeNull();
+
+  const seen = await clientA.from('dismissed_outfits').select('outfit_key');
+  expect(seen.error).toBeNull();
+  expect(seen.data).toEqual([]);
+
+  const deleted = await clientA.from('dismissed_outfits').delete().eq('user_id', userBId).select();
+  expect(deleted.error).toBeNull();
+  expect(deleted.data).toEqual([]);
+
+  // No update grant at all: a privilege error, not a silent zero-row update.
+  const updated = await clientA.from('dismissed_outfits').update({ outfit_key: keyA }).eq('user_id', userBId);
+  expect(updated.error?.code).toBe('42501');
+
+  const forged = await clientA.from('dismissed_outfits').insert({ user_id: userBId, outfit_key: keyA });
+  expect(forged.error?.code).toBe('42501');
+
+  const { data: bRows, error } = await serviceClient().from('dismissed_outfits').select('user_id, outfit_key').eq('user_id', userBId);
+  expect(error).toBeNull();
+  expect(bRows).toEqual([{ user_id: userBId, outfit_key: keyB }]);
 });

@@ -65,6 +65,8 @@ const garment = (n: number, category: GarmentCategory | null, extra: Row = {}): 
   fit: 'regular',
   status: 'available',
   last_worn_at: null,
+  wear_count: 0,
+  suggest: true,
   updated_at: '2026-11-01T00:00:00Z',
   ...extra,
 });
@@ -138,6 +140,7 @@ type RouteName =
   | 'quota'
   | 'cacheGet'
   | 'cachePut'
+  | 'dismissed'
   | 'jev';
 type Call = { route: RouteName; url: URL; body: string | undefined };
 type JevState = { outfit: { slot: string; category: string }[]; context: { weather: unknown } };
@@ -148,6 +151,7 @@ function routeOf(method: string, url: URL): RouteName {
   if (url.origin === ENV.geocodingUrl && url.pathname === '/v1/search') return 'geocode';
   if (url.pathname === '/rest/v1/garments' && method === 'GET' && !url.searchParams.has('id')) return 'closet';
   if (url.pathname === '/rest/v1/profiles' && method === 'GET') return 'profile';
+  if (url.pathname === '/rest/v1/dismissed_outfits' && method === 'GET') return 'dismissed';
   if (url.pathname === '/rest/v1/weather_cache') return method === 'GET' ? 'weatherGet' : 'weatherPut';
   if (url.pathname === '/rest/v1/rpc/consume_quota' && method === 'POST') return 'quota';
   if (url.pathname === '/rest/v1/lucky_cache') return method === 'GET' ? 'cacheGet' : 'cachePut';
@@ -168,6 +172,8 @@ type World = {
   jev: (state: JevState, n: number) => Response | Promise<Response>;
   /** lucky_cache rows by cache_key, as stored (the result keeps its internal `degraded` marker). */
   luckyCache: Map<string, { result: unknown; created_at: string }>;
+  /** The caller's `dismissed_outfits` keys (sorted garment ids joined by commas). */
+  dismissed: string[];
   fail?: Partial<Record<RouteName, Response>>;
 };
 
@@ -183,6 +189,7 @@ function world(overrides: Partial<World> = {}): World {
     forecast: () => json(500, {}),
     jev: varied,
     luckyCache: new Map(),
+    dismissed: [],
     ...overrides,
   };
 }
@@ -207,6 +214,8 @@ function fakeFetch(w: World) {
         return json(200, w.garments);
       case 'profile':
         return json(200, w.profile === null ? [] : [w.profile]);
+      case 'dismissed':
+        return json(200, w.dismissed.map((outfit_key) => ({ outfit_key })));
       case 'weatherGet':
         return json(200, w.weather === null ? [] : [{ payload: { weather: w.weather, lat: 40.42, lon: -3.7 } }]);
       case 'forecast':
@@ -898,6 +907,96 @@ describe('pinned garments', () => {
   });
 });
 
+describe('suggestion feedback', () => {
+  const keyOf = (outfit: LuckyOutfit): string => [...outfit.garmentIds].sort().join(',');
+  const unsuggest = (rows: Row[], id: string): Row[] => rows.map((row) => (String(row.id) === id ? { ...row, suggest: false } : row));
+
+  test('reads the dismissed combinations with the user’s bearer', async () => {
+    const { calls } = await lucky(world());
+    const read = calls.find((call) => call.route === 'dismissed');
+    expect(read?.url.searchParams.get('select')).toBe('outfit_key');
+  });
+
+  test('a dismissed combination is never in the list', async () => {
+    const first = (await lucky(world())).body as OkBody;
+    const dismissed = first.outfits.slice(0, 3).map(keyOf);
+    const { body } = await lucky(world({ dismissed }));
+    const keys = (body as OkBody).outfits.map(keyOf);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of dismissed) expect(keys).not.toContain(key);
+  });
+
+  test('an unsuggested garment is never in a candidate, and a pin on one is ignored', async () => {
+    const pinned = bigCloset().map((row) => (String(row.id) === idOf(5) ? { ...row, pinned_on: DATE } : row));
+    const { body } = await lucky(world({ garments: unsuggest(pinned, idOf(5)) }));
+    const { outfits } = body as OkBody;
+    expect(outfits.length).toBeGreaterThan(0);
+    expect(outfits.every((outfit) => !outfit.garmentIds.includes(idOf(5)))).toBe(true);
+  });
+
+  test('unsuggested shoes still count as owned: not too_small, just no outfit', async () => {
+    const shoes = new Set(['sneakers', 'loafers', 'boots']);
+    const garments = bigCloset().map((row) => (shoes.has(String(row.category)) ? { ...row, suggest: false } : row));
+    const { body, calls } = await lucky(world({ garments }));
+    expect(body).toEqual({ kind: 'ok', weather: COOL, outfits: [] });
+    expect(count(calls, 'jev')).toBe(0);
+  });
+
+  test('a dismissal followed by a refetch is a cache hit without the dismissed outfit: no quota, no Jev', async () => {
+    const w = world();
+    const first = (await lucky(w)).body as OkBody;
+    const [top] = first.outfits;
+    if (top === undefined) throw new Error('no outfit');
+    w.dismissed = [keyOf(top)];
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(0);
+    expect(count(calls, 'jev')).toBe(0);
+    expect((body as OkBody).outfits.map(keyOf)).toEqual(first.outfits.slice(1).map(keyOf));
+    expect(outcomes().at(-1)).toEqual({ outcome: 'cached' });
+  });
+
+  test('unsuggesting a garment after the list was ranked drops its outfits from the hit, with no quota', async () => {
+    const w = world();
+    const first = (await lucky(w)).body as OkBody;
+    const piece = first.outfits[0]?.garmentIds[0];
+    if (piece === undefined) throw new Error('no piece');
+    w.garments = unsuggest(w.garments, piece);
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(0);
+    const kept = first.outfits.filter((outfit) => !outfit.garmentIds.includes(piece));
+    expect(kept.length).toBeGreaterThanOrEqual(3);
+    expect((body as OkBody).outfits.map(keyOf)).toEqual(kept.map(keyOf));
+  });
+
+  test('when filtering a hit leaves fewer than 3 outfits, the list is ranked again without them', async () => {
+    const w = world();
+    const first = (await lucky(w)).body as OkBody;
+    w.dismissed = first.outfits.slice(2).map(keyOf);
+    const { body, calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(1);
+    expect(count(calls, 'jev')).toBeGreaterThan(0);
+    const keys = (body as OkBody).outfits.map(keyOf);
+    expect(keys.length).toBeGreaterThanOrEqual(3);
+    for (const key of w.dismissed) expect(keys).not.toContain(key);
+    // The same key, rewritten.
+    expect(w.luckyCache.size).toBe(1);
+  });
+
+  test('a hit that was short to begin with stays a hit when nothing is filtered out', async () => {
+    const w = world({ garments: smallCloset() });
+    await lucky(w);
+    const { calls } = await lucky(w);
+    expect(count(calls, 'quota')).toBe(0);
+  });
+
+  test('a database error reading the dismissed combinations → 500 with no quota or Jev call', async () => {
+    const { response, calls } = await lucky(world({ fail: { dismissed: json(500, {}) } }));
+    expect(response.status).toBe(500);
+    expect(count(calls, 'quota')).toBe(0);
+    expect(count(calls, 'jev')).toBe(0);
+  });
+});
+
 describe('donated garments', () => {
   test('a donated garment is never in the candidates or the list', async () => {
     const w = world({
@@ -998,11 +1097,11 @@ describe('logging', () => {
 });
 
 describe('the cache key', () => {
-  test('stays the key stored before the shared garment fingerprint, so no cached list is lost', async () => {
+  test('is pinned, so only a deliberate change (a CACHE_VERSION bump) drops the stored lists', async () => {
     const garments = bigCloset().map((row, index) => (index === 0 ? { ...row, pinned_on: DATE } : row));
     const { calls } = await lucky(world({ garments }));
     expect(calls.find((call) => call.route === 'cacheGet')?.url.searchParams.get('cache_key')).toBe(
-      'eq.b6ed4f6de94b4be74558fb31547df0fe1c6cc6d4b097e75b55487412cfac08a4',
+      'eq.23074292106397c61c12a2cca0aba848115a4009da42b2e6923e118cb58908c5',
     );
   });
 });

@@ -323,7 +323,10 @@ beats the current score by at least **5**; otherwise the result is `noBetterSwap
 Swaps are not looked for after a fallback rating: Jev has just failed, and a Jev-scored candidate
 can't be compared with a Claude-estimated score. Candidates are checked one by one against the
 occasion, season and weather rules (`passesRules` on the single piece, without the whole-outfit
-"cold needs outerwear" rule) and taken least recently worn first. When the weakest slot holds two
+"cold needs outerwear" rule) and taken in the order of the lucky list's `preScore` of the single piece
+(days since worn, a neutral color, the rotation bonus), so the least recently and least worn come first.
+A garment the user took out of suggestions (`suggest = false`) is never a candidate; the app also
+hides a cached rating's swap to such a piece. When the weakest slot holds two
 pieces (two accessories), the first is swapped.
 
 ### Unknown weather
@@ -371,12 +374,21 @@ The day's "feeling lucky" outfits for the Today screen (request, response and st
 1. Load the garments and the profile, then the weather (also for a small closet: Today shows it).
 2. `missingSlots` non-empty → `{ kind: 'too_small', missing, weather }`, with no cache, quota or Jev.
    `donated` is one more `status` the rules already exclude (not `available`), so a donated
-   garment counts towards no slot and is never a candidate, exactly like one in the laundry.
-3. The cache key (`CACHE_VERSION` 2) hashes the date, the occasion, `locationKey(profile)`,
+   garment counts towards no slot and is never a candidate, exactly like one in the laundry. A
+   garment with `suggest = false` does count towards its slot here (the user owns it; the closet
+   isn't too small), but joins no candidate and claims no pin in step 5, so a closet whose only
+   shoes are turned off answers `outfits: []`.
+3. The cache key (`CACHE_VERSION` 3) hashes the date, the occasion, `locationKey(profile)`,
    `profileIdentity(profile)` (not `updated_at`, so a language toggle keeps the list) and a
    closet fingerprint: each garment's id and rating-relevant columns (category, colors, pattern,
    formality, fit, seasons, warmth, status, and whether `pinned_on` equals *this request's* date;
-   not `updated_at` or `last_worn_at`, which logging a wear bumps), so an "I'll wear it" tap
+   not `updated_at`, `last_worn_at` or `wear_count`, which logging a wear bumps, nor `suggest`).
+   "Not for me" isn't in the key either: a hit drops every dismissed combination and every outfit
+   with a piece whose `suggest` is false, so a dismissal costs no quota. Only when that leaves fewer
+   than 3 outfits (`MIN_FILTERED_OUTFITS`) of a list that had more is the list ranked again under
+   the same key, spending one of the day's 10 misses; a list short to begin with (a small closet)
+   stays a hit. A piece turned back on reappears at the next recompute (the next day, occasion or
+   closet edit). So an "I'll wear it" tap
    doesn't reshuffle the day's list, but a new "Suggest tomorrow" pin for today does recompute it — a pin
    for tomorrow (what "Suggest tomorrow" actually sets, per "Unused for 6 months" above) leaves today's
    fingerprint, and so today's cached list, untouched. A hit keeps the list as ranked but
@@ -384,7 +396,9 @@ The day's "feeling lucky" outfits for the Today screen (request, response and st
    hour's weather (the stored one, validated, only when this hour's is unknown). So on a hit Today
    shows the current hour's weather next to a list ranked earlier in the day.
 4. Quota `lucky` 10 per day, the user's local day from the request (cache misses only).
-5. `generateCandidates` (at most 200, seed = user id + date) → sorted by `preScore`, highest first
+5. `generateCandidates` over the garments whose `suggest` is true (at most 200, seed = user id +
+   date), minus every candidate whose sorted ids are a dismissed combination → sorted by
+   `preScore`, highest first
    → the top 30, spread over the closet: at most 2 per base (the same pieces but the extra), and
    each base garment in at most `max(4, ceil(30 / distinct garments of its slot among the
    candidates))` of them while other candidates remain, with tops and one-pieces counted as one
@@ -403,8 +417,15 @@ The day's "feeling lucky" outfits for the Today screen (request, response and st
      total. Pieces worn in the last 7 days are avoided while at least 3 candidates survive without
      them: that pass may use half the draws, and the fallback pass the rest.
    - `preScore` is the mean over the base pieces (outerwear included, extras not) of the days since
-     last worn (never worn = 30, capped at 30) plus 5 for a neutral color, so adding a belt never
-     wins and a dress isn't behind separates for having fewer pieces.
+     last worn (never worn = 30, capped at 30), plus 5 for a neutral color, plus a rotation bonus of
+     `ROTATION_BONUS / (1 + wear_count)` (`ROTATION_BONUS` = 3: a never-worn piece gets 3, one worn
+     once 1.5, a piece worn a dozen times about 0.2). So adding a belt never wins, a dress isn't
+     behind separates for having fewer pieces, and between otherwise-equal candidates the one with
+     the least-worn pieces goes first, which also tells apart pieces whose last wear is past the
+     30-day cap. The bonus is worth 3 days unworn and stays under the neutral bonus on purpose: it
+     only orders which 30 candidates Jev rates, never Jev's own ranking, so style still decides.
+     It works on top of the 7-day avoidance above, and `wear_count` is in no cache key (logging a
+     wear must not reshuffle the day's list).
    - Every garment whose `pinned_on` equals the request's date, and that passes the per-piece
      rules on its own, is rotated one at a time through every fourth draw (within its own slot) to
      pick it instead of a random peer, so each is reachable even on a 200-garment closet where its
@@ -641,7 +662,8 @@ rules and the lucky list are unchanged). What to buy shouldn't change with the w
 toggle shouldn't cost the day's one recompute. A donated garment is out entirely.
 
 An archetype the user already owns (a wardrobe garment of the same category and first color) is
-skipped. For the rest, the gain is the number of complete outfits the archetype would make with the
+skipped. A garment the user took out of suggestions (`suggest = false`) still owns its archetype,
+so For you never suggests buying it again, but it counts in no new outfit below. For the rest, the gain is the number of complete outfits the archetype would make with the
 wardrobe — the archetype plus the user's pieces for the other required slots ((top + bottom or a
 one-piece) plus shoes; outerwear layers over a complete outfit) — that pass `passesRules` with no
 occasion, the current season and no weather, counted up to 5,000. "Combines with" is the number of
@@ -720,10 +742,11 @@ weather is read: the season comes from that date (the UTC date without one) and 
 2. Fewer than 3 wardrobe garments with a category (not donated; laundry and lent count) →
    `{ kind: 'too_small' }`, with no cache, quota or model call (a brand-new closet). A closet that
    is all in the wash still gets ideas.
-3. The cache key hashes a version (`CACHE_VERSION` 4), the language, the season,
+3. The cache key hashes a version (`CACHE_VERSION` 5), the language, the season,
    `profileIdentity(profile)` (clothing type, body, styles; not `updated_at`, so saving the profile
    without changing those keeps the entry) and a wardrobe fingerprint: every categorized garment that isn't donated, by its id
-   and rating-relevant columns (category, colors, pattern, formality, fit, seasons, warmth; not
+   and rating-relevant columns (category, colors, pattern, formality, fit, seasons, warmth, plus
+   `suggest`; not
    `status`, so the laundry and lending keep the entry, nor `updated_at` or `last_worn_at`, which
    logging a wear bumps, nor `pinned_on`). Donating a garment changes it; the season turning is a
    miss on the next call. An entry older than 7 days is a miss too, so the ideas follow the user's
