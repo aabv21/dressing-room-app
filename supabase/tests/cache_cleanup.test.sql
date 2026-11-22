@@ -5,7 +5,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(16);
+select plan(18);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -40,6 +40,17 @@ insert into public.for_you_cache (user_id, cache_key, result, created_at) values
   ('22222222-2222-2222-2222-222222222222', 'newest', '{"kind": "ok", "degraded": false}', now() - interval '1 day'),
   ('22222222-2222-2222-2222-222222222222', 'within-ttl', '{"kind": "ok", "degraded": true}', now() - interval '5 days'),
   ('22222222-2222-2222-2222-222222222222', 'expired', '{"kind": "ok", "degraded": false}', now() - interval '10 days');
+
+-- trip_cache: an answer is a hit for 6 hours, so a row goes after 7 (the margin as above).
+insert into public.trip_cache (user_id, cache_key, result, created_at) values
+  ('11111111-1111-1111-1111-111111111111', 'fresh', '{"kind": "ok", "degraded": false}', now() - interval '5 hours'),
+  ('11111111-1111-1111-1111-111111111111', 'old', '{"kind": "ok", "degraded": false}', now() - interval '8 hours');
+
+-- planned_outfits: a plan goes 30 days after its day (its day, not when it was written).
+insert into public.planned_outfits (user_id, planned_on, garment_ids) values
+  ('11111111-1111-1111-1111-111111111111', current_date - 29, array[gen_random_uuid(), gen_random_uuid()]),
+  ('11111111-1111-1111-1111-111111111111', current_date - 31, array[gen_random_uuid(), gen_random_uuid()]),
+  ('11111111-1111-1111-1111-111111111111', current_date + 3, array[gen_random_uuid(), gen_random_uuid()]);
 
 -- The job's own run history: kept for 30 days. (`runid` is given: only pg_cron itself may draw from
 -- its sequence.)
@@ -121,6 +132,18 @@ select is(
    from pg_proc p where p.oid = 'public.prune_expired_caches()'::regprocedure),
   true,
   'the function is security definer, owned by postgres, with an empty search_path'
+);
+
+select is(
+  array(select planned_on - current_date from public.planned_outfits order by 1),
+  array[-29, 3],
+  'planned_outfits drops plans whose day is over 30 days past'
+);
+
+select is(
+  array(select cache_key from public.trip_cache order by 1),
+  array['fresh'],
+  'trip_cache drops rows over 7 hours'
 );
 
 select ok(

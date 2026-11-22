@@ -17,7 +17,7 @@ export type AppleReply = MockReply | ((form: URLSearchParams) => MockReply);
 export type MockServices = {
   /** Sets the reply for every following `POST /v1/systemone`, until changed again. */
   jev(next: JevReply): void;
-  /** Sets the reply for every following `GET /v1/forecast`. */
+  /** Sets the reply for every following `GET /v1/forecast` (Today's current weather or a trip's `dailyForecast`). */
   forecast(next: MockReply): void;
   /** Sets the reply for every following `GET /v1/search` (geocoding). */
   geocode(next: MockReply): void;
@@ -73,6 +73,23 @@ export const MILD_FORECAST = {
   current: { temperature_2m: 19.5, weather_code: 1 },
   daily: { temperature_2m_max: [22], temperature_2m_min: [16], precipitation_probability_max: [10] },
 };
+
+/**
+ * A daily forecast like Open-Meteo's for `days` days from `from` (`YYYY-MM-DD`), every day `max`/`min`
+ * with no rain under WMO code 1; `trip-plan` reads it.
+ */
+export function dailyForecast(from: string, days: number, max = 22, min = 16): unknown {
+  const time = Array.from({ length: days }, (_, i) => new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
+  return {
+    daily: {
+      time,
+      temperature_2m_max: time.map(() => max),
+      temperature_2m_min: time.map(() => min),
+      precipitation_probability_max: time.map(() => 0),
+      weather_code: time.map(() => 1),
+    },
+  };
+}
 
 /** Madrid's first geocoding result. */
 export const MADRID_GEOCODE = {

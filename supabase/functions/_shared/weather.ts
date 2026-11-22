@@ -27,9 +27,24 @@ export function forecastUrl(base: string, lat: number, lon: number): string {
   return `${base}?${params.toString()}`;
 }
 
-/** The geocoding request for a free-text city name, taking the single best match. */
-export function geocodeUrl(base: string, name: string): string {
-  const params = new URLSearchParams({ name, count: '1', format: 'json' });
+/** How many days Open-Meteo forecasts, today included: its `forecast_days` maximum. */
+export const FORECAST_DAYS = 16;
+
+/** The daily forecast request for a trip: each day's range, rain chance and weather code. */
+export function dailyForecastUrl(base: string, lat: number, lon: number): string {
+  const params = new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lon),
+    daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code',
+    timezone: 'auto',
+    forecast_days: String(FORECAST_DAYS),
+  });
+  return `${base}?${params.toString()}`;
+}
+
+/** The geocoding request for a free-text city name, taking the single best match (names in `language`). */
+export function geocodeUrl(base: string, name: string, language?: string): string {
+  const params = new URLSearchParams({ name, count: '1', format: 'json', ...(language === undefined ? {} : { language }) });
   return `${base}?${params.toString()}`;
 }
 
@@ -80,6 +95,42 @@ export function parseForecast(body: unknown): WeatherSummary | null {
   const rain = precipitationProbability >= 50 || condition === 'rain' || condition === 'storm';
 
   return { tempC, condition, band: bandOf(maxC, minC), rain };
+}
+
+/**
+ * Each forecast day (`YYYY-MM-DD`, the place's own calendar) to its summary, the high as `tempC`;
+ * a day with any value missing is left out. `null` when the body isn't a daily forecast.
+ */
+export function parseDailyForecast(body: unknown): Map<string, WeatherSummary> | null {
+  if (!isRecord(body) || !isRecord(body.daily)) return null;
+  const { time, temperature_2m_max: highs, temperature_2m_min: lows, precipitation_probability_max: rains, weather_code: codes } =
+    body.daily;
+  if (!Array.isArray(time) || !Array.isArray(highs) || !Array.isArray(lows) || !Array.isArray(rains) || !Array.isArray(codes)) {
+    return null;
+  }
+  const days = new Map<string, WeatherSummary>();
+  const at = (values: unknown[], index: number): unknown => values.at(index);
+  (time as unknown[]).forEach((date, index) => {
+    const maxC = at(highs as unknown[], index);
+    const minC = at(lows as unknown[], index);
+    const rainChance = at(rains as unknown[], index);
+    const code = at(codes as unknown[], index);
+    if (typeof date !== 'string' || typeof maxC !== 'number' || typeof minC !== 'number') return;
+    if (typeof rainChance !== 'number' || typeof code !== 'number') return;
+    const condition = conditionOf(code);
+    const rain = rainChance >= 50 || condition === 'rain' || condition === 'storm';
+    days.set(date, { tempC: maxC, condition, band: bandOf(maxC, minC), rain });
+  });
+  return days;
+}
+
+/** The first geocoding result with its display name and country, or `null` when there is none. */
+export function parsePlace(body: unknown): { lat: number; lon: number; name: string; country: string | null } | null {
+  const coords = parseGeocode(body);
+  if (coords === null || !isRecord(body) || !Array.isArray(body.results)) return null;
+  const first: unknown = body.results[0];
+  if (!isRecord(first) || typeof first.name !== 'string') return null;
+  return { ...coords, name: first.name, country: typeof first.country === 'string' ? first.country : null };
 }
 
 /** Maps a geocoding response body to the first result's coordinates, or `null` if there is none. */

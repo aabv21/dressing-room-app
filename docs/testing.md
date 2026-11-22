@@ -128,6 +128,8 @@ The Profile tab's Privacy section (data export and account deletion):
   account's keys, the device's language preference and a `queue.purge.<id>` request stay; the
   user's later writes are refused
   (also the id-less onboarding and language entries), and lifted once that account signs in again.
+  `forgetDisplayCaches` drops the display caches (the plans and a trip's check-offs included) and
+  keeps the queues and Logged ✓.
 - `src/auth/__tests__/signOutLocally.test.ts` — against a real supabase-js client and a fake
   `fetch`: a deleted user's valid token (`user_not_found`), an expired token whose refresh is
   refused (`refresh_token_not_found`), and offline with an expired token (the stored session is
@@ -147,7 +149,13 @@ The Profile tab's Privacy section (data export and account deletion):
 - `src/reminder/__tests__/dailyReminder.test.ts` — turning the reminder on: the Android channel
   before the permission request, iOS provisional counting as allowed, asking only when the system
   still can, one `DAILY` trigger at the chosen hour and minute on the reminder channel, the copy in
-  English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; denied and a
+  English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; with a plan in the
+  next seven firings, seven `WEEKLY` triggers (one per weekday, the planned day saying "You
+  planned: …" in English or Spanish, today's plan counting while today's time is ahead), and the one
+  `DAILY` trigger for a plan past them; every weekly id stored, so a re-schedule cancels all seven
+  even when the OS listing fails, and off clears them; `isReminderCurrent` against each held note's
+  weekday and text (another language's daily text, a lone weekly note, a removed plan, and a plan
+  moved to another day are all not current); denied and a
   scheduling failure store nothing; a re-schedule cancels the stored id first, and two at once never
   leave two notifications; off cancels and keeps the time; `forgetReminder`;
   `isReminderResponse` (only a default tap on the reminder). Against a fake of the OS's scheduled
@@ -161,8 +169,9 @@ The Profile tab's Privacy section (data export and account deletion):
   re-schedule that fails elsewhere turns the switch off.
 - `src/reminder/__tests__/DailyReminderSync.test.tsx` — a reminder tap that launched the app or
   arrives while it runs opens Today and is cleared, another notification's doesn't, the listener is
-  removed on unmount, a language change re-schedules an enabled reminder (never an off one), and
-  an enabled reminder the OS no longer holds is scheduled again on mount (one still there isn't).
+  removed on unmount, a language change re-schedules an enabled reminder (never an off one), an
+  enabled reminder the OS no longer holds is scheduled again on mount (one still there isn't), and a
+  plan for the coming week re-schedules it naming the pieces still in the closet.
 - `src/voice/__tests__/speech.test.ts` — `pickVoice`: Latin American Spanish before Spain, es-MX
   first, Android's underscore tags, any voice in the language as a fallback, en-US first, an
   enhanced voice within a tag, and null with no voice in the language.
@@ -248,9 +257,40 @@ Outfits, Stats and Diary:
   quota and error states (over quota opens Build, a missing piece the closet), the staged loading
   copy, the stored list offline (its note wraps at a large text size), and Share (the outfit's card
   with its score shared as a PNG, a failed share and a device that can't share shown in the sheet).
+  "Planned for today": the plan shown first (the stored one at once, then the window refreshed), no
+  wear until its own "I'll wear it" (the plan's occasion, its Undo), a piece gone or in the laundry
+  left out and the button disabled without a complete outfit, no card for another day's plan, and
+  "Plan ahead" and "Pack for a trip" opening their screens.
 - `src/__tests__/build.test.tsx` — Build's slot rows, category chips, one-pieces and the optional
   row, a pick moving on to the next empty slot, the disabled button naming what's missing,
-  unavailable garments left out, and a slot row at a large text size.
+  unavailable garments left out, and a slot row at a large text size. Opened with `?planFor=`: the
+  "Planning for" line, "Plan this outfit" sending the ids to `/plan` (and leaving plan mode), Cancel,
+  and a day outside the window ignored.
+- `src/__tests__/plan.test.tsx` — the planner: 14 days from today with planned days marked, a Saved
+  outfit or one of Today's stored suggestions planned for the chosen day (stored and shown as the
+  day's plan), "Build one" opening Build for that day, an outfit sent back from Build preselected, a
+  link's day outside the window or unknown ids ignored, Remove, a failed save explained, and the
+  Spanish copy.
+- `src/__tests__/trip.test.tsx` — "Pack for a trip": the request (city, dates, occasion, language,
+  local day), each day with its forecast or "Forecast unavailable" and its outfit, the packing list
+  by slot with checkbox rows, a check-off kept across a remount and a new plan of the same trip,
+  Save only on the tap (then "Saved ✓"), a saved trip opened without a call and deleted, the
+  dictation mic filling the city, the not-found, quota and offline copy, a too-small closet, and the
+  Spanish labels.
+- `src/trips/__tests__/tripClient.test.ts` — `planTripRequest`'s body and error mapping, and
+  `isTripResponse` accepting a plan or `too_small` and refusing another shape.
+- `src/trips/__tests__/tripChecks.test.ts` — `tripKey` (city case and spaces aside), check-offs per
+  trip in kv `trip.checks.<id>` following each toggle, only the latest 20 trips kept, and account
+  deletion clearing them.
+- `src/trips/__tests__/savedTrips.test.ts` — the list (newest first, capped, an unreadable snapshot
+  dropped), a save with its snapshot, a failed save as `network`, and a delete by id.
+- `src/planner/__tests__/plannedOutfits.test.ts` — `listPlans` (the window, by day), `planOutfit`
+  (the RPC's arguments, no occasion left out, its refusals as `invalid`, offline as `network`) and
+  `removePlan` (a plan already gone counts as removed).
+- `src/planner/__tests__/planStore.test.ts` — `planDays` across a month end; `refreshPlans` storing
+  the window in kv `plans.v1.<id>` and keeping the stored plans on a failure; an unreadable value as
+  none; `savePlan` and `deletePlan` touching the store only after the server; `usePlans` following
+  every write; account deletion and an explicit sign-out clearing the key.
 - `src/__tests__/rate.test.tsx` — the rating screen: the score, label, confidence and reasons,
   the confidence line only when low or estimated, the success haptic, the swap (hidden when its target is out of suggestions), Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too. Share: the card with the pieces, score and footer, the captured PNG shared, a failed capture shown in the sheet, no Share while loading, and the Spanish copy.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
@@ -450,7 +490,7 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   rules, one-pieces, outerwear, the cap on a large closet), the ranking (an unsuggested garment
   still owns its archetype but adds no gain), the Jev fit, the Claude
   lines and their template fallbacks, and the store-search query.
-- `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs, weather bands and
+- `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs (the daily forecast's included), the daily forecast's and the place's parsing, weather bands and
   conditions, and the forecast and geocoding parsers.
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
   0000), `mapLimit`, the profile and garments read with the user's token (enums checked, non-uuid
@@ -488,6 +528,21 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   the garments, occasion and profile, not by a logged wear), the quota (fails closed), Jev and
   Claude both failing (503), unknown weather, a foreign garment id (404 before any quota), the swap
   search (never a garment out of suggestions), and no measurement reaching Jev or Claude.
+- `supabase/functions/_shared/__tests__/tripPlan.test.ts` — `tripDates` across a year end;
+  `planTrip` packs the fewest new pieces (three tops, two bottoms, one pair of shoes over three days
+  pack five pieces with three different outfits), repeats an outfit only when nothing else passes,
+  follows each day's weather band (a coat on a cold day, none on a hot one) and, with no forecast,
+  the season rule for the date and latitude; a day nothing fits has no outfit; dismissed
+  combinations and unsuggested pieces stay out; the packing list holds each piece once by slot with
+  its days, most-worn first; the same input plans the same way.
+- `supabase/functions/trip-plan/__tests__/handler.test.ts` — 401/405 before any fetch, every 400
+  (city, dates, 10-day limit, start window, occasion, language, no local day); the plan with each
+  day's weather and a packing list matching the days; no request beyond the database and Open-Meteo;
+  the `trip` quota (5, the local day) before the geocoder; a day past the forecast and a failed
+  forecast (degraded, marker stripped); `too_small` with no quota; 404, 503, 429 and 500; the cache:
+  a hit within 6 hours spends nothing, a miss after it, a degraded answer for 1 hour, a miss for
+  another city, language, dates, occasion or closet, and the city matched regardless of case and
+  spaces.
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
   deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
@@ -501,7 +556,7 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   an unsuggested garment changing the key while still owning its archetype.
 - `supabase/functions/apple-token/__tests__/handler.test.ts` — the code exchange stored with the
   service role and never returned, an identity mismatch, no Apple env (`skipped`), 401 and 405.
-- `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits included), rows read with the
+- `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits, plans and saved trips included), rows read with the
   caller's token and only the caller's paths signed for 7 days, another user's rows dropped, paging
   until an empty page (also when the server caps a page below 1000 rows), a brand-new account, a
   failed read or signing answering 500, and a log of only an outcome word.
@@ -522,7 +577,7 @@ Supabase stack:
 - `account.int.test.ts` — the account functions end to end through the gateway: `apple-token`
   exchanges a code with the mock Apple and stores the refresh token (and stores nothing for a code
   whose Apple user isn't the caller's); `export-data` returns the
-  caller's rows (dismissed outfits and garment prices included) and signed photo URLs; `delete-account` removes the caller's photos, revokes the
+  caller's rows (dismissed outfits, plans, saved trips and garment prices included) and signed photo URLs; `delete-account` removes the caller's photos, revokes the
   Apple token with the mock and deletes the auth user, whose rows cascade, and a retry with the
   same token answers `deleted` without calling Apple again. A second user is untouched throughout.
 - `rls.int.test.ts` — the cross-user RLS boundary: user A can never read, update, list or delete
@@ -554,6 +609,15 @@ Supabase stack:
   and a user whose daily quota is already
   used up (100 `consume_quota` calls through the service-role client) gets `over_quota` with no
   Claude call. Needs the Edge Runtime, so the full `pnpm db:start` or `pnpm db:start:ci`.
+- `planner.int.test.ts` — the planner's repository with supabase-js: a day's plan stored and
+  replaced (same id), listed by day; another user's garment, a past day and a day past the window
+  refused as `invalid`; another user lists none and can't remove one; the owner removes it. Saved
+  trips: saved with the snapshot, listed only to the owner, deleted by the owner.
+- `trip.int.test.ts` — `trip-plan` through the real gateway with the mock geocoder and daily
+  forecast: the days and packing list from the user's closet with one `trip` quota and one
+  `trip_cache` row, a hit for the same trip (city spelled differently) with no quota or forecast
+  call, days past the forecast without weather, 404 for an unknown city, and 429 on the sixth trip of
+  the day.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
   Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two
   pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`
@@ -637,6 +701,13 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   defaults to true and is client-writable on the caller's own garments only; `save_outfit` stores
   its score; a saved outfit is deleted only by its owner, only while no wear points at it, with its
   items cascading, while `outfit_items` keeps delete revoked.
+- `planned_outfits.test.sql` — `planned_outfits` and `plan_outfit()`: one plan per user and day (a
+  second replaces the first, same row), own garments only, 2 to 6 distinct ids, a day inside the
+  window (UTC date − 1 to + 14), the same rules on a direct insert or update through the policies,
+  own rows only between two users, no anon access, and the cascade on user delete.
+- `saved_trips.test.sql` — `saved_trips`: own rows only, no update, no anon access, the city, the
+  10-day, object-snapshot and 64 KiB checks, at most 50 trips per user, the list's index; `trip_cache` is server-only; the `trip`
+  quota kind; both cascade on user delete.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
   `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
   on the caller's own garments only, and not writable by anon.
@@ -647,7 +718,7 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
   queueing the request fails.
 - `cache_cleanup.test.sql` — `prune_expired_caches()` deletes cache rows past each lifetime and
-  keeps fresh ones and each user's newest For you row; the daily `pg_cron` job exists once; no
+  keeps fresh ones and each user's newest For you row (`trip_cache` after 7 hours, a plan 30 days after its day); the daily `pg_cron` job exists once; no
   client role can call the function.
 - `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
   is executable by a client role, and no index is made redundant by another that starts with the

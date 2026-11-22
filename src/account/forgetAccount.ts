@@ -20,8 +20,8 @@ export function forgetAccountOnDevice(userId: string): void {
   forgetAccount(userId);
 }
 
-/** The per-user kv caches that only speed up or fill screens; the server is their source of truth. */
-const DISPLAY_CACHE_PREFIXES = ['closet.v1.', 'today.lucky.', 'forYou.ideas.', 'wears.v1.', 'outfits.saved.v1.'] as const;
+/** The per-user kv caches that only speed up or fill screens (and a trip's check-offs, which a shared phone shouldn't keep). */
+const DISPLAY_CACHE_PREFIXES = ['closet.v1.', 'today.lucky.', 'forYou.ideas.', 'wears.v1.', 'outfits.saved.v1.', 'plans.v1.', 'trip.checks.'] as const;
 
 /**
  * After an explicit sign-out, drops and refuses (until `allowUserKeys`) the display caches so the next

@@ -108,6 +108,8 @@ test('forgetDisplayCaches drops the display caches and keeps the queues and Logg
     `forYou.ideas.${USER}`,
     `wears.v1.${USER}`,
     `outfits.saved.v1.${USER}`,
+    `plans.v1.${USER}`,
+    `trip.checks.${USER}`,
   ];
   const kept = [`wear.queue.${USER}`, `outfit.worn.${USER}`, `queue.purge.${USER}`, 'closet.v1.other-user'];
   for (const key of [...display, ...kept]) kvSet(key, 'x');

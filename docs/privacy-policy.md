@@ -33,6 +33,9 @@ where it is kept, who processes it and how you can export or delete it. Question
   often you wear it, whether you took it out of suggestions, and, only if you enter it, what you
   paid for it and in which currency (to show its cost per wear).
 - **What you wear.** The outfits you save or log as worn, with the day, the occasion and the score.
+- **Your plans and trips.** The outfit you planned for a day, up to 14 days ahead (its pieces and
+  occasion); a plan is deleted automatically 30 days after its day. Also the trips you save from "Pack for a trip": the destination city, the dates, the
+  occasion and the outfits and packing list shown. A trip you don't save is not stored.
 - **What you don't want suggested.** The outfit combinations you marked "Not for me", so they
   aren't suggested again.
 - **Your voice, only when you tap a mic.** Dictating a city or Today's occasion uses the
@@ -56,10 +59,12 @@ the project. Each row and each photo belongs to your account, and the database's
 let only your signed-in account read or change it. The app talks to Supabase over encrypted
 connections and holds no other key.
 
-Your phone also keeps a copy of your closet, today's outfit suggestions, your saved outfits, the
-combinations you marked "Not for me", your last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
+Your phone also keeps a copy of your closet, today's outfit suggestions, your saved outfits, your
+planned outfits, the packing items you checked off for each trip, the combinations you marked "Not
+for me", your last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
 folder until it is uploaded. If you turn on the daily reminder, its time stays on your phone and
-the phone itself schedules the notification: nothing about it reaches a server or a push service.
+the phone itself schedules the notification (on a day you planned, it names the planned pieces):
+nothing about it reaches a server or a push service.
 "Listen" reads the screen's text with your phone's own text-to-speech voices.
 
 ## Who processes it
@@ -69,7 +74,7 @@ the phone itself schedules the notification: nothing about it reaches a server o
 | Supabase | Everything listed above | Hosting: the database, sign-in, photo storage and the server functions that call the services below |
 | Anthropic (Claude) | For each new garment, its prepared photo (cut out and at most 784 pixels) and the clothing type you chose. When the rating service is unavailable, the same anonymous summary that TypeSafe receives. For "For you", only generic descriptions of the suggested pieces, how many of your garments and outfits each one combines with, and the app's language (English or Spanish) to write the lines in, with nothing else about you. | Recognizing each garment's attributes; a backup outfit rating; the short lines on the "For you" cards |
 | TypeSafe (Jev) | An anonymous summary only: your clothing type, body type, a height range (short, medium or tall), age group and styles; the occasion, the weather and the season; and each piece's category, colors, pattern, formality and fit. Never a photo, an exact measurement, a size, your name or your email. | Rating outfits and ranking suggestions |
-| Open-Meteo | Your city's coordinates, or the city's name when there are none | The day's weather |
+| Open-Meteo | Your city's coordinates, or the city's name when there are none; for "Pack for a trip", the destination city's name and the app's language, then that place's coordinates | The day's weather; a trip's daily forecast |
 | Apple | Your Sign in with Apple identity, and, when you delete your account, a request to revoke the app's access | Sign-in, and ending that link when you leave |
 | Google | Your Sign in with Google identity | Sign-in |
 | Brevo | Your email address and the confirmation or reset code | Sending your account's emails |
@@ -82,8 +87,9 @@ generic words such as "camel blazer women"; the store's own privacy policy appli
 
 ## How long it is kept
 
-Your data stays until you delete it or delete your account. You can delete any garment (its photos
-are removed too), any logged wear or any saved outfit at any time, put a piece back into
+Your data stays until you delete it or delete your account, except plans, which go 30 days after
+their day. You can delete any garment (its photos
+are removed too), any logged wear, saved outfit, plan or saved trip at any time, put a piece back into
 suggestions from its detail screen, and restore every hidden combination from Profile. The owner keeps a nightly backup of the database
 and photos on their own computer, for recovery only, and keeps the 14 most recent ones; data you
 delete disappears from the backups after the next 14 nightly backups (about two weeks when they run
@@ -94,7 +100,7 @@ Each processor above applies its own retention rules to what it receives from th
 ## Your choices: export and deletion
 
 - **Export.** Profile → Privacy → "Export my data" gives you a file with your profile, garments
-  (with any prices you entered), outfits, wears and the combinations you marked "Not for me", plus links to your photos that work
+  (with any prices you entered), outfits, wears, planned outfits, saved trips and the combinations you marked "Not for me", plus links to your photos that work
   for 7 days.
 - **Delete your account.** Profile → Privacy → "Delete account", confirmed twice, removes your
   photos, revokes Sign in with Apple if you used it, and deletes your account and every row that

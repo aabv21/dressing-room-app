@@ -84,7 +84,9 @@ export type PluralBase =
   | 'saved.count'
   | 'profile.hidden.count'
   | 'profile.hidden.confirmTitle'
-  | 'forYou.outfits';
+  | 'forYou.outfits'
+  | 'trip.days'
+  | 'trip.item';
 
 /** `{base}.one` for exactly 1, otherwise `{base}.other` — the same en/es rule as `formatWearCount`. */
 export function pluralKey(base: PluralBase, count: number): MessageKey {

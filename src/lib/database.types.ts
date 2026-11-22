@@ -133,6 +133,20 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"planned_outfits": {
+                  Row: {
+                    "created_at": string,"garment_ids": (string)[],"id": string,"occasion": Database["public"]['Enums']["occasion"] | null,"planned_on": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "created_at"?: string,"garment_ids": (string)[],"id"?: string,"occasion"?: Database["public"]['Enums']["occasion"] | null,"planned_on": string,"user_id"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"garment_ids"?: (string)[],"id"?: string,"occasion"?: Database["public"]['Enums']["occasion"] | null,"planned_on"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"profiles": {
                   Row: {
                     "age_group": Database["public"]['Enums']["age_group"] | null,"body_type": Database["public"]['Enums']["body_type"] | null,"bottom_size": string | null,"chest_cm": number | null,"city_lat": number | null,"city_lon": number | null,"city_name": string | null,"clothing_type": Database["public"]['Enums']["clothing_type"] | null,"created_at": string,"height_cm": number | null,"hips_cm": number | null,"language": Database["public"]['Enums']["app_language"] | null,"occasions": (Database["public"]['Enums']["occasion"])[],"onboarding_completed_at": string | null,"shoe_size": string | null,"styles": (Database["public"]['Enums']["style"])[],"top_size": string | null,"updated_at": string,"user_id": string,"waist_cm": number | null
@@ -148,6 +162,34 @@ isOneToOne: false
                     
                   ]
                 },"rating_cache": {
+                  Row: {
+                    "cache_key": string,"created_at": string,"result": NonNullable<Json>,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "cache_key": string,"created_at"?: string,"result": NonNullable<Json>,"user_id": string
+                  }
+                  Update: {
+                    "cache_key"?: string,"created_at"?: string,"result"?: NonNullable<Json>,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"saved_trips": {
+                  Row: {
+                    "city": string,"created_at": string,"end_on": string,"id": string,"occasion": Database["public"]['Enums']["occasion"] | null,"result": NonNullable<Json>,"start_on": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "city": string,"created_at"?: string,"end_on": string,"id"?: string,"occasion"?: Database["public"]['Enums']["occasion"] | null,"result": NonNullable<Json>,"start_on": string,"user_id"?: string
+                  }
+                  Update: {
+                    "city"?: string,"created_at"?: string,"end_on"?: string,"id"?: string,"occasion"?: Database["public"]['Enums']["occasion"] | null,"result"?: NonNullable<Json>,"start_on"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"trip_cache": {
                   Row: {
                     "cache_key": string,"created_at": string,"result": NonNullable<Json>,"user_id": string
                   }
@@ -226,6 +268,12 @@ isOneToOne: false
 "log_wear":
 { Args: { "p_garment_ids": (string)[],"p_occasion"?: Database["public"]['Enums']["occasion"],"p_score"?: number,"p_wear_id": string,"p_worn_on": string }; Returns: string
                            },
+"plan_outfit":
+{ Args: { "p_garment_ids": (string)[],"p_occasion"?: Database["public"]['Enums']["occasion"],"p_planned_on": string }; Returns: string
+                           },
+"planned_outfit_allowed":
+{ Args: { "p_garment_ids": (string)[],"p_planned_on": string }; Returns: boolean
+                           },
 "prune_expired_caches":
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },
@@ -234,7 +282,7 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "age_group": "under_18"|"18_24"|"25_34"|"35_44"|"45_54"|"55_plus","app_language": "en"|"es","body_type": "hourglass"|"pear"|"apple"|"rectangle"|"inverted_triangle"|"trapezoid"|"triangle"|"oval","clothing_type": "feminine"|"masculine"|"everything","extraction_status": "pending"|"done"|"failed"|"over_quota","garment_category": "t_shirt"|"blouse"|"shirt"|"polo"|"tank_top"|"sweater"|"hoodie"|"cardigan"|"pants"|"jeans"|"shorts"|"skirt"|"leggings"|"dress"|"jumpsuit"|"jacket"|"blazer"|"coat"|"vest"|"sneakers"|"shoes"|"heels"|"flats"|"sandals"|"boots"|"loafers"|"bag"|"hat"|"belt"|"scarf"|"tie"|"jewelry"|"sunglasses"|"watch"|"accessory","garment_color": "black"|"white"|"gray"|"navy"|"blue"|"light_blue"|"red"|"burgundy"|"pink"|"purple"|"green"|"olive"|"yellow"|"orange"|"brown"|"camel"|"beige"|"cream"|"gold"|"silver","garment_field": "category"|"colors"|"pattern"|"material"|"formality"|"seasons"|"warmth"|"fit"|"occasions","garment_fit": "fitted"|"regular"|"loose"|"oversized","garment_material": "cotton"|"denim"|"wool"|"knit"|"leather"|"synthetic"|"silk"|"linen"|"other","garment_pattern": "solid"|"striped"|"checked"|"floral"|"polka_dot"|"animal_print"|"geometric"|"graphic"|"other","garment_status": "available"|"laundry"|"lent"|"donated","occasion": "office"|"university"|"going_out"|"home"|"event"|"sport","quota_kind": "extraction"|"rating"|"lucky"|"for_you","season": "spring"|"summer"|"autumn"|"winter","style": "casual"|"elegant"|"minimalist"|"sporty"|"urban"|"bohemian"|"classic"
+            "age_group": "under_18"|"18_24"|"25_34"|"35_44"|"45_54"|"55_plus","app_language": "en"|"es","body_type": "hourglass"|"pear"|"apple"|"rectangle"|"inverted_triangle"|"trapezoid"|"triangle"|"oval","clothing_type": "feminine"|"masculine"|"everything","extraction_status": "pending"|"done"|"failed"|"over_quota","garment_category": "t_shirt"|"blouse"|"shirt"|"polo"|"tank_top"|"sweater"|"hoodie"|"cardigan"|"pants"|"jeans"|"shorts"|"skirt"|"leggings"|"dress"|"jumpsuit"|"jacket"|"blazer"|"coat"|"vest"|"sneakers"|"shoes"|"heels"|"flats"|"sandals"|"boots"|"loafers"|"bag"|"hat"|"belt"|"scarf"|"tie"|"jewelry"|"sunglasses"|"watch"|"accessory","garment_color": "black"|"white"|"gray"|"navy"|"blue"|"light_blue"|"red"|"burgundy"|"pink"|"purple"|"green"|"olive"|"yellow"|"orange"|"brown"|"camel"|"beige"|"cream"|"gold"|"silver","garment_field": "category"|"colors"|"pattern"|"material"|"formality"|"seasons"|"warmth"|"fit"|"occasions","garment_fit": "fitted"|"regular"|"loose"|"oversized","garment_material": "cotton"|"denim"|"wool"|"knit"|"leather"|"synthetic"|"silk"|"linen"|"other","garment_pattern": "solid"|"striped"|"checked"|"floral"|"polka_dot"|"animal_print"|"geometric"|"graphic"|"other","garment_status": "available"|"laundry"|"lent"|"donated","occasion": "office"|"university"|"going_out"|"home"|"event"|"sport","quota_kind": "extraction"|"rating"|"lucky"|"for_you"|"trip","season": "spring"|"summer"|"autumn"|"winter","style": "casual"|"elegant"|"minimalist"|"sporty"|"urban"|"bohemian"|"classic"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -354,7 +402,7 @@ export const Constants = {
           }
         },"public": {
           Enums: {
-            "age_group": ["under_18", "18_24", "25_34", "35_44", "45_54", "55_plus"],"app_language": ["en", "es"],"body_type": ["hourglass", "pear", "apple", "rectangle", "inverted_triangle", "trapezoid", "triangle", "oval"],"clothing_type": ["feminine", "masculine", "everything"],"extraction_status": ["pending", "done", "failed", "over_quota"],"garment_category": ["t_shirt", "blouse", "shirt", "polo", "tank_top", "sweater", "hoodie", "cardigan", "pants", "jeans", "shorts", "skirt", "leggings", "dress", "jumpsuit", "jacket", "blazer", "coat", "vest", "sneakers", "shoes", "heels", "flats", "sandals", "boots", "loafers", "bag", "hat", "belt", "scarf", "tie", "jewelry", "sunglasses", "watch", "accessory"],"garment_color": ["black", "white", "gray", "navy", "blue", "light_blue", "red", "burgundy", "pink", "purple", "green", "olive", "yellow", "orange", "brown", "camel", "beige", "cream", "gold", "silver"],"garment_field": ["category", "colors", "pattern", "material", "formality", "seasons", "warmth", "fit", "occasions"],"garment_fit": ["fitted", "regular", "loose", "oversized"],"garment_material": ["cotton", "denim", "wool", "knit", "leather", "synthetic", "silk", "linen", "other"],"garment_pattern": ["solid", "striped", "checked", "floral", "polka_dot", "animal_print", "geometric", "graphic", "other"],"garment_status": ["available", "laundry", "lent", "donated"],"occasion": ["office", "university", "going_out", "home", "event", "sport"],"quota_kind": ["extraction", "rating", "lucky", "for_you"],"season": ["spring", "summer", "autumn", "winter"],"style": ["casual", "elegant", "minimalist", "sporty", "urban", "bohemian", "classic"]
+            "age_group": ["under_18", "18_24", "25_34", "35_44", "45_54", "55_plus"],"app_language": ["en", "es"],"body_type": ["hourglass", "pear", "apple", "rectangle", "inverted_triangle", "trapezoid", "triangle", "oval"],"clothing_type": ["feminine", "masculine", "everything"],"extraction_status": ["pending", "done", "failed", "over_quota"],"garment_category": ["t_shirt", "blouse", "shirt", "polo", "tank_top", "sweater", "hoodie", "cardigan", "pants", "jeans", "shorts", "skirt", "leggings", "dress", "jumpsuit", "jacket", "blazer", "coat", "vest", "sneakers", "shoes", "heels", "flats", "sandals", "boots", "loafers", "bag", "hat", "belt", "scarf", "tie", "jewelry", "sunglasses", "watch", "accessory"],"garment_color": ["black", "white", "gray", "navy", "blue", "light_blue", "red", "burgundy", "pink", "purple", "green", "olive", "yellow", "orange", "brown", "camel", "beige", "cream", "gold", "silver"],"garment_field": ["category", "colors", "pattern", "material", "formality", "seasons", "warmth", "fit", "occasions"],"garment_fit": ["fitted", "regular", "loose", "oversized"],"garment_material": ["cotton", "denim", "wool", "knit", "leather", "synthetic", "silk", "linen", "other"],"garment_pattern": ["solid", "striped", "checked", "floral", "polka_dot", "animal_print", "geometric", "graphic", "other"],"garment_status": ["available", "laundry", "lent", "donated"],"occasion": ["office", "university", "going_out", "home", "event", "sport"],"quota_kind": ["extraction", "rating", "lucky", "for_you", "trip"],"season": ["spring", "summer", "autumn", "winter"],"style": ["casual", "elegant", "minimalist", "sporty", "urban", "bohemian", "classic"]
           }
         }
 } as const

@@ -181,16 +181,45 @@ leaves those combinations out of its candidates ([`ai.md`](ai.md#the-lucky-list-
 deleted garment leaves its keys behind; they never match again, and the cascade from `auth.users`
 removes them with the account.
 
-### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5)
+### `public.planned_outfits`
 
-Server-only caches for the `rate-outfit`, `lucky-list` and `for-you` Edge Functions (the first two
+The outfit planner (`20261122120000_planner_trips.sql`): at most one outfit per user and day, up to
+14 days ahead. `(id uuid primary key default gen_random_uuid(), user_id uuid not null default
+auth.uid() references auth.users on delete cascade, planned_on date not null, garment_ids uuid[] not
+null, occasion public.occasion, created_at timestamptz not null default now())`, unique `(user_id,
+planned_on)` (which leads with `user_id`, so it serves the per-user reads by day without another
+index), and a check holding `garment_ids` to 2–6 ids. An array can't carry a foreign key, so a
+deleted garment's id stays in a plan; the app wears and shows only the pieces still there. A plan is
+not a wear: nothing touches `wears` or the counts until Today's "I'll wear it" calls `log_wear`.
+`prune_expired_caches()` deletes a plan 30 days after its day.
+
+The app writes through `public.plan_outfit()` ([below](#planning-an-outfit)); the policies check the
+same rules on a direct write.
+
+### `public.saved_trips`
+
+A trip the user saved from "Pack for a trip", with the `trip-plan` answer as shown (`result`).
+Nothing is stored unless the user taps Save. `(id uuid primary key default gen_random_uuid(),
+user_id uuid not null default auth.uid() references auth.users on delete cascade, city text not
+null, start_on date not null, end_on date not null, occasion public.occasion, result jsonb not null,
+created_at timestamptz not null default now())`. Checks: the trimmed city 1–100 characters, `end_on`
+from `start_on` to 9 days after it (10 days at most), and `result` a JSON object of at most 64 KiB
+(`pg_column_size`; a 10-day plan is a few KiB). The `saved_trips_limit` trigger (`security definer`,
+execute revoked from clients) refuses a user's 51st trip with `23514` (`saved_trips: at most 50
+saved trips per user`), holding a per-user advisory lock so two concurrent saves can't both pass
+the count; the app lists the newest 50. Index
+`saved_trips_user_id_created_at_idx` on `(user_id, created_at desc)` backs the saved list.
+
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5), `public.trip_cache`
+
+Server-only caches for the `rate-outfit`, `lucky-list`, `for-you` and `trip-plan` Edge Functions (the first two
 share `weather_cache` through `_shared/userContext.ts`'s weather helper); no client ever reads or
-writes them. `public.rating_cache`, `public.lucky_cache` and `public.for_you_cache` share
-the same shape: `(user_id uuid references auth.users on delete cascade, cache_key text, result jsonb
+writes them. `public.rating_cache`, `public.lucky_cache`, `public.for_you_cache` and
+`public.trip_cache` share the same shape: `(user_id uuid references auth.users on delete cascade, cache_key text, result jsonb
 not null, created_at timestamptz not null default now())`, primary key `(user_id, cache_key)`.
 `public.weather_cache` is not user-scoped (weather is shared across users at the same place and
 hour): `(location_key text not null, hour timestamptz not null, payload jsonb not null)`, primary key
-`(location_key, hour)`. All four have RLS enabled with **no policies at all** and `revoke all` from
+`(location_key, hour)`. All five have RLS enabled with **no policies at all** and `revoke all` from
 both `anon` and `authenticated` — same "no API surface" pattern as `usage_counters` below, except
 nothing reads or writes them through a `security definer` function either; only `service_role` (the
 Edge Functions) ever touches them, bypassing RLS entirely as that role.
@@ -210,6 +239,8 @@ below. Each limit carries a margin, since the functions write `created_at` with 
 | `rating_cache`, `lucky_cache` | A `degraded: true` result for 1 hour (`DEGRADED_TTL_MS`); any other result has no age limit | Degraded and over 2 hours old, or any row over 30 days old |
 | `weather_cache` | Only the current UTC hour | `hour` over 2 days old |
 | `for_you_cache` | 7 days (`FOR_YOU_TTL_MS`), degraded for 1 hour; on a spent quota the same key's expired entry, else the user's newest entry under any key | Over 8 days old and not the user's newest row (each user's newest row stays, whatever its age; an older row for a key that comes back after 8 days is gone, so a spent quota then gets the newest row instead, as `cachePrune` already does) |
+| `trip_cache` | 6 hours (`TRIP_TTL_MS`), degraded for 1 hour | Over 7 hours old (`20261122120000_planner_trips.sql`) |
+| `planned_outfits` (not a cache) | Today's plan and the 13 days after it | `planned_on` over 30 days before the UTC date, as the privacy policies say |
 | `cron.job_run_details` (this job's rows) | pg_cron never deletes run history | `end_time` over 30 days old |
 
 A rating or lucky list older than 30 days is simply recomputed (one quota use) the next time its
@@ -236,14 +267,14 @@ export" below for how the row is written and used.
 
 Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
 `supabase/functions/extract-attributes/handler.ts`), the rating quota (50 per user per day), the
-feeling-lucky quota (10 per user per day) and the For-you quota (1 per user per day, counting cache
-misses only). Those three count the user's local day (see the 4-argument `consume_quota` below), so
+feeling-lucky quota (10 per user per day), the For-you quota (1 per user per day, counting cache
+misses only) and the trip quota (5 per user per day). Those four count the user's local day (see the 4-argument `consume_quota` below), so
 they reset at the user's midnight wherever they live.
 `(user_id uuid references auth.users on delete cascade, day date, kind quota_kind, count integer
-not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has four
+not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has five
 values: `extraction` (Plan 3), `rating`/`lucky` (Plan 4, added by `alter type … add value` in
-`20261108120000_outfits_wears_caches.sql`) and `for_you` (Plan 5, added the same way in
-`20261109000000_insights_account.sql` — each `add value` is its own statement, and the new value
+`20261108120000_outfits_wears_caches.sql`), `for_you` (Plan 5, added the same way in
+`20261109000000_insights_account.sql`) and `trip` (`20261122120000_planner_trips.sql`, the same way — each `add value` is its own statement, and the new value
 isn't referenced anywhere else in that migration, so it commits in the same transaction as the rest
 of it; Postgres only forbids using a brand new enum value in the same transaction that added it, not
 adding it). RLS is enabled with **no policies at all** and `revoke all` from
@@ -253,7 +284,7 @@ through `public.consume_quota()`.
 `public.consume_quota()` (both signatures in [`api.md`](api.md#rpcs)) is `security definer` with
 `set search_path = ''`, `execute` revoked from `public`, `anon` and
 `authenticated`, and granted only to `service_role` — only the Edge Functions call it (extraction,
-rating, lucky list and For you), never a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
+rating, lucky list, For you and trips), never a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
 `(p_user_id, today in UTC, p_kind)`, incrementing `count` only `where count < p_limit`, and returns
 whether a row was actually written (an `on conflict … do update … where …` whose `where` excludes
 the conflicting row makes `returning` produce no row, not a row holding `false` — the function
@@ -262,7 +293,7 @@ either the counter moves up by one and the function returns `true`, or nothing c
 returns `false`.
 
 The 4-argument `consume_quota` (`20261120120000_quota_local_day.sql`) is the same function with the
-day given: rating, the lucky list and For you pass the app's local
+day given: rating, the lucky list, For you and `trip-plan` pass the app's local
 calendar day from the request. It counts on `p_day` when it is within one day of the UTC date (every
 time zone is) and on the UTC day otherwise, so a phone with a wrong date can't open new counters at
 will. NOTE: changing the device date can spread one user's calls over up to 3 day counters in 24 h,
@@ -400,12 +431,31 @@ auth.uid())`: `dismissed_outfits_select_own`, `dismissed_outfits_insert_own` (`w
 references from authenticated`: a dismissal is added or removed, never edited, so an update raises
 `42501` instead of matching zero rows.
 
-### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache`, `public.apple_tokens` (Plan 5)
+### `public.planned_outfits`
 
-RLS is enabled with **zero policies** on all five, and `revoke all on <table> from anon,
+Four policies for `authenticated`: `planned_outfits_select_own` and `planned_outfits_delete_own`
+compare `user_id = (select auth.uid())`; `planned_outfits_insert_own` (`with check`) and
+`planned_outfits_update_own` (`using` own, `with check` own) also require
+`public.planned_outfit_allowed(planned_on, garment_ids)`: a day from the UTC date − 1 to + 14 (every
+time zone's local today to today + 13 fits; the app holds its local day to the exact 14 days) and
+distinct garments that are all the caller's own (`security invoker`, so it counts garments under
+the caller's RLS; `execute` for `authenticated` only). The policies check `now()` only on a write,
+so an old row stays readable and deletable. `revoke all from anon`; `revoke truncate, trigger,
+references from authenticated`. RLS runs before the check constraint, so a single garment raises
+`23514` and a foreign one `42501`.
+
+### `public.saved_trips`
+
+`saved_trips_select_own`, `saved_trips_insert_own` (`with check`) and `saved_trips_delete_own`, all
+comparing `user_id = (select auth.uid())`. `revoke all from anon`; `revoke update, truncate,
+trigger, references from authenticated`: a saved trip is kept or deleted, never edited.
+
+### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache`, `public.apple_tokens` (Plan 5), `public.trip_cache`
+
+RLS is enabled with **zero policies** on all six, and `revoke all on <table> from anon,
 authenticated` — same "no RLS-mediated access path at all" pattern as `usage_counters` below, except
 nothing reads or writes them through a `security definer` function either: only `service_role`
-(`rate-outfit`, `lucky-list` and `for-you` for the caches; `apple-token` and
+(`rate-outfit`, `lucky-list`, `for-you` and `trip-plan` for the caches; `apple-token` and
 `delete-account` for `apple_tokens`) ever touches them, bypassing RLS entirely as that role. A
 direct `select`/`insert`/`update`/`delete` from `authenticated` or `anon` is rejected by the table
 grant revoke before RLS is even consulted.
@@ -566,6 +616,17 @@ garment); see "RLS and storage rules" above for the self-only integrity gaps tha
 has. The RPCs are the app's only path in practice: they're the one place the array validation, the
 idempotency check and the all-or-nothing multi-table insert live.
 
+### Planning an outfit
+
+`public.plan_outfit(p_planned_on date, p_garment_ids uuid[], p_occasion occasion default null)
+returns uuid` follows `save_outfit`: `security invoker` (so the table's policies gate the write
+too), `search_path = ''`, `execute` for `authenticated` only. It raises `22023` for a null array,
+fewer than 2 or more than 6 ids or a duplicate, and for a day outside the UTC date − 1 to + 14;
+`42501` when the caller's RLS shows fewer garments than were sent (a foreign or deleted id). It then
+inserts or, on `(user_id, planned_on)`, replaces that day's garments and occasion (and `created_at`),
+returning the row's id: a second plan for a day keeps its id. The app removes a plan with a plain
+delete of its own row.
+
 ### Wear count maintenance (trigger)
 
 `public.maintain_wear_counts()` fires as the trigger `wears_maintain_counts`
@@ -690,8 +751,8 @@ inside them, never in `src/`.
      failed read of the row) is logged as `revoke_failed` and never blocks the deletion;
   3. with the service role, `DELETE /auth/v1/admin/users/{uid}`, after which every public table cascades away:
      `profiles`, `garments` (and through them `outfit_items`), `outfits`, `wears`,
-     `dismissed_outfits`, `usage_counters`, `rating_cache`, `lucky_cache`, `for_you_cache` and
-     `apple_tokens` all
+     `dismissed_outfits`, `planned_outfits`, `saved_trips`, `usage_counters`, `rating_cache`,
+     `lucky_cache`, `for_you_cache`, `trip_cache` and `apple_tokens` all
      reference `auth.users` with `on delete cascade` (pinned by `insights_account.test.sql`).
   4. once this call has deleted the user, sweeps `garments/{uid}/` one last time, best effort:
      another device (or a token that is still valid) can upload between steps 1 and 3, because the
@@ -709,7 +770,7 @@ inside them, never in `src/`.
   What the app does around the call (the marker, the paused queue, `reauth`, the local cleanup and
   the later checks) is in [`app.md`](app.md#account-deletion-on-the-device).
 - **`export-data`** — reads `profiles`, `garments` (every column, so `price` and `currency` too), `outfits` (with `items:outfit_items(garment_id)`),
-  `wears` and `dismissed_outfits` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
+  `wears`, `dismissed_outfits`, `planned_outfits` and `saved_trips` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
   caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still
   reads every row. Photo URLs are signed with the service role for 7 days,

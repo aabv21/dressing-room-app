@@ -70,8 +70,9 @@ export function isRatingResult(value: unknown): value is RatingResult {
   );
 }
 
-async function invoke<T>(
-  name: 'rate-outfit' | 'lucky-list' | 'for-you',
+/** One function call, its answer checked with `guard`; `trip-plan` (`src/trips/tripClient.ts`) shares it. */
+export async function invoke<T>(
+  name: 'rate-outfit' | 'lucky-list' | 'for-you' | 'trip-plan',
   body: Record<string, unknown>,
   guard: (value: unknown) => value is T,
   client: Client,

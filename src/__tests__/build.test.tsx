@@ -17,7 +17,9 @@ const DRESS = '00000000-0000-4000-8000-000000000006';
 const BLAZER = '00000000-0000-4000-8000-000000000007';
 const BAG = '00000000-0000-4000-8000-000000000008';
 
-jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
+const mockParams: { planFor?: string } = {};
+jest.mock('expo-router', () => ({ router: { push: jest.fn(), setParams: jest.fn() }, useLocalSearchParams: () => mockParams }));
+jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-21' }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
 jest.mock('@shopify/flash-list', () => require('../test/flashListMock'));
@@ -57,6 +59,8 @@ const CLOSET: Garment[] = [
 
 beforeEach(() => {
   mockCloset.garments = CLOSET;
+  delete mockParams.planFor;
+  jest.mocked(router.setParams).mockClear();
   mockedPush.mockClear();
   mockWindow.fontScale = 1;
 });
@@ -269,4 +273,33 @@ test("the disabled rate button says what's missing", async () => {
 
   await fireEvent.press(cell('Sneakers, 30 wears'));
   expect(screen.getByRole('button', { name: 'How does it look?' })).toBeEnabled();
+});
+
+describe('planning from Build', () => {
+  test('with a day to plan for, the button sends the outfit to the Plan screen instead of rating it', async () => {
+    mockParams.planFor = '2026-11-24';
+    await render(<BuildScreen />);
+
+    expect(screen.getByText('Planning for Tue, Nov 24')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Pick a top, a bottom and shoes to plan' })).toBeDisabled();
+    await fireEvent.press(cell('Blouse, 9 wears'));
+    await fireEvent.press(cell('Skirt, 21 wears'));
+    await fireEvent.press(cell('Sneakers, 30 wears'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Plan this outfit' }));
+
+    expect(router.setParams).toHaveBeenCalledWith({ planFor: undefined });
+    expect(mockedPush).toHaveBeenCalledWith({ pathname: '/plan', params: { day: '2026-11-24', ids: `${BLOUSE},${SKIRT},${SNEAKERS}` } });
+  });
+
+  test('Cancel goes back to rating; a day outside the planner’s window is ignored', async () => {
+    mockParams.planFor = '2026-11-24';
+    const view = await render(<BuildScreen />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancel planning' }));
+    expect(router.setParams).toHaveBeenCalledWith({ planFor: undefined });
+
+    mockParams.planFor = '2027-01-30';
+    await view.rerender(<BuildScreen />);
+    expect(screen.queryByText(/^Planning for/)).toBeNull();
+    expect(cta()).toBeOnTheScreen();
+  });
 });

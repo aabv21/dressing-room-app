@@ -20,7 +20,7 @@ jest.mock('react-native-view-shot', () => ({
 // expo-notifications' native module is absent under Jest: permission granted, scheduling answers an
 // id, no tap response; a suite that tests the reminder sets these with `jest.mocked`.
 jest.mock('expo-notifications', () => ({
-  SchedulableTriggerInputTypes: { DAILY: 'daily' },
+  SchedulableTriggerInputTypes: { DAILY: 'daily', WEEKLY: 'weekly' },
   IosAuthorizationStatus: { NOT_DETERMINED: 0, DENIED: 1, AUTHORIZED: 2, PROVISIONAL: 3, EPHEMERAL: 4 },
   AndroidImportance: { DEFAULT: 5 },
   DEFAULT_ACTION_IDENTIFIER: 'expo.modules.notifications.actions.DEFAULT',

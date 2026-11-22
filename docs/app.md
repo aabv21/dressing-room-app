@@ -14,8 +14,9 @@ code (components, hooks, utils) stays outside `src/app/`.
   `for-you.tsx` For you and `profile.tsx` the Profile.
 - The root Stack in `_layout.tsx` registers, inside the signed-in guard and without the tab bar:
   `camera`, `review`, `garment/[id]`, `rate` (pushed from Today and Build as
-  `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`) and `city` (Today's city, a modal
-  sheet).
+  `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`), `city` (Today's city, a modal
+  sheet), `plan` (the planner, pushed from Today as `/plan`, and from Build as
+  `/plan?day=<YYYY-MM-DD>&ids=<garment ids>`) and `trip` ("Pack for a trip", pushed from Today).
 - Leaving never drops work silently: the camera with unsent shots and the garment detail with
   unsaved edits ask first through `usePreventRemove` (Discard / Keep editing), and Android's back on
   Forgot password's code step returns to the email step. `review`, `rate` and the garment detail
@@ -190,7 +191,10 @@ the button's notice slot until the next edit, holds the daily reminder's section
   each other, one bag, hat or accessory, so a built outfit has at most five pieces against
   `rate-outfit`'s six; `canRate`, `selectionIds` and `retainSelection`. On the Build tab a pick in a
   required row moves on to the next empty one below it, and the disabled button names what's missing
-  ("Pick shoes to rate").
+  ("Pick shoes to rate"). Opened from the planner as `/build?planFor=<day>` (a day inside the
+  planner's window; anything else rates as usual), Build says "Planning for Tue, Nov 24" with a
+  Cancel, and its button becomes "Plan this outfit", which clears the param and pushes
+  `/plan?day=&ids=`.
 - `useStoredQuery.ts`: a function answer fetched one request at a time for the latest inputs and
   shown over its stored copy until this session has one (`offline` when the fetch couldn't
   connect); Today's list and For you are built on it.
@@ -257,6 +261,64 @@ the button's notice slot until the next edit, holds the daily reminder's section
   with Reduce Motion; the rating screen adds a success haptic as the result arrives), and `types.ts`
   (the functions' response types, re-exported from their `handler.ts`).
 
+## The planner (`src/planner/`)
+
+One outfit per day, from today to 13 days ahead. A plan is never a wear: only Today's "I'll wear it"
+on it logs one. Server side: `planned_outfits` and `plan_outfit`
+([`database.md`](database.md#planning-an-outfit)).
+
+- `plannedOutfits.ts`: `listPlans(from, to)` (by day; throws on failure), `planOutfit` (the RPC,
+  answering the stored plan; its own refusals are `invalid`) and `removePlan` (a plan already gone
+  counts as removed).
+- `planCache.ts`: the plans on the device in kv `plans.v1.<userId>`, read through `usePlans` (a
+  `useSyncExternalStore` over the stored text, so every reader follows a write), `planFor`,
+  `planDays(today)` (the 14 days) and `formatPlanDay` ("Tue, Nov 24" / "mar, 24 nov"). It loads
+  no Supabase client, so the reminder and Build can read it anywhere.
+- `planStore.ts`: `refreshPlans` (the window from the server into the cache; a failure keeps the
+  cache), `savePlan` and `deletePlan` (the server first, then the cache, so a failed write never
+  shows as planned).
+- `PlanDayStrip.tsx`: the 14 days as day chips (a radio group), a dot under each planned day.
+- `PlannedTodayCard.tsx`: Today's "Planned for today", above the occasion chips: the plan's pieces
+  still in the closet and available (`wearablePieces`), "Some pieces aren't available" when they no
+  longer make a complete outfit, and its own 48 pt "I'll wear it" through Today's `useWearLog` (the
+  plan's occasion, no score), with its error, queued note and Undo inside the card, so Today's
+  anchored button stays the lucky outfit's. Today refreshes the plans on focus and shows "Plan
+  ahead" and "Pack for a trip" links under the lucky card.
+- `src/app/plan.tsx`: the day strip, the chosen day's plan (with Remove) or "Nothing planned for
+  …", then "Choose an outfit": "Build one" (`/build?planFor=`), and Saved (the Saved list) or
+  Suggestions (`storedLuckyOutfits`: every outfit stored for today across occasions, with its
+  list's occasion) as cards with "Use this outfit". Only outfits whose pieces are still in the
+  closet and complete are offered; a link's ids are checked the same way. The anchored "Plan for
+  Tue, Nov 24" saves; a failed save stays in its notice. Offline, the cached plans with a note.
+- Account privacy: `forgetAccountOnDevice` clears `plans.v1.<id>` with the other per-user keys, and
+  an explicit sign-out drops it as a display cache.
+
+## Trips (`src/trips/`)
+
+"Pack for a trip" plans a trip's outfits with `trip-plan` ([`api.md`](api.md#trip-plan),
+[`ai.md`](ai.md#trip-packing)), which calls no model. Nothing is stored for the user until Save.
+
+- `tripResponse.ts`: `isTripResponse`, the shape check for the function's answer and for a saved
+  trip's snapshot (pure, so `savedTrips.ts` loads no kv).
+- `tripClient.ts`: `planTripRequest({ city, start, end, occasion, language, date })` through
+  `aiClient.ts`'s shared `invoke`, so a 404 (`city_not_found`) is `not_found`, 429 `over_quota`, 503
+  `unavailable`.
+- `savedTrips.ts`: `listSavedTrips` (the newest 50, dropping a snapshot this version can't read),
+  `saveTrip` (the trip and its snapshot) and `deleteSavedTrip`.
+- `tripChecks.ts`: the packing list's check-offs in kv `trip.checks.<userId>`, one entry per trip
+  keyed by `tripKey` (the city lowercased with its spaces collapsed, the dates and the occasion, so
+  planning the same trip again or opening it from Saved keeps them), the latest 20 trips kept;
+  `useTripChecks` follows every toggle. Account deletion clears the key, and an explicit sign-out
+  drops it with the display caches, so the next person on a shared phone doesn't see it.
+- `src/app/trip.tsx`: the city field with the dictation mic (the transcript replaces the field), a
+  60-day start strip (`PlanDayStrip`), 1–10 days, an optional occasion, and "Plan my packing" with
+  the app language and the local day. The answer shows each day (its date, the weather line or
+  "Forecast unavailable", its outfit or "Nothing in your closet fits…") and the packing list by slot
+  ("Tops · 2"), each piece a checkbox row "Jeans · Blue, worn 2 days". "Save trip" writes
+  `saved_trips` (then "Saved ✓"), "New trip" goes back to the form, which lists the saved trips
+  (open shows the snapshot without a call; Delete). Errors: an unknown city, the 5-a-day quota,
+  the geocoder down, offline; a closet without a required slot says what to add.
+
 ## The daily reminder (`src/reminder/`)
 
 A local notification at a time the user picks, inviting them to open Today. No server, no push
@@ -277,10 +339,11 @@ when the user travels.
   cancels the stored id and every scheduled notification whose `data.kind` is `dailyReminder`
   (`getAllScheduledNotificationsAsync`), so one the kv lost track of can't keep firing; it schedules
   nothing for an account whose kv is refused (a deletion). Every change runs after the previous one,
-  so two quick changes never leave two notifications. `turnOffReminder` cancels the same way and
+  so two quick changes never leave two notifications; a failure part way sweeps what it scheduled. `turnOffReminder` cancels the same way and
   keeps the time; `forgetReminder` reads the id synchronously and cancels in that same queue, for
-  the deletion, so a re-schedule already waiting can't outlive it. `isReminderScheduled` asks the
-  OS whether a reminder is still there.
+  the deletion, so a re-schedule already waiting can't outlive it. `isReminderCurrent` asks the
+  OS whether it still holds the notes the settings and plans call for (a backup restore or an OS
+  purge can drop them).
   `presentRemindersInForeground` (the root layout's module scope) shows a reminder that arrives
   with the app open, silently.
 - `ReminderSection.tsx`: Profile's "Daily reminder" card: the switch, the time (Intl's `7:30 AM` /
@@ -289,8 +352,20 @@ when the user travels.
   while off is only stored.
 - `DailyReminderSync.tsx`, mounted in the signed-in, onboarded tree: a tap on the reminder (the
   launch tap from `getLastNotificationResponse`, or one while the app runs) navigates to Today and
-  clears the response; an enabled reminder is re-scheduled when the app language changed, or when
-  the OS no longer holds it (an iOS backup restore or an OS purge keeps the kv's "on").
+  clears the response; it hands `setReminderPlans` each planned day's pieces still in the closet,
+  as text in the app language, and re-schedules an enabled reminder when the app language changed,
+  or when the OS no longer holds what the plans call for (`isReminderCurrent`, checked again when
+  the plans' text changes and on returning to the foreground; an iOS backup restore or an OS purge
+  keeps the kv's "on").
+- Planned days: with no plan in the next seven firings (from today while today's time is ahead,
+  else from tomorrow) the reminder is the one `DAILY` notification above. With one, it is seven
+  `WEEKLY` notifications, one per weekday at the same time, each tagged `dailyReminder` with its
+  `weekday` in `data` (null on the daily one). The kv keeps every id (`notificationId` and
+  `otherIds`), so a cancel reaches them all even when the OS listing fails, and `isReminderCurrent`
+  compares each held note's weekday and text with the wanted ones, so a plan moved to another day
+  is re-scheduled: the planned days say "You planned:
+  Blouse · White, Jeans · Blue." / "Planeaste: …", the rest the usual text. A weekly note keeps its
+  plan text a week later only if the app never opens in between (the `NOTE:` in `dailyReminder.ts`).
 - Turning off on the way out: `AuthProvider` turns the reminder off for the account whose session
   ended (any `SIGNED_OUT`, so the next person on the phone never gets it), keeping the time;
   `forgetAccountOnDevice` refuses the account's kv, then queues `forgetReminder` before removing

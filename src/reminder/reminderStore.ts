@@ -7,12 +7,21 @@ import { kvGet, kvGetJson, kvSet, parseJson } from '../lib/kv';
 
 export type ReminderTime = { hour: number; minute: number };
 
-/** `notificationId` is the scheduled notification to cancel; `language` the copy it was scheduled in. */
+/**
+ * `notificationId` is the scheduled notification to cancel, and `otherIds` the rest of a week of
+ * planned-day notes; `language` the copy they were scheduled in.
+ */
 export type ReminderSettings = ReminderTime & {
   enabled: boolean;
   notificationId: string | null;
+  otherIds?: string[];
   language: Locale | null;
 };
+
+/** Every scheduled id the settings know of. */
+export function storedReminderIds(settings: ReminderSettings): string[] {
+  return [...(settings.notificationId === null ? [] : [settings.notificationId]), ...(settings.otherIds ?? [])];
+}
 
 export const DEFAULT_REMINDER: ReminderSettings = { enabled: false, hour: 7, minute: 30, notificationId: null, language: null };
 
@@ -32,6 +41,7 @@ function isSettings(value: unknown): value is ReminderSettings {
     isClock(entry.hour, 23) &&
     isClock(entry.minute, 59) &&
     (entry.notificationId === null || typeof entry.notificationId === 'string') &&
+    (entry.otherIds === undefined || (Array.isArray(entry.otherIds) && entry.otherIds.every((id) => typeof id === 'string'))) &&
     (entry.language === null || entry.language === 'en' || entry.language === 'es')
   );
 }

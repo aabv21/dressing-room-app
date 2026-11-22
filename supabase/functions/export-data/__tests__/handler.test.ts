@@ -40,6 +40,12 @@ const OUTFITS: Row[] = [
   },
 ];
 const DISMISSED: Row[] = [{ user_id: USER_ID, outfit_key: `${idOf(1)},${idOf(2)}`, created_at: '2026-11-02T09:00:00Z' }];
+const PLANNED: Row[] = [
+  { id: idOf(301), user_id: USER_ID, planned_on: '2026-11-12', garment_ids: [idOf(1), idOf(2)], occasion: null, created_at: '2026-11-09T08:00:00Z' },
+];
+const TRIPS: Row[] = [
+  { id: idOf(401), user_id: USER_ID, city: 'Lisbon', start_on: '2026-12-01', end_on: '2026-12-03', occasion: null, result: { kind: 'ok' }, created_at: '2026-11-09T08:30:00Z' },
+];
 const WEARS: Row[] = [{ id: idOf(201), user_id: USER_ID, outfit_id: idOf(101), worn_on: '2026-11-01', occasion: 'office', score: 82 }];
 
 const FOREIGN = {
@@ -47,10 +53,20 @@ const FOREIGN = {
   garment: { id: idOf(9), user_id: OTHER_ID, category: 'shirt', colors: ['blue'], status: 'available' },
   outfit: { id: idOf(109), user_id: OTHER_ID, saved_at: null, created_at: '2026-11-01T08:00:00Z', items: [{ garment_id: idOf(9) }] },
   wear: { id: idOf(209), user_id: OTHER_ID, outfit_id: idOf(109), worn_on: '2026-11-01', occasion: null, score: null },
+  planned: { id: idOf(309), user_id: OTHER_ID, planned_on: '2026-11-12', garment_ids: [idOf(9), idOf(10)], occasion: null },
+  trip: { id: idOf(409), user_id: OTHER_ID, city: 'Porto', start_on: '2026-12-01', end_on: '2026-12-02', occasion: null, result: {} },
   dismissed: { user_id: OTHER_ID, outfit_key: `${idOf(9)},${idOf(10)}`, created_at: '2026-11-02T09:00:00Z' },
 };
 
-type Tables = { profiles: Row[]; garments: Row[]; outfits: Row[]; wears: Row[]; dismissed_outfits: Row[] };
+type Tables = {
+  profiles: Row[];
+  garments: Row[];
+  outfits: Row[];
+  wears: Row[];
+  dismissed_outfits: Row[];
+  planned_outfits: Row[];
+  saved_trips: Row[];
+};
 
 type World = {
   tables: Tables;
@@ -69,7 +85,11 @@ const json = (status: number, body: unknown): Response =>
 function world(overrides: Partial<Omit<World, 'tables'>> & { tables?: Partial<Tables> } = {}): World {
   const { tables, ...rest } = overrides;
   return {
-    tables: { profiles: [PROFILE], garments: GARMENTS, outfits: OUTFITS, wears: WEARS, dismissed_outfits: DISMISSED, ...tables },
+    tables: { profiles: [PROFILE], garments: GARMENTS, outfits: OUTFITS, wears: WEARS, dismissed_outfits: DISMISSED,
+      planned_outfits: PLANNED,
+      saved_trips: TRIPS,
+      ...tables,
+    },
     // Garment 3 has no photo yet; garment 2 has only its full-size one.
     objects: new Set([
       `${USER_ID}/${idOf(1)}/full.webp`,
@@ -81,7 +101,7 @@ function world(overrides: Partial<Omit<World, 'tables'>> & { tables?: Partial<Ta
   };
 }
 
-const TABLES = ['profiles', 'garments', 'outfits', 'wears', 'dismissed_outfits'] as const;
+const TABLES = ['profiles', 'garments', 'outfits', 'wears', 'dismissed_outfits', 'planned_outfits', 'saved_trips'] as const;
 
 const hrefOf = (input: RequestInfo | URL): string => (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
 
@@ -146,24 +166,38 @@ type Export = {
   outfits: Row[];
   wears: Row[];
   dismissedOutfits: Row[];
+  plannedOutfits: Row[];
+  savedTrips: Row[];
   photos: { garmentId: string; full: string | null; thumb: string | null }[];
 };
 
 describe('export-data', () => {
-  test('answers every section: the profile, garments, outfits with items, wears, dismissed outfits and signed photo URLs', async () => {
+  test('answers every section: the profile, garments, outfits with items, wears, dismissed outfits, plans, saved trips and signed photo URLs', async () => {
     const { fetch: fetchFn } = fakeFetch(world());
 
     const response = await handleExportData(request(), { env: ENV, fetch: fetchFn, now: () => NOW });
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as Export;
-    expect(Object.keys(body).sort()).toEqual(['dismissedOutfits', 'exportedAt', 'garments', 'outfits', 'photos', 'profile', 'wears']);
+    expect(Object.keys(body).sort()).toEqual([
+      'dismissedOutfits',
+      'exportedAt',
+      'garments',
+      'outfits',
+      'photos',
+      'plannedOutfits',
+      'profile',
+      'savedTrips',
+      'wears',
+    ]);
     expect(body.exportedAt).toBe('2026-11-09T12:00:00.000Z');
     expect(body.profile).toEqual(PROFILE);
     expect(body.garments).toEqual(GARMENTS);
     expect(body.outfits).toEqual(OUTFITS);
     expect(body.wears).toEqual(WEARS);
     expect(body.dismissedOutfits).toEqual(DISMISSED);
+    expect(body.plannedOutfits).toEqual(PLANNED);
+    expect(body.savedTrips).toEqual(TRIPS);
     expect(body.photos).toEqual([
       { garmentId: idOf(1), full: signed(`${USER_ID}/${idOf(1)}/full.webp`), thumb: signed(`${USER_ID}/${idOf(1)}/thumb.webp`) },
       { garmentId: idOf(2), full: signed(`${USER_ID}/${idOf(2)}/full.webp`), thumb: null },
@@ -206,6 +240,8 @@ describe('export-data', () => {
         outfits: [...OUTFITS, FOREIGN.outfit],
         wears: [FOREIGN.wear, ...WEARS],
         dismissed_outfits: [FOREIGN.dismissed, ...DISMISSED],
+        planned_outfits: [FOREIGN.planned, ...PLANNED],
+        saved_trips: [...TRIPS, FOREIGN.trip],
       },
     });
     const { fetch: fetchFn, calls } = fakeFetch(state);
@@ -220,6 +256,8 @@ describe('export-data', () => {
     expect(body.profile).toEqual(PROFILE);
     expect(body.garments).toEqual(GARMENTS);
     expect(body.dismissedOutfits).toEqual(DISMISSED);
+    expect(body.plannedOutfits).toEqual(PLANNED);
+    expect(body.savedTrips).toEqual(TRIPS);
     const signedPaths = calls
       .filter(({ url }) => url.pathname.startsWith('/storage/'))
       .flatMap(({ body: sent }) => (JSON.parse(sent) as { paths: string[] }).paths);
@@ -255,7 +293,9 @@ describe('export-data', () => {
 
   test('answers a null profile and empty sections for a brand-new account, signing nothing', async () => {
     const { fetch: fetchFn, calls } = fakeFetch(
-      world({ tables: { profiles: [], garments: [], outfits: [], wears: [], dismissed_outfits: [] } }),
+      world({
+        tables: { profiles: [], garments: [], outfits: [], wears: [], dismissed_outfits: [], planned_outfits: [], saved_trips: [] },
+      }),
     );
 
     const response = await handleExportData(request(), { env: ENV, fetch: fetchFn, now: () => NOW });
@@ -268,12 +308,14 @@ describe('export-data', () => {
       outfits: [],
       wears: [],
       dismissedOutfits: [],
+      plannedOutfits: [],
+      savedTrips: [],
       photos: [],
     });
     expect(calls.some(({ url }) => url.pathname.startsWith('/storage/'))).toBe(false);
   });
 
-  test.each([['garments'], ['wears'], ['dismissed_outfits']] as const)('answers 500 when the %s read fails', async (table) => {
+  test.each([['garments'], ['wears'], ['dismissed_outfits'], ['planned_outfits'], ['saved_trips']] as const)('answers 500 when the %s read fails', async (table) => {
     const { fetch: fetchFn } = fakeFetch(world({ failTable: table }));
 
     const response = await handleExportData(request(), { env: ENV, fetch: fetchFn, now: () => NOW });

@@ -1,6 +1,8 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
 jest.mock('../../auth/AuthProvider', () => require('../../test/authMock'));
 jest.mock('expo-router', () => ({ router: { navigate: jest.fn() } }));
+const mockCloset: { garments: unknown[] } = { garments: [] };
+jest.mock('../../closet/ClosetProvider', () => ({ useCloset: () => ({ garments: mockCloset.garments }) }));
 
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import * as Notifications from 'expo-notifications';
@@ -8,7 +10,9 @@ import { router } from 'expo-router';
 import { Pressable, Text } from 'react-native';
 
 import { I18nProvider, useLocalePreference } from '../../i18n/I18nProvider';
-import { allowUserKeys, kvKeys, kvRemove } from '../../lib/kv';
+import { allowUserKeys, kvKeys, kvRemove, kvSet } from '../../lib/kv';
+import { plansKey } from '../../planner/planCache';
+import { garment } from '../../test/garmentFixture';
 import { resetAuth } from '../../test/authMock';
 import { DailyReminderSync } from '../DailyReminderSync';
 import { readReminder, writeReminder } from '../reminderStore';
@@ -52,6 +56,7 @@ beforeEach(() => {
   for (const key of kvKeys()) kvRemove(key);
   allowUserKeys(USER);
   resetAuth();
+  mockCloset.garments = [];
 });
 
 test('a reminder tap that launched the app opens Today and is cleared', async () => {
@@ -95,7 +100,11 @@ test("another notification's tap doesn't navigate", async () => {
 });
 
 function scheduledReminder(identifier: string): Notifications.NotificationRequest {
-  return { identifier, content: { data: { kind: 'dailyReminder' } }, trigger: null } as unknown as Notifications.NotificationRequest;
+  return {
+    identifier,
+    content: { body: 'Open Today to see what to wear.', data: { kind: 'dailyReminder', weekday: null } },
+    trigger: null,
+  } as unknown as Notifications.NotificationRequest;
 }
 
 test('a language change re-schedules the reminder in the new language', async () => {
@@ -146,4 +155,28 @@ test('on and still scheduled in the same language: mounting changes nothing', as
   await act(() => Promise.resolve());
 
   expect(mocked.scheduleNotificationAsync).not.toHaveBeenCalled();
+});
+
+test('a plan for the coming week re-schedules the reminder with its pieces', async () => {
+  jest.useFakeTimers({ now: new Date(2026, 10, 21, 10, 0), doNotFake: ['setTimeout', 'setInterval', 'setImmediate', 'nextTick', 'queueMicrotask'] });
+  try {
+    mockCloset.garments = [
+      garment({ id: 'g-1', category: 'blouse', colors: ['white'] }),
+      garment({ id: 'g-2', category: 'jeans', colors: ['blue'] }),
+    ];
+    kvSet(plansKey(USER), JSON.stringify([{ id: 'p-1', day: '2026-11-24', garmentIds: ['g-2', 'g-1', 'gone'], occasion: null }]));
+    writeReminder(USER, { enabled: true, hour: 7, minute: 30, notificationId: 'reminder-1', language: 'en' });
+    mocked.getAllScheduledNotificationsAsync.mockReset().mockResolvedValue([scheduledReminder('reminder-1')]);
+    mocked.scheduleNotificationAsync.mockReset().mockResolvedValue('weekly');
+
+    await renderSync();
+    await act(() => Promise.resolve());
+
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledTimes(7);
+    expect(mocked.scheduleNotificationAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.objectContaining({ body: 'You planned: Blouse · White, Jeans · Blue.' }) as unknown }),
+    );
+  } finally {
+    jest.useRealTimers();
+  }
 });

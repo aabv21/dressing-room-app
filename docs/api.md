@@ -66,7 +66,7 @@ insert is `on conflict do nothing`.
 | pg_net, trigger → `extract-attributes` | 5 s | the trigger's `timeout_milliseconds`; the function keeps running after pg_net stops waiting |
 
 **Quotas and caches.** Quotas count cache misses only, through `consume_quota`, before any paid
-call. Rating, the lucky list and For you count the user's local day sent in the request, accepted
+call (or, for `trip-plan`, any outbound call). Rating, the lucky list, For you and trips count the user's local day sent in the request, accepted
 when it is within one day of the server's UTC date (else the UTC day); extraction, started by a
 trigger with no client day, counts the UTC day.
 
@@ -76,6 +76,7 @@ trigger with no client day, counts the UTC day.
 | `rate-outfit` | 50 (`rating`) | `rating_cache`; no age limit, a degraded result 1 hour |
 | `lucky-list` | 10 (`lucky`) | `lucky_cache`; no age limit, a degraded list 1 hour |
 | `for-you` | 1 (`for_you`) | `for_you_cache`; 7 days, a degraded answer 1 hour; one entry per user |
+| `trip-plan` | 5 (`trip`) | `trip_cache`; 6 hours, a degraded answer 1 hour |
 | any weather read | none | `weather_cache`, shared by place and UTC hour |
 
 A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-work)).
@@ -88,14 +89,16 @@ A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-w
 | `POST /functions/v1/rate-outfit` | `src/outfits/aiClient.ts` `rateOutfit` | User JWT | `{ garment_ids, occasion, date }` | 200 `RatingResult` | 400, 401, 404, 405, 422, 429, 500, 503 |
 | `POST /functions/v1/lucky-list` | `aiClient.ts` `fetchLuckyList` | User JWT | `{ date, occasion }` | 200 `LuckyResponse` | 400, 401, 405, 429, 500 |
 | `POST /functions/v1/for-you` | `aiClient.ts` `fetchForYou` | User JWT | `{ language, date? }` | 200 `ForYouResponse` | 400, 401, 405, 429, 500 |
+| `POST /functions/v1/trip-plan` | `aiClient.ts` `planTripRequest` | User JWT | `{ city, start, end, occasion?, language, date }` | 200 `TripResponse` | 400, 401, 404, 405, 429, 500, 503 |
 | `POST /functions/v1/apple-token` | `src/auth/socialAuth.ts` (fire-and-forget) | User JWT | `{ code }` | 200 `{ outcome }` | 401, 405 |
 | `POST /functions/v1/delete-account` | `src/account/accountClient.ts` `deleteAccount` | User JWT (sent explicitly) | `{}` | 200 `{ outcome: 'deleted' }` | 401, 405, 500 |
 | `POST /functions/v1/export-data` | `accountClient.ts` `exportData` | User JWT | `{}` | 200 `DataExport` | 401, 405, 500 |
 | `POST /rest/v1/rpc/log_wear` | `src/outfits/outfitRepository.ts` `logWear` | User JWT | wear id, garment ids, day, occasion?, score? | the wear id | `22023`, `42501`, `23505` |
 | `POST /rest/v1/rpc/save_outfit` | `outfitRepository.ts` `saveOutfit` | User JWT | garment ids, score? | the outfit id | `22023`, `42501` |
+| `POST /rest/v1/rpc/plan_outfit` | `src/planner/plannedOutfits.ts` `planOutfit` | User JWT | day, garment ids, occasion? | the plan id | `22023`, `42501` |
 | `POST /rest/v1/rpc/keep_alive` | `.github/workflows/keepalive.yml` | Anon key | `{}` | the server time | none |
 | `POST /rest/v1/rpc/consume_quota` | The functions | Service role | user, kind, limit, day? | `true` / `false` | — |
-| `/rest/v1/profiles`, `garments`, `wears`, `outfits`, `dismissed_outfits` | The repositories | User JWT + RLS | select, update, insert, delete | rows | `42501`, `23514` |
+| `/rest/v1/profiles`, `garments`, `wears`, `outfits`, `dismissed_outfits`, `planned_outfits`, `saved_trips` | The repositories | User JWT + RLS | select, update, insert, delete | rows | `42501`, `23514` |
 | `/storage/v1/object/garments/…` | Upload queue, `garmentRepository.ts`, functions, backup | User JWT or service role | upload, sign, remove, download | — | Storage error statuses ([Storage](#storage)) |
 | `/auth/v1/*` | `src/auth/emailAuth.ts`, `socialAuth.ts`, `accountClient.ts` | Anon key or session | sign-up, sign-in, recovery, ID tokens | session | Auth error codes |
 
@@ -192,6 +195,34 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | 200 | ideas | `ranked` / `degraded` / `empty` | Computed; a fit or line fell back; no archetype with gain |
 | 500 | `{ error: 'internal' }` | `error` | Loading garments or the profile, or the quota RPC, failed |
 
+### `trip-plan`
+
+- Request: `POST { "city": string, "start": "YYYY-MM-DD", "end": "YYYY-MM-DD", "occasion"?: <Occasion> |
+  null, "language": "en" | "es", "date": "YYYY-MM-DD" }`. The city is trimmed, 1–100 characters; the
+  trip is 1 to 10 days, starting at most one day before the server's UTC date and at most 365 days
+  after it; `occasion` may be left out; `date` is the app's local day (the quota's day);
+  `language` names the place in that language.
+- Response: `TripResponse` (`trip-plan/handler.ts`): `{ kind: 'too_small', missing }` or
+  `{ kind: 'ok', city, days: { date, weather, garmentIds }[], packing: { slot, items: { garmentId,
+  days }[] }[] }`. `city` is the geocoder's name for the place; `weather` is null for a day past the
+  16-day forecast (or every day when the forecast failed); `garmentIds` is null for a day no outfit
+  passes. Nothing is stored for the user: the app writes `saved_trips` only on Save.
+- Reads the caller's garments and `dismissed_outfits` with the user's token; geocoding and the daily
+  forecast come from Open-Meteo (5 s each). No Jev or Claude call. Algorithm:
+  [`ai.md`](ai.md#trip-packing).
+
+| Status | Body | Logged | When |
+| --- | --- | --- | --- |
+| 405 / 401 | as in `rate-outfit` | `invalid` | Method, token |
+| 400 | `{ error: 'invalid_input' }` | `invalid` | Malformed body, a trip over 10 days or outside the start window, another language |
+| 200 | `too_small` | `too_small` | A required slot has no available garment; no cache, quota or Open-Meteo |
+| 200 | the cached answer | `cached` | The same trip and closet within 6 hours (1 hour when degraded) |
+| 429 | `{ error: 'over_quota' }` | `over_quota` | 5 misses already today |
+| 404 | `{ error: 'city_not_found' }` | `not_found` | The geocoder has no match (the quota is spent) |
+| 503 | `{ error: 'geocoding_unavailable' }` | `unavailable` | The geocoder failed or timed out (the quota is spent, as for a 404: both come after it) |
+| 200 | the plan | `planned` / `degraded` | Planned; the forecast failed, so every day has no weather |
+| 500 | `{ error: 'internal' }` | `error` | Loading garments or the dismissed outfits, or the quota RPC, failed |
+
 ### `apple-token`
 
 Sent right after Sign in with Apple with the credential's one-time authorization code; the app
@@ -218,9 +249,10 @@ never waits for it.
 
 - Request: `POST {}`.
 - Response: `DataExport` (`export-data/handler.ts`): `{ exportedAt, profile, garments (every column, `price` and `currency` included), outfits (each
-  with items: [{ garment_id }]), wears, dismissedOutfits, photos: [{ garmentId, full, thumb }] }`.
-  The app refuses a document without `dismissedOutfits` (`isDataExport`), so the function ships
-  before or with an app that reads it. Rows are read with
+  with items: [{ garment_id }]), wears, dismissedOutfits, plannedOutfits, savedTrips (each with its
+  `result` snapshot), photos: [{ garmentId, full, thumb }] }`.
+  The app refuses a document without `dismissedOutfits`, `plannedOutfits` or `savedTrips`
+  (`isDataExport`), so the function ships before or with an app that reads it. Rows are read with
   the caller's token in pages of 1000 (`PAGE`); photo URLs are signed for 7 days
   (`SIGNED_URL_TTL_S`).
 - 405 and 401 as above; 500 `{ error: 'internal' }` when a read or the signing fails.
@@ -231,6 +263,7 @@ never waits for it.
 | --- | --- | --- | --- |
 | `log_wear` | `(p_wear_id uuid, p_garment_ids uuid[], p_worn_on date, p_occasion occasion default null, p_score smallint default null) returns uuid` | `authenticated` | `security invoker`. Idempotent on `p_wear_id`. `22023` for fewer than 2 or duplicate ids, `42501` for a garment that isn't the caller's, `23505` for another user's wear id |
 | `save_outfit` | `(p_garment_ids uuid[], p_score smallint default null) returns uuid` | `authenticated` | Same validation; stamps `saved_at` and stores `p_score` (0–100), logs no wear. A call with `p_garment_ids` alone (older builds) still resolves to it |
+| `plan_outfit` | `(p_planned_on date, p_garment_ids uuid[], p_occasion occasion default null) returns uuid` | `authenticated` | `security invoker`. Plans the day, replacing its plan (same id). `22023` for fewer than 2, more than 6 or duplicate ids, or a day outside the UTC date − 1 to + 14; `42501` for a garment that isn't the caller's |
 | `keep_alive` | `() returns timestamptz` | `anon` (the only anon grant) | Answers `now()`, reads no table |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer) returns boolean` | `service_role` | The UTC day; extraction only |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer, p_day date) returns boolean` | `service_role` | `p_day` when within one day of the UTC date, else the UTC day (`20261120120000_quota_local_day.sql`) |
@@ -248,6 +281,8 @@ All through PostgREST with the user's JWT; RLS limits every row to the caller's 
 | `garments` | select all own, newest first; upsert `{ id, user_id }` ignoring duplicates; update attributes, status, `pinned_on`, `suggest`, `price` with `currency`, `photo_version`, `reviewed_at`; delete | Insert only `id`, `user_id`; update only the attribute columns, `status`, `photo_version`, `reviewed_at`, `pinned_on`, `suggest`, `price`, `currency` | `src/closet/garmentRepository.ts`, `src/closet/upload/queueSteps.ts` |
 | `wears` | select by `worn_on` range with `outfits(outfit_items(garment_id))`, pages of 1000, at most 20; delete own | No update; insert only through `log_wear` in practice | `src/stats/wearsRepository.ts` |
 | `outfits`, `outfit_items` | select saved outfits with `outfit_items(garment_id)`, newest first; delete a saved one (its items cascade); otherwise through the RPCs and inside `wears` selects | No update; delete only on `outfits`, and only a saved outfit no wear points at | `src/outfits/savedOutfits.ts` |
+| `planned_outfits` | select own by `planned_on` range (today to today + 13); delete one by id; writes through `plan_outfit` | Select, insert, update, delete own; insert and update only for the caller's own distinct garments on a day in the window | `src/planner/plannedOutfits.ts` |
+| `saved_trips` | select own, newest first (at most 50); insert `{ city, start_on, end_on, occasion, result }`; delete one by id | Select, insert, delete own; no update | `src/trips/savedTrips.ts` |
 | `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates (upsert on `user_id,outfit_key`); delete one by key (Today's Undo) or all own (Profile's restore); count own (head) | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` (which also sets `garments.suggest` false, or true for the Undo) |
 
 The caches, `usage_counters` and `apple_tokens` have no client grants at all.
@@ -304,7 +339,7 @@ hosted, the URLs stay unset and default to the real hosts.
 | --- | --- | --- | --- |
 | Anthropic (Claude Haiku 5.5) | `POST /v1/messages` | `https://api.anthropic.com` | `integration/mockAnthropic.ts`, port 54499 |
 | TypeSafe (Jev) | `POST /v1/systemone` | `https://api.typesafe.ai` | `integration/mockServices.ts`, port 54498 |
-| Open-Meteo forecast | `GET /v1/forecast` | `https://api.open-meteo.com` | `mockServices.ts`, 54498 |
+| Open-Meteo forecast (current and daily) | `GET /v1/forecast` | `https://api.open-meteo.com` | `mockServices.ts`, 54498 |
 | Open-Meteo geocoding | `GET /v1/search` | `https://geocoding-api.open-meteo.com` | `mockServices.ts`, 54498 |
 | Apple | `POST /auth/token`, `POST /auth/revoke` | `https://appleid.apple.com` | `mockServices.ts`, 54498 |
 | Brevo (Auth's SMTP) | SMTP `smtp-relay.brevo.com:587` | hosted Auth only | Mailpit, port 54424 |

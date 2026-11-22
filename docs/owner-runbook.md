@@ -49,8 +49,8 @@ init`, the OAuth clients and the store records.
 
 - **Done.** Create the project, then `pnpm exec supabase login`,
   `pnpm exec supabase link --project-ref lkmolwiywnnmzmsarjmb`, `pnpm exec supabase db push` and
-  `pnpm exec supabase functions deploy` (no name deploys all seven; each keeps its `verify_jwt` from
-  `config.toml`, so `extract-attributes` stays `false` and the other six `true`).
+  `pnpm exec supabase functions deploy` (no name deploys all eight; each keeps its `verify_jwt` from
+  `config.toml`, so `extract-attributes` stays `false` and the other seven `true`).
   `supabase/seed.sql` is local only.
 - **Done.** Wave 1 (#45) is deployed: its migration `20261120120000_quota_local_day.sql` and the
   functions that send the local day to `consume_quota`.
@@ -92,6 +92,24 @@ init`, the OAuth clients and the store records.
   delete `ios/` and `android/` first): the old `AndroidManifest.xml` still blocks `RECORD_AUDIO`
   with `tools:node="remove"`, and a plain `pnpm android` keeps it. EAS builds prebuild from scratch.
   The on-device checks are in [section 5](#5-live-checks-on-the-phone).
+- **Pending (after merge).** Wave 5b-1 (the outfit planner and trip packing), after 5a-4 and in
+  this order:
+  1. `pnpm exec supabase db push` for `20261122120000_planner_trips.sql` (`planned_outfits` with
+     `plan_outfit`, `saved_trips`, the server-only `trip_cache`, the `trip` quota kind and
+     `prune_expired_caches()` with `trip_cache`'s 7-hour line);
+  2. `pnpm exec supabase functions deploy trip-plan export-data` (`trip-plan` is new and needs no
+     secret beyond the defaults: Open-Meteo has no key; `export-data` adds plans and saved trips);
+  3. then the app build (EAS `preview`, and the store profiles when they're set up). No native
+     module is added, but the planner and trip screens are new routes.
+
+  Incompatible combinations:
+  - The new functions on the old schema: `trip-plan` answers 500 (no `trip` quota kind or
+    `trip_cache`) and `export-data` answers 500 (no `planned_outfits`).
+  - The new app before the new `export-data`: the app refuses an export without `plannedOutfits`
+    and `savedTrips` ("Export my data" fails).
+  - The new app before `trip-plan` is deployed: "Pack for a trip" says something went wrong; the
+    planner on the old schema can't save.
+  - An old app on the new schema and functions works: nothing it calls changed shape.
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
   manual `gh workflow run keepalive.yml` answers the server time from `public.keep_alive()`. GitHub
@@ -225,6 +243,14 @@ project:
   for "fiesta", Deporte for "gimnasio", and says it didn't catch something unrelated. On an iPhone in airplane mode it
   still works for a language with on-device support; on Android check it once with the Google app
   or Speech Services installed. Deny the microphone once and check the message.
+- **Pending.** The planner on the phone: plan a Saved outfit, a suggestion and one built in Build for
+  three different days; tomorrow's plan shows as "Planned for today" the next morning, and only its
+  "I'll wear it" adds a Diary entry. With the reminder on and a plan for tomorrow, the notification
+  says "You planned: …"; remove the plan and open the app, and the next one says the usual text.
+- **Pending.** Trip packing on the phone: a real city 3–5 days ahead gets each day's forecast, one
+  outfit per day and a packing list; a trip starting more than 16 days ahead says "Forecast
+  unavailable" for its days; check off items, leave, plan the same trip again and the checks are
+  still there; Save it and reopen it from the saved list; dictate the city once.
 - **Pending.** Large text and screen readers: the largest Dynamic Type and Android font scale 2.0
   through every tab, the rating, review and Diary; then VoiceOver and TalkBack.
 - **Pending.** Google sign-in on the phone; Sign in with Apple and its revocation once Apple is

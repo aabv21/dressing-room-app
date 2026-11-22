@@ -132,7 +132,7 @@
       "id": "caches",
       "type": "database",
       "label": "result caches",
-      "sublabel": "rating · lucky · for_you",
+      "sublabel": "rating · lucky · for_you · trip",
       "row": 1,
       "col": 3,
       "size": [
@@ -163,6 +163,18 @@
         160,
         64
       ]
+    },
+    {
+      "id": "plans",
+      "type": "database",
+      "label": "plans · trips",
+      "sublabel": "planned_outfits · saved_trips",
+      "row": 4,
+      "col": 1,
+      "size": [
+        160,
+        64
+      ]
     }
   ],
   "boundaries": [
@@ -176,7 +188,8 @@
         "outfits",
         "items",
         "wears",
-        "dismissed"
+        "dismissed",
+        "plans"
       ],
       "pad": 20
     },
@@ -284,6 +297,14 @@
         390,
         487
       ]
+    },
+    {
+      "id": "own-plans",
+      "from": "users",
+      "to": "plans",
+      "label": "cascade",
+      "fromSide": "bottom",
+      "toSide": "right"
     }
   ],
   "cards": [
