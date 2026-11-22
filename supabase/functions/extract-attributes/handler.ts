@@ -1,19 +1,24 @@
-// Webhook after a garment insert: Claude reads the photo, enum attributes are written back. Any failure
-// after loading still ends `pending`. Logs carry only the garment id and an outcome word.
+// Webhook after a garment insert: Claude reads the photo, enum attributes are written back, then the
+// "ready to review" push. Any failure after loading still ends `pending`. Logs: the garment id and outcome words.
 
 import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
-import type { ClaudeEnv, ServiceEnv, WebhookEnv } from '../_shared/env.ts';
+import type { ClaudeEnv, PushEnv, ServiceEnv, WebhookEnv } from '../_shared/env.ts';
 import { buildExtractionRequest, EXTRACTION_CLAUDE_TIMEOUT_MS, parseExtraction } from '../_shared/extraction.ts';
 import { isRecord, UUID } from '../_shared/guards.ts';
 import { json, readJson, secretMatches } from '../_shared/http.ts';
 import { downloadObject, photoPath } from '../_shared/photoStore.ts';
+import { deleteTokens, sendPushes } from '../_shared/push.ts';
+import { pushLanguageOf, reviewReadyCopy } from '../_shared/pushCopy.ts';
 import { consumeQuota, restJson, restRows, runClaude, serviceHeaders, UpstreamError } from '../_shared/userContext.ts';
 
-export type ExtractEnv = ServiceEnv & ClaudeEnv & WebhookEnv;
+export type ExtractEnv = ServiceEnv & ClaudeEnv & WebhookEnv & PushEnv;
 
 export type ExtractDeps = { env: ExtractEnv; fetch: typeof fetch };
 
 export type ExtractOutcome = 'done' | 'failed' | 'over_quota' | 'skipped';
+
+/** `none`: nobody to tell yet (the batch isn't done, nobody opted in, or within the hour). */
+type PushOutcome = 'sent' | 'none' | 'failed';
 
 export const EXTRACTION_DAILY_LIMIT = 100;
 
@@ -23,8 +28,8 @@ type WriteBack = { outcome: Exclude<ExtractOutcome, 'skipped'>; patch: Record<st
 
 const FAILED: WriteBack = { outcome: 'failed', patch: { extraction_status: 'failed' } };
 
-function log(garmentId: string, outcome: ExtractOutcome | 'error'): void {
-  console.info(JSON.stringify({ garment_id: garmentId, outcome }));
+function log(garmentId: string, outcome: ExtractOutcome | 'error', push?: PushOutcome): void {
+  console.info(JSON.stringify({ garment_id: garmentId, outcome, ...(push === undefined ? {} : { push }) }));
 }
 
 async function readGarmentId(request: Request): Promise<string | null> {
@@ -125,6 +130,38 @@ async function writeBack(deps: ExtractDeps, garment: Garment, patch: Record<stri
   return rows.length > 0;
 }
 
+type ReviewTarget = { token: string; language: unknown; ready: number };
+
+function isReviewTarget(row: unknown): row is ReviewTarget {
+  return isRecord(row) && typeof row.token === 'string' && Number.isInteger(row.ready) && (row.ready as number) > 0;
+}
+
+/**
+ * The "ready to review" notice once the user's batch is done (docs/api.md#extract-attributes). The
+ * claim spends the hour even if Expo then fails, so a failure retries at the next batch. Never throws.
+ */
+async function notifyReviewReady(deps: ExtractDeps, userId: string): Promise<PushOutcome> {
+  try {
+    const rows = await restJson(deps.fetch, `${deps.env.supabaseUrl}/rest/v1/rpc/claim_review_push`, {
+      method: 'POST',
+      headers: { ...serviceHeaders(deps.env), 'content-type': 'application/json' },
+      body: JSON.stringify({ p_user_id: userId }),
+    });
+    if (!Array.isArray(rows) || !rows.every(isReviewTarget)) return 'failed';
+    if (rows.length === 0) return 'none';
+    const messages = rows.map((row) => ({
+      to: row.token,
+      ...reviewReadyCopy(pushLanguageOf(row.language), row.ready),
+      data: { kind: 'reviewReady', url: '/review' },
+    }));
+    const result = await sendPushes(deps.env, deps.fetch, messages);
+    await deleteTokens(deps.env, deps.fetch, result.dead);
+    return result.failed === 0 ? 'sent' : 'failed';
+  } catch {
+    return 'failed';
+  }
+}
+
 export async function handleExtract(request: Request, deps: ExtractDeps): Promise<Response> {
   if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' });
   if (!secretMatches(request.headers.get('x-webhook-secret'), deps.env.webhookSecret)) {
@@ -134,13 +171,16 @@ export async function handleExtract(request: Request, deps: ExtractDeps): Promis
   if (garmentId === null) return json(400, { error: 'invalid_body' });
 
   let outcome: ExtractOutcome;
+  let userId: string | null = null;
   try {
     const garment = await loadGarment(deps, garmentId);
     if (garment?.extractionStatus !== 'pending' || garment.reviewed) {
       outcome = 'skipped';
     } else {
       const result = await extract(deps, garment);
-      outcome = (await writeBack(deps, garment, result.patch)) ? result.outcome : 'skipped';
+      const written = await writeBack(deps, garment, result.patch);
+      outcome = written ? result.outcome : 'skipped';
+      if (written) userId = garment.userId;
     }
   } catch {
     // The database failed; a garment left `pending` reaches review after the app's 10-minute timeout.
@@ -148,6 +188,7 @@ export async function handleExtract(request: Request, deps: ExtractDeps): Promis
     return json(500, { error: 'internal' });
   }
 
-  log(garmentId, outcome);
+  // After the write-back's try: a push problem must never turn a written result into a 500.
+  log(garmentId, outcome, userId === null ? undefined : await notifyReviewReady(deps, userId));
   return json(200, { outcome });
 }
