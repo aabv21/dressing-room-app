@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 
 import { forgetDisplayCaches } from '../account/forgetAccount';
 import { useI18n } from '../i18n';
+import { forgetPushToken } from '../push/pushRegistration';
 import { announceForAccessibility } from '../ui/a11y';
 import { useAuth } from './AuthProvider';
 import { signOut } from './authService';
@@ -21,7 +22,8 @@ export function useSignOut(): { signOut: () => void; signingOut: boolean; error:
   const run = useCallback(() => {
     setError(undefined);
     setSigningOut(true);
-    void signOut().then((result) => {
+    // The token row goes first, while the session can still delete it.
+    void (userId === null ? Promise.resolve() : forgetPushToken(userId)).then(() => signOut()).then((result) => {
       setSigningOut(false);
       if (result.ok && userId !== null) forgetDisplayCaches(userId);
       if (!result.ok) {

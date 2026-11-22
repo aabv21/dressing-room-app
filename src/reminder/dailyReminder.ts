@@ -35,7 +35,7 @@ function allowed(status: Notifications.NotificationPermissionsStatus): boolean {
 }
 
 /** Asks only when the system still can; a permanent denial is left to Settings. */
-async function askReminderPermission(): Promise<boolean> {
+export async function askReminderPermission(): Promise<boolean> {
   const current = await Notifications.getPermissionsAsync();
   if (allowed(current)) return true;
   if (!current.canAskAgain) return false;
