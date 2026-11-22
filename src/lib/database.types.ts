@@ -163,14 +163,14 @@ isOneToOne: false
                   ]
                 },"push_tokens": {
                   Row: {
-                    "last_review_push_at": string | null,"platform": string,"review_ready": boolean,"token": string,"updated_at": string,"user_id": string,"weekly": boolean
+                    "device_secret_hash": string,"last_review_push_at": string | null,"platform": string,"review_ready": boolean,"token": string,"updated_at": string,"user_id": string,"weekly": boolean
                   }
                   ComputedFields: never
                   Insert: {
-                    "last_review_push_at"?: string | null,"platform": string,"review_ready"?: boolean,"token": string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
+                    "device_secret_hash": string,"last_review_push_at"?: string | null,"platform": string,"review_ready"?: boolean,"token": string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
                   }
                   Update: {
-                    "last_review_push_at"?: string | null,"platform"?: string,"review_ready"?: boolean,"token"?: string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
+                    "device_secret_hash"?: string,"last_review_push_at"?: string | null,"platform"?: string,"review_ready"?: boolean,"token"?: string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
                   }
                   Relationships: [
                     
@@ -295,6 +295,9 @@ isOneToOne: false
                            },
 "prune_expired_caches":
 { Args: Record<PropertyKey, never>; Returns: undefined
+                           },
+"register_push_token":
+{ Args: { "p_device_secret": string,"p_platform": string,"p_review_ready": boolean,"p_token": string,"p_weekly": boolean }; Returns: undefined
                            },
 "request_weekly_summary":
 { Args: Record<PropertyKey, never>; Returns: undefined

@@ -1,5 +1,6 @@
 // This phone's choices for the server's notices, per account in kv `push.<userId>` (the `<name>.<id>`
 // shape, so account deletion clears it); the server's push_tokens row is what it sends to.
+import { getRandomBytes } from 'expo-crypto';
 import { useMemo, useSyncExternalStore } from 'react';
 
 import { kvGet, kvGetJson, kvRemove, kvSet, parseJson } from '../lib/kv';
@@ -48,8 +49,8 @@ export function usePushSettings(userId: string): PushSettings {
 }
 
 /**
- * Tokens a sign-out couldn't unregister, kept device-wide (not `<name>.<id>`, so forgetting an
- * account keeps them) until `push-unregister` succeeds.
+ * Tokens a sign-out couldn't delete, kept device-wide (not `<name>.<id>`, so forgetting an account
+ * keeps them) until `push-unregister` succeeds.
  */
 export const PENDING_UNREGISTER_KEY = 'push.pendingUnregister';
 
@@ -62,4 +63,18 @@ export function readPendingUnregister(): string[] {
 export function writePendingUnregister(tokens: readonly string[]): void {
   if (tokens.length === 0) kvRemove(PENDING_UNREGISTER_KEY);
   else kvSet(PENDING_UNREGISTER_KEY, JSON.stringify([...new Set(tokens)]));
+}
+
+/** This phone's own secret, device-wide like the pending list: it proves the phone to the server. */
+export const DEVICE_SECRET_KEY = 'push.deviceSecret';
+
+const DEVICE_SECRET = /^[0-9a-f]{64}$/;
+
+/** 256 random bits as hex, made on first use and kept until the app's data is cleared. */
+export function deviceSecret(): string {
+  const stored = kvGet(DEVICE_SECRET_KEY);
+  if (stored !== null && DEVICE_SECRET.test(stored)) return stored;
+  const made = Array.from(getRandomBytes(32), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  kvSet(DEVICE_SECRET_KEY, made);
+  return made;
 }

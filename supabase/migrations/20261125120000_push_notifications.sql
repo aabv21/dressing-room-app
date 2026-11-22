@@ -1,4 +1,5 @@
--- Server push notifications (docs/database.md): `public.push_tokens`, the service-role-only RPCs
+-- Server push notifications (docs/database.md): `public.push_tokens`, written through
+-- `register_push_token()` with the phone's device secret, the service-role-only RPCs
 -- `claim_review_push()` and `weekly_summary_targets()`, and the weekly-summary pg_cron job, which
 -- calls the Edge Function through pg_net with a Vault URL and secret like the extraction trigger.
 
@@ -13,7 +14,10 @@ create table public.push_tokens (
   -- Server-only: the 60-minute window between "ready to review" pushes.
   last_review_push_at timestamptz,
   updated_at timestamptz not null default now(),
+  -- SHA-256 (hex) of the phone's own random secret: only that phone can register or unregister the token.
+  device_secret_hash text not null,
   primary key (user_id, token),
+  constraint push_tokens_device_secret_hash_check check (device_secret_hash ~ '^[0-9a-f]{64}$'),
   constraint push_tokens_platform_check check (platform in ('ios', 'android')),
   constraint push_tokens_token_check check (token ~ '^(ExponentPushToken|ExpoPushToken)\[.+\]$' and char_length(token) <= 255)
 );
@@ -32,34 +36,20 @@ create policy "push_tokens_select_own" on public.push_tokens
   to authenticated
   using (user_id = (select auth.uid()));
 
-create policy "push_tokens_insert_own" on public.push_tokens
-  for insert
-  to authenticated
-  with check (user_id = (select auth.uid()));
-
-create policy "push_tokens_update_own" on public.push_tokens
-  for update
-  to authenticated
-  using (user_id = (select auth.uid()))
-  with check (user_id = (select auth.uid()));
-
 create policy "push_tokens_delete_own" on public.push_tokens
   for delete
   to authenticated
   using (user_id = (select auth.uid()));
 
 revoke all on public.push_tokens from anon;
--- Column grants keep `last_review_push_at` and `updated_at` server-written, so a client can't pick
--- its registration time to win a shared token. `token` is granted for update too: PostgREST's upsert
--- sets every column it was sent.
-revoke insert, update, truncate, trigger, references on public.push_tokens from authenticated;
-grant insert (token, platform, review_ready, weekly) on public.push_tokens to authenticated;
-grant update (token, platform, review_ready, weekly) on public.push_tokens to authenticated;
+-- Clients write only through register_push_token() (insert and update revoked outright, rather than
+-- left to the missing policies), read every column but the secret's hash, and delete their own rows.
+revoke select, insert, update, truncate, trigger, references on public.push_tokens from authenticated;
+grant select (user_id, token, platform, review_ready, weekly, last_review_push_at, updated_at) on public.push_tokens to authenticated;
 
--- `updated_at` is the server's registration time: a shared phone token goes to its newest holder,
--- the account signed in on that phone now. clock_timestamp(), not now(): two registrations in one
--- transaction still order. Only a client write moves it, so a server claim doesn't make a row newer.
--- NOTE: taking over (or unregistering) a token needs knowing it, and the app never shows one; upgrade: an Edge Function that registers tokens, if one ever leaks.
+-- `updated_at` is the server's registration time (clock_timestamp(), not now(): two registrations
+-- in one transaction still order). Only a registration moves it, so a server claim doesn't make a
+-- row look newer.
 create function public.push_tokens_stamp()
 returns trigger
 language plpgsql
@@ -77,26 +67,73 @@ create trigger push_tokens_stamp
   before insert or update of token, platform, review_ready, weekly on public.push_tokens
   for each row execute function public.push_tokens_stamp();
 
--- A token belongs to one phone, and the phone to whoever signed in on it last: registering a token
--- removes every other account's row for it, so a new account always takes the token over cleanly.
--- security definer: those rows are invisible to the caller under RLS.
-create function public.push_tokens_take_over()
-returns trigger
+-- public.register_push_token() -----------------------------------------------------------------
+
+-- A token belongs to one phone, and the phone proves itself with its device secret: another
+-- account's row for the token under a different secret refuses the call (someone who only knows the
+-- token), while the same secret is that phone with a new account signed in, which takes the token
+-- over. The caller's own row may change secret (a reinstall can keep the token but not the secret).
+-- NOTE: whoever holds the unlocked phone holds its secret; a reinstall that keeps an old account's token blocks the next account until Expo reports the token gone.
+create function public.register_push_token(
+  p_token text,
+  p_platform text,
+  p_review_ready boolean,
+  p_weekly boolean,
+  p_device_secret text
+)
+returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_user uuid := (select auth.uid());
+  v_hash text;
 begin
-  delete from public.push_tokens where token = new.token and user_id <> new.user_id;
-  return null;
+  if v_user is null then
+    raise exception using errcode = '42501', message = 'register_push_token: not signed in';
+  end if;
+  if p_token is null or p_token !~ '^(ExponentPushToken|ExpoPushToken)\[.+\]$' or char_length(p_token) > 255 then
+    raise exception using errcode = '22023', message = 'register_push_token: not an Expo push token';
+  end if;
+  if p_platform is null or p_platform not in ('ios', 'android') then
+    raise exception using errcode = '22023', message = 'register_push_token: platform must be ios or android';
+  end if;
+  -- 32 hex characters is 128 bits; the app sends 64.
+  if p_device_secret is null or p_device_secret !~ '^[0-9a-f]{32,128}$' then
+    raise exception using errcode = '22023', message = 'register_push_token: the device secret must be 32 to 128 hex characters';
+  end if;
+  v_hash := encode(extensions.digest(p_device_secret, 'sha256'), 'hex');
+
+  -- Two registrations of one token wait for each other, so both can't pass the check.
+  perform pg_advisory_xact_lock(hashtextextended('push_tokens:' || p_token, 0));
+
+  if exists (
+    select 1 from public.push_tokens
+    where token = p_token and user_id <> v_user and device_secret_hash <> v_hash
+  ) then
+    raise exception using errcode = '42501', message = 'register_push_token: another device holds this token';
+  end if;
+
+  delete from public.push_tokens where token = p_token and user_id <> v_user;
+
+  insert into public.push_tokens (user_id, token, platform, review_ready, weekly, device_secret_hash)
+  values (v_user, p_token, p_platform, coalesce(p_review_ready, false), coalesce(p_weekly, false), v_hash)
+  on conflict (user_id, token) do update
+    set platform = excluded.platform,
+        review_ready = excluded.review_ready,
+        weekly = excluded.weekly,
+        device_secret_hash = excluded.device_secret_hash;
 end;
 $$;
 
-revoke execute on function public.push_tokens_take_over() from public, anon, authenticated;
+comment on function public.register_push_token(text, text, boolean, boolean, text) is
+  'Stores the caller''s push token with both choices and the SHA-256 of the phone''s secret. 22023 '
+  'for a bad token, platform or secret; 42501 when another account holds the token under another '
+  'secret. The same secret (that phone, a new account) deletes the other accounts'' rows first.';
 
-create trigger push_tokens_take_over
-  after insert or update of token on public.push_tokens
-  for each row execute function public.push_tokens_take_over();
+revoke execute on function public.register_push_token(text, text, boolean, boolean, text) from public, anon;
+grant execute on function public.register_push_token(text, text, boolean, boolean, text) to authenticated;
 
 -- public.claim_review_push() --------------------------------------------------------------------
 

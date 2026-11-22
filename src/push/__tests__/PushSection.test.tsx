@@ -1,9 +1,13 @@
 type Answer = { error: { message: string } | null };
-const mockUpsert = jest.fn<Promise<Answer>, [unknown, unknown]>(() => Promise.resolve({ error: null }));
+const mockRpc = jest.fn<Promise<Answer>, [string, Record<string, unknown>]>(() => Promise.resolve({ error: null }));
 const mockDeleteEq = jest.fn<Promise<Answer>, [string, string]>(() => Promise.resolve({ error: null }));
 jest.mock('../../lib/supabase', () => ({
-  supabase: { from: () => ({ upsert: mockUpsert, delete: () => ({ eq: mockDeleteEq }) }) },
+  supabase: {
+    rpc: (name: string, args: Record<string, unknown>) => mockRpc(name, args),
+    from: () => ({ delete: () => ({ eq: mockDeleteEq }) }),
+  },
 }));
+jest.mock('expo-crypto', () => ({ getRandomBytes: (size: number) => new Uint8Array(size).fill(0x1a) }));
 jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { extra: { eas: { projectId: 'project-1' } } } } }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
@@ -46,10 +50,13 @@ test('both notices are off by default; turning one on saves the token with that 
     expect(reviewSwitch()).toBeChecked();
   });
   expect(weeklySwitch()).not.toBeChecked();
-  expect(mockUpsert).toHaveBeenCalledWith(
-    { token: TOKEN, platform: 'ios', review_ready: true, weekly: false },
-    { onConflict: 'user_id,token' },
-  );
+  expect(mockRpc).toHaveBeenCalledWith('register_push_token', {
+    p_token: TOKEN,
+    p_platform: 'ios',
+    p_review_ready: true,
+    p_weekly: false,
+    p_device_secret: '1a'.repeat(32),
+  });
 });
 
 test('turning the other on keeps the first', async () => {
@@ -62,7 +69,7 @@ test('turning the other on keeps the first', async () => {
     expect(weeklySwitch()).toBeChecked();
   });
   expect(reviewSwitch()).toBeChecked();
-  expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({ review_ready: true, weekly: true }), expect.anything());
+  expect(mockRpc).toHaveBeenCalledWith('register_push_token', expect.objectContaining({ p_review_ready: true, p_weekly: true }));
 });
 
 test('turning the last one off deletes the token', async () => {
@@ -107,7 +114,7 @@ test('a denied permission explains and offers Settings', async () => {
 });
 
 test('a failed save says so and keeps the switch as it was', async () => {
-  mockUpsert.mockResolvedValueOnce({ error: { message: 'offline' } });
+  mockRpc.mockResolvedValueOnce({ error: { message: 'offline' } });
   await renderSection();
 
   await fireEvent(reviewSwitch(), 'valueChange', true);

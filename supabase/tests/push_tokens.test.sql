@@ -1,13 +1,15 @@
--- public.push_tokens (an opted-in phone's Expo push token and its two preferences): own rows only,
--- the token and platform checks, `last_review_push_at` server-only, no anon access, the cascade on
--- user delete; the service-role-only RPCs claim_review_push() (batch done, 60-minute window, a
--- shared token's newest owner) and weekly_summary_targets() (this week's wears, pieces unused for 6
--- months); the weekly-summary pg_cron job and its pg_net call through the Vault.
+-- public.push_tokens (an opted-in phone's Expo push token and its two preferences): written only
+-- through register_push_token() with the phone's device secret (a different secret can't register
+-- or take over a token; the same secret, a new account on that phone, takes it over), the secret's
+-- hash unreadable by clients, own rows only, no anon access, the cascade on user delete; the
+-- service-role-only RPCs claim_review_push() (batch done, 60-minute window) and
+-- weekly_summary_targets() (this week's wears, pieces unused for 6 months); the weekly-summary
+-- pg_cron job and its pg_net call through the Vault.
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(41);
+select plan(44);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -16,30 +18,39 @@ values
 
 update public.profiles set language = 'es' where user_id = '11111111-1111-1111-1111-111111111111';
 
+-- Two phones' device secrets (64 hex characters, as the app makes them).
+create temporary table phone (name text primary key, secret text) on commit drop;
+insert into phone values ('one', repeat('1a', 32)), ('two', repeat('2b', 32));
+grant select on phone to authenticated;
+
 select has_table('public', 'push_tokens', 'public.push_tokens exists');
 select has_index('public', 'push_tokens', 'push_tokens_token_idx', 'push_tokens has an index on the token');
 
--- Grants: the client writes the token, platform and preferences, never the server's push time.
+-- Grants: no direct client writes but delete; the secret's hash is never readable.
 select ok(
-  not has_column_privilege('authenticated', 'public.push_tokens', 'last_review_push_at', 'UPDATE')
-    and not has_column_privilege('authenticated', 'public.push_tokens', 'last_review_push_at', 'INSERT'),
-  'authenticated can neither insert nor update last_review_push_at'
+  not has_table_privilege('authenticated', 'public.push_tokens', 'INSERT')
+    and not has_table_privilege('authenticated', 'public.push_tokens', 'UPDATE')
+    and not has_any_column_privilege('authenticated', 'public.push_tokens', 'INSERT')
+    and not has_any_column_privilege('authenticated', 'public.push_tokens', 'UPDATE'),
+  'authenticated has no insert or update on any push_tokens column'
 );
 select ok(
-  not has_column_privilege('authenticated', 'public.push_tokens', 'updated_at', 'UPDATE')
-    and not has_column_privilege('authenticated', 'public.push_tokens', 'updated_at', 'INSERT'),
-  'authenticated can neither insert nor update updated_at'
-);
-select ok(
-  has_column_privilege('authenticated', 'public.push_tokens', 'review_ready', 'UPDATE')
-    and has_column_privilege('authenticated', 'public.push_tokens', 'weekly', 'INSERT'),
-  'authenticated can write the preferences'
+  not has_column_privilege('authenticated', 'public.push_tokens', 'device_secret_hash', 'SELECT')
+    and has_column_privilege('authenticated', 'public.push_tokens', 'review_ready', 'SELECT')
+    and has_table_privilege('authenticated', 'public.push_tokens', 'DELETE'),
+  'authenticated can read the preferences and delete, but never read device_secret_hash'
 );
 select ok(
   not has_table_privilege('anon', 'public.push_tokens', 'SELECT')
-    and not has_table_privilege('anon', 'public.push_tokens', 'INSERT'),
+    and not has_table_privilege('anon', 'public.push_tokens', 'DELETE'),
   'anon has no access to push_tokens'
 );
+select ok(
+  has_function_privilege('authenticated', 'public.register_push_token(text, text, boolean, boolean, text)', 'execute')
+    and not has_function_privilege('anon', 'public.register_push_token(text, text, boolean, boolean, text)', 'execute'),
+  'only authenticated can register a token'
+);
+select is_definer('public', 'register_push_token', array['text', 'text', 'boolean', 'boolean', 'text']::name[], 'register_push_token is security definer');
 select ok(
   not has_function_privilege('authenticated', 'public.claim_review_push(uuid)', 'execute')
     and not has_function_privilege('anon', 'public.claim_review_push(uuid)', 'execute')
@@ -53,56 +64,52 @@ select ok(
     and has_function_privilege('service_role', 'public.weekly_summary_targets()', 'execute'),
   'the service role (the Edge Functions) can execute the push RPCs'
 );
+select hasnt_trigger('public', 'push_tokens', 'push_tokens_take_over', 'no trigger takes a token over without the device secret');
 
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
 
 select lives_ok(
-  $$ insert into public.push_tokens (token, platform, review_ready, weekly) values ('ExponentPushToken[aaaa]', 'android', true, true) $$,
-  'A can store their own token'
+  $$ select public.register_push_token('ExponentPushToken[aaaa]', 'android', true, true, (select secret from phone where name = 'one')) $$,
+  'A registers phone one''s token'
 );
-select is(
-  (select user_id from public.push_tokens),
-  '11111111-1111-1111-1111-111111111111'::uuid,
-  'the row belongs to the caller by default'
+select results_eq(
+  $$ select user_id, token, platform, review_ready, weekly from public.push_tokens $$,
+  $$ values ('11111111-1111-1111-1111-111111111111'::uuid, 'ExponentPushToken[aaaa]'::text, 'android'::text, true, true) $$,
+  'the row is the caller''s, with the choices'
+);
+select throws_ok(
+  $$ select device_secret_hash from public.push_tokens $$,
+  '42501', null, 'A cannot read the secret''s hash, even on their own row'
 );
 select lives_ok(
-  $$ insert into public.push_tokens (token, platform, review_ready, weekly) values ('ExponentPushToken[aaaa]', 'android', false, true)
-     on conflict (user_id, token) do update set review_ready = excluded.review_ready, weekly = excluded.weekly, platform = excluded.platform, token = excluded.token $$,
-  'A can upsert the same token with new preferences'
+  $$ select public.register_push_token('ExponentPushToken[aaaa]', 'android', false, true, (select secret from phone where name = 'one')) $$,
+  'registering again from the same phone updates the choices'
 );
-select is((select review_ready from public.push_tokens), false, 'the upsert changed the preference');
+select is((select review_ready from public.push_tokens), false, 'the choice changed');
 select lives_ok(
-  $$ insert into public.push_tokens (token, platform) values ('ExpoPushToken[bbbb]', 'ios') $$,
+  $$ select public.register_push_token('ExpoPushToken[bbbb]', 'ios', true, false, (select secret from phone where name = 'one')) $$,
   'the ExpoPushToken[…] form is accepted too'
 );
 select throws_ok(
-  $$ insert into public.push_tokens (token, platform) values ('not-a-token', 'android') $$,
-  '23514', null, 'a token in another format raises a check_violation'
+  $$ select public.register_push_token('not-a-token', 'android', true, true, (select secret from phone where name = 'one')) $$,
+  '22023', null, 'a token in another format is refused'
 );
 select throws_ok(
-  $$ insert into public.push_tokens (token, platform) values ('ExponentPushToken[cccc]', 'web') $$,
-  '23514', null, 'a platform other than ios or android raises a check_violation'
+  $$ select public.register_push_token('ExponentPushToken[cccc]', 'web', true, true, (select secret from phone where name = 'one')) $$,
+  '22023', null, 'a platform other than ios or android is refused'
 );
 select throws_ok(
-  $$ insert into public.push_tokens (user_id, token, platform) values ('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[dddd]', 'android') $$,
-  '42501', null, 'A cannot store a token for B'
+  $$ select public.register_push_token('ExponentPushToken[cccc]', 'android', true, true, 'short') $$,
+  '22023', null, 'a device secret under 128 bits is refused'
 );
 select throws_ok(
-  $$ update public.push_tokens set last_review_push_at = now() - interval '2 hours' $$,
-  '42501', null, 'A cannot move their own last_review_push_at'
+  $$ insert into public.push_tokens (token, platform, device_secret_hash) values ('ExponentPushToken[dddd]', 'android', repeat('0', 64)) $$,
+  '42501', null, 'A cannot insert a row directly'
 );
 select throws_ok(
-  $$ insert into public.push_tokens (token, platform, last_review_push_at) values ('ExponentPushToken[eeee]', 'android', now()) $$,
-  '42501', null, 'A cannot insert a last_review_push_at'
-);
-select throws_ok(
-  $$ insert into public.push_tokens (token, platform, updated_at) values ('ExponentPushToken[ffff]', 'android', now() + interval '1 year') $$,
-  '42501', null, 'A cannot pick the updated_at of a registration'
-);
-select throws_ok(
-  $$ update public.push_tokens set updated_at = now() + interval '1 year' $$,
-  '42501', null, 'A cannot move updated_at forward to win a shared token'
+  $$ update public.push_tokens set weekly = false $$,
+  '42501', null, 'A cannot update a row directly'
 );
 select throws_ok(
   $$ select public.claim_review_push('11111111-1111-1111-1111-111111111111') $$,
@@ -112,15 +119,24 @@ select throws_ok(
 select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-2222-2222-222222222222', 'role', 'authenticated')::text, true);
 
 select is((select count(*)::int from public.push_tokens), 0, 'B sees none of A''s tokens');
-with changed as (
-  update public.push_tokens set weekly = false returning 1
-)
-select is((select count(*)::int from changed), 0, 'B''s update reaches none of A''s tokens');
 with deleted as (
   delete from public.push_tokens returning 1
 )
 select is((select count(*)::int from deleted), 0, 'B''s delete reaches none of A''s tokens');
 
+-- B knows phone one's token but holds phone two's secret: refused, and A keeps the token.
+select throws_ok(
+  $$ select public.register_push_token('ExponentPushToken[aaaa]', 'android', true, true, (select secret from phone where name = 'two')) $$,
+  '42501', null, 'another device''s secret cannot register or take over a token'
+);
+reset role;
+select is(
+  (select array_agg(user_id::text) from public.push_tokens where token = 'ExponentPushToken[aaaa]'),
+  array['11111111-1111-1111-1111-111111111111'],
+  'A''s row is untouched'
+);
+
+set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
 with deleted as (
   delete from public.push_tokens where token = 'ExpoPushToken[bbbb]' returning 1
@@ -178,44 +194,47 @@ select is(
   'after 60 minutes the next batch can push again'
 );
 
--- The same phone token registered later by B (B signed in on A's phone), through the API as the
--- app does: B takes the token over, so only B gets it, until A registers it again.
+-- B signs in on phone one (same secret): B takes the token over and A's row goes, until A
+-- registers it again from that phone.
 update public.push_tokens set last_review_push_at = null;
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-2222-2222-222222222222', 'role', 'authenticated')::text, true);
-insert into public.push_tokens (token, platform, review_ready, weekly) values ('ExponentPushToken[aaaa]', 'android', true, true);
+select public.register_push_token('ExponentPushToken[aaaa]', 'android', true, true, (select secret from phone where name = 'one'));
 reset role;
 
 select is(
-  (select count(*)::int from public.claim_review_push('11111111-1111-1111-1111-111111111111')),
-  0,
-  'a token registered later by another account is never pushed for the older one'
-);
-select is(
   (select array_agg(user_id::text) from public.push_tokens where token = 'ExponentPushToken[aaaa]'),
   array['22222222-2222-2222-2222-222222222222'],
-  'registering a token takes it over: the older account''s row is gone'
+  'the same phone''s secret takes the token over: the older account''s row is gone'
+);
+select is(
+  (select count(*)::int from public.claim_review_push('11111111-1111-1111-1111-111111111111')),
+  0,
+  'so the older account is never pushed on that phone'
 );
 
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
-insert into public.push_tokens (token, platform, review_ready, weekly) values ('ExponentPushToken[aaaa]', 'android', true, true)
-on conflict (user_id, token) do update set review_ready = excluded.review_ready, weekly = excluded.weekly, platform = excluded.platform, token = excluded.token;
+select public.register_push_token('ExponentPushToken[aaaa]', 'android', true, true, (select secret from phone where name = 'one'));
 reset role;
 
 select is(
-  (select count(*)::int from public.claim_review_push('11111111-1111-1111-1111-111111111111')),
-  1,
-  'registering it again makes A its newest holder'
-);
-select is(
   (select array_agg(user_id::text) from public.push_tokens where token = 'ExponentPushToken[aaaa]'),
   array['11111111-1111-1111-1111-111111111111'],
-  'and B''s row is gone in turn'
+  'A registering it again from that phone takes it back'
+);
+select is(
+  (select count(*)::int from public.claim_review_push('11111111-1111-1111-1111-111111111111')),
+  1,
+  'and A is pushed again'
+);
+select is(
+  (select device_secret_hash from public.push_tokens where token = 'ExponentPushToken[aaaa]'),
+  encode(extensions.digest(repeat('1a', 32), 'sha256'), 'hex'),
+  'the row keeps the SHA-256 of the secret, never the secret'
 );
 
 -- weekly_summary_targets(): A's wears this week and their pieces unused for 6 months.
-delete from public.push_tokens where user_id = '22222222-2222-2222-2222-222222222222';
 insert into public.outfits (id, user_id) values ('bbbbbbbb-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111');
 insert into public.wears (outfit_id, user_id, worn_on) values
   ('bbbbbbbb-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', (now() at time zone 'utc')::date),

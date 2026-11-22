@@ -1,5 +1,7 @@
 /** @jest-environment node */
 // supabase/functions/push-unregister/__tests__/handler.test.ts
+import { createHash } from 'node:crypto';
+
 import type { ServiceEnv } from '../../_shared/env.ts';
 import { handlePushUnregister, MAX_BODY_BYTES } from '../handler.ts';
 
@@ -7,6 +9,8 @@ const { jest } = import.meta;
 
 const ENV: ServiceEnv = { supabaseUrl: 'http://supabase.test', serviceRoleKey: 'service-role-test' };
 const TOKEN = 'ExponentPushToken[phone-a]';
+const SECRET = '1a'.repeat(32);
+const SECRET_HASH = createHash('sha256').update(SECRET).digest('hex');
 
 type Call = { url: URL; method: string; headers: Headers };
 
@@ -41,33 +45,44 @@ afterEach(() => {
   infoSpy.mockRestore();
 });
 
-test('deletes every row holding that exact token with the service role, and answers 204 with no body', async () => {
+test('deletes only the rows holding that token under that device secret’s hash, and answers 204 with no body', async () => {
   const { fetchFn, calls } = fakeFetch();
 
-  const response = await handlePushUnregister(request({ token: TOKEN }), { env: ENV, fetch: fetchFn });
+  const response = await handlePushUnregister(request({ token: TOKEN, device_secret: SECRET }), { env: ENV, fetch: fetchFn });
 
   expect(response.status).toBe(204);
   expect(await response.text()).toBe('');
   expect(calls).toHaveLength(1);
   expect(calls[0]?.method).toBe('DELETE');
   expect(calls[0]?.url.pathname).toBe('/rest/v1/push_tokens');
-  expect(calls[0]?.url.searchParams.get('token')).toBe(`in.("${TOKEN}")`);
+  expect(calls[0]?.url.searchParams.get('token')).toBe(`eq.${TOKEN}`);
+  expect(calls[0]?.url.searchParams.get('device_secret_hash')).toBe(`eq.${SECRET_HASH}`);
   expect(calls[0]?.headers.get('authorization')).toBe(`Bearer ${ENV.serviceRoleKey}`);
+});
+
+test('a wrong secret deletes nothing (no row matches its hash) and answers the same 204', async () => {
+  const { fetchFn, calls } = fakeFetch(() => json(200, []));
+  const response = await handlePushUnregister(request({ token: TOKEN, device_secret: '2b'.repeat(32) }), { env: ENV, fetch: fetchFn });
+  expect(response.status).toBe(204);
+  expect(calls[0]?.url.searchParams.get('device_secret_hash')).not.toBe(`eq.${SECRET_HASH}`);
 });
 
 test('a token no row holds answers the same 204, so it can’t probe which tokens exist', async () => {
   const { fetchFn } = fakeFetch(() => json(200, []));
-  const response = await handlePushUnregister(request({ token: 'ExpoPushToken[nobody]' }), { env: ENV, fetch: fetchFn });
+  const response = await handlePushUnregister(request({ token: 'ExpoPushToken[nobody]', device_secret: SECRET }), { env: ENV, fetch: fetchFn });
   expect(response.status).toBe(204);
 });
 
 test.each([
-  ['a token in another format', { token: 'not-a-token' }],
-  ['an empty bracket', { token: 'ExponentPushToken[]' }],
-  ['a token over 255 characters', { token: `ExponentPushToken[${'a'.repeat(240)}]` }],
-  ['several tokens', { token: [TOKEN, TOKEN] }],
+  ['a token in another format', { token: 'not-a-token', device_secret: SECRET }],
+  ['an empty bracket', { token: 'ExponentPushToken[]', device_secret: SECRET }],
+  ['a token over 255 characters', { token: `ExponentPushToken[${'a'.repeat(240)}]`, device_secret: SECRET }],
+  ['several tokens', { token: [TOKEN, TOKEN], device_secret: SECRET }],
   ['a list body', [TOKEN]],
-  ['no token', {}],
+  ['no token', { device_secret: SECRET }],
+  ['no device secret', { token: TOKEN }],
+  ['a device secret under 128 bits', { token: TOKEN, device_secret: 'abc123' }],
+  ['a device secret that isn’t hex', { token: TOKEN, device_secret: 'z'.repeat(64) }],
 ])('%s is refused with 400 before any fetch', async (_label, body) => {
   const { fetchFn, calls } = fakeFetch();
   const response = await handlePushUnregister(request(body), { env: ENV, fetch: fetchFn });
@@ -83,7 +98,7 @@ test('a body that isn’t JSON is refused with 400', async () => {
 
 test(`a body over ${String(MAX_BODY_BYTES)} bytes is refused with 413 before any fetch`, async () => {
   const { fetchFn, calls } = fakeFetch();
-  const raw = JSON.stringify({ token: TOKEN, padding: 'x'.repeat(MAX_BODY_BYTES) });
+  const raw = JSON.stringify({ token: TOKEN, device_secret: SECRET, padding: 'x'.repeat(MAX_BODY_BYTES) });
   expect((await handlePushUnregister(request(null, { raw }), { env: ENV, fetch: fetchFn })).status).toBe(413);
   expect(calls).toHaveLength(0);
 });
@@ -96,11 +111,11 @@ test('a method other than POST is refused with 405', async () => {
 
 test('a database failure answers 500, so the phone keeps the token and tries again', async () => {
   const { fetchFn } = fakeFetch(() => json(500, { message: 'boom' }));
-  expect((await handlePushUnregister(request({ token: TOKEN }), { env: ENV, fetch: fetchFn })).status).toBe(500);
+  expect((await handlePushUnregister(request({ token: TOKEN, device_secret: SECRET }), { env: ENV, fetch: fetchFn })).status).toBe(500);
 });
 
-test('logs only an outcome word, never the token', async () => {
+test('logs only an outcome word, never the token or the secret', async () => {
   const { fetchFn } = fakeFetch();
-  await handlePushUnregister(request({ token: TOKEN }), { env: ENV, fetch: fetchFn });
+  await handlePushUnregister(request({ token: TOKEN, device_secret: SECRET }), { env: ENV, fetch: fetchFn });
   expect(infoSpy.mock.calls).toEqual([[JSON.stringify({ outcome: 'unregistered' })]]);
 });

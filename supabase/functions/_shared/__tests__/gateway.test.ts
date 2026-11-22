@@ -11,7 +11,7 @@ const FUNCTIONS_DIR = new URL('../../', import.meta.url);
 
 /** The only functions the gateway lets through unsigned: the database's webhook and cron job, which check their own secrets. */
 const WEBHOOK_FUNCTIONS = ['extract-attributes', 'weekly-summary'];
-/** Called without a session (after sign-out): the push token itself is the credential, and no user id is read. */
+/** Called without a session (after sign-out): the push token and the phone's device secret are the credential; no user id is read. */
 const TOKEN_FUNCTIONS = ['push-unregister'];
 
 function functionNames(): string[] {
@@ -54,12 +54,13 @@ describe('the gateway verifies every user-called function’s JWT', () => {
     },
   );
 
-  test('push-unregister skips the gateway check and never trusts a caller id: it only deletes the token it is given', () => {
+  test('push-unregister skips the gateway check and never trusts a caller id: it deletes only rows matching the token and device secret', () => {
     expect(verifyJwtSettings().get('push-unregister')).toBe(false);
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
     const handler = readFileSync(new URL('push-unregister/handler.ts', FUNCTIONS_DIR), 'utf8');
     expect(handler).not.toContain('userIdFromJwt');
     expect(handler).not.toContain('callerOf');
+    expect(handler).toContain('device_secret_hash=eq.');
   });
 
   test('the weekly-summary cron call skips the gateway check, and checks its own secret instead', () => {

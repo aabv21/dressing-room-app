@@ -1,8 +1,8 @@
 // integration/push.int.test.ts
 //
-// Server push on the full local stack: push_tokens through the API as the app writes it (own rows
-// only, the server's push time out of reach, a new account taking a token over), push-unregister
-// with no session, the "ready to review" push from extract-attributes once a batch is done (once an
+// Server push on the full local stack: push_tokens through register_push_token() as the app writes it
+// (own rows only, the device secret: another phone can't take a token, a new account on the same
+// phone does), push-unregister with no session, the "ready to review" push from extract-attributes once a batch is done (once an
 // hour, a dead token deleted), and the weekly-summary function behind its secret. Expo's push
 // service is `mockServices.ts` on the host (`EXPO_PUSH_URL` in config.toml).
 //
@@ -34,7 +34,10 @@ let services: MockServices;
 const createdUserIds: string[] = [];
 const uploadedPaths: string[] = [];
 
-type SignedInUser = { id: string; client: ReturnType<typeof anonClient>; token: string };
+/** `secret` is the phone's device secret (the app's `push.deviceSecret`). */
+type SignedInUser = { id: string; client: ReturnType<typeof anonClient>; token: string; secret: string };
+
+const newSecret = (): string => randomUUID().replace(/-/g, '').repeat(2);
 
 async function signedInUser(label: string): Promise<SignedInUser> {
   const email = uniqueEmail(label);
@@ -42,15 +45,23 @@ async function signedInUser(label: string): Promise<SignedInUser> {
   createdUserIds.push(id);
   const client = anonClient();
   expect(await signInWithEmail(email, PASSWORD, client)).toEqual({ ok: true });
-  return { id, client, token: `ExponentPushToken[int-${randomUUID()}]` };
+  return { id, client, token: `ExponentPushToken[int-${randomUUID()}]`, secret: newSecret() };
 }
 
-/** What the app does when a switch goes on. */
+/** What the app does when a switch goes on; the error is null on success. */
+async function register(user: SignedInUser, choices: { review_ready: boolean; weekly: boolean }) {
+  const { error } = await user.client.rpc('register_push_token', {
+    p_token: user.token,
+    p_platform: 'android',
+    p_review_ready: choices.review_ready,
+    p_weekly: choices.weekly,
+    p_device_secret: user.secret,
+  });
+  return error;
+}
+
 async function optIn(user: SignedInUser, choices: { review_ready: boolean; weekly: boolean }): Promise<void> {
-  const { error } = await user.client
-    .from('push_tokens')
-    .upsert({ token: user.token, platform: 'android', ...choices }, { onConflict: 'user_id,token' });
-  expect(error).toBeNull();
+  expect(await register(user, choices)).toBeNull();
 }
 
 async function addGarment(user: SignedInUser): Promise<string> {
@@ -125,7 +136,7 @@ afterAll(async () => {
 });
 
 describe('push_tokens through the API', () => {
-  test('each user reads and changes only their own row, and never the server’s push time', async () => {
+  test('each user reads and deletes only their own row, never writes it directly, and never reads the secret’s hash', async () => {
     const userA = await signedInUser('push-rls-a');
     const userB = await signedInUser('push-rls-b');
     await optIn(userA, { review_ready: true, weekly: false });
@@ -134,8 +145,9 @@ describe('push_tokens through the API', () => {
     expect(own.data).toEqual([{ token: userA.token, review_ready: true, weekly: false }]);
 
     expect((await userB.client.from('push_tokens').select('token')).data).toEqual([]);
-    const update = await userB.client.from('push_tokens').update({ weekly: true }).eq('token', userA.token).select('token');
-    expect(update.data).toEqual([]);
+    // No client writes but through register_push_token(): a direct update is refused outright.
+    const update = await userB.client.from('push_tokens').update({ weekly: true }).eq('token', userA.token);
+    expect(update.error?.code).toBe('42501');
     const removal = await userB.client.from('push_tokens').delete().eq('token', userA.token).select('token');
     expect(removal.data).toEqual([]);
 
@@ -144,6 +156,7 @@ describe('push_tokens through the API', () => {
       .update({ last_review_push_at: '2020-01-01T00:00:00Z' })
       .eq('token', userA.token);
     expect(sneaky.error?.code).toBe('42501');
+    expect((await userA.client.from('push_tokens').select('device_secret_hash')).error?.code).toBe('42501');
 
     // Turning both off, as the app does.
     expect((await userA.client.from('push_tokens').delete().eq('token', userA.token)).error).toBeNull();
@@ -152,28 +165,33 @@ describe('push_tokens through the API', () => {
 });
 
 describe('taking over and unregistering a token', () => {
-  test('a new account registering the same phone token removes the old account’s row', async () => {
+  test('another phone’s secret can’t take a token; a new account on the same phone takes it over', async () => {
     const previous = await signedInUser('push-takeover-a');
     const next = await signedInUser('push-takeover-b');
     await optIn(previous, { review_ready: true, weekly: true });
 
-    await optIn({ ...next, token: previous.token }, { review_ready: false, weekly: true });
+    const stranger = await register({ ...next, token: previous.token }, { review_ready: true, weekly: true });
+    expect(stranger?.code).toBe('42501');
+
+    await optIn({ ...next, token: previous.token, secret: previous.secret }, { review_ready: false, weekly: true });
 
     const { data, error } = await serviceClient().from('push_tokens').select('user_id').eq('token', previous.token);
     expect(error).toBeNull();
     expect(data).toEqual([{ user_id: next.id }]);
   });
 
-  test('push-unregister deletes the token with only the anon key, and answers 204 whether or not a row matched', async () => {
+  test('push-unregister, with only the anon key, deletes the token for its own secret and answers 204 either way', async () => {
     const user = await signedInUser('push-unregister');
     await optIn(user, { review_ready: true, weekly: false });
 
-    const first = await pushUnregister({ token: user.token });
-    expect(first.status).toBe(204);
+    expect((await pushUnregister({ token: user.token, device_secret: newSecret() })).status).toBe(204);
+    expect(await tokenRows(user.token)).toBe(1);
+
+    expect((await pushUnregister({ token: user.token, device_secret: user.secret })).status).toBe(204);
     expect(await tokenRows(user.token)).toBe(0);
 
-    expect((await pushUnregister({ token: user.token })).status).toBe(204);
-    expect((await pushUnregister({ token: 'not-a-token' })).status).toBe(400);
+    expect((await pushUnregister({ token: user.token, device_secret: user.secret })).status).toBe(204);
+    expect((await pushUnregister({ token: 'not-a-token', device_secret: user.secret })).status).toBe(400);
   });
 });
 

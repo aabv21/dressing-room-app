@@ -10,7 +10,7 @@ import { translate, type Locale } from '../i18n';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';
 import { askReminderPermission } from '../reminder/dailyReminder';
-import { readPendingUnregister, readPush, writePendingUnregister, writePush } from './pushStore';
+import { deviceSecret, readPendingUnregister, readPush, writePendingUnregister, writePush } from './pushStore';
 
 export type PushClient = SupabaseClient<Database>;
 
@@ -71,62 +71,69 @@ export async function setPushPreferences(
   if (registered === null) return 'unavailable';
   const previous = readPush(userId).token;
   try {
-    const { error } = await client
-      .from('push_tokens')
-      .upsert(
-        { token: registered, platform: Platform.OS === 'ios' ? 'ios' : 'android', review_ready: next.reviewReady, weekly: next.weekly },
-        { onConflict: 'user_id,token' },
-      );
+    // The server refuses (42501) a token another device registered: its secret differs.
+    const { error } = await client.rpc('register_push_token', {
+      p_token: registered,
+      p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
+      p_review_ready: next.reviewReady,
+      p_weekly: next.weekly,
+      p_device_secret: deviceSecret(),
+    });
     if (error !== null) return 'failed';
   } catch {
     return 'failed';
   }
   writePush(userId, { token: registered, ...next });
+  // This account holds the token again, so an earlier sign-out's retry must not delete it.
+  writePendingUnregister(readPendingUnregister().filter((token) => token !== registered));
   // A reinstall or restore can hand the phone a new token; the old row would only collect dead pushes.
   if (previous !== null && previous !== registered) await deleteRow(client, previous).catch(() => false);
   return 'saved';
 }
 
-/** How long sign-out waits for the unregister call on a stalled network. */
+/** How long sign-out and the flush wait for each call on a stalled network. */
 export const FORGET_TIMEOUT_MS = 5_000;
 
-/** Asks `push-unregister` to drop every row holding `token`; true once it answered success. Never throws. */
-async function unregister(client: PushClient, token: string): Promise<boolean> {
+/** `call`'s answer, or false once `FORGET_TIMEOUT_MS` passes or it fails. Never throws. */
+async function within(call: () => PromiseLike<boolean>): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stalled = new Promise<boolean>((resolve) => {
     timer = setTimeout(() => {
       resolve(false);
     }, FORGET_TIMEOUT_MS);
   });
-  const call = client.functions
-    .invoke('push-unregister', { body: { token } })
-    .then(({ error }) => error === null)
-    .catch(() => false);
-  const done = await Promise.race([call, stalled]);
+  const done = await Promise.race([Promise.resolve().then(call).then(Boolean, () => false), stalled]);
   clearTimeout(timer);
   return done;
 }
 
 /**
- * Sign-out: unregisters this phone's token, then turns both off on the device. A token the server
- * didn't confirm waits in the device's pending list for `flushPendingUnregister`. Never throws.
+ * Sign-out: deletes this phone's own row while the session still can, then turns both off on the
+ * device. A row it couldn't delete leaves the token in the device's pending list. Never throws.
  */
 export async function forgetPushToken(userId: string, client: PushClient = supabase): Promise<void> {
   const stored = readPush(userId).token;
   if (stored === null) return;
-  if (!(await unregister(client, stored))) writePendingUnregister([...readPendingUnregister(), stored]);
+  if (!(await within(() => deleteRow(client, stored)))) writePendingUnregister([...readPendingUnregister(), stored]);
   writePush(userId, { token: null, reviewReady: false, weekly: false });
 }
 
-/** At launch and after a sign-in: retries the pending tokens, keeping each that fails again. Never throws. */
+/**
+ * At launch and after a sign-in: `push-unregister` with each pending token and this phone's secret,
+ * which deletes only rows this phone registered. Keeps each that fails again. Never throws.
+ */
 export async function flushPendingUnregister(client: PushClient = supabase): Promise<void> {
   const pending = readPendingUnregister();
   if (pending.length === 0) return;
+  const secret = deviceSecret();
   const failed: string[] = [];
   for (const token of pending) {
-    if (!(await unregister(client, token))) failed.push(token);
+    const ok = await within(() =>
+      client.functions.invoke('push-unregister', { body: { token, device_secret: secret } }).then(({ error }) => error === null),
+    );
+    if (!ok) failed.push(token);
   }
-  // A sign-out may have added a token meanwhile: keep it with the failures.
-  const added = readPendingUnregister().filter((token) => !pending.includes(token));
-  writePendingUnregister([...failed, ...added]);
+  // A sign-out may have added a token meanwhile, or a registration taken one back.
+  const now = readPendingUnregister();
+  writePendingUnregister([...failed.filter((token) => now.includes(token)), ...now.filter((token) => !pending.includes(token))]);
 }
