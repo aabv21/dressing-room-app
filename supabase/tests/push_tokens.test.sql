@@ -9,7 +9,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(59);
+select plan(64);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -234,8 +234,12 @@ select is(
   'the row keeps the SHA-256 of the secret, never the secret'
 );
 
--- push_claims: B lost nothing but holds phone two; to reclaim A's token B must prove receipt of a
--- push: start (rate limited, only for a held token), attempts (at most 5, unexpired), finish.
+-- push_claims: B holds phone two; to reclaim A's token B must prove receipt of a push: start
+-- (rate limited per token and account, per account, per token), attempts (at most 5, unexpired),
+-- finish. One account's claim never blocks another's.
+insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
+values ('33333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'user-c@example.com', crypt('password', gen_salt('bf')), '{}', '{}');
+
 select has_table('public', 'push_claims', 'public.push_claims exists');
 select ok(
   not has_table_privilege('authenticated', 'public.push_claims', 'SELECT')
@@ -243,8 +247,10 @@ select ok(
     and not has_table_privilege('authenticated', 'public.push_claims', 'UPDATE')
     and not has_table_privilege('authenticated', 'public.push_claims', 'DELETE')
     and not has_table_privilege('anon', 'public.push_claims', 'SELECT')
-    and not has_table_privilege('anon', 'public.push_claims', 'INSERT'),
-  'clients have no access to push_claims'
+    and not has_table_privilege('anon', 'public.push_claims', 'INSERT')
+    and not has_table_privilege('authenticated', 'public.push_claim_starts', 'SELECT')
+    and not has_table_privilege('anon', 'public.push_claim_starts', 'SELECT'),
+  'clients have no access to push_claims or push_claim_starts'
 );
 select ok(
   not has_function_privilege('authenticated', 'public.start_push_claim(uuid, text, text)', 'execute')
@@ -266,14 +272,24 @@ select is(
   'B starts a claim on A''s token'
 );
 select is(
-  public.start_push_claim('11111111-1111-1111-1111-111111111111', 'ExponentPushToken[aaaa]', repeat('d', 64)),
+  public.start_push_claim('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]', repeat('d', 64)),
   false,
-  'one start per token per 10 minutes, whoever asks'
+  'one start per token and account per 10 minutes'
+);
+select is(
+  public.start_push_claim('33333333-3333-3333-3333-333333333333', 'ExponentPushToken[aaaa]', encode(extensions.digest('CCCC5678', 'sha256'), 'hex')),
+  true,
+  'another account''s active claim doesn''t block C''s start'
 );
 select is(
   public.push_claim_attempt('11111111-1111-1111-1111-111111111111', 'ExponentPushToken[aaaa]'),
   null,
-  'only the claimant can attempt'
+  'only a claimant can attempt'
+);
+select is(
+  public.push_claim_attempt('33333333-3333-3333-3333-333333333333', 'ExponentPushToken[aaaa]'),
+  encode(extensions.digest('CCCC5678', 'sha256'), 'hex'),
+  'each claimant attempts against their own code'
 );
 select is(
   public.push_claim_attempt('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]'),
@@ -286,7 +302,8 @@ select is(
   null,
   'the 6th attempt is refused'
 );
-update public.push_claims set attempts = 0, expires_at = now() - interval '1 second';
+update public.push_claims set attempts = 0, expires_at = now() - interval '1 second'
+where user_id = '22222222-2222-2222-2222-222222222222';
 select is(
   public.push_claim_attempt('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]'),
   null,
@@ -297,23 +314,62 @@ select is(
   false,
   'an expired claim can''t finish either'
 );
-update public.push_claims set expires_at = now() + interval '5 minutes';
+update public.push_claims set expires_at = now() + interval '5 minutes'
+where user_id = '22222222-2222-2222-2222-222222222222';
 select is(
   public.finish_push_claim('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]', 'android', true, false, (select secret from phone where name = 'two')),
   true,
-  'a proven claim finishes'
+  'a proven claim finishes, whatever other claims are open'
 );
 select results_eq(
   $$ select user_id, device_secret_hash = encode(extensions.digest(repeat('2b', 32), 'sha256'), 'hex') from public.push_tokens where token = 'ExponentPushToken[aaaa]' $$,
   $$ values ('22222222-2222-2222-2222-222222222222'::uuid, true) $$,
   'B now holds the token under phone two''s secret; A''s row is gone'
 );
-select is((select count(*)::int from public.push_claims), 0, 'the claim is gone');
+select is((select count(*)::int from public.push_claims where token = 'ExponentPushToken[aaaa]'), 0, 'every claim on the token is gone, C''s too');
+
+-- The limits, against a token B holds: C may start at most 5 claims an hour across tokens, and a
+-- token gets at most 6 claim pushes an hour whoever asks.
+insert into public.push_tokens (user_id, token, platform, device_secret_hash)
+select '22222222-2222-2222-2222-222222222222', 'ExponentPushToken[t' || i || ']', 'android', repeat('f', 64)
+from generate_series(1, 6) i;
+select is(
+  (select count(*)::int from generate_series(1, 6) i
+   where public.start_push_claim('33333333-3333-3333-3333-333333333333', 'ExponentPushToken[t' || i || ']', repeat('a', 64))),
+  4,
+  'C''s hour allows 5 starts: the one above and 4 more'
+);
+delete from public.push_claim_starts;
+select is(
+  (select count(*)::int from (
+     select public.start_push_claim(u, 'ExponentPushToken[t1]', repeat('a', 64)) as started
+     from unnest(array[
+       '11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333'
+     ]::uuid[]) u
+   ) starts where started),
+  2,
+  'two accounts can each start a claim on one token'
+);
+insert into public.push_claim_starts (token, user_id)
+select 'ExponentPushToken[t1]', '11111111-1111-1111-1111-111111111111' from generate_series(1, 4);
+delete from public.push_claims where token = 'ExponentPushToken[t1]';
+select is(
+  public.start_push_claim('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[t1]', repeat('a', 64)),
+  false,
+  'a token gets at most 6 claim pushes an hour'
+);
 
 insert into public.push_claims (token, user_id, code_hash, expires_at) values
   ('ExpoPushToken[old]', '22222222-2222-2222-2222-222222222222', repeat('e', 64), now() - interval '1 minute');
+update public.push_claim_starts set started_at = now() - interval '2 hours';
+delete from public.push_claims where expires_at > now();
 select public.prune_expired_caches();
-select is((select count(*)::int from public.push_claims), 0, 'the daily cleanup deletes expired claims');
+select is(
+  (select count(*)::int from public.push_claims) + (select count(*)::int from public.push_claim_starts),
+  0,
+  'the daily cleanup deletes expired claims and starts over an hour old'
+);
+delete from public.push_tokens where token like 'ExponentPushToken[t%';
 
 -- Back to A on phone two (same secret: a takeover), as the weekly section expects.
 set local role authenticated;

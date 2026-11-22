@@ -138,33 +138,54 @@ comment on function public.register_push_token(text, text, boolean, boolean, tex
 revoke execute on function public.register_push_token(text, text, boolean, boolean, text) from public, anon;
 grant execute on function public.register_push_token(text, text, boolean, boolean, text) to authenticated;
 
--- public.push_claims ---------------------------------------------------------------------------
+-- public.push_claims, public.push_claim_starts ------------------------------------------------
 
--- A reclaim in flight: the push-claim function sent a code to the token as a push; whoever types
--- it back proves the phone receives that token's pushes. Server-only, like the caches.
+-- A reclaim in flight, one per token and account: the push-claim function sent a code to the token
+-- as a push; whoever types it back proves the phone receives that token's pushes. Keyed by account
+-- too, so one account's claim never blocks another's. Server-only, like the caches.
 create table public.push_claims (
-  token text primary key,
+  token text not null,
   user_id uuid not null references auth.users (id) on delete cascade,
   code_hash text not null,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   attempts smallint not null default 0,
+  primary key (token, user_id),
   constraint push_claims_code_hash_check check (code_hash ~ '^[0-9a-f]{64}$'),
   constraint push_claims_attempts_check check (attempts between 0 and 5)
 );
 
 comment on table public.push_claims is
-  'One reclaim per push token: the SHA-256 of the code pushed to it, 10 minutes and 5 attempts to '
-  'type it back. No client grants; only push-claim (service role) uses it.';
+  'One reclaim per push token and account: the SHA-256 of the code pushed to the token, 10 minutes '
+  'and 5 attempts to type it back. No client grants; only push-claim (service role) uses it.';
 
 create index push_claims_user_id_idx on public.push_claims (user_id);
 
+-- Every claim start that sent a code, for the rate limits; kept an hour.
+create table public.push_claim_starts (
+  id bigint generated always as identity primary key,
+  token text not null,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  started_at timestamptz not null default now()
+);
+
+comment on table public.push_claim_starts is
+  'Claim starts in the last hour, for push-claim''s limits (per token and account, per account, per '
+  'token). Server-only; the daily cleanup drops older rows.';
+
+create index push_claim_starts_user_id_started_at_idx on public.push_claim_starts (user_id, started_at);
+create index push_claim_starts_token_started_at_idx on public.push_claim_starts (token, started_at);
+
 alter table public.push_claims enable row level security;
+alter table public.push_claim_starts enable row level security;
 
 revoke all on public.push_claims from anon, authenticated;
+revoke all on public.push_claim_starts from anon, authenticated;
 
--- Starts (or restarts) a claim, at most once per token per 10 minutes whoever asks, and only for a
--- token some row holds: a token nobody holds simply registers.
+-- Starts (or restarts) the caller's claim on a token some row holds (a token nobody holds simply
+-- registers), sending a code at most: once per token and account per 10 minutes, 5 times per
+-- account per hour, and 6 times per token per hour.
+-- NOTE: the per-token cap is a spam guard, so 6 accounts that know a token can use up its hour; ceiling: they need the token and several accounts (Auth rate-limits sign-ups); upgrade: a per-device quota, if it happens.
 create function public.start_push_claim(p_user_id uuid, p_token text, p_code_hash text)
 returns boolean
 language plpgsql
@@ -173,17 +194,24 @@ set search_path = ''
 as $$
 begin
   perform pg_advisory_xact_lock(hashtextextended('push_tokens:' || p_token, 0));
+  perform pg_advisory_xact_lock(hashtextextended('push_claims_user:' || p_user_id::text, 0));
   if not exists (select 1 from public.push_tokens where token = p_token) then
     return false;
   end if;
-  if exists (select 1 from public.push_claims where token = p_token and created_at > now() - interval '10 minutes') then
+  if exists (
+    select 1 from public.push_claim_starts
+    where token = p_token and user_id = p_user_id and started_at > now() - interval '10 minutes'
+  )
+  or (select count(*) from public.push_claim_starts where user_id = p_user_id and started_at > now() - interval '1 hour') >= 5
+  or (select count(*) from public.push_claim_starts where token = p_token and started_at > now() - interval '1 hour') >= 6
+  then
     return false;
   end if;
   insert into public.push_claims (token, user_id, code_hash, created_at, expires_at)
   values (p_token, p_user_id, p_code_hash, now(), now() + interval '10 minutes')
-  on conflict (token) do update
-    set user_id = excluded.user_id, code_hash = excluded.code_hash, created_at = excluded.created_at,
-        expires_at = excluded.expires_at, attempts = 0;
+  on conflict (token, user_id) do update
+    set code_hash = excluded.code_hash, created_at = excluded.created_at, expires_at = excluded.expires_at, attempts = 0;
+  insert into public.push_claim_starts (token, user_id) values (p_token, p_user_id);
   return true;
 end;
 $$;
@@ -202,8 +230,9 @@ as $$
   returning code_hash;
 $$;
 
--- After a matching code, in one transaction: the token's other rows go, the claimant's row takes
--- the new secret's hash, and the claim goes. False when the claim is gone or expired.
+-- After a matching code, in one transaction: the caller's claim must still be open; then every claim
+-- on the token and its other rows go, and the claimant's row takes the new secret's hash. False when
+-- the caller's claim is gone or expired.
 create function public.finish_push_claim(
   p_user_id uuid,
   p_token text,
@@ -226,6 +255,8 @@ begin
   if not found then
     return false;
   end if;
+  -- The token is settled: every other open claim on it goes too.
+  delete from public.push_claims where token = p_token;
   delete from public.push_tokens where token = p_token and user_id <> p_user_id;
   insert into public.push_tokens (user_id, token, platform, review_ready, weekly, device_secret_hash)
   values (p_user_id, p_token, p_platform, coalesce(p_review_ready, false), coalesce(p_weekly, false),
@@ -437,6 +468,9 @@ begin
 
   delete from public.push_claims
   where expires_at < now();
+
+  delete from public.push_claim_starts
+  where started_at < now() - interval '1 hour';
 
   delete from cron.job_run_details d
   using cron.job j

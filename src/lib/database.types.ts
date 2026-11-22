@@ -161,6 +161,20 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"push_claim_starts": {
+                  Row: {
+                    "id": number,"started_at": string,"token": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "id"?: never,"started_at"?: string,"token": string,"user_id": string
+                  }
+                  Update: {
+                    "id"?: never,"started_at"?: string,"token"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"push_claims": {
                   Row: {
                     "attempts": number,"code_hash": string,"created_at": string,"expires_at": string,"token": string,"user_id": string
