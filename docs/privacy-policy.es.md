@@ -34,8 +34,8 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   pagaste por ella y en qué moneda (para mostrar su costo por uso).
 - **Lo que usas.** Los outfits que guardas o registras como usados, con el día, la ocasión y el
   puntaje.
-- **Tus planes y viajes.** El outfit que planeaste para cada uno de los próximos catorce días (sus
-  prendas y la ocasión), y los viajes que guardas desde "Armar la maleta": la ciudad de destino, las
+- **Tus planes y viajes.** El outfit que planeaste para un día, hasta catorce días antes (sus
+  prendas y la ocasión); un plan se borra solo 30 días después de su día. También los viajes que guardas desde "Armar la maleta": la ciudad de destino, las
   fechas, la ocasión y los outfits y la lista para empacar que se mostraron. Un viaje que no
   guardas no se almacena.
 - **Lo que no quieres que te sugiera.** Las combinaciones de outfit que marcaste con "No es para
@@ -93,7 +93,8 @@ la tienda.
 
 ## Cuánto tiempo se guardan
 
-Tus datos se guardan hasta que los eliminas o eliminas tu cuenta. Puedes eliminar cualquier prenda
+Tus datos se guardan hasta que los eliminas o eliminas tu cuenta, salvo los planes, que se borran
+30 días después de su día. Puedes eliminar cualquier prenda
 (sus fotos también se borran), cualquier uso registrado, outfit guardado, plan o viaje guardado cuando quieras,
 volver a incluir una prenda en las sugerencias desde su detalle y restaurar todas las combinaciones
 ocultas desde Perfil. El dueño de la app guarda

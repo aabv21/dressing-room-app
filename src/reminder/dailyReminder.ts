@@ -6,7 +6,7 @@ import { Platform } from 'react-native';
 import { translate, type Locale } from '../i18n';
 import { localDate } from '../lib/localDate';
 import { kvUserRefused } from '../lib/kv';
-import { readReminder, writeReminder, type ReminderTime } from './reminderStore';
+import { readReminder, storedReminderIds, writeReminder, type ReminderSettings, type ReminderTime } from './reminderStore';
 
 export const REMINDER_CHANNEL_ID = 'daily-reminder';
 const REMINDER_KIND = 'dailyReminder';
@@ -101,27 +101,34 @@ function reminderNotes(userId: string, time: ReminderTime, language: Locale, now
   }));
 }
 
-/** Whether the OS holds exactly the notes the settings and plans call for now (texts compared, order aside). */
+const noteKey = (weekday: unknown, body: unknown): string => JSON.stringify([weekday ?? null, body ?? null]);
+
+/**
+ * Whether the OS holds exactly the notes the settings and plans call for now: each note's weekday
+ * (null for the daily one, from its `data`) with its text, order aside.
+ */
 export async function isReminderCurrent(userId: string, time: ReminderTime, language: Locale): Promise<boolean> {
-  const held = await scheduledReminders();
-  const wanted = reminderNotes(userId, time, language, new Date());
-  if (wanted.length === 1) return held.length === 1;
-  const sorted = (bodies: string[]): string => JSON.stringify(bodies.sort());
-  return sorted(held.map((entry) => entry.content.body ?? '')) === sorted(wanted.map((note) => note.body));
+  const held = (await scheduledReminders()).map((entry) => noteKey(entry.content.data?.weekday, entry.content.body)).sort();
+  const wanted = reminderNotes(userId, time, language, new Date()).map((note) => noteKey(note.weekday, note.body)).sort();
+  return JSON.stringify(held) === JSON.stringify(wanted);
 }
 
-/** The stored id and every scheduled reminder, so one the kv lost track of can't keep firing. */
-async function cancelAllReminders(storedId: string | null): Promise<void> {
-  const ids = new Set(await scheduledReminderIds());
-  if (storedId !== null) ids.add(storedId);
+/** The stored ids and every scheduled reminder, so one the kv lost track of (or the OS can't list) can't keep firing. */
+async function cancelAllReminders(storedIds: readonly string[]): Promise<void> {
+  const ids = new Set([...(await scheduledReminderIds()), ...storedIds]);
   for (const id of ids) await cancelQuietly(id);
+}
+
+/** The settings with no scheduled ids. */
+function withoutIds(settings: ReminderSettings): ReminderSettings {
+  return { enabled: settings.enabled, hour: settings.hour, minute: settings.minute, notificationId: null, language: settings.language };
 }
 
 async function scheduleNow(userId: string, time: ReminderTime, language: Locale): Promise<boolean> {
   // A deleted account (its kv refused) never gets a reminder back, whatever was queued before.
   if (kvUserRefused(userId)) return false;
   const previous = readReminder(userId);
-  await cancelAllReminders(previous.notificationId);
+  await cancelAllReminders(storedReminderIds(previous));
   try {
     await ensureReminderChannel(language);
     const ids: string[] = [];
@@ -129,7 +136,12 @@ async function scheduleNow(userId: string, time: ReminderTime, language: Locale)
       const { hour, minute } = time;
       ids.push(
         await Notifications.scheduleNotificationAsync({
-          content: { title: translate(language, 'reminder.note.title'), body: note.body, data: { kind: REMINDER_KIND, url: '/' } },
+          content: {
+            title: translate(language, 'reminder.note.title'),
+            body: note.body,
+            // The weekday lets `isReminderCurrent` tell a plan moved to another day.
+            data: { kind: REMINDER_KIND, url: '/', weekday: note.weekday },
+          },
           // DAILY and WEEKLY match the device's clock, so the reminder follows the local time zone.
           trigger:
             note.weekday === null
@@ -138,13 +150,20 @@ async function scheduleNow(userId: string, time: ReminderTime, language: Locale)
         }),
       );
     }
-    // The other weekly notes carry the same kind, so the sweep in `cancelAllReminders` finds them.
-    writeReminder(userId, { enabled: true, hour: time.hour, minute: time.minute, notificationId: ids[0] ?? null, language });
+    const [first = null, ...others] = ids;
+    writeReminder(userId, {
+      enabled: true,
+      hour: time.hour,
+      minute: time.minute,
+      notificationId: first,
+      ...(others.length === 0 ? {} : { otherIds: others }),
+      language,
+    });
     return true;
   } catch {
     // Some weekly notes may already be scheduled: sweep them so a failure leaves none.
-    await cancelAllReminders(null);
-    writeReminder(userId, { ...previous, hour: time.hour, minute: time.minute, enabled: false, notificationId: null });
+    await cancelAllReminders([]);
+    writeReminder(userId, { ...withoutIds(previous), hour: time.hour, minute: time.minute, enabled: false });
     return false;
   }
 }
@@ -171,9 +190,9 @@ export function turnOnReminder(userId: string, time: ReminderTime, language: Loc
 export function turnOffReminder(userId: string): Promise<void> {
   return serial(async () => {
     const current = readReminder(userId);
-    await cancelAllReminders(current.notificationId);
-    if (current.enabled || current.notificationId !== null) {
-      writeReminder(userId, { ...current, enabled: false, notificationId: null });
+    await cancelAllReminders(storedReminderIds(current));
+    if (current.enabled || storedReminderIds(current).length > 0) {
+      writeReminder(userId, { ...withoutIds(current), enabled: false });
     }
   });
 }
@@ -183,8 +202,8 @@ export function turnOffReminder(userId: string): Promise<void> {
  * the queue, after any change already waiting, so nothing scheduled before it survives.
  */
 export function forgetReminder(userId: string): Promise<void> {
-  const { notificationId } = readReminder(userId);
-  return serial(() => cancelAllReminders(notificationId));
+  const ids = storedReminderIds(readReminder(userId));
+  return serial(() => cancelAllReminders(ids));
 }
 
 /** A tap on the reminder itself (not an action button, not another notification). */

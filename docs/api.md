@@ -219,7 +219,7 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | 200 | the cached answer | `cached` | The same trip and closet within 6 hours (1 hour when degraded) |
 | 429 | `{ error: 'over_quota' }` | `over_quota` | 5 misses already today |
 | 404 | `{ error: 'city_not_found' }` | `not_found` | The geocoder has no match (the quota is spent) |
-| 503 | `{ error: 'geocoding_unavailable' }` | `unavailable` | The geocoder failed or timed out |
+| 503 | `{ error: 'geocoding_unavailable' }` | `unavailable` | The geocoder failed or timed out (the quota is spent, as for a 404: both come after it) |
 | 200 | the plan | `planned` / `degraded` | Planned; the forecast failed, so every day has no weather |
 | 500 | `{ error: 'internal' }` | `error` | Loading garments or the dismissed outfits, or the quota RPC, failed |
 

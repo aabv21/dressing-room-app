@@ -1,11 +1,12 @@
 -- public.saved_trips (a trip the user saved, with its plan's snapshot): own rows only between two
 -- users, no update, no anon access, the shape checks (city, at most 10 days, an object snapshot),
--- the cascade on user delete; public.trip_cache is server-only; quota_kind has 'trip'.
+-- a snapshot over 64 KiB, at most 50 trips per user, the cascade on user delete; public.trip_cache is
+-- server-only; quota_kind has 'trip'.
 begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(18);
+select plan(21);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -89,6 +90,27 @@ with deleted as (
   delete from public.saved_trips returning 1
 )
 select is((select count(*)::int from deleted), 1, 'A can delete their own trip');
+
+select throws_ok(
+  $$ insert into public.saved_trips (city, start_on, end_on, result)
+     values ('Lisbon', '2026-12-01', '2026-12-02', jsonb_build_object('days', (select jsonb_agg(md5(i::text)) from generate_series(1, 3000) i))) $$,
+  '23514',
+  null,
+  'a snapshot over 64 KiB raises a check_violation'
+);
+
+select lives_ok(
+  $$ insert into public.saved_trips (city, start_on, end_on, result)
+     select 'Trip ' || i, '2026-12-01', '2026-12-02', '{}' from generate_series(1, 50) i $$,
+  'A can keep 50 saved trips'
+);
+
+select throws_ok(
+  $$ insert into public.saved_trips (city, start_on, end_on, result) values ('One more', '2026-12-01', '2026-12-02', '{}') $$,
+  '23514',
+  'saved_trips: at most 50 saved trips per user',
+  'the 51st saved trip is refused'
+);
 
 select set_config('request.jwt.claims', '', true);
 set local role anon;

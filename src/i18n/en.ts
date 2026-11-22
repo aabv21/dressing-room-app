@@ -727,7 +727,7 @@ export const en = {
   'trip.error.incomplete': 'Something went wrong. Try again.',
   'trip.error.unknown': 'Something went wrong. Try again.',
   'trip.saveError.network': "Couldn't save the trip. Check your internet and try again.",
-  'trip.saveError.invalid': 'Something went wrong while saving. Try again.',
+  'trip.saveError.invalid': "This trip can't be saved. You can keep 50 saved trips: delete one and try again.",
   'trip.saveError.unknown': 'Something went wrong while saving. Try again.',
   'today.planned': 'Planned for today',
   'today.planAhead': 'Plan ahead',

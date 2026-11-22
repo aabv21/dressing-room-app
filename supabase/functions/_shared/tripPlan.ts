@@ -41,7 +41,7 @@ const keyOf = (pieces: readonly RuleGarment[]): string =>
     .sort()
     .join(',');
 
-/** The candidate that packs the fewest new pieces, then repeats no earlier day's base, then the best pre-score. */
+/** The candidate that repeats no earlier day's base, then packs the fewest new pieces, then has the best pre-score. */
 function pickFor(candidates: readonly Outfit[], date: string, packed: ReadonlySet<string>, usedBases: ReadonlySet<string>): Outfit | null {
   const ranked = candidates
     .map((outfit, index) => ({

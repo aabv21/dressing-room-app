@@ -651,7 +651,7 @@ trip costs nothing per request beyond Open-Meteo's free API. The request and sta
    Wear dates aren't in it (a wear would spend the quota again). A row is a hit for 6 hours
    (`TRIP_TTL_MS`), a degraded one (the forecast failed) for 1 hour.
 3. On a miss, `consume_quota(user, 'trip', 5, date)` on the app's local day, before any outbound
-   call; 429 over it. A city the geocoder doesn't find still spends one.
+   call; 429 over it. A city the geocoder doesn't find, or a geocoder failure, still spends one.
 4. Geocodes the city with Open-Meteo (`count=1`, names in the request's language): no result is 404
    `city_not_found`, a failure 503 `geocoding_unavailable`.
 5. Reads Open-Meteo's daily forecast for the place (`forecast_days=16`, its maximum, in the place's
@@ -662,18 +662,18 @@ trip costs nothing per request beyond Open-Meteo's free API. The request and sta
    plans every day that way and marks the answer degraded.
 6. Day by day, in order: `generateCandidates` over the suggestable garments (the lucky list's rules,
    pool and 7-day fallback, seeded with the user id and the date, the date as "today"), minus
-   dismissed combinations. Of those, the outfit that adds the **fewest new pieces** to what's
-   already packed wins; among equals, one whose base (the outfit without bag, hat or accessory)
-   wasn't chosen on an earlier day comes first, then the higher `preScore`, then generation order.
-   A repeated outfit is chosen only when nothing else passes. No candidate leaves the day's
+   dismissed combinations. Of those, an outfit whose base (the outfit without bag, hat or accessory)
+   wasn't chosen on an earlier day comes first, so a repeated outfit is chosen only when nothing
+   else passes; among those, the one that adds the **fewest new pieces** to what's already packed
+   wins, then the higher `preScore`, then generation order. No candidate leaves the day's
    `garmentIds` null.
 7. The packing list holds each chosen garment once, grouped by slot in `SLOTS` order (top, bottom,
    one-piece, outerwear, shoes, bag, headwear, accessory), each with the number of days it's worn,
    most-worn first.
 
 The fewest-new-pieces rule is a greedy capsule: the first day packs a full outfit (the one with the
-fewest pieces wins, so a one-piece beats top and bottom), later days mix those pieces before adding
-any, and shoes are reused whenever the weather allows. Because the draw is seeded, the same closet
+fewest pieces wins, so a one-piece beats top and bottom), later days mix those pieces into new
+combinations before adding any, and shoes are reused whenever the weather allows. Because the draw is seeded, the same closet
 and trip plan the same way.
 
 | Outcome | Status | When |

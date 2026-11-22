@@ -100,7 +100,11 @@ test("another notification's tap doesn't navigate", async () => {
 });
 
 function scheduledReminder(identifier: string): Notifications.NotificationRequest {
-  return { identifier, content: { data: { kind: 'dailyReminder' } }, trigger: null } as unknown as Notifications.NotificationRequest;
+  return {
+    identifier,
+    content: { body: 'Open Today to see what to wear.', data: { kind: 'dailyReminder', weekday: null } },
+    trigger: null,
+  } as unknown as Notifications.NotificationRequest;
 }
 
 test('a language change re-schedules the reminder in the new language', async () => {

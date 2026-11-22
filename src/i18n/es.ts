@@ -730,7 +730,7 @@ export const es: Record<MessageKey, string> = {
   'trip.error.incomplete': 'Algo salió mal. Intenta de nuevo.',
   'trip.error.unknown': 'Algo salió mal. Intenta de nuevo.',
   'trip.saveError.network': 'No se pudo guardar el viaje. Revisa tu internet e intenta de nuevo.',
-  'trip.saveError.invalid': 'Algo salió mal al guardar. Intenta de nuevo.',
+  'trip.saveError.invalid': 'No se pudo guardar este viaje. Puedes tener 50 viajes guardados: borra uno e intenta de nuevo.',
   'trip.saveError.unknown': 'Algo salió mal al guardar. Intenta de nuevo.',
   'today.planned': 'Planeado para hoy',
   'today.planAhead': 'Planear',

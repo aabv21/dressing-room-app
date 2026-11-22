@@ -191,6 +191,7 @@ planned_on)` (which leads with `user_id`, so it serves the per-user reads by day
 index), and a check holding `garment_ids` to 2–6 ids. An array can't carry a foreign key, so a
 deleted garment's id stays in a plan; the app wears and shows only the pieces still there. A plan is
 not a wear: nothing touches `wears` or the counts until Today's "I'll wear it" calls `log_wear`.
+`prune_expired_caches()` deletes a plan 30 days after its day.
 
 The app writes through `public.plan_outfit()` ([below](#planning-an-outfit)); the policies check the
 same rules on a direct write.
@@ -202,7 +203,11 @@ Nothing is stored unless the user taps Save. `(id uuid primary key default gen_r
 user_id uuid not null default auth.uid() references auth.users on delete cascade, city text not
 null, start_on date not null, end_on date not null, occasion public.occasion, result jsonb not null,
 created_at timestamptz not null default now())`. Checks: the trimmed city 1–100 characters, `end_on`
-from `start_on` to 9 days after it (10 days at most), and `result` a JSON object. Index
+from `start_on` to 9 days after it (10 days at most), and `result` a JSON object of at most 64 KiB
+(`pg_column_size`; a 10-day plan is a few KiB). The `saved_trips_limit` trigger (`security definer`,
+execute revoked from clients) refuses a user's 51st trip with `23514` (`saved_trips: at most 50
+saved trips per user`), holding a per-user advisory lock so two concurrent saves can't both pass
+the count; the app lists the newest 50. Index
 `saved_trips_user_id_created_at_idx` on `(user_id, created_at desc)` backs the saved list.
 
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5), `public.trip_cache`
@@ -235,6 +240,7 @@ below. Each limit carries a margin, since the functions write `created_at` with 
 | `weather_cache` | Only the current UTC hour | `hour` over 2 days old |
 | `for_you_cache` | 7 days (`FOR_YOU_TTL_MS`), degraded for 1 hour; on a spent quota the same key's expired entry, else the user's newest entry under any key | Over 8 days old and not the user's newest row (each user's newest row stays, whatever its age; an older row for a key that comes back after 8 days is gone, so a spent quota then gets the newest row instead, as `cachePrune` already does) |
 | `trip_cache` | 6 hours (`TRIP_TTL_MS`), degraded for 1 hour | Over 7 hours old (`20261122120000_planner_trips.sql`) |
+| `planned_outfits` (not a cache) | Today's plan and the 13 days after it | `planned_on` over 30 days before the UTC date, as the privacy policies say |
 | `cron.job_run_details` (this job's rows) | pg_cron never deletes run history | `end_time` over 30 days old |
 
 A rating or lucky list older than 30 days is simply recomputed (one quota use) the next time its

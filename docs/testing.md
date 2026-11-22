@@ -128,6 +128,8 @@ The Profile tab's Privacy section (data export and account deletion):
   account's keys, the device's language preference and a `queue.purge.<id>` request stay; the
   user's later writes are refused
   (also the id-less onboarding and language entries), and lifted once that account signs in again.
+  `forgetDisplayCaches` drops the display caches (the plans and a trip's check-offs included) and
+  keeps the queues and Logged ✓.
 - `src/auth/__tests__/signOutLocally.test.ts` — against a real supabase-js client and a fake
   `fetch`: a deleted user's valid token (`user_not_found`), an expired token whose refresh is
   refused (`refresh_token_not_found`), and offline with an expired token (the stored session is
@@ -150,7 +152,10 @@ The Profile tab's Privacy section (data export and account deletion):
   English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; with a plan in the
   next seven firings, seven `WEEKLY` triggers (one per weekday, the planned day saying "You
   planned: …" in English or Spanish, today's plan counting while today's time is ahead), and the one
-  `DAILY` trigger for a plan past them; `isReminderCurrent` against the texts the OS holds; denied and a
+  `DAILY` trigger for a plan past them; every weekly id stored, so a re-schedule cancels all seven
+  even when the OS listing fails, and off clears them; `isReminderCurrent` against each held note's
+  weekday and text (another language's daily text, a lone weekly note, a removed plan, and a plan
+  moved to another day are all not current); denied and a
   scheduling failure store nothing; a re-schedule cancels the stored id first, and two at once never
   leave two notifications; off cancels and keeps the time; `forgetReminder`;
   `isReminderResponse` (only a default tap on the reminder). Against a fake of the OS's scheduled
@@ -701,7 +706,7 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   window (UTC date − 1 to + 14), the same rules on a direct insert or update through the policies,
   own rows only between two users, no anon access, and the cascade on user delete.
 - `saved_trips.test.sql` — `saved_trips`: own rows only, no update, no anon access, the city, the
-  10-day and the object-snapshot checks, the list's index; `trip_cache` is server-only; the `trip`
+  10-day, object-snapshot and 64 KiB checks, at most 50 trips per user, the list's index; `trip_cache` is server-only; the `trip`
   quota kind; both cascade on user delete.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
   `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
@@ -713,7 +718,7 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   pg_net request it queues, and that an insert still succeeds with the Vault secrets missing or when
   queueing the request fails.
 - `cache_cleanup.test.sql` — `prune_expired_caches()` deletes cache rows past each lifetime and
-  keeps fresh ones and each user's newest For you row (`trip_cache` after 7 hours); the daily `pg_cron` job exists once; no
+  keeps fresh ones and each user's newest For you row (`trip_cache` after 7 hours, a plan 30 days after its day); the daily `pg_cron` job exists once; no
   client role can call the function.
 - `schema_hygiene.test.sql` — rules checked across the whole `public` schema: no trigger function
   is executable by a client role, and no index is made redundant by another that starts with the

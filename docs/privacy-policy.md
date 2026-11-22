@@ -33,8 +33,8 @@ where it is kept, who processes it and how you can export or delete it. Question
   often you wear it, whether you took it out of suggestions, and, only if you enter it, what you
   paid for it and in which currency (to show its cost per wear).
 - **What you wear.** The outfits you save or log as worn, with the day, the occasion and the score.
-- **Your plans and trips.** The outfit you planned for each of the next 14 days (its pieces and
-  occasion), and the trips you save from "Pack for a trip": the destination city, the dates, the
+- **Your plans and trips.** The outfit you planned for a day, up to 14 days ahead (its pieces and
+  occasion); a plan is deleted automatically 30 days after its day. Also the trips you save from "Pack for a trip": the destination city, the dates, the
   occasion and the outfits and packing list shown. A trip you don't save is not stored.
 - **What you don't want suggested.** The outfit combinations you marked "Not for me", so they
   aren't suggested again.
@@ -87,7 +87,8 @@ generic words such as "camel blazer women"; the store's own privacy policy appli
 
 ## How long it is kept
 
-Your data stays until you delete it or delete your account. You can delete any garment (its photos
+Your data stays until you delete it or delete your account, except plans, which go 30 days after
+their day. You can delete any garment (its photos
 are removed too), any logged wear, saved outfit, plan or saved trip at any time, put a piece back into
 suggestions from its detail screen, and restore every hidden combination from Profile. The owner keeps a nightly backup of the database
 and photos on their own computer, for recovery only, and keeps the 14 most recent ones; data you

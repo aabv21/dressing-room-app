@@ -1,6 +1,7 @@
 -- The outfit planner and trip packing (docs/database.md): `public.planned_outfits` with
--- `plan_outfit()`, `public.saved_trips`, the server-only `public.trip_cache`, the 'trip' quota
--- kind, and `prune_expired_caches()` with trip_cache's lifetime.
+-- `plan_outfit()`, `public.saved_trips` (64 KiB a snapshot, 50 per user), the server-only
+-- `public.trip_cache`, the 'trip' quota kind, and `prune_expired_caches()` with trip_cache's and old
+-- plans' lifetimes.
 
 -- Nothing below uses the new value, so it commits with the rest (see 20261108120000).
 alter type public.quota_kind add value 'trip';
@@ -138,7 +139,9 @@ create table public.saved_trips (
   created_at timestamptz not null default now(),
   constraint saved_trips_city_check check (char_length(btrim(city)) between 1 and 100),
   constraint saved_trips_dates_check check (end_on >= start_on and end_on - start_on <= 9),
-  constraint saved_trips_result_check check (jsonb_typeof(result) = 'object')
+  constraint saved_trips_result_check check (jsonb_typeof(result) = 'object'),
+  -- A 10-day plan is a few KiB; the cap only stops a client from storing anything it likes.
+  constraint saved_trips_result_size_check check (pg_column_size(result) <= 65536)
 );
 
 comment on table public.saved_trips is
@@ -170,6 +173,32 @@ revoke all on public.saved_trips from anon;
 -- policy, which would match zero rows instead of raising.
 revoke update, truncate, trigger, references on public.saved_trips from authenticated;
 
+-- At most 50 saved trips per user (the app lists the newest 50). The lock per user serializes two
+-- concurrent saves, so they can't both pass the count.
+create function public.saved_trips_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('saved_trips:' || new.user_id::text, 0));
+  if (select count(*) from public.saved_trips where user_id = new.user_id) >= 50 then
+    raise exception using errcode = '23514', message = 'saved_trips: at most 50 saved trips per user';
+  end if;
+  return new;
+end;
+$$;
+
+comment on function public.saved_trips_limit() is
+  'Refuses a 51st saved trip for a user (23514). Fired before each saved_trips insert.';
+
+revoke execute on function public.saved_trips_limit() from public, anon, authenticated;
+
+create trigger saved_trips_limit
+  before insert on public.saved_trips
+  for each row execute function public.saved_trips_limit();
+
 -- public.trip_cache ----------------------------------------------------------------------------
 
 create table public.trip_cache (
@@ -191,6 +220,7 @@ revoke all on public.trip_cache from anon, authenticated;
 
 -- The other lines are unchanged from 20261109200000_prune_expired_caches.sql. trip_cache answers
 -- are a hit for 6 hours (`TRIP_TTL_MS`), so a row goes after 7 (the margin for the functions' clock).
+-- A plan goes 30 days after its day (the privacy policies say so); the UTC day is close enough.
 create or replace function public.prune_expired_caches()
 returns void
 language plpgsql
@@ -218,6 +248,9 @@ begin
 
   delete from public.trip_cache
   where created_at < now() - interval '7 hours';
+
+  delete from public.planned_outfits
+  where planned_on < (now() at time zone 'utc')::date - 30;
 
   delete from cron.job_run_details d
   using cron.job j

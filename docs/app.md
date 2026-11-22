@@ -308,8 +308,8 @@ on it logs one. Server side: `planned_outfits` and `plan_outfit`
 - `tripChecks.ts`: the packing list's check-offs in kv `trip.checks.<userId>`, one entry per trip
   keyed by `tripKey` (the city lowercased with its spaces collapsed, the dates and the occasion, so
   planning the same trip again or opening it from Saved keeps them), the latest 20 trips kept;
-  `useTripChecks` follows every toggle. Account deletion clears the key; an explicit sign-out keeps
-  it, like the queues.
+  `useTripChecks` follows every toggle. Account deletion clears the key, and an explicit sign-out
+  drops it with the display caches, so the next person on a shared phone doesn't see it.
 - `src/app/trip.tsx`: the city field with the dictation mic (the transcript replaces the field), a
   60-day start strip (`PlanDayStrip`), 1–10 days, an optional occasion, and "Plan my packing" with
   the app language and the local day. The answer shows each day (its date, the weather line or
@@ -359,8 +359,11 @@ when the user travels.
   keeps the kv's "on").
 - Planned days: with no plan in the next seven firings (from today while today's time is ahead,
   else from tomorrow) the reminder is the one `DAILY` notification above. With one, it is seven
-  `WEEKLY` notifications, one per weekday at the same time, each tagged `dailyReminder` (so every
-  cancel above sweeps them all; the kv keeps the first id): the planned days say "You planned:
+  `WEEKLY` notifications, one per weekday at the same time, each tagged `dailyReminder` with its
+  `weekday` in `data` (null on the daily one). The kv keeps every id (`notificationId` and
+  `otherIds`), so a cancel reaches them all even when the OS listing fails, and `isReminderCurrent`
+  compares each held note's weekday and text with the wanted ones, so a plan moved to another day
+  is re-scheduled: the planned days say "You planned:
   Blouse · White, Jeans · Blue." / "Planeaste: …", the rest the usual text. A weekly note keeps its
   plan text a week later only if the app never opens in between (the `NOTE:` in `dailyReminder.ts`).
 - Turning off on the way out: `AuthProvider` turns the reminder off for the account whose session
