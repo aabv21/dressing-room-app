@@ -449,6 +449,11 @@ APPLE_PRIVATE_KEY = "env(LOCAL_APPLE_PRIVATE_KEY)"
 [functions.extract-attributes]
 verify_jwt = false
 
+# Called by the weekly-summary pg_cron job (pg_net), which authenticates with the `x-webhook-secret`
+# header checked inside the function, like extract-attributes.
+[functions.weekly-summary]
+verify_jwt = false
+
 # Called by signed-in users; the gateway verifies the JWT before the function
 # runs, and the function reads garments and the profile with that same token.
 [functions.rate-outfit]

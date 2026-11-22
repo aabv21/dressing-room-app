@@ -9,8 +9,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 const FUNCTIONS_DIR = new URL('../../', import.meta.url);
 
-/** The only function the gateway lets through unsigned: the database webhook, which checks its own secret. */
-const WEBHOOK_FUNCTIONS = ['extract-attributes'];
+/** The only functions the gateway lets through unsigned: the database's webhook and cron job, which check their own secrets. */
+const WEBHOOK_FUNCTIONS = ['extract-attributes', 'weekly-summary'];
 
 function functionNames(): string[] {
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
@@ -52,7 +52,15 @@ describe('the gateway verifies every user-called function’s JWT', () => {
     },
   );
 
-  test('only the database webhook skips the gateway check, and it checks its own secret instead', () => {
+  test('the weekly-summary cron call skips the gateway check, and checks its own secret instead', () => {
+    expect(verifyJwtSettings().get('weekly-summary')).toBe(false);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
+    const handler = readFileSync(new URL('weekly-summary/handler.ts', FUNCTIONS_DIR), 'utf8');
+    expect(handler).toContain("request.headers.get('x-webhook-secret')");
+    expect(handler).not.toContain('userIdFromJwt');
+  });
+
+  test('the extraction webhook skips the gateway check, and checks its own secret instead', () => {
     expect(verifyJwtSettings().get('extract-attributes')).toBe(false);
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
     const handler = readFileSync(new URL('extract-attributes/handler.ts', FUNCTIONS_DIR), 'utf8');
