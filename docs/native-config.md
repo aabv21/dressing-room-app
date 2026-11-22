@@ -40,14 +40,22 @@ create or edit them by hand. Native behavior lives in `app.json` and its config 
 
 ## Notifications
 
-- `expo-notifications` schedules the daily reminder, a local notification only
-  ([`app.md`](app.md#the-daily-reminder-srcreminder)). Its plugin sets
-  `enableRemoteNotifications: false`, so the iOS build has no APNs (`aps-environment`) entitlement
-  and needs no push setup with Apple, FCM or Expo Push; `icon` (the monochrome adaptive-icon layer)
-  and `color` style the Android status-bar icon.
+- `expo-notifications` schedules the daily reminder, a local notification
+  ([`app.md`](app.md#the-daily-reminder-srcreminder)), and receives the server's opt-in push notices
+  ([`app.md`](app.md#notifications-from-the-app-srcpush)). Its plugin still sets
+  `enableRemoteNotifications: false`, so the iOS build has no APNs (`aps-environment`) entitlement:
+  a personal-team build can't sign one, so it stays off until the Apple account exists, and until
+  then iOS's token fetch fails and Profile says notifications aren't available yet
+  ([`owner-runbook.md`](owner-runbook.md#4-eas-project-and-builds)). `icon` (the monochrome
+  adaptive-icon layer) and `color` style the Android status-bar icon.
+- Android push needs FCM V1: `google-services.json` (public identifiers, safe to commit) under
+  `android.googleServicesFile`, added with the file in the owner's Firebase step, never before it
+  exists, and the service-account key uploaded with `eas credentials`, never committed. Until then
+  `getExpoPushTokenAsync` fails and the app shows the same message.
 - iOS needs no usage string for notifications; the system asks when the switch is turned on.
 - On Android the library's own manifest adds `POST_NOTIFICATIONS` (Android 13+ asks for it, and
-  only once a channel exists, so the app creates its `daily-reminder` channel first) and
+  only once a channel exists, so the app creates its `daily-reminder` channel, or the notices'
+  `app-notices` channel, first) and
   `RECEIVE_BOOT_COMPLETED` (scheduled reminders survive a restart).
 - No `SCHEDULE_EXACT_ALARM` or `USE_EXACT_ALARM`: the `DAILY` trigger's default `bestEffort`
   delivery may arrive a few minutes late on some phones, which suits a morning reminder, and Google

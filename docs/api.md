@@ -17,13 +17,16 @@ server starts by itself, and the providers the functions call. Algorithms, promp
 | Mode | Header | Who uses it |
 | --- | --- | --- |
 | User JWT | `apikey: <anon key>`, `Authorization: Bearer <session token>` | The app, for every table, RPC, Storage and function call; the user-called functions re-use it to read the caller's rows under RLS |
-| Webhook secret | `x-webhook-secret: <EXTRACT_WEBHOOK_SECRET>` | The garments insert trigger calling `extract-attributes` (`verify_jwt = false`) |
-| Anon key | `apikey` and `Authorization: Bearer <anon key>` | `.github/workflows/keepalive.yml` calling `rpc/keep_alive`; the app before sign-in (Auth only) |
+| Webhook secret | `x-webhook-secret: <EXTRACT_WEBHOOK_SECRET>` or `<WEEKLY_SUMMARY_SECRET>` | The garments insert trigger calling `extract-attributes`, and the `weekly-summary` cron job (both `verify_jwt = false`) |
+| Anon key | `apikey` and `Authorization: Bearer <anon key>` | `.github/workflows/keepalive.yml` calling `rpc/keep_alive`; the app before sign-in (Auth only); the app's pending-list flush calling `push-unregister` (`verify_jwt = false`) |
 | Service role | `apikey` and `Authorization: Bearer <service-role key>` | Inside the functions only (quota, caches, `apple_tokens`, Storage, the Auth admin API), and the owner's scripts (`pnpm backup`, `pnpm calibrate export`). Never in `src/` |
 
 Every user-called function has `verify_jwt = true` in `supabase/config.toml`, so the gateway checks
 the token's signature first; the anon key passes the gateway but has no `sub`, and the function
-answers 401. `gateway.test.ts` pins the setting per function.
+answers 401. The three exceptions never read a caller id: `extract-attributes` and `weekly-summary`
+check their own secret, and `push-unregister` deletes only rows matching the push token and the
+phone's device secret.
+`gateway.test.ts` pins the setting per function.
 
 **Bodies.** Requests and responses are JSON. An error is `{ "error": "<word>" }` with a non-2xx
 status. A 200 either carries the result or, for the fire-and-forget and account functions,
@@ -36,8 +39,10 @@ worker never boots: the gateway answers an error (most likely a 503, which the a
 exception: `appleEnvFrom` answers null without them and the Apple calls are skipped.
 
 **Shared code.** `_shared/http.ts` holds `json` and `reply` (the answer plus its logged outcome word),
-`readJson`, `callerOf` (the bearer and its `sub`) and `fetchWithDeadline`, which every outbound call
-uses so a stalled body can't outlive its timeout. `_shared/guards.ts` holds `isRecord` and the `UUID`
+`readJson`, `callerOf` (the bearer and its `sub`), `secretMatches` (the webhooks' constant-time compare)
+and `fetchWithDeadline`, which every outbound call uses so a stalled body can't outlive its timeout.
+`_shared/push.ts` sends Expo push messages and deletes dead tokens; `_shared/pushCopy.ts` holds the
+notices' en/es copy. `_shared/guards.ts` holds `isRecord` and the `UUID`
 pattern.
 
 **Logs.** Each function logs one JSON line per call with an outcome word (and the garment id for
@@ -64,7 +69,10 @@ insert is `on conflict do nothing`.
 | Jev | 10 s | `JEV_TIMEOUT_MS` |
 | Open-Meteo forecast and geocoding | 5 s each | `WEATHER_TIMEOUT_MS` |
 | Apple `/auth/token` and `/auth/revoke` | 10 s | `APPLE_TIMEOUT_MS`, `_shared/apple.ts` |
+| Expo push send, each batch of up to 100 | 5 s | `EXPO_PUSH_TIMEOUT_MS`, `_shared/push.ts` |
+| App: the sign-out delete and each `push-unregister` call | 5 s | `FORGET_TIMEOUT_MS`, `src/push/pushRegistration.ts`; on a timeout the token stays pending |
 | pg_net, trigger → `extract-attributes` | 5 s | the trigger's `timeout_milliseconds`; the function keeps running after pg_net stops waiting |
+| pg_net, cron → `weekly-summary` | 30 s | `request_weekly_summary()`'s `timeout_milliseconds`; same |
 
 **Quotas and caches.** Quotas count cache misses only, through `consume_quota`, before any paid
 call (or, for `trip-plan`, any outbound call). Rating, the lucky list, For you, trips, buy checks and the stylist count the user's local day sent in the request, accepted
@@ -98,12 +106,17 @@ A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-w
 | `POST /functions/v1/apple-token` | `src/auth/socialAuth.ts` (fire-and-forget) | User JWT | `{ code }` | 200 `{ outcome }` | 401, 405 |
 | `POST /functions/v1/delete-account` | `src/account/accountClient.ts` `deleteAccount` | User JWT (sent explicitly) | `{}` | 200 `{ outcome: 'deleted' }` | 401, 405, 500 |
 | `POST /functions/v1/export-data` | `accountClient.ts` `exportData` | User JWT | `{}` | 200 `DataExport` | 401, 405, 500 |
+| `POST /functions/v1/weekly-summary` | The `weekly-summary` pg_cron job, through pg_net | Webhook secret | `{}` | 200 `{ outcome, targets, sent, failed, removed }` | 401, 405, 500 |
+| `POST /functions/v1/push-claim` | `src/push/pushRegistration.ts` (after a `42501` from `register_push_token`) | User JWT | `{ token, step: 'start' }` or `{ token, step: 'confirm', code, device_secret, platform, review_ready, weekly }` | 202 `{ outcome: 'accepted' }` / 200 `{ outcome: 'claimed' }` | 400, 401, 403, 405, 500 |
+| `POST /functions/v1/push-unregister` | `src/push/pushRegistration.ts` (the pending-list flush) | Anon key or user JWT; the device secret is the credential | `{ token, device_secret }` | 204 | 400, 405, 413, 500 |
 | `POST /rest/v1/rpc/log_wear` | `src/outfits/outfitRepository.ts` `logWear` | User JWT | wear id, garment ids, day, occasion?, score? | the wear id | `22023`, `42501`, `23505` |
 | `POST /rest/v1/rpc/save_outfit` | `outfitRepository.ts` `saveOutfit` | User JWT | garment ids, score? | the outfit id | `22023`, `42501` |
 | `POST /rest/v1/rpc/plan_outfit` | `src/planner/plannedOutfits.ts` `planOutfit` | User JWT | day, garment ids, occasion? | the plan id | `22023`, `42501` |
 | `POST /rest/v1/rpc/keep_alive` | `.github/workflows/keepalive.yml` | Anon key | `{}` | the server time | none |
 | `POST /rest/v1/rpc/consume_quota` | The functions | Service role | user, kind, limit, day? | `true` / `false` | — |
-| `/rest/v1/profiles`, `garments`, `wears`, `outfits`, `dismissed_outfits`, `planned_outfits`, `saved_trips` | The repositories | User JWT + RLS | select, update, insert, delete | rows | `42501`, `23514` |
+| `POST /rest/v1/rpc/register_push_token` | `src/push/pushRegistration.ts` `setPushPreferences` | User JWT | token, platform, both choices, device secret | — | `22023`, `42501` |
+| `POST /rest/v1/rpc/claim_review_push`, `weekly_summary_targets` | `extract-attributes`, `weekly-summary` | Service role | user / `{}` | rows | — |
+| `/rest/v1/profiles`, `garments`, `wears`, `outfits`, `dismissed_outfits`, `planned_outfits`, `saved_trips`, `push_tokens` | The repositories | User JWT + RLS | select, update, insert, delete | rows | `42501`, `23514` |
 | `/storage/v1/object/garments/…` | Upload queue, `garmentRepository.ts`, functions, backup | User JWT or service role | upload, sign, remove, download | — | Storage error statuses ([Storage](#storage)) |
 | `/auth/v1/*` | `src/auth/emailAuth.ts`, `socialAuth.ts`, `accountClient.ts` | Anon key or session | sign-up, sign-in, recovery, ID tokens | session | Auth error codes |
 
@@ -133,6 +146,69 @@ Called by `public.request_garment_extraction()` after a garment insert, never by
 The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` and the
 `updated_at` read before the Claude call; why each guard is there:
 [`ai.md`](ai.md#failure-mapping).
+
+**"Ready to review" push.** After a write-back that matched (any outcome but `skipped`), the function
+calls `rpc/claim_review_push` with the garment's user. The RPC answers nothing unless the user has no
+live extraction left (pending, unreviewed, under the app's 10-minute timeout), at least one
+unreviewed `done` garment, and a `review_ready` phone not pushed in the last 60 minutes; the claim
+stamps `last_review_push_at` atomically, so two garments finishing together push once. Each claimed
+phone gets one message in the profile's language, "N garments are ready to review" / "N prendas
+listas para revisar", with `data: { kind: 'reviewReady', url: '/review' }`. The claim spends the hour
+even if Expo then fails. A `DeviceNotRegistered` ticket deletes that token. The push never changes
+the answer: the log line gains `push: 'sent' | 'none' | 'failed'`, never a token.
+
+### `weekly-summary`
+
+Called by the `weekly-summary` pg_cron job (Sundays 13:00 UTC) through `public.request_weekly_summary()`,
+never by the app.
+
+- Request: `POST {}` with `x-webhook-secret` (`WEEKLY_SUMMARY_SECRET`, constant-time compare).
+- Reads `rpc/weekly_summary_targets` with the service role in pages of 1000: one row per `weekly`
+  phone (its newest holder) with the outfits logged in the last 7 UTC days and the active pieces
+  unused for 6 months; users with both at 0 are left out.
+- Sends each one message in the profile's language, "This week: 4 outfits logged · 3 pieces waiting
+  to be worn" / "Esta semana: 4 outfits registrados · 3 prendas esperando a que las uses", with
+  `data: { kind: 'weeklySummary', url: '/closet?segment=stats' }`, in batches of 100; a failed batch
+  doesn't stop the next. `DeviceNotRegistered` tokens are deleted.
+- Response: 200 `{ outcome: 'sent', targets, sent, failed, removed }`; 405, 401 before any read; 500
+  `{ error: 'internal' }` when the targets read fails (nothing sent). Logs the outcome and the counts.
+
+### `push-claim`
+
+Reclaims a push token another account holds under another device secret, by proving this phone
+receives the token's pushes: this phone lost its secret (restored app data, a kv reset) while the
+token survived, or someone who learned the token registered it first. `verify_jwt = true`.
+
+- `{ token, step: 'start' }`: `rpc/start_push_claim` stores the SHA-256 of a fresh 8-character code
+  (`CLAIM_CODE_LENGTH`, 32 symbols without 0/O/1/I) as the caller's own claim in `push_claims` for 10
+  minutes, only for a token some row holds and within the limits: once per token and account per 10
+  minutes, 5 starts per account per hour, 6 claim pushes per token per hour. Another account's open
+  claim never blocks this one. The function then sends the
+  code as a data-only push (`{ type: 'push-claim', code }`, high priority, no title) to that token
+  only. Always 202 `{ outcome: 'accepted' }`, sent or not.
+- `{ token, step: 'confirm', code, device_secret, platform, review_ready, weekly }`:
+  `rpc/push_claim_attempt` spends one of the caller's 5 attempts on their own unexpired claim and
+  answers the code's hash; the function compares the code's hash in constant time; on a match
+  `rpc/finish_push_claim` deletes the token's other rows and every claim on it, and upserts the
+  caller's row with the new secret's hash and both choices, in one transaction. 200
+  `{ outcome: 'claimed' }`; a wrong, expired or spent code (or another caller's claim) answers 403
+  `{ error: 'invalid_code' }`.
+- 400 `{ error: 'invalid_body' }`, 401, 405 before any read; 500 when a call fails. Logs outcome words,
+  never the token, code or secret.
+
+### `push-unregister`
+
+Called by the app's pending-list flush (at launch and after a sign-in) for a token a sign-out
+couldn't delete, with or without a session.
+
+- Request: `POST { "token": "<Expo push token>", "device_secret": "<hex>" }`: one token, a body of at
+  most 1 KiB (`MAX_BODY_BYTES`), the table's token format and 255-character cap, and a secret of 32
+  to 128 hex characters (the app sends 64).
+- Deletes, with the service role, only the `push_tokens` rows holding that token **and** the
+  SHA-256 of that secret: knowing a token alone deletes nothing.
+- Response: 204, whether or not a row matched, so it can't tell which tokens or secrets exist; 400
+  `{ error: 'invalid_body' }`, 405, 413 `{ error: 'payload_too_large' }` before any read; 500 when the
+  delete fails (the app keeps the token pending).
 
 ### `rate-outfit`
 
@@ -311,8 +387,9 @@ never waits for it.
 - Request: `POST {}`.
 - Response: `DataExport` (`export-data/handler.ts`): `{ exportedAt, profile, garments (every column, `price` and `currency` included), outfits (each
   with items: [{ garment_id }]), wears, dismissedOutfits, plannedOutfits, savedTrips (each with its
-  `result` snapshot), photos: [{ garmentId, full, thumb }] }`.
-  The app refuses a document without `dismissedOutfits`, `plannedOutfits` or `savedTrips`
+  `result` snapshot), pushPreferences (each phone's `platform`, `review_ready`, `weekly`,
+  `last_review_push_at` and `updated_at`, never the token), photos: [{ garmentId, full, thumb }] }`.
+  The app refuses a document without `dismissedOutfits`, `plannedOutfits`, `savedTrips` or `pushPreferences`
   (`isDataExport`), so the function ships before or with an app that reads it. Rows are read with
   the caller's token in pages of 1000 (`PAGE`); photo URLs are signed for 7 days
   (`SIGNED_URL_TTL_S`).
@@ -328,9 +405,13 @@ never waits for it.
 | `keep_alive` | `() returns timestamptz` | `anon` (the only anon grant) | Answers `now()`, reads no table |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer) returns boolean` | `service_role` | The UTC day; extraction only |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer, p_day date) returns boolean` | `service_role` | `p_day` when within one day of the UTC date, else the UTC day (`20261120120000_quota_local_day.sql`) |
+| `start_push_claim`, `push_claim_attempt`, `finish_push_claim` | `(user, token, code hash) returns boolean`, `(user, token) returns text`, `(user, token, platform, review_ready, weekly, device secret) returns boolean` | `service_role` | `security definer`. The reclaim steps ([`push-claim`](#push-claim)) |
+| `register_push_token` | `(p_token text, p_platform text, p_review_ready boolean, p_weekly boolean, p_device_secret text) returns void` | `authenticated` | `security definer`. Stores the caller's token, both choices and the secret's SHA-256. `22023` for a bad token, platform or secret (under 128 bits); `42501` when another account holds the token under another secret; the same secret (that phone, a new account) deletes the other accounts' rows first ([`database.md`](database.md#push-notifications)) |
+| `claim_review_push` | `(p_user_id uuid) returns table (token text, language text, ready integer)` | `service_role` | `security definer`. The "ready to review" check and the 60-minute claim ([`extract-attributes`](#extract-attributes)) |
+| `weekly_summary_targets` | `() returns table (user_id uuid, token text, language text, outfits integer, unused integer)` | `service_role` | `security definer`. One row per weekly phone with something to say ([`weekly-summary`](#weekly-summary)) |
 
-`prune_expired_caches()` is not callable from the API (execute revoked from `anon` and
-`authenticated`); only the cron job runs it. Details: [`database.md`](database.md#logging-a-wear).
+`prune_expired_caches()` and `request_weekly_summary()` are not callable from the API (execute
+revoked from `anon` and `authenticated`); only their cron jobs run them. Details: [`database.md`](database.md#logging-a-wear).
 
 ## Tables the app reads and writes
 
@@ -345,6 +426,7 @@ All through PostgREST with the user's JWT; RLS limits every row to the caller's 
 | `planned_outfits` | select own by `planned_on` range (today to today + 13); delete one by id; writes through `plan_outfit` | Select, insert, update, delete own; insert and update only for the caller's own distinct garments on a day in the window | `src/planner/plannedOutfits.ts` |
 | `saved_trips` | select own, newest first (at most 50); insert `{ city, start_on, end_on, occasion, result }`; delete one by id | Select, insert, delete own; no update | `src/trips/savedTrips.ts` |
 | `dismissed_outfits` | insert `{ outfit_key }` ignoring duplicates (upsert on `user_id,outfit_key`); delete one by key (Today's Undo) or all own (Profile's restore); count own (head) | Select, insert, delete own; no update | `src/outfits/suggestionFeedback.ts` (which also sets `garments.suggest` false, or true for the Undo) |
+| `push_tokens` | writes through `rpc/register_push_token`; select own; delete own by token (both switches off, sign-out, an old token) | Select every column but `device_secret_hash`, delete own; no insert or update | `src/push/pushRegistration.ts` |
 
 The caches, `usage_counters` and `apple_tokens` have no client grants at all.
 
@@ -387,6 +469,7 @@ admin API with the service role (`GET` and `DELETE /auth/v1/admin/users/{uid}`, 
 | --- | --- | --- |
 | Extraction trigger | After each garment insert | `garments_request_extraction` → `net.http_post` (5 s) to `extract-attributes`, URL and secret from the Vault; nothing when either is missing |
 | `prune-expired-caches` | `pg_cron`, daily at 04:00 UTC | `public.prune_expired_caches()`, which deletes cache rows past their lifetime ([`database.md`](database.md)) |
+| `weekly-summary` | `pg_cron`, Sundays at 13:00 UTC (`0 13 * * 0`) | `public.request_weekly_summary()` → `net.http_post` (30 s) to `weekly-summary`, URL and secret from the Vault (`weekly_summary_url`, `weekly_summary_secret`); nothing when either is missing |
 | Keep-alive | GitHub Actions, daily at 14:23 UTC (`23 14 * * *`), and by hand | `POST rpc/keep_alive` with the anon key, from the repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`; GitHub stops it after 60 days without repo activity |
 | Backup | launchd on the owner's Mac, daily at 03:30 local time | `pnpm backup`: two `supabase db dump` runs and every Storage object ([`owner-runbook.md`](owner-runbook.md#7-backups)) |
 
@@ -403,6 +486,7 @@ hosted, the URLs stay unset and default to the real hosts.
 | Open-Meteo forecast (current and daily) | `GET /v1/forecast` | `https://api.open-meteo.com` | `mockServices.ts`, 54498 |
 | Open-Meteo geocoding | `GET /v1/search` | `https://geocoding-api.open-meteo.com` | `mockServices.ts`, 54498 |
 | Apple | `POST /auth/token`, `POST /auth/revoke` | `https://appleid.apple.com` | `mockServices.ts`, 54498 |
+| Expo push service | `POST /--/api/v2/push/send` (`EXPO_PUSH_URL`; `Authorization: Bearer <EXPO_ACCESS_TOKEN>` only when Expo's enhanced push security is on) | `https://exp.host/--/api/v2/push/send` | `mockServices.ts`, 54498 |
 | Brevo (Auth's SMTP) | SMTP `smtp-relay.brevo.com:587` | hosted Auth only | Mailpit, port 54424 |
 
 How to run the mocks: [`local-stack.md`](local-stack.md#mocks).

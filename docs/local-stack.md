@@ -31,7 +31,7 @@ The stack uses its own port block, 54420–54429 (`supabase/config.toml`):
 | Postgres | `127.0.0.1:54422` (user and password `postgres`) |
 | Studio | `http://127.0.0.1:54423` |
 | Mailpit | `http://127.0.0.1:54424` |
-| Mock Jev, Open-Meteo and Apple | `54498` on the host |
+| Mock Jev, Open-Meteo, Apple and Expo push | `54498` on the host |
 | Mock Claude | `54499` on the host |
 
 The Edge Runtime serves every function at `http://127.0.0.1:54421/functions/v1/<name>` and reloads
@@ -54,18 +54,19 @@ function directory is only found at start: until `pnpm db:stop && pnpm db:start`
 ## Function secrets
 
 The local secrets are literal, local-only values in `supabase/config.toml`'s
-`[edge_runtime.secrets]` (`EXTRACT_WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`,
-`TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `OPEN_METEO_URL`, `OPEN_METEO_GEOCODING_URL`,
-`APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_CLIENT_ID`, `APPLE_BASE_URL`; `APPLE_PRIVATE_KEY` comes from
-the environment). They apply when the stack starts, so restart it after changing them.
+`[edge_runtime.secrets]` (`EXTRACT_WEBHOOK_SECRET`, `WEEKLY_SUMMARY_SECRET`, `ANTHROPIC_API_KEY`,
+`ANTHROPIC_BASE_URL`, `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `OPEN_METEO_URL`,
+`OPEN_METEO_GEOCODING_URL`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_CLIENT_ID`, `APPLE_BASE_URL`,
+`EXPO_PUSH_URL`; `APPLE_PRIVATE_KEY` comes from the environment; `EXPO_ACCESS_TOKEN` stays unset). They apply when the stack starts, so restart it after changing them.
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are injected by the runtime.
 
 Those values must never reach the hosted project: `supabase secrets set` run from this repo pushes
 them too. Hosted secrets are set from an empty directory
 ([`owner-runbook.md`](owner-runbook.md#setting-a-hosted-secret)).
 
-`rate-outfit`, `lucky-list`, `for-you`, `trip-plan`, `buy-check`, `stylist`, `apple-token`, `delete-account` and `export-data` run with
+`rate-outfit`, `lucky-list`, `for-you`, `trip-plan`, `buy-check`, `stylist`, `push-claim`, `apple-token`, `delete-account` and `export-data` run with
 `verify_jwt = true`: the anon key passes the gateway but has no user, and the function answers 401.
+`extract-attributes`, `weekly-summary` and `push-unregister` run with `verify_jwt = false`.
 
 ## The extraction trigger's Vault secrets
 
@@ -73,6 +74,11 @@ The garments insert trigger reads the function URL and webhook secret from the V
 `extract_attributes_url` and `extract_webhook_secret`, which `supabase/seed.sql` creates on every
 `pnpm db:reset`. The URL uses Kong's container name, since pg_net runs inside the db container
 ([`database.md`](database.md#extraction-trigger)).
+
+The weekly-summary job reads `weekly_summary_url` and `weekly_summary_secret` the same way (seeded
+too; the secret matches `WEEKLY_SUMMARY_SECRET`). The job only fires on Sundays at 13:00 UTC; to run
+it by hand, `select public.request_weekly_summary();` in Studio's SQL editor
+([`database.md`](database.md#push-notifications)).
 
 ## Cache cleanup
 
@@ -134,6 +140,14 @@ when it's missing (kept across restarts, never registered with Apple) and passes
 leaves the key unset, so `apple-token` answers `skipped` and deletion skips the revoke, as on a
 hosted project without the secrets. With no mock running, `apple-token` answers `exchange_failed`
 and deletion logs `revoke_failed` and goes on.
+
+### Mock Expo push
+
+`EXPO_PUSH_URL` points at port 54498 too, where `mockServices.ts` serves `POST /--/api/v2/push/send`
+(`EXPO_PUSH_PATH`): it records every message (`pushes()`) and answers an `ok` ticket per message
+until `expoPush(next)` sets a reply computed from the messages (`null` restores the default), for
+example `DeviceNotRegistered` tickets. `push.int.test.ts` starts it. With no mock running, the push
+send fails, which `extract-attributes` logs as `push: 'failed'` and goes on.
 
 ### Logs
 

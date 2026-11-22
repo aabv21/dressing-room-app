@@ -174,6 +174,25 @@ The Profile tab's Privacy section (data export and account deletion):
   removed on unmount, a language change re-schedules an enabled reminder (never an off one), an
   enabled reminder the OS no longer holds is scheduled again on mount (one still there isn't), and a
   plan for the coming week re-schedules it naming the pieces still in the closet.
+- `src/push/__tests__/pushRegistration.test.ts` — the device secret (256 bits as hex, made once, kept
+  device-wide); turning a notice on: the permission, the token for the EAS project, and
+  `register_push_token` with both choices and the secret; a denied permission, a failed token fetch
+  or no project id (`unavailable`) and a refused registration storing nothing; both off and a changed
+  token deleting the own row; a re-registered token leaving the pending list; sign-out deleting the own
+  row, or (offline, an error, a stalled network) leaving the token pending, the pending list and secret
+  surviving the account's kv; the flush sending the token with the secret and keeping what fails
+  again; a `42501` starting a claim, the code confirming only this account's pending claim, a
+  refused code keeping it, and the next launch asking again (or dropping another account's).
+- `src/push/__tests__/PushSection.test.tsx` — both notices off by default; one on registers with that
+  choice, the other on keeps the first, the last off deletes; "Notifications aren't available on this
+  phone yet", the denied explanation with "Open settings", and a failed save, each leaving the switch
+  off.
+- `src/push/__tests__/PushTapSync.test.tsx` — a "ready to review" tap opens Review and a weekly summary
+  tap opens Stats (at launch or while running), the listener goes away on unmount, and the reminder's,
+  an unknown kind's or an action button's tap is ignored.
+- `src/push/__tests__/PushClaimSync.test.tsx` — resumes the account's claim on mount, hands a claim
+  code push to `confirmPushClaim`, ignores other notifications and malformed codes, and stops
+  listening on unmount.
 - `src/voice/__tests__/speech.test.ts` — `pickVoice`: Latin American Spanish before Spain, es-MX
   first, Android's underscore tags, any voice in the language as a fallback, en-US first, an
   enhanced voice within a tag, and null with no voice in the language.
@@ -559,8 +578,14 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   `supabase/config.toml`: every function folder has its own `[functions.<name>]` section and no
   section names a missing folder; every user-called function has `verify_jwt = true`, since
   `userIdFromJwt` reads the token's `sub` without checking its signature; and `extract-attributes`,
-  the database webhook, is the only one with `verify_jwt = false`, checking its `x-webhook-secret`
-  header instead and never reading a JWT.
+  `extract-attributes` and `weekly-summary` have `verify_jwt = false` and check their
+  `x-webhook-secret` header instead, and `push-unregister` has it off too but never reads a caller
+  id, deleting only rows matching the token and device secret.
+- `supabase/functions/_shared/__tests__/push.test.ts` — Expo sends: JSON on the app's channel, the
+  bearer only with an access token, a data-only message at high priority without title or sound,
+  batches of 100, `DeviceNotRegistered` tickets naming their tokens, a failed batch (500, no tickets,
+  too few, not JSON, a network error, the 5 s timeout) not stopping the next; `deleteTokens`; the
+  en/es copy and its plurals.
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
   after 30 s (`failed`), a garment no longer pending, already reviewed or missing, a guarded
@@ -568,7 +593,11 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   `updated_at` filter carries the exact value read before the Claude call), a row without a
   readable `updated_at` (500, no Claude call), adversarial
   Claude responses (`claude-adversarial-*.json`) writing only the attribute columns, and logs that
-  carry only the garment id and an outcome word.
+  carry only the garment id and outcome words. The "ready to review" push: after a matched write-back
+  (a failed one too) it claims with the user's id and sends one message in the profile language
+  opening Review; no tokens, a claim error or malformed rows, an Expo 500, a network error, a rejected
+  message or a 5 s hang still answer the extraction's outcome; a `DeviceNotRegistered` ticket deletes
+  the token; a skipped write-back claims nothing; the log never carries a token or the copy.
 - `supabase/functions/rate-outfit/__tests__/handler.test.ts` — the Jev score and its cache (keyed by
   the garments, occasion and profile, not by a logged wear), the quota (fails closed), Jev and
   Claude both failing (503), unknown weather, a foreign garment id (404 before any quota), the swap
@@ -622,7 +651,21 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   an unsuggested garment changing the key while still owning its archetype.
 - `supabase/functions/apple-token/__tests__/handler.test.ts` — the code exchange stored with the
   service role and never returned, an identity mismatch, no Apple env (`skipped`), 401 and 405.
-- `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits, plans and saved trips included), rows read with the
+- `supabase/functions/weekly-summary/__tests__/handler.test.ts` — 401 (wrong, last-character, missing
+  secret) and 405 before any fetch; each target's counts in its language opening Stats; nobody opted
+  in; 150 phones in two requests; paging past a capped page; dead tokens deleted (exactly those); a
+  failed batch not stopping the next; a failing delete still answering; a failed or malformed targets
+  read answering 500 with nothing sent; logs of outcome words and counts only.
+- `supabase/functions/push-unregister/__tests__/handler.test.ts` — deletes only rows matching the
+  token and the secret's SHA-256, 204 with no body whether or not a row matched (a wrong secret
+  deletes nothing); 400 for a bad token, secret or shape, 413 over 1 KiB, 405, 500 on a failed delete;
+  logs never carry the token.
+- `supabase/functions/push-claim/__tests__/handler.test.ts` — start: a fresh code's hash stored and the
+  code pushed as data only to that token, 202 either way (rate limited: no push), a new code each
+  time; confirm: a right code takes the token over with the new secret, a wrong one spends an attempt,
+  the 6th attempt, an expired claim, another caller's claim and a claim ended meanwhile all answering
+  403; 401 and every 400 before any fetch; logs without the token, code or secret.
+- `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits, plans, saved trips and the notification preferences without the push token included), rows read with the
   caller's token and only the caller's paths signed for 7 days, another user's rows dropped, paging
   until an empty page (also when the server caps a page below 1000 rows), a brand-new account, a
   failed read or signing answering 500, and a log of only an outcome word.
@@ -665,6 +708,13 @@ Supabase stack:
   `bumpPhotoVersion` moves 1 → 2, `confirmReview` stamps `reviewed_at`, and `deleteGarment` leaves
   no row and no photos (and succeeds again on a retry). Uploads use `uploadGarmentPhotoBytes`, the
   storage half of `uploadGarmentPhoto`; its expo-file-system read is covered by the unit test.
+- `push.int.test.ts` — server push with the Expo mock in `mockServices.ts`: `push_tokens` through the
+  API (own rows only, no direct writes, the hash unreadable); another phone's secret refused and the
+  same phone's new account taking the token over; `push-unregister` with the anon key (a wrong secret
+  deletes nothing); `push-claim` (the code pushed to the token only, a second start sending nothing, a
+  wrong code refused, the right one taking over); the "ready to review" push once a batch is done and
+  not again within the hour; a `DeviceNotRegistered` ticket deleting the row; `weekly-summary` behind
+  its secret with the week's counts.
 - `extraction.int.test.ts` — attribute extraction end to end: A uploads
   `integration/fixtures/garment.webp` and inserts the row, the insert trigger calls the
   `extract-attributes` Edge Function through pg_net, and the function calls the mock Claude below.
@@ -786,6 +836,14 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   quota kind; both cascade on user delete.
 - `buy_check_quota.test.sql` — the `buy_check` quota kind: five checks on a local day, the sixth
   refused, counted apart from `extraction` and from another user.
+- `push_tokens.test.sql` — `push_tokens`: no client insert or update, the hash unreadable, own rows
+  only, anon nothing; `register_push_token` (format, platform and secret checks; another device's
+  secret refused; the same secret taking over; the SHA-256 kept); `claim_review_push` (no push while a
+  fresh extraction is pending or with only failed rows, the count and language once the batch is done,
+  the 60-minute window); `push_claims` and `push_claim_starts` (no client access, per-account claims,
+  5 attempts, expiry, every claim gone after a takeover, the per-account and per-token limits, the
+  cleanup); `weekly_summary_targets` (this week's wears, unused pieces, weekly off, nothing to say);
+  the `weekly-summary` job and its Vault-read pg_net call; the cascade.
 - `stylist_quota.test.sql` — the `stylist` quota kind: twenty messages on a local day, the 21st
   refused, counted apart from `buy_check` and from another user.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and

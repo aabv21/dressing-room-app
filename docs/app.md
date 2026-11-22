@@ -383,8 +383,9 @@ only: leaving the screen or "New chat" forgets it, and the server keeps nothing 
 ## The daily reminder (`src/reminder/`)
 
 A local notification at a time the user picks, inviting them to open Today. No server, no push
-token: the phone schedules it and shows it at its own wall clock, so it follows the local time zone
-when the user travels.
+token (the server's notices are [Notifications from the app](#notifications-from-the-app-srcpush)):
+the phone schedules it and shows it at its own wall clock, so it follows the local time zone when the
+user travels.
 
 - `reminderStore.ts`: the settings on this device, per account, in kv `reminder.<userId>`:
   `{ enabled, hour, minute, notificationId, language }`, off at 07:30 by default. The key's
@@ -431,6 +432,53 @@ when the user travels.
   ended (any `SIGNED_OUT`, so the next person on the phone never gets it), keeping the time;
   `forgetAccountOnDevice` refuses the account's kv, then queues `forgetReminder` before removing
   the keys.
+
+## Notifications from the app (`src/push/`)
+
+Two notices the server sends through Expo's push service, both off until turned on in Profile:
+"Garments ready to review" / "Prendas listas para revisar" (once a batch of uploads is done, at most
+once an hour) and "Weekly summary" / "Resumen semanal" (Sundays: the outfits logged that week and the
+pieces unused for 6 months). What the server does: [`api.md`](api.md#extract-attributes),
+[`api.md`](api.md#weekly-summary).
+
+- `pushStore.ts`: this phone's choices per account in kv `push.<userId>`
+  (`{ token, reviewReady, weekly }`, the `<name>.<id>` shape, so account deletion clears it), read by
+  `usePushSettings`; and three device-wide keys outside that shape, which survive sign-out and account
+  deletion: `push.deviceSecret` (`deviceSecret()`: 256 bits from `expo-crypto`'s `getRandomBytes`,
+  made on first use), `push.pendingUnregister` (tokens a sign-out couldn't delete) and
+  `push.pendingClaim` (a token reclaim this phone started: the account, token, platform and choices).
+- `pushRegistration.ts`: `setPushPreferences(userId, { reviewReady, weekly }, language)`. Turning a
+  notice on creates the Android `app-notices` channel, asks permission like the reminder
+  (`askReminderPermission`), fetches `getExpoPushTokenAsync({ projectId })` with `app.json`'s
+  `extra.eas.projectId`, and calls `rpc/register_push_token` with the token, the platform, both
+  choices and the device secret; it answers `saved`, `denied`, `unavailable` (no project id, or the
+  token fetch failed: FCM or APNs isn't set up for the build) or `failed` (the call failed, or the
+  server refused a token another device holds). A saved token leaves the pending list, and a changed
+  token's old row is deleted. Both off deletes the phone's own row through RLS.
+  A `42501` refusal (another account holds the token under another secret) starts a claim: the
+  pending claim goes to `push.pendingClaim` and `push-claim` `start` asks the server to push a code to
+  the token. `confirmPushClaim(code, userId)` confirms only this account's pending claim, with the
+  device secret, and on success saves the choices as a registration would; a refused code keeps the
+  claim. `resumePushClaim(userId)` asks for a new code at the next launch or sign-in, and drops another
+  account's claim. There's no UI for it beyond the switch turning on once it succeeds.
+  `forgetPushToken` (sign-out, before the session ends) deletes the own row the same way, within
+  5 s (`FORGET_TIMEOUT_MS`); when that fails, the token joins `push.pendingUnregister`.
+  `flushPendingUnregister` (at launch and after each sign-in, from `AuthProvider`) sends each pending
+  token with the device secret to `push-unregister`, which deletes only rows this phone registered,
+  and keeps each that fails again.
+- `PushSection.tsx`: Profile's "Notifications from the app" / "Avisos de la app" card: two switches
+  with a line each, showing the requested state while the prompt and the save run; on `denied` the
+  reason and "Open settings", on `unavailable` "Notifications aren't available on this phone yet.",
+  on `failed` a retry message. Nothing crashes on a phone without push set up.
+- `PushClaimSync.tsx`, mounted next to `DailyReminderSync` with the user id: resumes the account's
+  pending claim, and hands a received `{ type: 'push-claim', code }` data push to `confirmPushClaim`
+  (`addNotificationReceivedListener`, so only while the app runs; the `NOTE:` there).
+- `PushTapSync.tsx`, mounted next to `DailyReminderSync`: a tap on a notice (the launch tap or one
+  while the app runs) opens Review for `reviewReady` and Stats (`/closet?segment=stats`) for
+  `weeklySummary`, chosen from the notice's `kind`, never its `data.url`, and clears the response.
+- On the way out: `useSignOut` awaits `forgetPushToken` before signing out; account deletion needs
+  nothing more, since the rows cascade with the user and `forgetAccountOnDevice` clears
+  `push.<userId>`.
 
 ## Voice (`src/voice/`)
 
@@ -518,7 +566,8 @@ compared across them. Each line opens the garment, and the card is hidden with n
   with the user's id as a dot-separated segment, plus `deviceState`'s entries, after refusing that
   user's later kv writes.
   New per-user kv keys must keep the `<name>.<id>[.<more>]` shape to be cleared and refused;
-  `queue.purge.<id>` is the one key it keeps.
+  `queue.purge.<id>` is the one key it keeps. The device-wide `push.deviceSecret`,
+  `push.pendingUnregister` and `push.pendingClaim` have no user id in the key, so they stay.
 - `deviceFiles.ts`: `removeExports` and `forgetDeviceFiles` (the exports plus expo-image's caches).
 - `usePrivacyActions.ts`: one flow at a time. Export checks the share sheet, replaces earlier exports
   and shares as `public.json`; delete asks twice, then runs `runDeletion`. Profile's Sign out stays

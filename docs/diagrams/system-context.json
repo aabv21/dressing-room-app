@@ -96,7 +96,7 @@
       "id": "functions",
       "type": "backend",
       "label": "Edge Functions",
-      "sublabel": "10 · quotas · caches",
+      "sublabel": "13 · quotas · caches",
       "row": 1,
       "col": 2,
       "size": [
@@ -120,7 +120,7 @@
       "id": "postgres",
       "type": "database",
       "label": "Postgres 17",
-      "sublabel": "RLS · pg_cron prune",
+      "sublabel": "RLS · pg_cron jobs",
       "row": 2,
       "col": 2,
       "size": [
@@ -185,6 +185,18 @@
       "sublabel": "token exchange · revoke",
       "row": 3,
       "col": 4,
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "expo",
+      "type": "external",
+      "label": "Expo Push",
+      "sublabel": "FCM · APNs",
+      "row": 0,
+      "col": 3,
       "size": [
         150,
         64
@@ -293,7 +305,7 @@
       "id": "trigger",
       "from": "postgres",
       "to": "functions",
-      "label": "on insert",
+      "label": "on insert · Sundays",
       "variant": "dashed",
       "fromSide": "right",
       "toSide": "right"
@@ -342,6 +354,12 @@
       "to": "appleid",
       "label": "refresh token",
       "labelSegment": 2
+    },
+    {
+      "id": "push",
+      "from": "functions",
+      "to": "expo",
+      "label": "opt-in notices"
     }
   ],
   "cards": [
@@ -369,7 +387,7 @@
       "items": [
         "Claude: a 784 px cut-out and enum values",
         "Jev: height, age and body buckets, never photos",
-        "Brevo: the reset-code email; Open-Meteo: the city"
+        "Brevo: the reset email; Open-Meteo: the city; Expo: opt-in notices"
       ]
     }
   ]
