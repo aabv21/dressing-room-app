@@ -91,8 +91,9 @@ function Guards() {
         {/* The planner and trip packing, pushed from Today. */}
         <Stack.Screen name="plan" />
         <Stack.Screen name="trip" />
-        {/* "Should I buy it?", pushed from For you. */}
+        {/* "Should I buy it?" and "Ask your stylist", pushed from For you. */}
         <Stack.Screen name="buy-check" />
+        <Stack.Screen name="stylist" />
         {/* Today's city: a sheet over the tabs, so closing it lands back on Today. */}
         <Stack.Screen name="city" options={{ presentation: 'modal' }} />
       </Stack.Protected>

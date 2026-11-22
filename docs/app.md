@@ -16,8 +16,9 @@ code (components, hooks, utils) stays outside `src/app/`.
   `camera`, `review`, `garment/[id]`, `rate` (pushed from Today and Build as
   `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`), `city` (Today's city, a modal
   sheet), `plan` (the planner, pushed from Today as `/plan`, and from Build as
-  `/plan?day=<YYYY-MM-DD>&ids=<garment ids>`), `trip` ("Pack for a trip", pushed from Today) and
-  `buy-check` ("Should I buy it?", pushed from For you's header).
+  `/plan?day=<YYYY-MM-DD>&ids=<garment ids>`), `trip` ("Pack for a trip", pushed from Today),
+  `buy-check` ("Should I buy it?", pushed from For you's header) and `stylist` ("Ask your stylist",
+  pushed from For you's header).
 - Leaving never drops work silently: the camera with unsent shots and the garment detail with
   unsaved edits ask first through `usePreventRemove` (Discard / Keep editing), and Android's back on
   Forgot password's code step returns to the email step. `review`, `rate` and the garment detail
@@ -350,6 +351,32 @@ not the answer.
   have their own line.
 - For you's header carries the "Should I buy it?" button, in every state of the ideas.
 
+## Ask your stylist (`src/stylist/`)
+
+A chat with Claude about the user's own closet, typed or dictated, through `stylist`
+([`api.md`](api.md#stylist), [`ai.md`](ai.md#ask-your-stylist)). The conversation lives in memory
+only: leaving the screen or "New chat" forgets it, and the server keeps nothing either.
+
+- `stylistClient.ts`: `askStylist({ messages, date, language })` through `aiClient.ts`'s shared
+  `invoke` (429 `over_quota`, 503 `unavailable`); `isStylistResponse` checks the answer (a reply of
+  1–500 characters, an outfit of 1–6 uuids or none); `historyForRequest` sends the newest turns that
+  fit the function's limits (12 turns, 4,000 characters) and starts with the user's.
+- `useStylist.ts`: the messages, one send at a time (a ref locks a double tap); a failure keeps the
+  user's message and "Try again" resends the same history; "New chat" clears it and drops a late
+  answer for the old conversation. Over the quota stays over after "New chat".
+- `src/app/stylist.tsx`: the intro, the privacy line ("Your messages and a summary of your closet go
+  to Anthropic to answer them. The app and its server don't store them; Anthropic applies its own
+  retention rules."), a "Speak replies" switch, the chat, and an input bar with the field (500
+  characters), a mic ("Dictate a message", whose transcript fills or extends the field; a problem
+  such as nothing heard shows above it) and Send.
+  Each reply has a Listen button; with "Speak replies" on, a reply that arrives then reads itself
+  once (`ListenButton`'s `autoPlay`), and starting dictation stops it. A reply carrying an outfit
+  shows its pieces still in the closet as an `OutfitStack`, with "Rate it" (`/rate?ids=…`) and
+  "I'll wear it" (`useWearLog`, on the local day). Over the quota the field and Send are disabled
+  with "You've used today's 20 messages. Come back tomorrow."; offline, unavailable and unknown
+  failures have their own line and "Try again".
+- For you's header carries the "Ask your stylist" button next to "Should I buy it?".
+
 ## The daily reminder (`src/reminder/`)
 
 A local notification at a time the user picks, inviting them to open Today. No server, no push
@@ -405,8 +432,7 @@ when the user travels.
 ## Voice (`src/voice/`)
 
 "Listen" reads the screen aloud with `expo-speech`, the phone's own text-to-speech, and dictation
-fills the city and Today's occasion. The voice stylist (a conversation with Claude) is a later
-step.
+fills the city, Today's occasion and the stylist's message ([Ask your stylist](#ask-your-stylist-srcstylist)).
 
 - `speechText.ts`: what is read, as short sentences (a label's " · " becomes a pause):
   `todaySpeech` (Today's pieces in display order, the weather line when there is weather, and
@@ -415,7 +441,7 @@ step.
 - `speech.ts`: `pickVoice(voices, locale)` picks the installed voice for the app language: for
   Spanish es-MX, es-US, then es-419 (the neutral Latin American copy), then any Spanish voice; for
   English en-US, then any English voice; an enhanced voice wins within a tag, and Android's
-  `es_MX` tags match too. `useSpeaker(text)` keeps one utterance app-wide (a module-level owner
+  `es_MX` tags match too. `useSpeaker(text, { autoPlay })` keeps one utterance app-wide (a module-level owner
   and per-utterance token read through `useSyncExternalStore`, so a late `onStopped` from an earlier
   utterance can't reset the button of the one playing now): another button's Listen stops the
   current one, a second tap stops it, and leaving the screen (`useIsFocused`), unmounting or new
@@ -424,7 +450,9 @@ step.
   list (an engine still starting) keeps the button, and a speak error then alerts "This phone has no
   voice for this language."
 - `ListenButton.tsx`: the round Listen / Stop button (Volume2 / Square), on Today's card header,
-  the rating's header (once a result is shown) and each For you card.
+  the rating's header (once a result is shown), each For you card and each stylist reply. With
+  `autoPlay`, it reads its text once by itself as soon as the voices are known and the screen is
+  focused (the stylist's "Speak replies").
 
 Dictation uses the community module `expo-speech-recognition` (the phone's own recognizer):
 

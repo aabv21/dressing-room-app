@@ -182,8 +182,9 @@ The Profile tab's Privacy section (data export and account deletion):
 - Listen on the screens, in `today.test.tsx` (the pieces, weather and occasion with the en-US voice;
   a second tap, the end of the speech, leaving the screen and "Another" stop it; the es-MX voice in
   Spanish; hidden with voices but none in the language; a speak error alerts), `rate.test.tsx` (the
-  score, label and reasons; none while loading; unmounting stops it) and `for-you.test.tsx` (each
-  idea's text; another idea's Listen takes over; leaving the tab stops it).
+  score, label and reasons; none while loading; unmounting stops it), `for-you.test.tsx` (each
+  idea's text; another idea's Listen takes over; leaving the tab stops it) and `stylist.test.tsx`
+  (each reply, `autoPlay` with "Speak replies", stopped when dictation starts).
 - `src/voice/__tests__/occasionFromSpeech.test.ts` — every occasion from Spanish and English
   phrases, accents and capitals, the keyword order ("salir a correr", "cena formal", "fiesta en
   casa", "work out", "home office", "oficina en casa"), "office" and "la u" in Spanish, whole words
@@ -281,6 +282,12 @@ Outfits, Stats and Diary:
   Spanish labels.
 - `src/trips/__tests__/tripClient.test.ts` — `planTripRequest`'s body and error mapping, and
   `isTripResponse` accepting a plan or `too_small` and refusing another shape.
+- `src/__tests__/stylist.test.tsx` — "Ask your stylist": the privacy line; a message sent with the
+  local day and language and its reply with Listen; the conversation carried to the next message;
+  dictation filling the field, saying when it heard nothing, and stopping speech; "Speak replies" reading a new reply (and nothing
+  read with it off); an outfit reply with only the pieces still in the closet, "Rate it" and "I'll
+  wear it"; New chat; over the quota (sending disabled, no retry); network, unavailable and unknown
+  failures with "Try again" resending; Spanish copy; Back.
 - `src/__tests__/buy-check.test.tsx` — "Should I buy it?": the privacy line and both photo sources;
   a gallery photo prepared on the device then sent with the local day and language; the camera
   asked for first (denied: an alert, no camera); a canceled picker; each verdict's sentence, the
@@ -293,6 +300,9 @@ Outfits, Stats and Diary:
 - `src/buyCheck/__tests__/buyCheckClient.test.ts` — `checkPurchase`'s body and error mapping (413
   is `unknown`), and `isBuyCheckResponse` refusing an unknown verdict, count, id, category or color,
   or more than 3 duplicates.
+- `src/stylist/__tests__/stylistClient.test.ts` — `askStylist`'s body and error mapping, the answer
+  guard (empty or over-long replies, bad or too many outfit ids refused), and `historyForRequest`
+  (the last 12 turns starting with the user's, the 4,000-character total).
 - `src/trips/__tests__/tripChecks.test.ts` — `tripKey` (city case and spaces aside), check-offs per
   trip in kv `trip.checks.<id>` following each toggle, only the latest 20 trips kept, and account
   deletion clearing them.
@@ -310,7 +320,8 @@ Outfits, Stats and Diary:
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, one request at a time, and "Search in stores": the region's stores in a
   sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, a browser
-  that won't open, and the header's "Should I buy it?" opening `/buy-check` in both languages.
+  that won't open, and the header's "Should I buy it?" and "Ask your stylist" opening `/buy-check`
+  and `/stylist` in both languages.
 - `src/outfits/__tests__/storeLinks.test.ts` — `storeLinksFor`: each region's stores and exact
   URLs, a lower-case or missing region, every query and the `gl` region URL-encoded, and Mercado
   Libre's hyphens.

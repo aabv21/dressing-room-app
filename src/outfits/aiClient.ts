@@ -70,9 +70,9 @@ export function isRatingResult(value: unknown): value is RatingResult {
   );
 }
 
-/** One function call, its answer checked with `guard`; `trip-plan` and `buy-check` share it. */
+/** One function call, its answer checked with `guard`; `trip-plan`, `buy-check` and `stylist` share it. */
 export async function invoke<T>(
-  name: 'rate-outfit' | 'lucky-list' | 'for-you' | 'trip-plan' | 'buy-check',
+  name: 'rate-outfit' | 'lucky-list' | 'for-you' | 'trip-plan' | 'buy-check' | 'stylist',
   body: Record<string, unknown>,
   guard: (value: unknown) => value is T,
   client: Client,

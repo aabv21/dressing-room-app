@@ -2,7 +2,7 @@
 // (docs/app.md#voice-srcvoice).
 import * as Speech from 'expo-speech';
 import { useIsFocused } from 'expo-router';
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Alert } from 'react-native';
 
 import { useI18n, type Locale } from '../i18n';
@@ -56,14 +56,20 @@ type VoiceState = { status: 'unknown' } | { status: 'none' } | { status: 'ready'
 
 /**
  * `hidden` when the phone lists voices but none in the app language. An empty list (an engine not
- * ready yet) keeps the button, and a speak error then says there's no voice.
+ * ready yet) keeps the button, and a speak error then says there's no voice. `autoPlay` reads `text`
+ * once, as soon as the voices are known (the stylist's "Speak replies").
  */
-export function useSpeaker(text: string): { hidden: boolean; speaking: boolean; toggle: () => void } {
+export function useSpeaker(
+  text: string,
+  { autoPlay = false }: { autoPlay?: boolean } = {},
+): { hidden: boolean; speaking: boolean; toggle: () => void } {
   const { t, locale } = useI18n();
   const focused = useIsFocused();
   const [owner] = useState(() => Symbol('speaker'));
   const isSpeaking = useSyncExternalStore(subscribe, () => speaking?.owner === owner);
   const [voice, setVoice] = useState<VoiceState>({ status: 'unknown' });
+  const [settled, setSettled] = useState(false);
+  const autoPlayed = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -73,8 +79,11 @@ export function useSpeaker(text: string): { hidden: boolean; speaking: boolean; 
         const picked = pickVoice(voices, locale);
         if (picked !== null) setVoice({ status: 'ready', voice: picked });
         else setVoice({ status: voices.length === 0 ? 'unknown' : 'none' });
+        setSettled(true);
       },
-      () => undefined,
+      () => {
+        if (live) setSettled(true);
+      },
     );
     return () => {
       live = false;
@@ -112,6 +121,12 @@ export function useSpeaker(text: string): { hidden: boolean; speaking: boolean; 
       },
     });
   }, [owner, text, voice, locale, t]);
+
+  useEffect(() => {
+    if (!autoPlay || !settled || !focused || autoPlayed.current || voice.status === 'none') return;
+    autoPlayed.current = true;
+    toggle();
+  }, [autoPlay, settled, focused, voice, toggle]);
 
   return { hidden: voice.status === 'none', speaking: isSpeaking, toggle };
 }
