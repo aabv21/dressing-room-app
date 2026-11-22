@@ -110,6 +110,20 @@ init`, the OAuth clients and the store records.
   - The new app before `trip-plan` is deployed: "Pack for a trip" says something went wrong; the
     planner on the old schema can't save.
   - An old app on the new schema and functions works: nothing it calls changed shape.
+- **Pending (after merge).** Wave 5b-2 ("Should I buy it?"), after 5b-1 and in this order:
+  1. `pnpm exec supabase db push` for `20261123120000_buy_check_quota.sql` (the `buy_check` quota
+     kind);
+  2. `pnpm exec supabase functions deploy buy-check` (new; it reads the same `ANTHROPIC_API_KEY` as
+     `extract-attributes`, so no new secret, and keeps `verify_jwt = true` from `config.toml`);
+  3. then the app build (EAS `preview`, and the store profiles when they're set up). No native
+     module is added (`expo-image-picker`'s camera was already in the build), but the screen is a new
+     route.
+
+  Incompatible combinations:
+  - `buy-check` on the old schema: every check answers 500 (no `buy_check` quota kind), before
+    Claude is called.
+  - The new app before `buy-check` is deployed: "Should I buy it?" says something went wrong.
+  - An old app on the new schema and function works: nothing it calls changed.
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
   manual `gh workflow run keepalive.yml` answers the server time from `public.keep_alive()`. GitHub
@@ -251,6 +265,11 @@ project:
   outfit per day and a packing list; a trip starting more than 16 days ahead says "Forecast
   unavailable" for its days; check off items, leave, plan the same trip again and the checks are
   still there; Save it and reopen it from the saved list; dictate the city once.
+- **Pending.** "Should I buy it?" on the phone, with the real Claude: a shot in a store of something
+  you own (the verdict says you already have something very similar, its thumbnail opens it), a
+  store screenshot of a piece you don't (the new-outfit count and the verdict), a photo of no
+  clothing ("doesn't look like clothing"), and "Add to my closet" (the piece reaches review). Deny
+  the camera once and check the message; the sixth check of the day says the 5 are used.
 - **Pending.** Large text and screen readers: the largest Dynamic Type and Android font scale 2.0
   through every tab, the rating, review and Diary; then VoiceOver and TalkBack.
 - **Pending.** Google sign-in on the phone; Sign in with Apple and its revocation once Apple is

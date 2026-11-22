@@ -28,6 +28,10 @@ where it is kept, who processes it and how you can export or delete it. Question
   the device (when the phone supports it) and shrinks it to at most 784 pixels, plus a 256-pixel
   thumbnail. Only those two versions are uploaded. The app never saves to or reads from your photo
   library beyond the photos you pick.
+- **"Should I buy it?" photos.** A photo or screenshot of a piece you're thinking of buying is
+  prepared the same way on your phone and sent to Anthropic for analysis, then compared with your
+  closet. It is not stored anywhere, and neither is the answer. Only if you tap "Add to my closet"
+  is it uploaded, like any garment photo.
 - **Your closet.** Each garment's attributes (category, colors, pattern, material, formality,
   seasons, warmth, fit, occasions), its status (available, in the laundry, lent or donated), how
   often you wear it, whether you took it out of suggestions, and, only if you enter it, what you
@@ -72,7 +76,7 @@ nothing about it reaches a server or a push service.
 | Processor | What it receives | Why |
 |---|---|---|
 | Supabase | Everything listed above | Hosting: the database, sign-in, photo storage and the server functions that call the services below |
-| Anthropic (Claude) | For each new garment, its prepared photo (cut out and at most 784 pixels) and the clothing type you chose. When the rating service is unavailable, the same anonymous summary that TypeSafe receives. For "For you", only generic descriptions of the suggested pieces, how many of your garments and outfits each one combines with, and the app's language (English or Spanish) to write the lines in, with nothing else about you. | Recognizing each garment's attributes; a backup outfit rating; the short lines on the "For you" cards |
+| Anthropic (Claude) | For each new garment, its prepared photo (cut out and at most 784 pixels) and the clothing type you chose. When the rating service is unavailable, the same anonymous summary that TypeSafe receives. For "For you", only generic descriptions of the suggested pieces, how many of your garments and outfits each one combines with, and the app's language (English or Spanish) to write the lines in, with nothing else about you. For "Should I buy it?", the photo you take or pick (prepared the same way) and your clothing type; Anthropic only analyzes it, and the app stores neither the photo nor the answer. | Recognizing each garment's attributes; a backup outfit rating; the short lines on the "For you" cards; recognizing a piece you're thinking of buying |
 | TypeSafe (Jev) | An anonymous summary only: your clothing type, body type, a height range (short, medium or tall), age group and styles; the occasion, the weather and the season; and each piece's category, colors, pattern, formality and fit. Never a photo, an exact measurement, a size, your name or your email. | Rating outfits and ranking suggestions |
 | Open-Meteo | Your city's coordinates, or the city's name when there are none; for "Pack for a trip", the destination city's name and the app's language, then that place's coordinates | The day's weather; a trip's daily forecast |
 | Apple | Your Sign in with Apple identity, and, when you delete your account, a request to revoke the app's access | Sign-in, and ending that link when you leave |
@@ -80,7 +84,8 @@ nothing about it reaches a server or a push service.
 | Brevo | Your email address and the confirmation or reset code | Sending your account's emails |
 
 The AI services receive these requests from the app's server, never directly from your phone, and
-the app's server never sends them your photos except for the garment recognition described above.
+the app's server never sends them your photos except for the garment recognition and the "Should I
+buy it?" check described above.
 When you tap "Search in stores" on a "For you" idea and pick a store (Falabella, Mercado Libre,
 Google Shopping or Google, depending on your country), your browser opens that store's search for
 generic words such as "camel blazer women"; the store's own privacy policy applies to that search.

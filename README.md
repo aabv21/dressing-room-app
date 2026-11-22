@@ -57,6 +57,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 - Listen: Today's outfit, the rating (score, label and reasons) and each For you idea can be read aloud in the app's language with the phone's own voices (a Latin American Spanish voice when there is one); a second tap or leaving the screen stops it, and the button hides when the phone has no voice for the language.
 - Dictate: a mic on the city field fills it, and Today's "Say the occasion" mic picks the occasion from what you say ("trabajo", "fiesta", "gym"…) in English or Spanish; the microphone is used only while you tap, and on an iPhone the words are recognized on the phone.
 - For you: 3–5 staples your closet is missing, ranked by how many new outfits each opens with what you own and how well it suits your body and style, each with a short line and a "Search in stores" button that lists the stores for your country (Falabella, Mercado Libre, Google Shopping) and opens the one you pick. The last ideas stay readable offline. A low rating with no swap links here ("Missing something?").
+- Should I buy it?: from For you, photograph a piece in the store or pick a screenshot. Claude reads what it is, and the app says whether you already own something very similar (with thumbnails that open it), how many new outfits it would open with your closet, and a verdict worked out from those two numbers, not by the model. "Add to my closet" sends the same photo through the upload queue. The photo goes to Anthropic for analysis and is never stored (5 checks a day).
 - UX polish: "I'll wear it" can be undone for 5 seconds; leaving unsaved garment edits asks first; long AI waits say "Still thinking…"; over quota, missing-piece and Stats errors offer a way out; Build moves to the next empty slot and says what's missing; Profile shows Save only for a change and lists household mode as coming soon; one type scale (11 pt minimum), color tokens and one violet selected style; 48 pt tabs.
 - Accessibility: tab labels, charts and the score ring read with meaningful labels in VoiceOver and TalkBack; content text follows the system text size with no cap, while fixed chrome, such as the tab bar, anchored buttons, the score ring and calendar cells, stops between 1.2× and 1.5×; and with Reduce Motion on, the bars and the score ring show their final state without animating.
 - Jev calibration: `pnpm calibrate export|collect|eval` turns hand-labeled saved outfits into an agreement report (Spearman's ρ, band accuracy, a confusion matrix) with suggested weights, bands and confidence aggregate. Real labels stay in gitignored files.
@@ -68,7 +69,7 @@ The screenshots come from the local stack with the mock Jev and Open-Meteo (ever
 
 ![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, a garment insert starts the extraction function, Auth mails through Brevo, GitHub Actions calls the keep-alive daily, and the owner's Mac backs up the database and photos](docs/diagrams/system-context.svg)
 
-The app talks only to one Supabase project, with the user's session: Auth, Postgres with row-level security on every table, a private photo bucket, and eight Edge Functions. Background removal, resizing and a resumable upload queue run on the phone, and so do Stats and Diary. Only the Edge Functions call the outside services: Claude labels each garment photo, TypeSafe's Jev rates outfits from bucketed, enum-only data (never photos or measurements), and Open-Meteo gives the weather. Code owns the workflow; per-user daily quotas and caches come before any paid call, and each model failure has a fallback.
+The app talks only to one Supabase project, with the user's session: Auth, Postgres with row-level security on every table, a private photo bucket, and nine Edge Functions. Background removal, resizing and a resumable upload queue run on the phone, and so do Stats and Diary. Only the Edge Functions call the outside services: Claude labels each garment photo, TypeSafe's Jev rates outfits from bucketed, enum-only data (never photos or measurements), and Open-Meteo gives the weather. Code owns the workflow; per-user daily quotas and caches come before any paid call, and each model failure has a fallback.
 
 How it works, how it fails, and why it's built this way: [`docs/architecture.md`](docs/architecture.md), with the upload pipeline, the rating sequence and the data model. Open [`docs/diagrams/system-context.html`](docs/diagrams/system-context.html) from a local clone for the interactive diagram.
 
@@ -122,7 +123,7 @@ On a physical iPhone, use the LAN URL `perf:serve` prints for the Wi-Fi the phon
 ```bash
 pnpm typecheck && pnpm lint && pnpm test   # strict TypeScript, ESLint, and the app, scripts and functions Jest projects
 pnpm db:test                               # pgTAP: RLS, grants, constraints, triggers, quotas and the deletion cascade
-pnpm test:int                              # integration against the local stack: auth, RLS across users, uploads, extraction, the outfit and account functions
+pnpm test:int                              # integration against the local stack: auth, RLS across users, uploads, extraction, the outfit, trip, buy-check and account functions
 pnpm e2e                                   # Maestro flows on the iOS simulator: sign-up to Stats, build → rate → swap, account deletion
 ```
 
@@ -145,10 +146,11 @@ Sized for a family of about 4 on Supabase's free tier. From [`docs/ai.md`](docs/
 | Garment extraction (Claude Haiku 5.5) | about $0.0003 per garment; about $0.18 for a first load of 600 garments |
 | Ratings and lucky lists (Jev) | about $0.65 a month for 4 users in typical use; about $6 at worst, with every daily quota used up |
 | For you | at most one cache miss per user a day, about $0.0005 each: at most about $0.06 a month for 4 users |
+| Should I buy it? (Claude Haiku 5.5) | about $0.0003 per check; at most about $0.18 a month for 4 users with every daily check used |
 | Weather (Open-Meteo) | free, no key; trip packing uses it and no model |
 | Supabase | free tier |
 
-Per-user daily quotas (100 extractions, 50 ratings, 10 lucky lists, 1 For you, 5 trips) bound the spend; typical use fits the $1-a-month target, and the spend caps the owner sets with the providers hold it.
+Per-user daily quotas (100 extractions, 50 ratings, 10 lucky lists, 1 For you, 5 trips, 5 buy checks) bound the spend; typical use fits the $1-a-month target, and the spend caps the owner sets with the providers hold it.
 
 ## License
 

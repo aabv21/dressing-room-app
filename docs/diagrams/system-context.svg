@@ -537,15 +537,15 @@ rect.c-bg-rect { fill: var(--bg); }
         <text x="115" y="116" class="t-muted" font-size="9" text-anchor="middle">SMTP relay</text>
         </g>
 
-        <g id="node-functions" data-node-id="functions" data-node-label="Edge Functions" tabindex="0" role="button" aria-label="Focus Edge Functions, 8 · quotas · caches, Supabase project" aria-pressed="false" data-node-kind="backend" data-node-sublabel="8 · quotas · caches" data-node-context="Supabase project">
-          <title>Edge Functions · 8 · quotas · caches · Supabase project</title>
+        <g id="node-functions" data-node-id="functions" data-node-label="Edge Functions" tabindex="0" role="button" aria-label="Focus Edge Functions, 9 · quotas · caches, Supabase project" aria-pressed="false" data-node-kind="backend" data-node-sublabel="9 · quotas · caches" data-node-context="Supabase project">
+          <title>Edge Functions · 9 · quotas · caches · Supabase project</title>
           <rect x="560" y="204" width="150" height="64" rx="6" class="c-mask"/>
           <rect x="560" y="204" width="150" height="64" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(566 210) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" x="635" y="234" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Edge Functions</text>
-        <text x="635" y="250" class="t-muted" font-size="9" text-anchor="middle">8 · quotas · caches</text>
+        <text x="635" y="250" class="t-muted" font-size="9" text-anchor="middle">9 · quotas · caches</text>
         </g>
 
         <g id="node-storage" data-node-id="storage" data-node-label="Storage" tabindex="0" role="button" aria-label="Focus Storage, private garments bucket, Supabase project" aria-pressed="false" data-node-kind="database" data-node-sublabel="private garments bucket" data-node-context="Supabase project">

@@ -5,7 +5,7 @@ Guidance for anyone, human or AI, working in this repository.
 ## Project
 
 Dressing Room is a digital closet and AI outfit rater for iPhone and Android, built as a portfolio demo with Expo (SDK 58) and Supabase.
-The app talks only to one Supabase project (Auth, Postgres with RLS, a private photo bucket, eight Edge Functions); only the functions call Claude, Jev (TypeSafe), Open-Meteo and Apple. Auth sends email through Brevo.
+The app talks only to one Supabase project (Auth, Postgres with RLS, a private photo bucket, nine Edge Functions); only the functions call Claude, Jev (TypeSafe), Open-Meteo and Apple. Auth sends email through Brevo.
 What it does and what works now: [`README.md`](README.md). How it works: [`docs/architecture.md`](docs/architecture.md).
 
 ## Expo has changed — do not trust your training data
@@ -37,9 +37,9 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 
 ## Where things live
 
-- `src/app/`: Expo Router routes only. `src/ui/`, `src/i18n/`, `src/closet/`, `src/auth/`, `src/profile/`, `src/lib/`, `src/outfits/`, `src/planner/`, `src/trips/`, `src/reminder/`, `src/voice/`, `src/stats/`, `src/account/`, `src/perf/`: the app's modules ([`docs/app.md`](docs/app.md)).
+- `src/app/`: Expo Router routes only. `src/ui/`, `src/i18n/`, `src/closet/`, `src/auth/`, `src/profile/`, `src/lib/`, `src/outfits/`, `src/planner/`, `src/trips/`, `src/buyCheck/`, `src/reminder/`, `src/voice/`, `src/stats/`, `src/account/`, `src/perf/`: the app's modules ([`docs/app.md`](docs/app.md)).
 - `src/test/`: shared Jest helpers, never imported by app code.
-- `supabase/functions/`: eight Edge Functions, each a runtime-neutral `handler.ts` plus a Deno-only `index.ts`; `_shared/` holds what they share, including `env.ts` (the startup env read), `http.ts` (replies, the caller, deadlines) and `guards.ts` ([`docs/api.md`](docs/api.md), [`docs/ai.md`](docs/ai.md)).
+- `supabase/functions/`: nine Edge Functions, each a runtime-neutral `handler.ts` plus a Deno-only `index.ts`; `_shared/` holds what they share, including `env.ts` (the startup env read), `http.ts` (replies, the caller, deadlines) and `guards.ts` ([`docs/api.md`](docs/api.md), [`docs/ai.md`](docs/ai.md)).
 - `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql`, `supabase/config.toml`: schema, pgTAP, local seed and local config ([`docs/database.md`](docs/database.md), [`docs/local-stack.md`](docs/local-stack.md)).
 - `modules/garment-cutout/`: the local native background-removal module ([its README](modules/garment-cutout/README.md)).
 - `integration/`: Jest suites and mocks against the live local stack ([`docs/testing.md`](docs/testing.md#integration)).

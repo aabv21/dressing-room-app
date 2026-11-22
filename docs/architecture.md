@@ -24,7 +24,7 @@ It runs in three places:
   and Android. Background removal, resizing and the upload queue run here, and so do Stats and
   Diary, which are computed from the garments and wears already on the device.
 - **One Supabase project.** Auth, Postgres 17 with row-level security on every table, a private
-  Storage bucket, and eight Edge Functions. Every request from the app goes through the project's
+  Storage bucket, and nine Edge Functions. Every request from the app goes through the project's
   API gateway with the user's session token; the app holds no other credential.
 - **Three AI and data services,** called only from the Edge Functions: Anthropic (Claude Haiku
   5.5), TypeSafe (its Jev judgment model) and Open-Meteo (weather and geocoding). Apple and Google
@@ -49,6 +49,8 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 | `rate-outfit` | Edge Function | Rates a built outfit with Jev, falls back to Claude, and searches a swap for a weak outfit. |
 | `lucky-list` | Edge Function | Generates up to 200 candidate outfits from the closet, ranks the top 30 with Jev, and returns them with the day's weather. |
 | `for-you` | Edge Function | Ranks the wardrobe staples for the user's clothing type (41–58) by how many new outfits each opens, weighted by a Jev fit, and returns 3–5 with a Claude line and a store-search query. |
+| `trip-plan` | Edge Function | Plans a trip's outfits day by day from the closet, the destination's daily forecast and the lucky rules, with a packing list; no model call. |
+| `buy-check` | Edge Function | "Should I buy it?": sends a photo the user takes or picks through the extraction request, then finds duplicates in the closet, counts the new outfits the piece opens and picks a rule verdict. Stores nothing. |
 | `apple-token` | Edge Function | Exchanges a Sign in with Apple authorization code for the refresh token deletion needs, and stores it only when the token's Apple user is the caller. |
 | `delete-account` | Edge Function | Removes the caller's photos, revokes the Apple token and deletes the auth user, whose rows cascade. Safe to retry. |
 | `export-data` | Edge Function | Returns the caller's profile, garments, outfits, wears and 7-day signed photo URLs as one JSON document. |
@@ -162,6 +164,14 @@ it adds and then the pre-score, with no Jev or Claude call, and the answer carri
 slot. Nothing is stored for the user unless they tap Save (`saved_trips`); check-offs stay on the
 phone.
 
+**Should I buy it?** For you's header opens a check: the app takes or picks one photo, cuts it out
+and resizes it to a 784 px WebP on the phone, and sends it with the local day to `buy-check`. The
+function validates the image, reads the closet and the profile with the caller's token, spends one
+of 5 daily checks, and sends the photo through the extraction request (same model, prompt and
+sanitizer). Code then finds up to 3 duplicates, counts the new outfits with For you's gain and picks
+the verdict; the model never decides it. No photo, cache row or answer is stored; "Add to my closet"
+hands the same photo to the upload queue.
+
 **Data export.** Profile → "Export my data" calls `export-data`, which reads the caller's rows
 with the caller's token, signs each photo URL for 7 days with the service role, and returns one
 JSON document that the app hands to the share sheet.
@@ -232,7 +242,7 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
   the Apple tokens, the caller's own photo folder and, in `delete-account`, the auth user; the
   `extract-attributes` webhook, which has no user token, uses it for the one garment it was sent.
 - **What reaches the models.** Claude sees a garment photo (cut out where possible, 784 px) and the
-  clothing type for extraction, and the same bucketed state as Jev for a fallback rating. Jev sees
+  clothing type for extraction (and a "Should I buy it?" photo the same way, never stored), and the same bucketed state as Jev for a fallback rating. Jev sees
   only buckets and enum values: clothing type, body type, a height bucket, age group, styles,
   occasion, a weather band, season and each piece's attributes. Exact measurements, sizes, names and
   photos never reach Jev, and the rating functions never read chest, waist, hips or sizes.
@@ -240,7 +250,8 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
   keeps only catalog values; reasons and swap wording come from templates, and For you's free-text
   lines are length-checked and shown as plain text. [`red-team.md`](red-team.md) maps each attack to
   its defense and test.
-- **Spend limits.** Per-user daily quotas (100 extractions, 50 ratings, 10 lucky lists, 1 For you)
+- **Spend limits.** Per-user daily quotas (100 extractions, 50 ratings, 10 lucky lists, 1 For you,
+  5 trips, 5 buy checks)
   count before any paid call, and caches answer repeats for free.
 - **Logs.** Functions log an outcome word per call (and the garment id for extraction), never a
   photo, the profile, a prompt or a model answer.
