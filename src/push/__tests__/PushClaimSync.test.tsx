@@ -35,16 +35,17 @@ test('a claim code push is handed to confirmPushClaim for this account', async (
   await render(<PushClaimSync userId="user-1" />);
 
   await act(() => {
-    listener?.(received({ type: 'push-claim', code: 'K7M2P9QX' }));
+    listener?.(received({ type: 'push-claim', code: 'K7M2P9QX', nonce: 'a1'.repeat(16) }));
   });
 
-  expect(confirmPushClaim).toHaveBeenCalledWith('K7M2P9QX', 'user-1');
+  expect(confirmPushClaim).toHaveBeenCalledWith('K7M2P9QX', 'a1'.repeat(16), 'user-1');
 });
 
 test.each([
   ['a visible notice', { kind: 'reviewReady', url: '/review' }],
   ['a claim push without a code', { type: 'push-claim' }],
-  ['a code that isn’t a string', { type: 'push-claim', code: 12345678 }],
+  ['a code that isn’t a string', { type: 'push-claim', code: 12345678, nonce: 'a1'.repeat(16) }],
+  ['a claim push without a nonce', { type: 'push-claim', code: 'K7M2P9QX' }],
 ])('ignores %s', async (_label, data) => {
   await render(<PushClaimSync userId="user-1" />);
 

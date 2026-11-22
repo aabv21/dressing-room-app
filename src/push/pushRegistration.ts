@@ -12,6 +12,7 @@ import { supabase } from '../lib/supabase';
 import { askReminderPermission } from '../reminder/dailyReminder';
 import {
   deviceSecret,
+  randomHex,
   readPendingClaim,
   readPendingUnregister,
   readPush,
@@ -25,8 +26,11 @@ export type PushClient = SupabaseClient<Database>;
 
 export type PushPreferences = { reviewReady: boolean; weekly: boolean };
 
-/** `unavailable`: no token on this phone (no EAS project id, or FCM/APNs not set up for the build). */
-export type PushOutcome = 'saved' | 'denied' | 'unavailable' | 'failed';
+/**
+ * `unavailable`: no token on this phone (no EAS project id, or FCM/APNs not set up for the build);
+ * `verifying`: another account holds the token, so a claim is proving this phone receives it.
+ */
+export type PushOutcome = 'saved' | 'denied' | 'unavailable' | 'verifying' | 'failed';
 
 function projectId(): string | null {
   const extra: unknown = Constants.expoConfig?.extra;
@@ -55,9 +59,16 @@ function saved(userId: string, token: string, choices: PushPreferences): void {
   writePendingUnregister(readPendingUnregister().filter((pending) => pending !== token));
 }
 
-async function startClaim(client: PushClient, claim: PendingClaim): Promise<void> {
-  writePendingClaim(claim);
-  await client.functions.invoke('push-claim', { body: { token: claim.token, step: 'start' } }).catch(() => undefined);
+/** Starts (or restarts) the claim with a fresh nonce, so a code from an earlier start no longer matches. */
+async function startClaim(client: PushClient, claim: Omit<PendingClaim, 'nonce'>): Promise<void> {
+  const nonce = randomHex(16);
+  writePendingClaim({ ...claim, nonce });
+  await client.functions.invoke('push-claim', { body: { token: claim.token, step: 'start', nonce } }).catch(() => undefined);
+}
+
+/** A session's end, or both notices off: a claim still in flight must not turn them back on later. */
+function dropClaimOf(userId: string): void {
+  if (readPendingClaim()?.userId === userId) writePendingClaim(null);
 }
 
 /** At launch or sign-in: asks again for this account's pending claim (the server allows one code per 10 minutes). */
@@ -72,10 +83,15 @@ export async function resumePushClaim(userId: string, client: PushClient = supab
   await startClaim(client, claim);
 }
 
-/** A claim code push arrived: confirms this account's pending claim. True once the token is this phone's. Never throws. */
-export async function confirmPushClaim(code: string, userId: string, client: PushClient = supabase): Promise<boolean> {
+/**
+ * A claim code push arrived: confirms this account's pending claim, only when the push carries that
+ * claim's nonce (another account's claim on the token also pushes codes here, and confirming those
+ * would spend this claim's attempts). True once the token is this phone's. Never throws.
+ */
+export async function confirmPushClaim(code: string, nonce: string, userId: string, client: PushClient = supabase): Promise<boolean> {
   const claim = readPendingClaim();
-  if (claim?.userId !== userId) return false;
+  if (claim?.userId !== userId || claim.nonce !== nonce) return false;
+  const previous = readPush(userId).token;
   const ok = await within(() =>
     client.functions
       .invoke('push-claim', {
@@ -83,6 +99,7 @@ export async function confirmPushClaim(code: string, userId: string, client: Pus
           token: claim.token,
           step: 'confirm',
           code,
+          nonce,
           device_secret: deviceSecret(),
           platform: claim.platform,
           review_ready: claim.reviewReady,
@@ -94,10 +111,17 @@ export async function confirmPushClaim(code: string, userId: string, client: Pus
   if (!ok) return false;
   writePendingClaim(null);
   saved(userId, claim.token, { reviewReady: claim.reviewReady, weekly: claim.weekly });
+  await dropReplacedRow(client, previous, claim.token);
   return true;
 }
 
+/** A reinstall or restore can hand the phone a new token; the old row would only collect dead pushes. */
+async function dropReplacedRow(client: PushClient, previous: string | null, current: string): Promise<void> {
+  if (previous !== null && previous !== current) await deleteRow(client, previous).catch(() => false);
+}
+
 async function turnOff(userId: string, client: PushClient): Promise<PushOutcome> {
+  dropClaimOf(userId);
   const stored = readPush(userId).token;
   if (stored !== null && !(await deleteRow(client, stored).catch(() => false))) return 'failed';
   writePush(userId, { token: null, reviewReady: false, weekly: false });
@@ -139,15 +163,17 @@ export async function setPushPreferences(
     if (error !== null) {
       // 42501: another account holds the token under another secret (this phone lost its secret, or
       // someone learned the token). Prove receipt instead: the code arrives as a push.
-      if (error.code === '42501') await startClaim(client, { userId, token: registered, platform, ...next });
+      if (error.code === '42501') {
+        await startClaim(client, { userId, token: registered, platform, ...next });
+        return 'verifying';
+      }
       return 'failed';
     }
   } catch {
     return 'failed';
   }
   saved(userId, registered, next);
-  // A reinstall or restore can hand the phone a new token; the old row would only collect dead pushes.
-  if (previous !== null && previous !== registered) await deleteRow(client, previous).catch(() => false);
+  await dropReplacedRow(client, previous, registered);
   return 'saved';
 }
 
@@ -172,9 +198,23 @@ async function within(call: () => PromiseLike<boolean>): Promise<boolean> {
  * device. A row it couldn't delete leaves the token in the device's pending list. Never throws.
  */
 export async function forgetPushToken(userId: string, client: PushClient = supabase): Promise<void> {
+  dropClaimOf(userId);
   const stored = readPush(userId).token;
   if (stored === null) return;
   if (!(await within(() => deleteRow(client, stored)))) writePendingUnregister([...readPendingUnregister(), stored]);
+  writePush(userId, { token: null, reviewReady: false, weekly: false });
+}
+
+/**
+ * A session that ended without Sign out (another phone's global sign-out, a revoked session): with
+ * no session to delete the row, the token joins the pending list for `push-unregister`, which pairs
+ * it with this phone's secret, and the account's notices turn off here.
+ */
+export function forgetPushTokenLater(userId: string): void {
+  dropClaimOf(userId);
+  const stored = readPush(userId).token;
+  if (stored === null) return;
+  writePendingUnregister([...readPendingUnregister(), stored]);
   writePush(userId, { token: null, reviewReady: false, weekly: false });
 }
 

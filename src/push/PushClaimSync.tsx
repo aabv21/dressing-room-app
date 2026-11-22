@@ -11,8 +11,8 @@ export function PushClaimSync({ userId }: { userId: string }): null {
     void resumePushClaim(userId);
     const subscription = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data;
-      if (data?.type !== 'push-claim' || typeof data.code !== 'string') return;
-      void confirmPushClaim(data.code, userId);
+      if (data?.type !== 'push-claim' || typeof data.code !== 'string' || typeof data.nonce !== 'string') return;
+      void confirmPushClaim(data.code, data.nonce, userId);
     });
     return () => {
       subscription.remove();

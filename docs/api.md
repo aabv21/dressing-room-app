@@ -107,7 +107,7 @@ A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-w
 | `POST /functions/v1/delete-account` | `src/account/accountClient.ts` `deleteAccount` | User JWT (sent explicitly) | `{}` | 200 `{ outcome: 'deleted' }` | 401, 405, 500 |
 | `POST /functions/v1/export-data` | `accountClient.ts` `exportData` | User JWT | `{}` | 200 `DataExport` | 401, 405, 500 |
 | `POST /functions/v1/weekly-summary` | The `weekly-summary` pg_cron job, through pg_net | Webhook secret | `{}` | 200 `{ outcome, targets, sent, failed, removed }` | 401, 405, 500 |
-| `POST /functions/v1/push-claim` | `src/push/pushRegistration.ts` (after a `42501` from `register_push_token`) | User JWT | `{ token, step: 'start' }` or `{ token, step: 'confirm', code, device_secret, platform, review_ready, weekly }` | 202 `{ outcome: 'accepted' }` / 200 `{ outcome: 'claimed' }` | 400, 401, 403, 405, 500 |
+| `POST /functions/v1/push-claim` | `src/push/pushRegistration.ts` (after a `42501` from `register_push_token`) | User JWT | `{ token, step: 'start', nonce }` or `{ token, step: 'confirm', code, nonce, device_secret, platform, review_ready, weekly }` | 202 `{ outcome: 'accepted' }` / 200 `{ outcome: 'claimed' }` | 400, 401, 403, 405, 500 |
 | `POST /functions/v1/push-unregister` | `src/push/pushRegistration.ts` (the pending-list flush) | Anon key or user JWT; the device secret is the credential | `{ token, device_secret }` | 204 | 400, 405, 413, 500 |
 | `POST /rest/v1/rpc/log_wear` | `src/outfits/outfitRepository.ts` `logWear` | User JWT | wear id, garment ids, day, occasion?, score? | the wear id | `22023`, `42501`, `23505` |
 | `POST /rest/v1/rpc/save_outfit` | `outfitRepository.ts` `saveOutfit` | User JWT | garment ids, score? | the outfit id | `22023`, `42501` |
@@ -164,7 +164,7 @@ never by the app.
 
 - Request: `POST {}` with `x-webhook-secret` (`WEEKLY_SUMMARY_SECRET`, constant-time compare).
 - Reads `rpc/weekly_summary_targets` with the service role in pages of 1000: one row per `weekly`
-  phone (its newest holder) with the outfits logged in the last 7 UTC days and the active pieces
+  phone (a token has one holder) with the outfits logged in the last 7 UTC days and the active pieces
   unused for 6 months; users with both at 0 are left out.
 - Sends each one message in the profile's language, "This week: 4 outfits logged · 3 pieces waiting
   to be worn" / "Esta semana: 4 outfits registrados · 3 prendas esperando a que las uses", with
@@ -179,16 +179,18 @@ Reclaims a push token another account holds under another device secret, by prov
 receives the token's pushes: this phone lost its secret (restored app data, a kv reset) while the
 token survived, or someone who learned the token registered it first. `verify_jwt = true`.
 
-- `{ token, step: 'start' }`: `rpc/start_push_claim` stores the SHA-256 of a fresh 8-character code
-  (`CLAIM_CODE_LENGTH`, 32 symbols without 0/O/1/I) as the caller's own claim in `push_claims` for 10
-  minutes, only for a token some row holds and within the limits: once per token and account per 10
-  minutes, 5 starts per account per hour, 6 claim pushes per token per hour. Another account's open
-  claim never blocks this one. The function then sends the
-  code as a data-only push (`{ type: 'push-claim', code }`, high priority, no title) to that token
-  only. Always 202 `{ outcome: 'accepted' }`, sent or not.
-- `{ token, step: 'confirm', code, device_secret, platform, review_ready, weekly }`:
-  `rpc/push_claim_attempt` spends one of the caller's 5 attempts on their own unexpired claim and
-  answers the code's hash; the function compares the code's hash in constant time; on a match
+- `{ token, step: 'start', nonce }`: `nonce` is 32 to 128 hex characters the phone makes for this
+  claim. `rpc/start_push_claim` stores the SHA-256 of a fresh 8-character code (`CLAIM_CODE_LENGTH`,
+  32 symbols without 0/O/1/I) and of the nonce as the caller's own claim in `push_claims` for 10
+  minutes, only for a token another account holds and within the limits: once per token and account
+  per 10 minutes, 5 starts per account per hour, at most 6 distinct accounts claiming a token per
+  hour. Another account's open claim never blocks this one. The function then sends the code and the
+  nonce as a data-only push (`{ type: 'push-claim', code, nonce }`, high priority, no title) to that
+  token only. Always 202 `{ outcome: 'accepted' }`, sent or not; its timing can reveal whether a token
+  is held, which `register_push_token`'s `42501` already does.
+- `{ token, step: 'confirm', code, nonce, device_secret, platform, review_ready, weekly }`: the app
+  confirms only a code whose nonce is its own pending claim's. `rpc/push_claim_attempt` spends one of
+  the caller's 5 attempts on their own unexpired claim with that nonce and answers the code's hash; the function compares the code's hash in constant time; on a match
   `rpc/finish_push_claim` deletes the token's other rows and every claim on it, and upserts the
   caller's row with the new secret's hash and both choices, in one transaction. 200
   `{ outcome: 'claimed' }`; a wrong, expired or spent code (or another caller's claim) answers 403
@@ -405,7 +407,7 @@ never waits for it.
 | `keep_alive` | `() returns timestamptz` | `anon` (the only anon grant) | Answers `now()`, reads no table |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer) returns boolean` | `service_role` | The UTC day; extraction only |
 | `consume_quota` | `(p_user_id uuid, p_kind quota_kind, p_limit integer, p_day date) returns boolean` | `service_role` | `p_day` when within one day of the UTC date, else the UTC day (`20261120120000_quota_local_day.sql`) |
-| `start_push_claim`, `push_claim_attempt`, `finish_push_claim` | `(user, token, code hash) returns boolean`, `(user, token) returns text`, `(user, token, platform, review_ready, weekly, device secret) returns boolean` | `service_role` | `security definer`. The reclaim steps ([`push-claim`](#push-claim)) |
+| `start_push_claim`, `push_claim_attempt`, `finish_push_claim` | `(user, token, code hash, nonce hash) returns boolean`, `(user, token, nonce hash) returns text`, `(user, token, platform, review_ready, weekly, device secret) returns boolean` | `service_role` | `security definer`. The reclaim steps ([`push-claim`](#push-claim)) |
 | `register_push_token` | `(p_token text, p_platform text, p_review_ready boolean, p_weekly boolean, p_device_secret text) returns void` | `authenticated` | `security definer`. Stores the caller's token, both choices and the secret's SHA-256. `22023` for a bad token, platform or secret (under 128 bits); `42501` when another account holds the token under another secret; the same secret (that phone, a new account) deletes the other accounts' rows first ([`database.md`](database.md#push-notifications)) |
 | `claim_review_push` | `(p_user_id uuid) returns table (token text, language text, ready integer)` | `service_role` | `security definer`. The "ready to review" check and the 60-minute claim ([`extract-attributes`](#extract-attributes)) |
 | `weekly_summary_targets` | `() returns table (user_id uuid, token text, language text, outfits integer, unused integer)` | `service_role` | `security definer`. One row per weekly phone with something to say ([`weekly-summary`](#weekly-summary)) |

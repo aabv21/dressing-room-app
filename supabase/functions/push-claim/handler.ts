@@ -20,12 +20,15 @@ const MAX_TOKEN_LENGTH = 255;
 // CODE_ALPHABET, CLAIM_CODE_LENGTH long.
 const CODE = /^[A-HJ-NP-Z2-9]{8}$/;
 const DEVICE_SECRET = /^[0-9a-f]{32,128}$/;
+// The claiming phone's own random value, echoed in the code push (32 to 128 hex characters).
+const NONCE = /^[0-9a-f]{32,128}$/;
 
-type Start = { token: string; step: 'start' };
+type Start = { token: string; step: 'start'; nonce: string };
 type Confirm = {
   token: string;
   step: 'confirm';
   code: string;
+  nonce: string;
   device_secret: string;
   platform: 'ios' | 'android';
   review_ready: boolean;
@@ -36,7 +39,8 @@ function parse(body: unknown): Start | Confirm | null {
   if (!isRecord(body) || typeof body.token !== 'string' || body.token.length > MAX_TOKEN_LENGTH || !TOKEN.test(body.token)) {
     return null;
   }
-  if (body.step === 'start') return { token: body.token, step: 'start' };
+  if (typeof body.nonce !== 'string' || !NONCE.test(body.nonce)) return null;
+  if (body.step === 'start') return { token: body.token, step: 'start', nonce: body.nonce };
   if (
     body.step !== 'confirm' ||
     typeof body.code !== 'string' ||
@@ -53,6 +57,7 @@ function parse(body: unknown): Start | Confirm | null {
     token: body.token,
     step: 'confirm',
     code: body.code,
+    nonce: body.nonce,
     device_secret: body.device_secret,
     platform: body.platform,
     review_ready: body.review_ready,
@@ -78,19 +83,33 @@ function rpc(deps: PushClaimDeps, name: string, args: Record<string, unknown>): 
   });
 }
 
-/** The same 202 whether a code went out or not (rate limited, a token nobody holds), so it reveals nothing. */
+/**
+ * The same 202 whether a code went out or not (rate limited, a token nobody holds, the caller's own).
+ * Its timing can tell whether a token is held, which register_push_token's 42501 already does.
+ */
 async function start(deps: PushClaimDeps, userId: string, claim: Start): Promise<Response> {
   const code = newCode();
-  const started = await rpc(deps, 'start_push_claim', { p_user_id: userId, p_token: claim.token, p_code_hash: await sha256Hex(code) });
+  const started = await rpc(deps, 'start_push_claim', {
+    p_user_id: userId,
+    p_token: claim.token,
+    p_code_hash: await sha256Hex(code),
+    p_nonce_hash: await sha256Hex(claim.nonce),
+  });
   // Only to the claimed token: the code proves this phone receives that token's pushes.
-  if (started === true) await sendPushes(deps.env, deps.fetch, [{ to: claim.token, data: { type: 'push-claim', code } }]);
+  if (started === true) {
+    await sendPushes(deps.env, deps.fetch, [{ to: claim.token, data: { type: 'push-claim', code, nonce: claim.nonce } }]);
+  }
   return reply('accepted', 202, { outcome: 'accepted' });
 }
 
 async function confirm(deps: PushClaimDeps, userId: string, claim: Confirm): Promise<Response> {
   const invalid = (): Response => reply('invalid_code', 403, { error: 'invalid_code' });
   // The attempt is spent before the compare, so 5 wrong codes end the claim whatever happens next.
-  const expected = await rpc(deps, 'push_claim_attempt', { p_user_id: userId, p_token: claim.token });
+  const expected = await rpc(deps, 'push_claim_attempt', {
+    p_user_id: userId,
+    p_token: claim.token,
+    p_nonce_hash: await sha256Hex(claim.nonce),
+  });
   if (typeof expected !== 'string' || !secretMatches(await sha256Hex(claim.code), expected)) return invalid();
   const finished = await rpc(deps, 'finish_push_claim', {
     p_user_id: userId,

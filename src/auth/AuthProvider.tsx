@@ -9,7 +9,7 @@ import { useOnResume } from '../lib/useOnResume';
 import { readStoredSession, startAuthAutoRefresh, supabase } from '../lib/supabase';
 import { getProfile, saveProfile } from '../profile/profileRepository';
 import type { Profile, ProfilePatch } from '../profile/profileRepository';
-import { flushPendingUnregister } from '../push/pushRegistration';
+import { flushPendingUnregister, forgetPushTokenLater } from '../push/pushRegistration';
 import { turnOffReminder } from '../reminder/dailyReminder';
 import {
   cacheOnboarding,
@@ -168,7 +168,12 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
           // Retried at the next sign-out or sign-in.
         }
         // Whoever uses the phone next mustn't get this account's reminder.
-        if (currentUserIdRef.current !== null) void turnOffReminder(currentUserIdRef.current);
+        if (currentUserIdRef.current !== null) {
+          void turnOffReminder(currentUserIdRef.current);
+          // Nor its notices: a sign-out from elsewhere skipped Sign out's own delete (a no-op after it).
+          forgetPushTokenLater(currentUserIdRef.current);
+          void flushPendingUnregister();
+        }
         currentUserIdRef.current = null;
         unconfirmedSessionRef.current = false;
         languageSyncedForRef.current = null;

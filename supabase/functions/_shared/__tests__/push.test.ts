@@ -165,6 +165,20 @@ describe('deleteTokens', () => {
     expect(calls[0]?.headers.get('authorization')).toBe(`Bearer ${ENV.serviceRoleKey}`);
   });
 
+  test(`deletes in chunks of ${String(EXPO_PUSH_BATCH)}, so a big run of dead tokens stays within URL limits`, async () => {
+    const urls: string[] = [];
+    const fetchFn = ((input: RequestInfo | URL) => {
+      urls.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+      return Promise.resolve(json(200, []));
+    }) as typeof fetch;
+
+    await deleteTokens(ENV, fetchFn, Array.from({ length: 250 }, (_, n) => `ExponentPushToken[${String(n)}]`));
+
+    expect(urls).toHaveLength(3);
+    const counts = urls.map((url) => (new URL(url).searchParams.get('token')?.match(/ExponentPushToken/g) ?? []).length);
+    expect(counts).toEqual([100, 100, 50]);
+  });
+
   test('does nothing for no tokens', async () => {
     const fetchFn = jest.fn() as unknown as typeof fetch;
     await deleteTokens(ENV, fetchFn, []);

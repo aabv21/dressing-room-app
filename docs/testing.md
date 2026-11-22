@@ -181,17 +181,21 @@ The Profile tab's Privacy section (data export and account deletion):
   token deleting the own row; a re-registered token leaving the pending list; sign-out deleting the own
   row, or (offline, an error, a stalled network) leaving the token pending, the pending list and secret
   surviving the account's kv; the flush sending the token with the secret and keeping what fails
-  again; a `42501` starting a claim, the code confirming only this account's pending claim, a
-  refused code keeping it, and the next launch asking again (or dropping another account's).
+  again; a `42501` starting a claim with a nonce and answering `verifying`, the code confirming only
+  this account's pending claim and only with its nonce (an attacker's spends nothing), a reclaim
+  deleting the previous token row, a refused code keeping the claim, the next launch asking again (or
+  dropping another account's), turning both off and signing out dropping a claim in flight;
+  `forgetPushTokenLater` queuing the token and turning everything off.
 - `src/push/__tests__/PushSection.test.tsx` — both notices off by default; one on registers with that
   choice, the other on keeps the first, the last off deletes; "Notifications aren't available on this
   phone yet", the denied explanation with "Open settings", and a failed save, each leaving the switch
-  off.
+  off; a token another device holds saying the phone is being verified, not that it failed.
 - `src/push/__tests__/PushTapSync.test.tsx` — a "ready to review" tap opens Review and a weekly summary
   tap opens Stats (at launch or while running), the listener goes away on unmount, and the reminder's,
   an unknown kind's or an action button's tap is ignored.
 - `src/push/__tests__/PushClaimSync.test.tsx` — resumes the account's claim on mount, hands a claim
-  code push to `confirmPushClaim`, ignores other notifications and malformed codes, and stops
+  code push and its nonce to `confirmPushClaim`, ignores other notifications, malformed codes and a
+  push without a nonce, and stops
   listening on unmount.
 - `src/voice/__tests__/speech.test.ts` — `pickVoice`: Latin American Spanish before Spain, es-MX
   first, Android's underscore tags, any voice in the language as a fallback, en-US first, an
@@ -237,7 +241,8 @@ Accounts, onboarding and the profile:
   and the shared profile: read at sign-in (no row as `{}`), an error until a retry succeeds (loading
   while it runs), a failed refresh keeping the last good profile, a foreground or reconnect after an
   offline launch reading it again, `replaceProfileLocal` merging a saved patch, and another account
-  or a sign-out dropping it; a session that ends turns off that account's daily reminder, keeping
+  or a sign-out dropping it; a session that ends without Sign out queues that account's push token
+  (`forgetPushTokenLater`) and flushes the pending list; a session that ends turns off that account's daily reminder, keeping
   its time. Screen suites stand it in with
   `src/test/authMock.ts`, a store that re-renders on `setAuth`.
 - `src/auth/__tests__/authService.test.ts` — sign-up, sign-in, sign-out (offline falls back to a
@@ -584,7 +589,8 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
 - `supabase/functions/_shared/__tests__/push.test.ts` — Expo sends: JSON on the app's channel, the
   bearer only with an access token, a data-only message at high priority without title or sound,
   batches of 100, `DeviceNotRegistered` tickets naming their tokens, a failed batch (500, no tickets,
-  too few, not JSON, a network error, the 5 s timeout) not stopping the next; `deleteTokens`; the
+  too few, not JSON, a network error, the 5 s timeout) not stopping the next; `deleteTokens` (in
+  chunks of 100: 250 tokens make 3 requests); the
   en/es copy and its plurals.
 - `supabase/functions/extract-attributes/__tests__/handler.test.ts` — the webhook secret and method
   checks, the happy path, an exhausted quota (`over_quota`, no Claude call), a Claude call aborted
@@ -660,11 +666,12 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   token and the secret's SHA-256, 204 with no body whether or not a row matched (a wrong secret
   deletes nothing); 400 for a bad token, secret or shape, 413 over 1 KiB, 405, 500 on a failed delete;
   logs never carry the token.
-- `supabase/functions/push-claim/__tests__/handler.test.ts` — start: a fresh code's hash stored and the
-  code pushed as data only to that token, 202 either way (rate limited: no push), a new code each
+- `supabase/functions/push-claim/__tests__/handler.test.ts` — start: a fresh code's hash and the
+  nonce's stored and the code pushed with the nonce as data only to that token, 202 either way (rate limited: no push), a new code each
   time; confirm: a right code takes the token over with the new secret, a wrong one spends an attempt,
   the 6th attempt, an expired claim, another caller's claim and a claim ended meanwhile all answering
-  403; 401 and every 400 before any fetch; logs without the token, code or secret.
+  403, the attempt carrying the nonce's hash; 401 and every 400 (a missing or short nonce too) before
+  any fetch; logs without the token, code or secret.
 - `supabase/functions/export-data/__tests__/handler.test.ts` — every section (dismissed outfits, plans, saved trips and the notification preferences without the push token included), rows read with the
   caller's token and only the caller's paths signed for 7 days, another user's rows dropped, paging
   until an empty page (also when the server caps a page below 1000 rows), a brand-new account, a
@@ -841,8 +848,9 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   secret refused; the same secret taking over; the SHA-256 kept); `claim_review_push` (no push while a
   fresh extraction is pending or with only failed rows, the count and language once the batch is done,
   the 60-minute window); `push_claims` and `push_claim_starts` (no client access, per-account claims,
-  5 attempts, expiry, every claim gone after a takeover, the per-account and per-token limits, the
-  cleanup); `weekly_summary_targets` (this week's wears, unused pieces, weekly off, nothing to say);
+  another claim's nonce matching nothing and spending nothing, 5 attempts, expiry, every claim gone
+  after a takeover, the holder unable to claim and uncounted, the per-account limit, 6 distinct
+  accounts filling a token's hour and the 7th refused while a repeat account isn't, the cleanup); `weekly_summary_targets` (this week's wears, unused pieces, weekly off, nothing to say);
   the `weekly-summary` job and its Vault-read pg_net call; the cascade.
 - `stylist_quota.test.sql` — the `stylist` quota kind: twenty messages on a local day, the 21st
   refused, counted apart from `buy_check` and from another user.

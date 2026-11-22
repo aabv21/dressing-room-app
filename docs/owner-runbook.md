@@ -144,9 +144,8 @@ init`, the OAuth clients and the store records.
      `push_claims`, `register_push_token`, the three claim RPCs, `claim_review_push`,
      `weekly_summary_targets`, `request_weekly_summary`, the `weekly-summary` pg_cron job and
      `prune_expired_caches()` with the expired claims);
-  2. the Vault values `weekly_summary_url` and `weekly_summary_secret`, and the function secret
-     `WEEKLY_SUMMARY_SECRET` ([section 3](#3-secrets-keys-and-spend-caps)), set
-     [from an empty directory](#setting-a-hosted-secret);
+  2. the weekly summary's Vault values and function secret, as listed in
+     [section 3](#3-secrets-keys-and-spend-caps) (the only place they're spelled out);
   3. `pnpm exec supabase functions deploy weekly-summary push-unregister push-claim extract-attributes export-data`
      (`weekly-summary`, `push-unregister` and `push-claim` are new: the first two keep
      `verify_jwt = false` from `config.toml`, `push-claim` `true`; `extract-attributes` sends the

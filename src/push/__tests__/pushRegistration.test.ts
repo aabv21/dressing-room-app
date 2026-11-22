@@ -21,6 +21,7 @@ import {
   confirmPushClaim,
   flushPendingUnregister,
   forgetPushToken,
+  forgetPushTokenLater,
   resumePushClaim,
   setPushPreferences,
   type PushClient,
@@ -31,6 +32,8 @@ const mocked = jest.mocked(Notifications);
 const USER_ID = 'user-1';
 const TOKEN = 'ExponentPushToken[device-1]';
 const SECRET = '1a'.repeat(32);
+// The mocked getRandomBytes fills every byte with 0x1a, so a 16-byte nonce reads like this.
+const NONCE = '1a'.repeat(16);
 
 type Answer = { error: { message: string; code?: string } | null };
 type InvokeAnswer = { data: unknown; error: Error | null };
@@ -298,48 +301,68 @@ describe('flushPendingUnregister', () => {
 });
 
 describe('reclaiming a token another device holds', () => {
-  const CLAIMED = { userId: USER_ID, token: TOKEN, platform: 'ios' as const, reviewReady: true, weekly: false };
+  const CLAIMED = { userId: USER_ID, token: TOKEN, platform: 'ios' as const, reviewReady: true, weekly: false, nonce: NONCE };
 
-  test('a 42501 refusal starts a claim, which waits on the device for the code push', async () => {
+  test('a 42501 refusal starts a claim with a fresh nonce and answers "verifying", not "failed"', async () => {
     const { client, claims } = fakeClient({ register: { error: { message: 'another device holds this token', code: '42501' } } });
 
-    expect(await setPushPreferences(USER_ID, { reviewReady: true, weekly: false }, 'en', client)).toBe('failed');
+    expect(await setPushPreferences(USER_ID, { reviewReady: true, weekly: false }, 'en', client)).toBe('verifying');
 
-    expect(claims).toEqual([{ token: TOKEN, step: 'start' }]);
+    expect(claims).toEqual([{ token: TOKEN, step: 'start', nonce: NONCE }]);
     expect(readPendingClaim()).toEqual(CLAIMED);
     expect(readPush(USER_ID).token).toBeNull();
   });
 
   test('any other failure starts no claim', async () => {
     const { client, claims } = fakeClient({ register: { error: { message: 'offline' } } });
-    await setPushPreferences(USER_ID, { reviewReady: true, weekly: false }, 'en', client);
+    expect(await setPushPreferences(USER_ID, { reviewReady: true, weekly: false }, 'en', client)).toBe('failed');
     expect(claims).toEqual([]);
     expect(readPendingClaim()).toBeNull();
   });
 
-  test('the code confirms the pending claim with the device secret, and the choices are saved', async () => {
+  test('the code with this claim’s nonce confirms it with the device secret, and the choices are saved', async () => {
     writePendingClaim(CLAIMED);
     writePendingUnregister([TOKEN]);
     const { client, claims } = fakeClient();
 
-    expect(await confirmPushClaim('K7M2P9QX', USER_ID, client)).toBe(true);
+    expect(await confirmPushClaim('K7M2P9QX', NONCE, USER_ID, client)).toBe(true);
 
     expect(claims).toEqual([
-      { token: TOKEN, step: 'confirm', code: 'K7M2P9QX', device_secret: SECRET, platform: 'ios', review_ready: true, weekly: false },
+      { token: TOKEN, step: 'confirm', code: 'K7M2P9QX', nonce: NONCE, device_secret: SECRET, platform: 'ios', review_ready: true, weekly: false },
     ]);
     expect(readPendingClaim()).toBeNull();
     expect(readPush(USER_ID)).toEqual({ token: TOKEN, reviewReady: true, weekly: false });
     expect(readPendingUnregister()).toEqual([]);
   });
 
+  test('a code carrying another claim’s nonce (an attacker’s) is ignored and spends no attempt', async () => {
+    writePendingClaim(CLAIMED);
+    const { client, claims } = fakeClient();
+
+    expect(await confirmPushClaim('ATTACK23', 'ff'.repeat(16), USER_ID, client)).toBe(false);
+
+    expect(claims).toEqual([]);
+    expect(readPendingClaim()).toEqual(CLAIMED);
+  });
+
+  test('a successful reclaim deletes the phone’s previous token row, as a registration does', async () => {
+    writePush(USER_ID, { token: 'ExponentPushToken[old]', reviewReady: true, weekly: false });
+    writePendingClaim(CLAIMED);
+    const { client, deletes } = fakeClient();
+
+    expect(await confirmPushClaim('K7M2P9QX', NONCE, USER_ID, client)).toBe(true);
+
+    expect(deletes).toEqual([{ table: 'push_tokens', column: 'token', value: 'ExponentPushToken[old]' }]);
+  });
+
   test('without a pending claim, or with another account’s, a code confirms nothing', async () => {
     const none = fakeClient();
-    expect(await confirmPushClaim('K7M2P9QX', USER_ID, none.client)).toBe(false);
+    expect(await confirmPushClaim('K7M2P9QX', NONCE, USER_ID, none.client)).toBe(false);
     expect(none.claims).toEqual([]);
 
     writePendingClaim({ ...CLAIMED, userId: 'user-2' });
     const other = fakeClient();
-    expect(await confirmPushClaim('K7M2P9QX', USER_ID, other.client)).toBe(false);
+    expect(await confirmPushClaim('K7M2P9QX', NONCE, USER_ID, other.client)).toBe(false);
     expect(other.claims).toEqual([]);
   });
 
@@ -347,7 +370,7 @@ describe('reclaiming a token another device holds', () => {
     writePendingClaim(CLAIMED);
     const { client } = fakeClient({ claim: () => Promise.resolve({ data: null, error: new Error('403') }) });
 
-    expect(await confirmPushClaim('WRNGXY23', USER_ID, client)).toBe(false);
+    expect(await confirmPushClaim('WRNGXY23', NONCE, USER_ID, client)).toBe(false);
 
     expect(readPendingClaim()).toEqual(CLAIMED);
     expect(readPush(USER_ID).token).toBeNull();
@@ -357,12 +380,48 @@ describe('reclaiming a token another device holds', () => {
     writePendingClaim(CLAIMED);
     const mine = fakeClient();
     await resumePushClaim(USER_ID, mine.client);
-    expect(mine.claims).toEqual([{ token: TOKEN, step: 'start' }]);
+    expect(mine.claims).toEqual([{ token: TOKEN, step: 'start', nonce: NONCE }]);
     expect(readPendingClaim()).toEqual(CLAIMED);
 
     const theirs = fakeClient();
     await resumePushClaim('user-2', theirs.client);
     expect(theirs.claims).toEqual([]);
     expect(readPendingClaim()).toBeNull();
+  });
+
+  test('turning both off drops a claim in flight, so it can’t turn the notices back on later', async () => {
+    writePendingClaim(CLAIMED);
+    const { client } = fakeClient();
+
+    expect(await setPushPreferences(USER_ID, { reviewReady: false, weekly: false }, 'en', client)).toBe('saved');
+
+    expect(readPendingClaim()).toBeNull();
+  });
+
+  test('signing out drops a claim in flight too, even with no token stored yet', async () => {
+    writePendingClaim(CLAIMED);
+    const { client } = fakeClient();
+
+    await forgetPushToken(USER_ID, client);
+
+    expect(readPendingClaim()).toBeNull();
+  });
+});
+
+describe('forgetPushTokenLater', () => {
+  test('a session that ended without Sign out queues the token for push-unregister and turns everything off', () => {
+    writePush(USER_ID, { token: TOKEN, reviewReady: true, weekly: true });
+    writePendingClaim({ userId: USER_ID, token: TOKEN, platform: 'ios', reviewReady: true, weekly: true, nonce: NONCE });
+
+    forgetPushTokenLater(USER_ID);
+
+    expect(readPendingUnregister()).toEqual([TOKEN]);
+    expect(readPush(USER_ID)).toEqual({ token: null, reviewReady: false, weekly: false });
+    expect(readPendingClaim()).toBeNull();
+  });
+
+  test('nothing stored: nothing queued', () => {
+    forgetPushTokenLater(USER_ID);
+    expect(readPendingUnregister()).toEqual([]);
   });
 });

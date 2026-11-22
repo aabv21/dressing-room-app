@@ -76,12 +76,16 @@ export async function sendPushes(env: PushEnv, fetchFn: typeof fetch, messages: 
 
 const quoted = (token: string): string => `"${token.replace(/["\\]/g, '\\$&')}"`;
 
-/** Deletes every row holding one of `tokens`, whoever's: Expo said the phone no longer takes them. Throws on failure. */
+/**
+ * Deletes every row holding one of `tokens`, whoever's: Expo said the phone no longer takes them. In
+ * chunks of `EXPO_PUSH_BATCH`, so the filter stays a short URL. Throws on failure.
+ */
 export async function deleteTokens(env: ServiceEnv, fetchFn: typeof fetch, tokens: readonly string[]): Promise<void> {
-  if (tokens.length === 0) return;
-  const list = encodeURIComponent(`in.(${tokens.map(quoted).join(',')})`);
-  await restJson(fetchFn, `${env.supabaseUrl}/rest/v1/push_tokens?token=${list}&select=token`, {
-    method: 'DELETE',
-    headers: { ...serviceHeaders(env), prefer: 'return=representation' },
-  });
+  for (let start = 0; start < tokens.length; start += EXPO_PUSH_BATCH) {
+    const list = encodeURIComponent(`in.(${tokens.slice(start, start + EXPO_PUSH_BATCH).map(quoted).join(',')})`);
+    await restJson(fetchFn, `${env.supabaseUrl}/rest/v1/push_tokens?token=${list}&select=token`, {
+      method: 'DELETE',
+      headers: { ...serviceHeaders(env), prefer: 'return=representation' },
+    });
+  }
 }

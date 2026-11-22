@@ -6,3 +6,4 @@ export const forgetPushToken = jest.fn(() => Promise.resolve());
 export const flushPendingUnregister = jest.fn(() => Promise.resolve());
 export const resumePushClaim = jest.fn(() => Promise.resolve());
 export const confirmPushClaim = jest.fn(() => Promise.resolve(false));
+export const forgetPushTokenLater = jest.fn();

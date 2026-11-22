@@ -70,7 +70,10 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   qué avisos elegiste, el tipo de teléfono (iPhone o Android), cuándo te avisó por última vez que había
   prendas listas, y una huella de un código aleatorio que la app crea en tu teléfono, para que solo tu
   teléfono pueda registrar o quitar su token. El token se guarda solo para enviarte los avisos que
-  activaste.
+  activaste. Si otra cuenta ya tiene el token de tu teléfono (por ejemplo, después de restaurar los
+  datos de la app), la app comprueba que tu teléfono lo recibe con un código de un solo uso enviado
+  como notificación silenciosa; para esa comprobación el servidor guarda el token, el id de tu cuenta
+  y huellas del código hasta por una hora.
 
 La app no tiene publicidad, ni analítica, ni rastreo, y tus datos nunca se venden.
 

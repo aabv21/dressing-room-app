@@ -70,17 +70,32 @@ export const DEVICE_SECRET_KEY = 'push.deviceSecret';
 
 const DEVICE_SECRET = /^[0-9a-f]{64}$/;
 
+/** `bytes` random bytes as hex. */
+export function randomHex(bytes: number): string {
+  return Array.from(getRandomBytes(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /** 256 random bits as hex, made on first use and kept until the app's data is cleared. */
 export function deviceSecret(): string {
   const stored = kvGet(DEVICE_SECRET_KEY);
   if (stored !== null && DEVICE_SECRET.test(stored)) return stored;
-  const made = Array.from(getRandomBytes(32), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const made = randomHex(32);
   kvSet(DEVICE_SECRET_KEY, made);
   return made;
 }
 
-/** A reclaim this phone started (docs/app.md#notifications-from-the-app-srcpush): device-wide, one at a time. */
-export type PendingClaim = { userId: string; token: string; platform: 'ios' | 'android'; reviewReady: boolean; weekly: boolean };
+/**
+ * A reclaim this phone started (docs/app.md#notifications-from-the-app-srcpush): device-wide, one at
+ * a time. `nonce` is echoed in the code push, so only this claim's code is confirmed.
+ */
+export type PendingClaim = {
+  userId: string;
+  token: string;
+  platform: 'ios' | 'android';
+  reviewReady: boolean;
+  weekly: boolean;
+  nonce: string;
+};
 
 export const PENDING_CLAIM_KEY = 'push.pendingClaim';
 
@@ -92,7 +107,8 @@ function isPendingClaim(value: unknown): value is PendingClaim {
     typeof entry.token === 'string' &&
     (entry.platform === 'ios' || entry.platform === 'android') &&
     typeof entry.reviewReady === 'boolean' &&
-    typeof entry.weekly === 'boolean'
+    typeof entry.weekly === 'boolean' &&
+    typeof entry.nonce === 'string'
   );
 }
 

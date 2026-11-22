@@ -201,22 +201,24 @@ describe('reclaiming a token by proving receipt of a push', () => {
     const claimant = await signedInUser('push-claim-claimant');
     await optIn(holder, { review_ready: true, weekly: true });
 
-    const start = await claimant.client.functions.invoke('push-claim', { body: { token: holder.token, step: 'start' } });
+    const nonce = newSecret().slice(0, 32);
+    const start = await claimant.client.functions.invoke('push-claim', { body: { token: holder.token, step: 'start', nonce } });
     expect(start.error).toBeNull();
     const pushed = await waitFor(() => pushesTo(holder.token), (pushes) => pushes.length > 0, 10_000);
     expect(pushed).toHaveLength(1);
     const code = String(pushed[0]?.data.code);
     expect(pushed[0]?.data.type).toBe('push-claim');
+    expect(pushed[0]?.data.nonce).toBe(nonce);
     expect(pushed[0]).not.toHaveProperty('title');
 
     // A second start within 10 minutes sends nothing.
-    await claimant.client.functions.invoke('push-claim', { body: { token: holder.token, step: 'start' } });
+    await claimant.client.functions.invoke('push-claim', { body: { token: holder.token, step: 'start', nonce } });
     await sleep(1_000);
     expect(pushesTo(holder.token)).toHaveLength(1);
 
     const confirm = (withCode: string) =>
       claimant.client.functions.invoke('push-claim', {
-        body: { token: holder.token, step: 'confirm', code: withCode, device_secret: claimant.secret, platform: 'android', review_ready: true, weekly: false },
+        body: { token: holder.token, step: 'confirm', code: withCode, nonce, device_secret: claimant.secret, platform: 'android', review_ready: true, weekly: false },
       });
     expect((await confirm('WRNGXY23')).error).not.toBeNull();
     expect((await confirm(code)).error).toBeNull();

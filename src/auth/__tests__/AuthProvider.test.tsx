@@ -35,7 +35,13 @@ jest.mock('../../lib/useOnResume', () => ({
 }));
 
 const mockFlushPendingUnregister = jest.fn(() => Promise.resolve());
-jest.mock('../../push/pushRegistration', () => ({ flushPendingUnregister: () => mockFlushPendingUnregister() }));
+const mockForgetPushTokenLater = jest.fn<undefined, [string]>();
+jest.mock('../../push/pushRegistration', () => ({
+  flushPendingUnregister: () => mockFlushPendingUnregister(),
+  forgetPushTokenLater: (userId: string) => {
+    mockForgetPushTokenLater(userId);
+  },
+}));
 
 import * as Notifications from 'expo-notifications';
 
@@ -918,5 +924,20 @@ describe('pending push unregistrations', () => {
       authStateCallback?.('TOKEN_REFRESHED', { user: { id: 'user-2', email: 'b@example.com' } });
     });
     expect(mockFlushPendingUnregister).toHaveBeenCalledTimes(2);
+  });
+
+  test('a session that ends without the Sign out button (another phone, a revoke) queues the push token and flushes it', async () => {
+    await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-2', email: 'b@example.com' } });
+    });
+    mockFlushPendingUnregister.mockClear();
+
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+
+    expect(mockForgetPushTokenLater).toHaveBeenCalledWith('user-2');
+    expect(mockFlushPendingUnregister).toHaveBeenCalledTimes(1);
   });
 });

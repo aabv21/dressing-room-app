@@ -446,20 +446,24 @@ pieces unused for 6 months). What the server does: [`api.md`](api.md#extract-att
   `usePushSettings`; and three device-wide keys outside that shape, which survive sign-out and account
   deletion: `push.deviceSecret` (`deviceSecret()`: 256 bits from `expo-crypto`'s `getRandomBytes`,
   made on first use), `push.pendingUnregister` (tokens a sign-out couldn't delete) and
-  `push.pendingClaim` (a token reclaim this phone started: the account, token, platform and choices).
+  `push.pendingClaim` (a token reclaim this phone started: the account, token, platform, choices and
+  the claim's nonce).
 - `pushRegistration.ts`: `setPushPreferences(userId, { reviewReady, weekly }, language)`. Turning a
   notice on creates the Android `app-notices` channel, asks permission like the reminder
   (`askReminderPermission`), fetches `getExpoPushTokenAsync({ projectId })` with `app.json`'s
   `extra.eas.projectId`, and calls `rpc/register_push_token` with the token, the platform, both
   choices and the device secret; it answers `saved`, `denied`, `unavailable` (no project id, or the
-  token fetch failed: FCM or APNs isn't set up for the build) or `failed` (the call failed, or the
-  server refused a token another device holds). A saved token leaves the pending list, and a changed
+  token fetch failed: FCM or APNs isn't set up for the build), `verifying` (a claim is proving this
+  phone receives the token; "Verifying this phone. It turns on in a minute.") or `failed`. A saved token leaves the pending list, and a changed
   token's old row is deleted. Both off deletes the phone's own row through RLS.
   A `42501` refusal (another account holds the token under another secret) starts a claim: the
-  pending claim goes to `push.pendingClaim` and `push-claim` `start` asks the server to push a code to
-  the token. `confirmPushClaim(code, userId)` confirms only this account's pending claim, with the
-  device secret, and on success saves the choices as a registration would; a refused code keeps the
-  claim. `resumePushClaim(userId)` asks for a new code at the next launch or sign-in, and drops another
+  pending claim, with a fresh 128-bit nonce, goes to `push.pendingClaim` and `push-claim` `start` asks
+  the server to push a code and that nonce to the token. `confirmPushClaim(code, nonce, userId)`
+  confirms only this account's pending claim and only a code carrying its nonce (another account's
+  claim on the token pushes codes here too, which must not spend this claim's attempts), with the
+  device secret; on success it saves the choices as a registration would and deletes the phone's
+  previous token row; a refused code keeps the claim. Turning both off and signing out drop a claim in
+  flight, so it can't turn the notices back on later. `resumePushClaim(userId)` asks for a new code at the next launch or sign-in, and drops another
   account's claim. There's no UI for it beyond the switch turning on once it succeeds.
   `forgetPushToken` (sign-out, before the session ends) deletes the own row the same way, within
   5 s (`FORGET_TIMEOUT_MS`); when that fails, the token joins `push.pendingUnregister`.
@@ -476,7 +480,10 @@ pieces unused for 6 months). What the server does: [`api.md`](api.md#extract-att
 - `PushTapSync.tsx`, mounted next to `DailyReminderSync`: a tap on a notice (the launch tap or one
   while the app runs) opens Review for `reviewReady` and Stats (`/closet?segment=stats`) for
   `weeklySummary`, chosen from the notice's `kind`, never its `data.url`, and clears the response.
-- On the way out: `useSignOut` awaits `forgetPushToken` before signing out; account deletion needs
+- On the way out: `useSignOut` awaits `forgetPushToken` before signing out; a session that ends any
+  other way (a global sign-out from another phone, a revoked session) has no session left to delete
+  with, so `AuthProvider` calls `forgetPushTokenLater` (the token joins the pending list, the
+  account's notices turn off here, its claim goes) and flushes the list; account deletion needs
   nothing more, since the rows cascade with the user and `forgetAccountOnDevice` clears
   `push.<userId>`.
 

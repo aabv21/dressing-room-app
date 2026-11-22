@@ -177,14 +177,14 @@ isOneToOne: false
                   ]
                 },"push_claims": {
                   Row: {
-                    "attempts": number,"code_hash": string,"created_at": string,"expires_at": string,"token": string,"user_id": string
+                    "attempts": number,"code_hash": string,"created_at": string,"expires_at": string,"nonce_hash": string,"token": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "attempts"?: number,"code_hash": string,"created_at"?: string,"expires_at": string,"token": string,"user_id": string
+                    "attempts"?: number,"code_hash": string,"created_at"?: string,"expires_at": string,"nonce_hash": string,"token": string,"user_id": string
                   }
                   Update: {
-                    "attempts"?: number,"code_hash"?: string,"created_at"?: string,"expires_at"?: string,"token"?: string,"user_id"?: string
+                    "attempts"?: number,"code_hash"?: string,"created_at"?: string,"expires_at"?: string,"nonce_hash"?: string,"token"?: string,"user_id"?: string
                   }
                   Relationships: [
                     
@@ -328,7 +328,7 @@ isOneToOne: false
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },
 "push_claim_attempt":
-{ Args: { "p_token": string,"p_user_id": string }; Returns: string
+{ Args: { "p_nonce_hash": string,"p_token": string,"p_user_id": string }; Returns: string
                            },
 "register_push_token":
 { Args: { "p_device_secret": string,"p_platform": string,"p_review_ready": boolean,"p_token": string,"p_weekly": boolean }; Returns: undefined
@@ -340,7 +340,7 @@ isOneToOne: false
 { Args: { "p_garment_ids": (string)[],"p_score"?: number }; Returns: string
                            },
 "start_push_claim":
-{ Args: { "p_code_hash": string,"p_token": string,"p_user_id": string }; Returns: boolean
+{ Args: { "p_code_hash": string,"p_nonce_hash": string,"p_token": string,"p_user_id": string }; Returns: boolean
                            },
 "weekly_summary_targets":
 { Args: Record<PropertyKey, never>; Returns: {

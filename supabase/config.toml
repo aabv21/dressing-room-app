@@ -458,7 +458,8 @@ verify_jwt = false
 verify_jwt = false
 
 # Called by the app with the anon key, signed in or not (a sign-out that couldn't reach the server
-# retries after it): the push token in the body is the credential, and no caller id is read.
+# retries after it): the push token plus the phone's device secret in the body are the credential,
+# and no caller id is read.
 [functions.push-unregister]
 verify_jwt = false
 

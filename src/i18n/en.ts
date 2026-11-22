@@ -388,6 +388,7 @@ export const en = {
   'push.saved': 'Notification settings saved',
   'push.denied': 'Notifications are off for Dressing Room. Turn them on in Settings to get these notices.',
   'push.unavailable': "Notifications aren't available on this phone yet.",
+  'push.verifying': 'Verifying this phone. It turns on in a minute.',
   'push.failed': "Couldn't save your notification settings. Try again.",
   'push.channel': 'Notices from Dressing Room',
   'profile.section.household': 'Household',

@@ -390,6 +390,7 @@ export const es: Record<MessageKey, string> = {
   'push.saved': 'Avisos guardados',
   'push.denied': 'Las notificaciones de Dressing Room están desactivadas. Actívalas en Configuración para recibir estos avisos.',
   'push.unavailable': 'Los avisos todavía no están disponibles en este teléfono.',
+  'push.verifying': 'Verificando este teléfono. Se activa en un minuto.',
   'push.failed': 'No se pudieron guardar tus avisos. Intenta de nuevo.',
   'push.channel': 'Avisos de Dressing Room',
   'profile.section.household': 'Hogar',

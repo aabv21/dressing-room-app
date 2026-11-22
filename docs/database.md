@@ -623,31 +623,35 @@ NOTE: whoever holds the unlocked phone holds its secret and its pushes; upgrade 
 attestation, if the app ever holds data worth it.
 
 **`public.push_claims`** (`token text, user_id uuid references auth.users on delete cascade,
-code_hash text not null, created_at, expires_at timestamptz not null, attempts smallint not null
-default 0 check (attempts between 0 and 5), primary key (token, user_id)`, index on `user_id`) is a
-reclaim in flight: the SHA-256 of a code the `push-claim` function pushed to the token. Keyed by
-account too, so one account's open claim never blocks another's. **`public.push_claim_starts`**
+code_hash text not null, nonce_hash text not null, created_at, expires_at timestamptz not null,
+attempts smallint not null default 0 check (attempts between 0 and 5), primary key (token,
+user_id)`, index on `user_id`) is a reclaim in flight: the SHA-256 of a code the `push-claim` function
+pushed to the token, and of the nonce the claiming phone made, which the push echoes so a phone
+answers only its own claim's code. Keyed by account too, so one account's open claim never blocks
+another's. **`public.push_claim_starts`**
 (`id identity primary key, token, user_id … on delete cascade, started_at`, indexes on
 `(user_id, started_at)` and `(token, started_at)`) logs each start that sent a code, for the limits.
 Both have RLS on with no policies and `revoke all` from `anon` and `authenticated`, like the caches.
-Three `security definer` RPCs, `service_role` only, each holding the same per-token advisory lock as
-`register_push_token`:
+Three `security definer` RPCs, `service_role` only:
 
-- `start_push_claim(p_user_id, p_token, p_code_hash)` answers false for a token no row holds (it can
-  simply be registered), and when a limit is reached: a start by that account on that token in the
-  last 10 minutes, 5 starts by the account in the last hour across tokens, or 6 claim pushes to the
-  token in the last hour (a spam guard for the phone). Otherwise it starts or replaces the caller's
-  claim for 10 minutes with 0 attempts, logs the start and answers true.
-- `push_claim_attempt(p_user_id, p_token)` adds one to the caller's own unexpired claim's attempts
-  while under 5 and answers its `code_hash` (the function compares in constant time), else null.
-- `finish_push_claim(p_user_id, p_token, p_platform, p_review_ready, p_weekly, p_device_secret)`
-  deletes the caller's own unexpired claim, and only if it did: deletes every other claim on the
+- `start_push_claim(p_user_id, p_token, p_code_hash, p_nonce_hash)`, under the same per-token
+  advisory lock as `register_push_token`, answers false (and logs nothing) for a token no row holds
+  (it can simply be registered) or one the caller already holds, and false when a limit is reached:
+  a start by that account on that token in the last 10 minutes, 5 starts by the account in the last
+  hour across tokens, or 6 distinct other accounts already claiming the token in the last hour (a
+  spam guard for the phone). Otherwise it starts or replaces the caller's claim for 10 minutes with
+  0 attempts, logs the start and answers true.
+- `push_claim_attempt(p_user_id, p_token, p_nonce_hash)` adds one to the caller's own unexpired claim
+  with that nonce while under 5 attempts and answers its `code_hash` (the function compares in
+  constant time), else null; a code carrying another claim's nonce spends nothing. It takes no lock:
+  `finish_push_claim` re-checks the claim under the token's lock.
+- `finish_push_claim(p_user_id, p_token, p_platform, p_review_ready, p_weekly, p_device_secret)`,
+  under the token's lock, deletes the caller's own unexpired claim, and only if it did: deletes every other claim on the
   token and its other rows, and upserts the caller's row with the new secret's hash and both choices,
   all in one transaction.
 
-NOTE: the per-token cap means 6 accounts that know a token can use up its hour of claim pushes; the
-ceiling is that they need the token and several accounts (Auth rate-limits sign-ups); upgrade path: a
-per-device quota, if it ever happens.
+NOTE: the per-token cap is a spam guard, so locking a token's claims for an hour takes the token plus 6
+accounts (Auth rate-limits sign-ups); upgrade path: a per-device quota, if it ever happens.
 
 `prune_expired_caches()` (redefined by this migration, the rest unchanged) deletes expired claims and
 starts over an hour old daily.
@@ -657,12 +661,13 @@ calls it after each matched write-back) answers nothing while the user has a liv
 (`pending`, unreviewed, not donated, created under 10 minutes ago, the app's stale timeout) or no
 unreviewed `done` garment. Otherwise it counts the review queue (unreviewed, not donated) and, in one
 `update … returning`, stamps `last_review_push_at = now()` on each `review_ready` row not pushed in
-the last 60 minutes whose token no other account registered later; it returns those tokens with the
+the last 60 minutes (a token has one holder; the check that no other account registered it later
+stays as defense in depth); it returns those tokens with the
 profile language (`'en'` when unset) and the count. The update is the claim: a concurrent call waits
 on the row lock and then sees the new time, so two garments finishing together push once.
 
 **`public.weekly_summary_targets()`** (`security definer`, `stable`, `service_role` only) returns one
-row per `weekly` token (its newest holder only) with the profile language, `outfits` (wears with
+row per `weekly` token (a token has one holder; the newest-holder check stays as defense in depth) with the profile language, `outfits` (wears with
 `worn_on` in the 7 UTC days ending today) and `unused` (Stats' rule: not donated, added over 182 days
 ago, never worn or last worn over 182 days ago); a user with both at 0 is left out.
 

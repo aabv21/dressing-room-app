@@ -1,10 +1,11 @@
-type Answer = { error: { message: string } | null };
+type Answer = { error: { message: string; code?: string } | null };
 const mockRpc = jest.fn<Promise<Answer>, [string, Record<string, unknown>]>(() => Promise.resolve({ error: null }));
 const mockDeleteEq = jest.fn<Promise<Answer>, [string, string]>(() => Promise.resolve({ error: null }));
 jest.mock('../../lib/supabase', () => ({
   supabase: {
     rpc: (name: string, args: Record<string, unknown>) => mockRpc(name, args),
     from: () => ({ delete: () => ({ eq: mockDeleteEq }) }),
+    functions: { invoke: () => Promise.resolve({ data: null, error: null }) },
   },
 }));
 jest.mock('expo-crypto', () => ({ getRandomBytes: (size: number) => new Uint8Array(size).fill(0x1a) }));
@@ -121,4 +122,14 @@ test('a failed save says so and keeps the switch as it was', async () => {
 
   expect(await screen.findByText("Couldn't save your notification settings. Try again.")).toBeTruthy();
   expect(reviewSwitch()).not.toBeChecked();
+});
+
+test('a token another device holds says the phone is being verified, not that it failed', async () => {
+  mockRpc.mockResolvedValueOnce({ error: { message: 'another device holds this token', code: '42501' } });
+  await renderSection();
+
+  await fireEvent(reviewSwitch(), 'valueChange', true);
+
+  expect(await screen.findByText('Verifying this phone. It turns on in a minute.')).toBeTruthy();
+  expect(screen.queryByText("Couldn't save your notification settings. Try again.")).toBeNull();
 });

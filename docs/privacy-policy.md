@@ -65,7 +65,10 @@ where it is kept, who processes it and how you can export or delete it. Question
   stores your phone's push token (the address push services deliver to), which notices you chose,
   your phone type (iPhone or Android), when it last told you garments were ready, and a fingerprint of
   a random code the app makes on your phone, so only your phone can register or remove its token. The
-  token is stored only to send the notices you turned on.
+  token is stored only to send the notices you turned on. If another account already holds your
+  phone's token (for example after restoring the app's data), the app proves your phone receives it
+  with a one-time code sent as a silent notification; for that check the server keeps the token, your
+  account id and fingerprints of the code for up to an hour.
 
 The app has no ads, no analytics and no tracking, and your data is never sold.
 

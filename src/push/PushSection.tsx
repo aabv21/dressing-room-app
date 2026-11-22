@@ -10,7 +10,7 @@ import { colors, fontSizes, layout, spacing } from '../ui/theme';
 import { setPushPreferences, type PushPreferences } from './pushRegistration';
 import { usePushSettings } from './pushStore';
 
-type Problem = 'denied' | 'unavailable' | 'failed';
+type Problem = 'denied' | 'unavailable' | 'verifying' | 'failed';
 
 function problemText(problem: Problem): MessageKey {
   switch (problem) {
@@ -18,6 +18,8 @@ function problemText(problem: Problem): MessageKey {
       return 'push.denied';
     case 'unavailable':
       return 'push.unavailable';
+    case 'verifying':
+      return 'push.verifying';
     case 'failed':
       return 'push.failed';
   }
@@ -98,7 +100,7 @@ export function PushSection({ userId }: { userId: string }): React.JSX.Element {
       />
       {problem === null ? null : (
         <View style={styles.problem} accessibilityLiveRegion="polite">
-          <Text style={styles.error}>{t(problemText(problem))}</Text>
+          <Text style={problem === 'verifying' ? styles.note : styles.error}>{t(problemText(problem))}</Text>
           {problem === 'denied' ? <OpenSettingsLink /> : null}
         </View>
       )}
@@ -140,6 +142,10 @@ const styles = StyleSheet.create({
   },
   problem: {
     paddingBottom: 6,
+  },
+  note: {
+    color: colors.muted,
+    fontSize: fontSizes.bodySmall,
   },
   error: {
     color: colors.error,
