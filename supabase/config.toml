@@ -443,6 +443,9 @@ APPLE_KEY_ID = "LOCALKEY00"
 APPLE_CLIENT_ID = "local.dressing-room.test"
 APPLE_BASE_URL = "http://host.docker.internal:54498"
 APPLE_PRIVATE_KEY = "env(LOCAL_APPLE_PRIVATE_KEY)"
+# Expo's push send points at integration/mockServices.ts too, so local pushes never reach Expo.
+# EXPO_ACCESS_TOKEN stays unset: it's only for Expo's enhanced push security on the hosted project.
+EXPO_PUSH_URL = "http://host.docker.internal:54498/--/api/v2/push/send"
 
 # Called by the garments insert webhook (pg_net), which authenticates with the
 # `x-webhook-secret` header checked inside the function, not with a user JWT.

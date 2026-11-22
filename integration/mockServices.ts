@@ -1,5 +1,5 @@
-// Mock Jev, Open-Meteo (forecast, geocoding) and Apple's token/revoke, one server routed by path. It listens on
-// every interface since the Edge Runtime calls from a container (docs/local-stack.md#mocks).
+// Mock Jev, Open-Meteo (forecast, geocoding), Apple's token/revoke and Expo's push send, one server routed by
+// path. It listens on every interface since the Edge Runtime calls from a container (docs/local-stack.md#mocks).
 
 import { createServer, type ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,9 @@ export type JevReply = MockReply | ((body: unknown) => MockReply);
 /** An Apple reply, or one computed from each request's form fields. */
 export type AppleReply = MockReply | ((form: URLSearchParams) => MockReply);
 
+/** An Expo push reply computed from each request's messages. */
+export type ExpoPushReply = (messages: unknown[]) => MockReply;
+
 export type MockServices = {
   /** Sets the reply for every following `POST /v1/systemone`, until changed again. */
   jev(next: JevReply): void;
@@ -25,6 +28,10 @@ export type MockServices = {
   appleToken(next: AppleReply): void;
   /** Sets the reply for every following Apple `POST /auth/revoke`. */
   appleRevoke(next: AppleReply): void;
+  /** Sets the reply for every following Expo `POST /--/api/v2/push/send`; null restores the default (an `ok` ticket each). */
+  expoPush(next: ExpoPushReply | null): void;
+  /** Every push message received so far, oldest first. */
+  pushes(): unknown[];
   /** The form fields of every call so far on an Apple path (`/auth/token` or `/auth/revoke`), oldest first. */
   appleForms(path: string): URLSearchParams[];
   /** How many calls have arrived so far on `path` (any route above). */
@@ -37,6 +44,14 @@ const FORECAST_PATH = '/v1/forecast';
 const GEOCODE_PATH = '/v1/search';
 const APPLE_TOKEN_PATH = '/auth/token';
 const APPLE_REVOKE_PATH = '/auth/revoke';
+/** Expo's send path, as `EXPO_PUSH_URL` names it in supabase/config.toml. */
+export const EXPO_PUSH_PATH = '/--/api/v2/push/send';
+
+/** Expo's answer when it accepts every message: one `ok` ticket each, in order. */
+const DEFAULT_EXPO_PUSH: ExpoPushReply = (messages) => ({
+  status: 200,
+  body: { data: messages.map((_, index) => ({ status: 'ok', id: `mock-receipt-${String(index)}` })) },
+});
 
 /** The refresh token the default Apple mock hands out for `code`, so each user's is distinct. */
 export const mockAppleRefreshToken = (code: string): string => `mock-apple-refresh-${code}`;
@@ -162,7 +177,7 @@ function parseJson(text: string): unknown {
 
 /**
  * Starts the mock on `port`. Until a test sets its own: Jev at the best level, `MILD_FORECAST`, Madrid, Apple
- * tokens named after the code (`mockAppleRefreshToken`, `mockAppleSubject`) and a 200 revoke.
+ * tokens named after the code (`mockAppleRefreshToken`, `mockAppleSubject`), a 200 revoke and an `ok` ticket per push.
  */
 export function startMockServices(port = 54498): Promise<MockServices> {
   let jevReply: JevReply = DEFAULT_JEV;
@@ -170,6 +185,8 @@ export function startMockServices(port = 54498): Promise<MockServices> {
   let geocodeReply: MockReply = { status: 200, body: MADRID_GEOCODE };
   let appleTokenReply: AppleReply = DEFAULT_APPLE_TOKEN;
   let appleRevokeReply: AppleReply = DEFAULT_APPLE_REVOKE;
+  let expoPushReply: ExpoPushReply = DEFAULT_EXPO_PUSH;
+  const pushes: unknown[] = [];
   const callCounts = new Map<string, number>();
   const appleForms = new Map<string, URLSearchParams[]>([
     [APPLE_TOKEN_PATH, []],
@@ -190,6 +207,11 @@ export function startMockServices(port = 54498): Promise<MockServices> {
         reply = forecastReply;
       } else if (request.method === 'GET' && path === GEOCODE_PATH) {
         reply = geocodeReply;
+      } else if (request.method === 'POST' && path === EXPO_PUSH_PATH) {
+        const parsed = parseJson(Buffer.concat(chunks).toString('utf8'));
+        const messages: unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+        pushes.push(...messages);
+        reply = expoPushReply(messages);
       } else if (request.method === 'POST' && (path === APPLE_TOKEN_PATH || path === APPLE_REVOKE_PATH)) {
         const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
         appleForms.get(path)?.push(form);
@@ -225,6 +247,10 @@ export function startMockServices(port = 54498): Promise<MockServices> {
         appleRevoke(next) {
           appleRevokeReply = next;
         },
+        expoPush(next) {
+          expoPushReply = next ?? DEFAULT_EXPO_PUSH;
+        },
+        pushes: () => [...pushes],
         appleForms: (path) => [...(appleForms.get(path) ?? [])],
         calls: (path) => callCounts.get(path) ?? 0,
         close: () =>
