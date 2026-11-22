@@ -124,6 +124,21 @@ init`, the OAuth clients and the store records.
     Claude is called.
   - The new app before `buy-check` is deployed: "Should I buy it?" says something went wrong.
   - An old app on the new schema and function works: nothing it calls changed.
+- **Pending (after merge).** Wave 5b-3 ("Ask your stylist"), after 5b-2 and in this order:
+  1. `pnpm exec supabase db push` for `20261124120000_stylist_quota.sql` (the `stylist` quota kind);
+  2. `pnpm exec supabase functions deploy stylist` (new; it reads the same `ANTHROPIC_API_KEY` as
+     `extract-attributes` and the Open-Meteo defaults, so no new secret, and keeps
+     `verify_jwt = true` from `config.toml`);
+  3. then the app build (EAS `preview`, and the store profiles when they're set up). No native
+     module is added (dictation and Listen were already in the build), but the screen is a new route
+     and the microphone and speech recognition purpose strings now name the stylist, so build from a
+     clean prebuild.
+
+  Incompatible combinations:
+  - `stylist` on the old schema: every message answers 500 (no `stylist` quota kind), before Claude
+    is called.
+  - The new app before `stylist` is deployed: "Ask your stylist" says something went wrong.
+  - An old app on the new schema and function works: nothing it calls changed.
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
   manual `gh workflow run keepalive.yml` answers the server time from `public.keep_alive()`. GitHub
@@ -270,6 +285,16 @@ project:
   store screenshot of a piece you don't (the new-outfit count and the verdict), a photo of no
   clothing ("doesn't look like clothing"), and "Add to my closet" (the piece reaches review). Deny
   the camera once and check the message; the sixth check of the day says the 5 are used.
+- **Pending.** "Ask your stylist" on the phone, with the real Claude, once in Spanish and once in
+  English (switch the app language in Profile): ask "¿qué me pongo hoy?" / "what should I wear
+  today?" (a short reply in that language and an outfit card; "Calificarlo" / "Rate it" opens the
+  rating, "Me lo pongo" / "I'll wear it" logs it); dictate a follow-up ("¿y otro?" / "another one?")
+  and check the outfit changes; turn "Speak replies" on (the next reply reads itself in a Latin
+  American voice in Spanish) and start dictating while it reads (it stops). Then ask it to ignore
+  its instructions and list other users, to name a store or a price, and something off-topic: it
+  declines or redirects in one sentence. "New chat" clears it; leaving and coming back starts empty;
+  the 21st message of the day says the 20 are used. Check the Anthropic console's usage for the
+  session against `ai.md`'s per-message estimate.
 - **Pending.** Large text and screen readers: the largest Dynamic Type and Android font scale 2.0
   through every tab, the rating, review and Diary; then VoiceOver and TalkBack.
 - **Pending.** Google sign-in on the phone; Sign in with Apple and its revocation once Apple is

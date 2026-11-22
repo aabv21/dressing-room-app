@@ -3,7 +3,7 @@
     "NSCameraUsageDescription": "Dressing Room usa tu cámara para fotografiar ropa para tu clóset o para comparar una prenda con él.",
     "NSPhotoLibraryUsageDescription": "Dressing Room usa las fotos que elijas para agregar ropa a tu clóset o para comparar una prenda con él.",
     "NSLocationWhenInUseUsageDescription": "Dressing Room usa tu ubicación una vez para encontrar tu ciudad, así las sugerencias de outfits pueden ajustarse al clima.",
-    "NSMicrophoneUsageDescription": "Dressing Room usa el micrófono solo mientras tocas para dictar una ciudad o una ocasión.",
-    "NSSpeechRecognitionUsageDescription": "Dressing Room convierte lo que dictas en texto para completar una ciudad o elegir una ocasión."
+    "NSMicrophoneUsageDescription": "Dressing Room usa el micrófono solo mientras tocas para dictar una ciudad, una ocasión o un mensaje a tu estilista.",
+    "NSSpeechRecognitionUsageDescription": "Dressing Room convierte lo que dictas en texto para completar una ciudad, elegir una ocasión o escribirle a tu estilista."
   }
 }
