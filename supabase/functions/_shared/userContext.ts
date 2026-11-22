@@ -402,7 +402,7 @@ export async function consumeQuota(
   env: ServiceEnv,
   fetchFn: FetchFn,
   userId: string,
-  kind: 'rating' | 'lucky' | 'for_you' | 'trip' | 'buy_check' | 'extraction',
+  kind: 'rating' | 'lucky' | 'for_you' | 'trip' | 'buy_check' | 'stylist' | 'extraction',
   limit: number,
   day?: string,
 ): Promise<boolean> {

@@ -7,7 +7,7 @@ import { Platform } from 'react-native';
 
 import { useI18n, type Locale } from '../i18n';
 import { announceForAccessibility } from '../ui/a11y';
-import { stopSpeaking } from './speech';
+import { setMicListening, stopSpeaking } from './speech';
 
 /** The device's own regional variant of the app language (es-CO), else es-MX or en-US. */
 export function recognitionLanguage(locale: Locale, deviceTags: readonly string[]): string {
@@ -35,6 +35,7 @@ let staleEnds = 0;
 const listeners = new Set<() => void>();
 
 function notify(): void {
+  setMicListening(active !== null);
   for (const listener of listeners) listener();
 }
 

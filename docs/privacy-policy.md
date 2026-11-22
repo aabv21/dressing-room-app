@@ -33,6 +33,13 @@ where it is kept, who processes it and how you can export or delete it. Question
   closet. The app doesn't store the photo or the answer, and neither does the app's server;
   Anthropic handles the photo under its own retention rules (see "How long it is kept"). Only if you
   tap "Add to my closet" is it uploaded, like any garment photo.
+- **"Ask your stylist" messages.** What you type or dictate in the chat, and the replies, are sent
+  to Anthropic to answer them, together with a summary of your closet (each piece's category,
+  colors, formality, seasons, wear count and status, and your clothing type and liked styles; no
+  photos, measurements or other profile details), and, when it's useful to the answer, today's
+  weather where you are (temperature, condition, season), never your city or location. The app keeps the conversation only while the
+  screen is open, and neither the app nor its server stores the messages or the summary; Anthropic
+  handles them under its own retention rules (see "How long it is kept").
 - **Your closet.** Each garment's attributes (category, colors, pattern, material, formality,
   seasons, warmth, fit, occasions), its status (available, in the laundry, lent or donated), how
   often you wear it, whether you took it out of suggestions, and, only if you enter it, what you
@@ -43,13 +50,14 @@ where it is kept, who processes it and how you can export or delete it. Question
   occasion and the outfits and packing list shown. A trip you don't save is not stored.
 - **What you don't want suggested.** The outfit combinations you marked "Not for me", so they
   aren't suggested again.
-- **Your voice, only when you tap a mic.** Dictating a city or Today's occasion uses the
+- **Your voice, only when you tap a mic.** Dictating a city, Today's occasion or a stylist message uses the
   microphone only while you hold that session (tap to start, tap again or pause to stop); the app
   never records or keeps the audio. Your phone's own speech recognizer turns it into text: on an
   iPhone that supports it, entirely on the phone; otherwise Apple's (iPhone) or the phone's speech
   service, usually Google's (Android), may receive the audio to transcribe it, under their own
   privacy terms. Only the resulting words reach the app, which uses a dictated city or occasion
-  exactly like a typed city or a tapped occasion.
+  exactly like a typed city, a tapped occasion or a typed message. A stylist reply you have read
+  aloud is spoken by your phone's own voices.
 - **Usage counts.** How many AI requests of each kind you made each day, to enforce the daily
   limits, and the results of recent AI requests, so repeating one costs nothing.
 
@@ -77,7 +85,7 @@ nothing about it reaches a server or a push service.
 | Processor | What it receives | Why |
 |---|---|---|
 | Supabase | Everything listed above | Hosting: the database, sign-in, photo storage and the server functions that call the services below |
-| Anthropic (Claude) | For each new garment, its prepared photo (cut out and at most 784 pixels) and the clothing type you chose. When the rating service is unavailable, the same anonymous summary that TypeSafe receives. For "For you", only generic descriptions of the suggested pieces, how many of your garments and outfits each one combines with, and the app's language (English or Spanish) to write the lines in, with nothing else about you. For "Should I buy it?", the photo you take or pick (prepared the same way) and your clothing type; neither the app nor its server stores the photo or the answer, and Anthropic handles it under its own retention rules. | Recognizing each garment's attributes; a backup outfit rating; the short lines on the "For you" cards; recognizing a piece you're thinking of buying |
+| Anthropic (Claude) | For each new garment, its prepared photo (cut out and at most 784 pixels) and the clothing type you chose. When the rating service is unavailable, the same anonymous summary that TypeSafe receives. For "For you", only generic descriptions of the suggested pieces, how many of your garments and outfits each one combines with, and the app's language (English or Spanish) to write the lines in, with nothing else about you. For "Should I buy it?", the photo you take or pick (prepared the same way) and your clothing type; neither the app nor its server stores the photo or the answer, and Anthropic handles it under its own retention rules. For "Ask your stylist", your chat messages, the language you use the app in, the closet summary described above and, when useful, today's weather where you are (temperature, condition, season); neither the app nor its server stores them, and Anthropic handles them under its own retention rules. | Recognizing each garment's attributes; a backup outfit rating; the short lines on the "For you" cards; recognizing a piece you're thinking of buying; answering your stylist chat |
 | TypeSafe (Jev) | An anonymous summary only: your clothing type, body type, a height range (short, medium or tall), age group and styles; the occasion, the weather and the season; and each piece's category, colors, pattern, formality and fit. Never a photo, an exact measurement, a size, your name or your email. | Rating outfits and ranking suggestions |
 | Open-Meteo | Your city's coordinates, or the city's name when there are none; for "Pack for a trip", the destination city's name and the app's language, then that place's coordinates | The day's weather; a trip's daily forecast |
 | Apple | Your Sign in with Apple identity, and, when you delete your account, a request to revoke the app's access | Sign-in, and ending that link when you leave |

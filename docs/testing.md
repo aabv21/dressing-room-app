@@ -182,8 +182,9 @@ The Profile tab's Privacy section (data export and account deletion):
 - Listen on the screens, in `today.test.tsx` (the pieces, weather and occasion with the en-US voice;
   a second tap, the end of the speech, leaving the screen and "Another" stop it; the es-MX voice in
   Spanish; hidden with voices but none in the language; a speak error alerts), `rate.test.tsx` (the
-  score, label and reasons; none while loading; unmounting stops it) and `for-you.test.tsx` (each
-  idea's text; another idea's Listen takes over; leaving the tab stops it).
+  score, label and reasons; none while loading; unmounting stops it), `for-you.test.tsx` (each
+  idea's text; another idea's Listen takes over; leaving the tab stops it) and `stylist.test.tsx`
+  (each reply, `autoPlay` with "Speak replies", stopped when dictation starts).
 - `src/voice/__tests__/occasionFromSpeech.test.ts` — every occasion from Spanish and English
   phrases, accents and capitals, the keyword order ("salir a correr", "cena formal", "fiesta en
   casa", "work out", "home office", "oficina en casa"), "office" and "la u" in Spanish, whole words
@@ -281,6 +282,14 @@ Outfits, Stats and Diary:
   Spanish labels.
 - `src/trips/__tests__/tripClient.test.ts` — `planTripRequest`'s body and error mapping, and
   `isTripResponse` accepting a plan or `too_small` and refusing another shape.
+- `src/__tests__/stylist.test.tsx` — "Ask your stylist": the privacy line; a message sent with the
+  local day and language and its reply with Listen; the conversation carried to the next message;
+  dictation filling the field, saying when it heard nothing, and stopping speech; a new reply
+  announced to VoiceOver (a live region for TalkBack) unless read aloud; "Speak replies" skipping a
+  reply that arrives while dictating and stopping when switched off; "Speak replies" reading a new reply (and nothing
+  read with it off); an outfit reply with only the pieces still in the closet, "Rate it" and "I'll
+  wear it"; New chat; over the quota (sending disabled, no retry); network, unavailable and unknown
+  failures with "Try again" resending; Spanish copy; Back.
 - `src/__tests__/buy-check.test.tsx` — "Should I buy it?": the privacy line and both photo sources;
   a gallery photo prepared on the device then sent with the local day and language; the camera
   asked for first (denied: an alert, no camera); a canceled picker; each verdict's sentence, the
@@ -293,6 +302,9 @@ Outfits, Stats and Diary:
 - `src/buyCheck/__tests__/buyCheckClient.test.ts` — `checkPurchase`'s body and error mapping (413
   is `unknown`), and `isBuyCheckResponse` refusing an unknown verdict, count, id, category or color,
   or more than 3 duplicates.
+- `src/stylist/__tests__/stylistClient.test.ts` — `askStylist`'s body and error mapping, the answer
+  guard (empty or over-long replies, bad or too many outfit ids refused), and `historyForRequest`
+  (the last 12 turns starting with the user's, the 4,000-character total).
 - `src/trips/__tests__/tripChecks.test.ts` — `tripKey` (city case and spaces aside), check-offs per
   trip in kv `trip.checks.<id>` following each toggle, only the latest 20 trips kept, and account
   deletion clearing them.
@@ -310,7 +322,8 @@ Outfits, Stats and Diary:
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, one request at a time, and "Search in stores": the region's stores in a
   sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, a browser
-  that won't open, and the header's "Should I buy it?" opening `/buy-check` in both languages.
+  that won't open, and the header's "Should I buy it?" and "Ask your stylist" opening `/buy-check`
+  and `/stylist` in both languages.
 - `src/outfits/__tests__/storeLinks.test.ts` — `storeLinksFor`: each region's stores and exact
   URLs, a lower-case or missing region, every query and the `gl` region URL-encoded, and Mercado
   Libre's hyphens.
@@ -513,6 +526,15 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   out, laundry, lent and unsuggested ones in; closest first, at most 3), the verdict's thresholds,
   `pieceGain`'s count for candidate shoes (two tops × two bottoms plus a dress), and the new outfits
   counted with no season over the wardrobe.
+- `supabase/functions/_shared/__tests__/stylist.test.ts` — "Ask your stylist"'s pure parts: the turns
+  (12 at most, 500 characters each in code points, 4,000 in all, the user's first and last), the
+  enum-only closet summary (no ids, donated pieces out, the 300 cap), the request (the fixed prompt
+  and its rules, the language and profile block with `cache_control`, low effort with no sampling,
+  `tool_choice: none` on the final call, `max_tokens` 4,096, three enum-only tools), `suggest_outfit` (the best pre-score,
+  a later variant rotating, a band override, the missing slots), `find_garments` (filters, the
+  20 cap), tool results without ids, `today_weather`, the error results for an unknown tool or an
+  out-of-enum input, answer parsing (text, tool rounds, refusals, a cut-off call, a `max_tokens`
+  reply), `completeSentences`, the reply sanitizer and `ownOutfit`.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs (the daily forecast's included), the daily forecast's and the place's parsing, weather bands and
   conditions, and the forecast and geocoding parsers.
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
@@ -575,6 +597,18 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   spent quota; 429 with no Claude call; 500 when a read or the quota fails; no Storage, cache or other
   write; logs with outcome words only; and the red-team cases (a "formal gown" category outside the
   enums, a dress for a masculine closet, a model answer carrying its own verdict).
+- `supabase/functions/stylist/__tests__/handler.test.ts` — 401/405 before any fetch; every 400 before
+  any read; a plain answer; the closet and profile read with the caller's token, then one `stylist`
+  quota (20, the local day), then Claude; the request carrying no names, ids, measurements or city; a
+  tool round (the assistant content sent back unchanged, one `tool_result` per call in one user turn,
+  the outfit), the weather fetched once for two tools, at most 3 tool rounds with `tool_choice: none`
+  on the last call, the 25 s deadline and each call's remaining timeout; Claude failures, refusals and
+  empty replies (503, quota spent); 429 with no Claude call; 500 when a read or the quota fails; no
+  write but the quota, the weather cache and Claude; logs with outcome words only; and the red-team
+  cases ("list all users", a tool outside the list, a fake garment id, a forged earlier assistant
+  turn, an off-topic redirect); the latest suggestion standing (a later "none" clears an earlier
+  outfit, the last of two parallel calls wins); and a reply cut off at `max_tokens` kept to its
+  complete sentences (503 when none), logged `truncated`.
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
   deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
@@ -654,6 +688,12 @@ Supabase stack:
   compared with the user's closet (a duplicate, the new outfits, `skip`) for one `buy_check` quota;
   no object in the bucket and no new garment; `not_garment` still spending one; a mistyped image
   refused for free; and 429 on the sixth check of the day with no Claude call.
+- `stylist.int.test.ts` — `stylist` through the real gateway with the mock Claude answering a
+  `suggest_outfit` round then a reply: the outfit made of the user's own garments, one `stylist` quota
+  for the two calls, no ids in the closet summary or the tool result and none of another user's
+  garments in any request;
+  no new rows; an assistant turn last refused for free; and 429 on the 21st message of the day with
+  no Claude call.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
   Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two
   pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`
@@ -746,6 +786,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   quota kind; both cascade on user delete.
 - `buy_check_quota.test.sql` — the `buy_check` quota kind: five checks on a local day, the sixth
   refused, counted apart from `extraction` and from another user.
+- `stylist_quota.test.sql` — the `stylist` quota kind: twenty messages on a local day, the 21st
+  refused, counted apart from `buy_check` and from another user.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
   `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
   on the caller's own garments only, and not writable by anon.

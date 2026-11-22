@@ -242,6 +242,21 @@ describe('should I buy it', () => {
   });
 });
 
+describe('ask your stylist', () => {
+  test('the header opens the chat whatever the ideas’ state', async () => {
+    mockedFetch.mockReturnValue(failed('over_quota'));
+    await renderIn('en');
+    await fireEvent.press(await screen.findByRole('button', { name: 'Ask your stylist' }));
+    expect(mockedPush).toHaveBeenCalledWith('/stylist');
+  });
+
+  test('reads Pregúntale a tu estilista in Spanish', async () => {
+    mockedFetch.mockReturnValue(ok(IDEAS));
+    await renderIn('es');
+    expect(await screen.findByRole('button', { name: 'Pregúntale a tu estilista' })).toBeOnTheScreen();
+  });
+});
+
 describe('the other states', () => {
   test('too_small asks for more pieces and links to the closet', async () => {
     mockedFetch.mockReturnValue(ok({ kind: 'too_small' }));

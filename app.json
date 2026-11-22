@@ -58,8 +58,8 @@
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Dressing Room uses the microphone only while you tap to dictate a city or an occasion.",
-          "speechRecognitionPermission": "Dressing Room turns what you dictate into text to fill in a city or pick an occasion."
+          "microphonePermission": "Dressing Room uses the microphone only while you tap to dictate a city, an occasion or a message to your stylist.",
+          "speechRecognitionPermission": "Dressing Room turns what you dictate into text to fill in a city, pick an occasion or write to your stylist."
         }
       ],
       [

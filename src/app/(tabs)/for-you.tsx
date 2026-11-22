@@ -2,7 +2,7 @@
 // a line (Claude's or a template) and "Search in stores" (the region's stores, in the system browser).
 import { getLocales } from 'expo-localization';
 import { router } from 'expo-router';
-import { RotateCw, Search, Shirt, ShoppingBag, Sparkles, TriangleAlert, WifiOff } from 'lucide-react-native';
+import { MessageCircle, RotateCw, Search, Shirt, ShoppingBag, Sparkles, TriangleAlert, WifiOff } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -136,11 +136,22 @@ function Note({ error }: { error: AiError }): React.JSX.Element {
   );
 }
 
-/** "Should I buy it?": for the shop, so it stays reachable whatever state the ideas are in. */
-function BuyCheckEntry(): React.JSX.Element {
+/** "Ask your stylist" and "Should I buy it?": reachable whatever state the ideas are in. */
+function HeaderEntries(): React.JSX.Element {
   const { t } = useI18n();
   return (
     <View style={styles.headerRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('stylist.entry')}
+        onPress={() => {
+          router.push('/stylist');
+        }}
+        style={({ pressed }) => [styles.entry, pressed ? styles.pressed : null]}
+      >
+        <MessageCircle size={14} color={colors.accentText} strokeWidth={2.5} />
+        <Text style={styles.searchLabel}>{t('stylist.entry')}</Text>
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('buyCheck.entry')}
@@ -202,7 +213,7 @@ export default function ForYouScreen(): React.JSX.Element {
   }
 
   return (
-    <Screen title={t('screen.forYou')} headerAccessory={<BuyCheckEntry />} {...(primary === undefined ? {} : { cta: { primary } })}>
+    <Screen title={t('screen.forYou')} headerAccessory={<HeaderEntries />} {...(primary === undefined ? {} : { cta: { primary } })}>
       <Text style={styles.intro}>{t('forYou.intro')}</Text>
       {forYou.failed === null ? null : <Note error={forYou.failed} />}
       {body}
@@ -284,7 +295,9 @@ const styles = StyleSheet.create({
   headerRow: {
     flex: 1,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'flex-end',
+    gap: spacing.sm,
   },
   entry: {
     minHeight: layout.minHitTarget,

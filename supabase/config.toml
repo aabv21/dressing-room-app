@@ -472,6 +472,10 @@ verify_jwt = true
 [functions.buy-check]
 verify_jwt = true
 
+# Called by signed-in users chatting with the stylist; reads the closet and the profile with that token.
+[functions.stylist]
+verify_jwt = true
+
 # Called by signed-in users; removes their photos, revokes Apple, then deletes the auth user (service role).
 [functions.delete-account]
 verify_jwt = true

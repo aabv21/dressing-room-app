@@ -1,5 +1,5 @@
-// A round "Listen" / "Stop" button that reads `text` aloud; nothing when the phone has no voice in
-// the app language.
+// A round "Listen" / "Stop" button that reads `text` aloud (by itself once with `autoPlay`); nothing
+// when the phone has no voice in the app language.
 import { Square, Volume2 } from 'lucide-react-native';
 import { Pressable, StyleSheet } from 'react-native';
 
@@ -7,9 +7,17 @@ import { useI18n } from '../i18n';
 import { colors, layout, radii, spacing } from '../ui/theme';
 import { useSpeaker } from './speech';
 
-export function ListenButton({ text, size = 28 }: { text: string; size?: number }): React.JSX.Element | null {
+export function ListenButton({
+  text,
+  size = 28,
+  autoPlay = false,
+}: {
+  text: string;
+  size?: number;
+  autoPlay?: boolean;
+}): React.JSX.Element | null {
   const { t } = useI18n();
-  const speaker = useSpeaker(text);
+  const speaker = useSpeaker(text, { autoPlay });
   if (speaker.hidden) return null;
   const slop = Math.max(0, (layout.minHitTarget - size) / 2);
   const Icon = speaker.speaking ? Square : Volume2;

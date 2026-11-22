@@ -1,4 +1,4 @@
-// Mock Anthropic Messages API for the local `extract-attributes`. It listens on every interface since the Edge
+// Mock Anthropic Messages API for the local functions. It listens on every interface since the Edge
 // Runtime calls from a container (docs/local-stack.md#mock-claude).
 
 import { readFile } from 'node:fs/promises';
@@ -11,8 +11,12 @@ export type MockReply = { status: number; body: unknown; delayMs?: number } | { 
 export type MockAnthropic = {
   /** Sets the reply for every following call, until changed again. */
   respondWith(next: MockReply): void;
+  /** Answers the next calls with these replies in order (a tool round, then the answer), then `respondWith`'s again. */
+  respondWithSequence(next: readonly MockReply[]): void;
   /** How many `POST /v1/messages` calls have arrived so far. */
   calls(): number;
+  /** Every `POST /v1/messages` body so far, parsed (null when it wasn't JSON). */
+  requests(): unknown[];
   close(): Promise<void>;
 };
 
@@ -25,18 +29,28 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
 
 export function startMockAnthropic(port = 54499): Promise<MockAnthropic> {
   let reply: MockReply = DEFAULT_REPLY;
+  let queue: MockReply[] = [];
   let callCount = 0;
+  const bodies: unknown[] = [];
 
   const server = createServer((request, response) => {
-    // Drain the body (the base64 photo) so the client never blocks on a full socket buffer.
-    request.resume();
+    // Read the whole body (a base64 photo, or a chat) so the client never blocks on a full socket buffer.
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
     request.on('end', () => {
       if (request.method !== 'POST' || request.url !== '/v1/messages') {
         sendJson(response, 404, { type: 'error', error: { type: 'not_found_error', message: 'not found' } });
         return;
       }
       callCount += 1;
-      const current = reply;
+      try {
+        bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown);
+      } catch {
+        bodies.push(null);
+      }
+      const current = queue.shift() ?? reply;
       if ('hang' in current) return;
       if (current.delayMs === undefined) {
         sendJson(response, current.status, current.body);
@@ -56,7 +70,11 @@ export function startMockAnthropic(port = 54499): Promise<MockAnthropic> {
         respondWith(next) {
           reply = next;
         },
+        respondWithSequence(next) {
+          queue = [...next];
+        },
         calls: () => callCount,
+        requests: () => [...bodies],
         close: () =>
           new Promise<void>((resolveClose, rejectClose) => {
             // Hung requests would otherwise keep `close()` waiting forever.

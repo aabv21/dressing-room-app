@@ -24,7 +24,7 @@ It runs in three places:
   and Android. Background removal, resizing and the upload queue run here, and so do Stats and
   Diary, which are computed from the garments and wears already on the device.
 - **One Supabase project.** Auth, Postgres 17 with row-level security on every table, a private
-  Storage bucket, and nine Edge Functions. Every request from the app goes through the project's
+  Storage bucket, and ten Edge Functions. Every request from the app goes through the project's
   API gateway with the user's session token; the app holds no other credential.
 - **Three AI and data services,** called only from the Edge Functions: Anthropic (Claude Haiku
   5.5), TypeSafe (its Jev judgment model) and Open-Meteo (weather and geocoding). Apple and Google
@@ -51,6 +51,7 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 | `for-you` | Edge Function | Ranks the wardrobe staples for the user's clothing type (41–58) by how many new outfits each opens, weighted by a Jev fit, and returns 3–5 with a Claude line and a store-search query. |
 | `trip-plan` | Edge Function | Plans a trip's outfits day by day from the closet, the destination's daily forecast and the lucky rules, with a packing list; no model call. |
 | `buy-check` | Edge Function | "Should I buy it?": sends a photo the user takes or picks through the extraction request, then finds duplicates in the closet, counts the new outfits the piece opens and picks a rule verdict. Stores nothing. |
+| `stylist` | Edge Function | "Ask your stylist": a chat with Claude about the caller's closet. Sends an enum-only closet summary and runs three tools for the model (an outfit from the lucky rules, a garment search, today's weather) over the caller's own rows, in at most three rounds within 25 s. Stores nothing. |
 | `apple-token` | Edge Function | Exchanges a Sign in with Apple authorization code for the refresh token deletion needs, and stores it only when the token's Apple user is the caller. |
 | `delete-account` | Edge Function | Removes the caller's photos, revokes the Apple token and deletes the auth user, whose rows cascade. Safe to retry. |
 | `export-data` | Edge Function | Returns the caller's profile, garments, outfits, wears and 7-day signed photo URLs as one JSON document. |
@@ -172,6 +173,16 @@ sanitizer). Code then finds up to 3 duplicates, counts the new outfits with For 
 the verdict; the model never decides it. No photo, cache row or answer is stored; "Add to my closet"
 hands the same photo to the upload queue.
 
+**Ask your stylist.** For you's header opens a chat. The app keeps the conversation in memory and
+sends the last turns that fit (12, 4,000 characters) with the local day and language to `stylist`.
+The function reads the closet and profile with the caller's token, spends one of 20 daily messages,
+and runs a manual tool loop with Claude: up to 3 rounds in which the model may call
+`suggest_outfit`, `find_garments` or `today_weather`, which the function runs itself over the
+caller's rows (the weather through `weather_cache`), each call bounded by what's left of 25 s. The
+reply is sanitized; the outfit is the server's own suggestion, filtered to the caller's available
+garments, and the app shows it with "Rate it" and "I'll wear it". Dictation and Listen run on the
+phone. Nothing is stored ([`ai.md`](ai.md#ask-your-stylist)).
+
 **Data export.** Profile → "Export my data" calls `export-data`, which reads the caller's rows
 with the caller's token, signs each photo URL for 7 days with the service role, and returns one
 JSON document that the app hands to the share sheet.
@@ -216,6 +227,7 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | The extraction quota is used up | `over_quota`, with no Claude call. | Manual entry; the quota resets at the next UTC day. |
 | Jev fails, times out (10 s) or answers something that doesn't parse | `rate-outfit` falls back to Claude ("estimated", no swap); `lucky-list` keeps the pre-score order for unrated outfits; `for-you` ranks that idea at the fit floor of 0.3. Each such result is cached for an hour only. | Automatic; the next call after the hour recomputes. |
 | Both Jev and Claude fail a rating | 503 `rating_unavailable`, nothing cached. | The user taps again. |
+| The stylist's Claude call fails, refuses, or the 25 s run out | 503 `analysis_unavailable`, the quota spent; the app keeps the user's message and offers "Try again". | The user retries (another of the day's 20 messages). |
 | Open-Meteo fails or the city can't be geocoded | The weather is unknown: weather fit is neutral and the unsafe-for-weather check is ignored. A failed forecast for known coordinates marks the lucky list degraded. | Automatic. |
 | A daily quota is used up | Rating and lucky answer 429, and the app says so; For you serves its last entry first. | The user's next local day. |
 | The network fails on Today or For you | The app shows the last good answer with an offline note. | The next focus or reconnect refetches. |
@@ -242,13 +254,18 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
   the Apple tokens, the caller's own photo folder and, in `delete-account`, the auth user; the
   `extract-attributes` webhook, which has no user token, uses it for the one garment it was sent.
 - **What reaches the models.** Claude sees a garment photo (cut out where possible, 784 px) and the
-  clothing type for extraction (and a "Should I buy it?" photo the same way, never stored), and the same bucketed state as Jev for a fallback rating. Jev sees
+  clothing type for extraction (and a "Should I buy it?" photo the same way, never stored), and the same bucketed state as Jev for a fallback rating.
+  For the stylist it sees the user's own chat turns, the clothing type and styles, an enum-only
+  closet summary without ids, and tool results with enum values only (the server keeps a suggested
+  outfit's ids); never
+  photos, measurements or anyone else's rows. Jev sees
   only buckets and enum values: clothing type, body type, a height bucket, age group, styles,
   occasion, a weather band, season and each piece's attributes. Exact measurements, sizes, names and
   photos never reach Jev, and the rating functions never read chest, waist, hips or sizes.
 - **Untrusted model output.** Every model answer goes through structured outputs and a parser that
   keeps only catalog values; reasons and swap wording come from templates, and For you's free-text
-  lines are length-checked and shown as plain text. [`red-team.md`](red-team.md) maps each attack to
+  lines and the stylist's replies are length-checked, sanitized and shown as plain text. The
+  stylist's tools are fixed, enum-checked and read only the caller's rows. [`red-team.md`](red-team.md) maps each attack to
   its defense and test.
 - **Spend limits.** Per-user daily quotas (100 extractions, 50 ratings, 10 lucky lists, 1 For you,
   5 trips, 5 buy checks)
@@ -291,6 +308,8 @@ Costs, from [`ai.md`](ai.md)'s "Quota and cost":
 | Jev, typical use | about $0.65 a month for 4 users |
 | Jev, worst case at the quotas | about $6 a month for 4 users |
 | For you | about $0.0005 per cache miss, at most about $0.06 a month for 4 users |
+| Should I buy it? | about $0.0003 per check, at most about $0.18 a month for 4 users |
+| Ask your stylist | about $0.0013 per typical message, $0.0134 at worst; at most 20 a day per user |
 | Open-Meteo | free, no key |
 | Supabase | free tier |
 
@@ -308,7 +327,7 @@ target, so the owner sets spend caps or alerts with Anthropic and TypeSafe
 - **Two kinds of AI, with code in charge.** Claude labels photos, where a vision model is needed;
   Jev answers narrow typed questions about outfits, which code combines with fixed weights into a
   score. Reasons and swap wording are templates, so the app never shows a model's prose except For
-  you's short lines.
+  you's short lines and the stylist's replies.
 - **Buckets, not measurements, in every prompt.** Height becomes short, medium or tall, and the
   rest of the state is enums, so the models can't leak or be steered by personal detail.
 - **On-device background removal and resizing, over server processing.** The photo leaves the phone
@@ -320,6 +339,10 @@ target, so the owner sets spend caps or alerts with Anthropic and TypeSafe
   no AI call and work offline.
 - **Quotas and caches before any paid call.** Each function checks its cache, then the per-user
   quota, before it calls a model; a degraded result is cached for only an hour.
+- **A manual tool loop for the stylist, over an agent framework.** The function owns the loop:
+  three fixed tools over the caller's rows, at most three rounds, a deadline, and the outfit taken
+  from the server's own suggestion, so the model can talk but not act outside them. The Edge
+  Functions take no third-party imports, so the loop is a few dozen lines over `runClaude`.
 - **Templates and fallbacks everywhere a model can fail.** Extraction falls back to manual review,
   the rating to Claude, the lucky list to the pre-score, and For you's lines to templates.
 - **A nightly backup on the owner's Mac, over a cloud copy.** The free tier has no downloadable

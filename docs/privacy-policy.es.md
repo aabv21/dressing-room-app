@@ -33,6 +33,14 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   ni su servidor guardan la foto ni la respuesta; Anthropic trata la foto según sus propias reglas
   de conservación (ver "Cuánto tiempo se guardan"). Solo si tocas "Agregar a mi clóset" se sube,
   como cualquier foto de una prenda.
+- **Mensajes de "Pregúntale a tu estilista".** Lo que escribes o dictas en el chat, y las
+  respuestas, se envían a Anthropic para responderte, junto con un resumen de tu clóset (la
+  categoría, los colores, la formalidad, las temporadas, las veces que usaste cada prenda y su
+  estado, más tu tipo de ropa y los estilos que te gustan; sin fotos, medidas ni otros datos de tu
+  perfil) y, cuando sirve para responder, el clima de hoy donde estás (temperatura, condición,
+  temporada), nunca tu ciudad ni tu ubicación. La app guarda la conversación solo mientras la pantalla está abierta, y ni la app ni su
+  servidor guardan los mensajes ni el resumen; Anthropic los trata según sus propias reglas de
+  conservación (ver "Cuánto tiempo se guardan").
 - **Tu clóset.** Los atributos de cada prenda (categoría, colores, estampado, material, formalidad,
   temporadas, abrigo, corte, ocasiones), su estado (disponible, en la lavandería, en préstamo o
   donada), cuántas veces la usas, si la sacaste de las sugerencias y, solo si lo escribes, cuánto
@@ -45,14 +53,15 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   guardas no se almacena.
 - **Lo que no quieres que te sugiera.** Las combinaciones de outfit que marcaste con "No es para
   mí", para no sugerirlas de nuevo.
-- **Tu voz, solo cuando tocas un micrófono.** Dictar una ciudad o la ocasión de Hoy usa el
+- **Tu voz, solo cuando tocas un micrófono.** Dictar una ciudad, la ocasión de Hoy o un mensaje a tu estilista usa el
   micrófono solo durante esa sesión (tocas para empezar y vuelves a tocar o haces una pausa para
   terminar); la app nunca graba ni guarda el audio. El reconocedor de voz de tu propio teléfono lo
   convierte en texto: en un iPhone que lo permite, todo dentro del teléfono; si no, el de Apple
   (iPhone) o el servicio de voz del teléfono, normalmente el de Google (Android), puede recibir el
   audio para transcribirlo, con sus propias condiciones de privacidad. A la app solo llegan las
-  palabras resultantes, y usa una ciudad o una ocasión dictadas igual que una ciudad escrita o una
-  ocasión tocada.
+  palabras resultantes, y usa una ciudad, una ocasión o un mensaje dictados igual que si los
+  escribieras o tocaras. Una respuesta de tu estilista que pides escuchar la leen las voces de tu
+  propio teléfono.
 - **Conteos de uso.** Cuántas solicitudes de IA de cada tipo hiciste cada día, para aplicar los
   límites diarios, y los resultados de solicitudes recientes, para que repetir una no cueste nada.
 
@@ -82,7 +91,7 @@ pantalla con las voces de texto a voz de tu propio teléfono.
 | Proveedor | Qué recibe | Para qué |
 |---|---|---|
 | Supabase | Todo lo anterior | Alojamiento: la base de datos, el inicio de sesión, el almacenamiento de fotos y las funciones del servidor que llaman a los servicios de abajo |
-| Anthropic (Claude) | Por cada prenda nueva, su foto preparada (sin fondo y de 784 píxeles como máximo) y el tipo de ropa que elegiste. Cuando el servicio de calificación no está disponible, el mismo resumen anónimo que recibe TypeSafe. Para "Para ti", solo descripciones genéricas de las prendas sugeridas, con cuántas de tus prendas y outfits combina cada una, y el idioma de la app (inglés o español) en que escribir las frases, sin nada más sobre ti. Para "¿Lo compro?", la foto que tomas o eliges (preparada igual) y tu tipo de ropa; ni la app ni su servidor guardan la foto ni la respuesta, y Anthropic la trata según sus propias reglas de conservación. | Reconocer los atributos de cada prenda; una calificación de respaldo; las frases cortas de las tarjetas de "Para ti"; reconocer una prenda que piensas comprar |
+| Anthropic (Claude) | Por cada prenda nueva, su foto preparada (sin fondo y de 784 píxeles como máximo) y el tipo de ropa que elegiste. Cuando el servicio de calificación no está disponible, el mismo resumen anónimo que recibe TypeSafe. Para "Para ti", solo descripciones genéricas de las prendas sugeridas, con cuántas de tus prendas y outfits combina cada una, y el idioma de la app (inglés o español) en que escribir las frases, sin nada más sobre ti. Para "¿Lo compro?", la foto que tomas o eliges (preparada igual) y tu tipo de ropa; ni la app ni su servidor guardan la foto ni la respuesta, y Anthropic la trata según sus propias reglas de conservación. Para "Pregúntale a tu estilista", tus mensajes del chat, el idioma en que usas la app, el resumen de tu clóset descrito arriba y, cuando sirve, el clima de hoy donde estás (temperatura, condición, temporada); ni la app ni su servidor los guardan, y Anthropic los trata según sus propias reglas de conservación. | Reconocer los atributos de cada prenda; una calificación de respaldo; las frases cortas de las tarjetas de "Para ti"; reconocer una prenda que piensas comprar; responder el chat con tu estilista |
 | TypeSafe (Jev) | Solo un resumen anónimo: tu tipo de ropa, tipo de cuerpo, un rango de estatura (baja, media o alta), rango de edad y estilos; la ocasión, el clima y la temporada; y la categoría, los colores, el estampado, la formalidad y el corte de cada prenda. Nunca una foto, una medida exacta, una talla, tu nombre ni tu correo. | Calificar outfits y ordenar sugerencias |
 | Open-Meteo | Las coordenadas de tu ciudad, o el nombre de la ciudad cuando no las hay; para "Armar la maleta", el nombre de la ciudad de destino y el idioma de la app, y luego las coordenadas de ese lugar | El clima del día; el pronóstico diario de un viaje |
 | Apple | Tu identidad de Iniciar sesión con Apple y, cuando eliminas tu cuenta, una solicitud para revocar el acceso de la app | El inicio de sesión, y cortar ese vínculo cuando te vas |
