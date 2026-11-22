@@ -67,7 +67,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   starts, a stopped item keeps its stage and attempts and is due at once, and nothing runs until
   `resumeQueue`), `preparePhoto.test.ts` (the resize arguments for portrait, landscape and small
   photos, one decode capped at 784 px with the thumbnail built from it, WebP qualities, the cut-out
-  or the source photo), `cutout.test.ts` (the native module present, missing, or throwing) and
+  or the source photo; `prepareCheckPhoto`'s base64 WebP from the cut-out, nothing moved into
+  uploads and both temporary files deleted, even when the decode fails), `cutout.test.ts` (the native module present, missing, or throwing) and
   `queueSteps.test.ts` (the real steps, the session check, replacements).
 - `src/__tests__/camera.test.tsx` — the burst camera: permissions, the shutter and shot strip, Done,
   the Discard / Keep shooting confirm on Close and on a back gesture, and "Choose from gallery"
@@ -279,6 +280,16 @@ Outfits, Stats and Diary:
   Spanish labels.
 - `src/trips/__tests__/tripClient.test.ts` — `planTripRequest`'s body and error mapping, and
   `isTripResponse` accepting a plan or `too_small` and refusing another shape.
+- `src/__tests__/buy-check.test.tsx` — "Should I buy it?": the privacy line and both photo sources;
+  a gallery photo prepared on the device then sent with the local day and language; the camera
+  asked for first (denied: an alert, no camera); a canceled picker; each verdict's sentence, the
+  item and the count; duplicates opening their garment (a deleted one left out); "Add to my closet"
+  enqueuing the original photo once; "Check another"; not clothing, the quota (no retry), offline
+  ("Try again" resends without picking again), a photo the device can't decode (never sent); and
+  the Spanish copy.
+- `src/buyCheck/__tests__/buyCheckClient.test.ts` — `checkPurchase`'s body and error mapping (413
+  is `unknown`), and `isBuyCheckResponse` refusing an unknown verdict, count, id, category or color,
+  or more than 3 duplicates.
 - `src/trips/__tests__/tripChecks.test.ts` — `tripKey` (city case and spaces aside), check-offs per
   trip in kv `trip.checks.<id>` following each toggle, only the latest 20 trips kept, and account
   deletion clearing them.
@@ -295,8 +306,8 @@ Outfits, Stats and Diary:
   the confidence line only when low or estimated, the success haptic, the swap (hidden when its target is out of suggestions), Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too. Share: the card with the pieces, score and footer, the captured PNG shared, a failed capture shown in the sheet, no Share while loading, and the Spanish copy.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, one request at a time, and "Search in stores": the region's stores in a
-  sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, and a browser
-  that won't open.
+  sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, a browser
+  that won't open, and the header's "Should I buy it?" opening `/buy-check` in both languages.
 - `src/outfits/__tests__/storeLinks.test.ts` — `storeLinksFor`: each region's stores and exact
   URLs, a lower-case or missing region, every query and the `gl` region URL-encoded, and Mercado
   Libre's hyphens.

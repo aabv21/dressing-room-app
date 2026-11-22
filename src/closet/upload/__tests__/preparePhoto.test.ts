@@ -1,7 +1,7 @@
 import { SaveFormat } from 'expo-image-manipulator';
 
 import { cutOutGarment } from '../cutout';
-import { preparePhoto, resizeFor } from '../preparePhoto';
+import { prepareCheckPhoto, preparePhoto, resizeFor } from '../preparePhoto';
 
 type Size = { width: number; height: number };
 
@@ -40,7 +40,7 @@ jest.mock('../cutout', () => ({ cutOutGarment: jest.fn() }));
 
 type FakeImage = Size & {
   release: jest.Mock;
-  saveAsync: jest.Mock<Promise<Size & { uri: string }>, [unknown]>;
+  saveAsync: jest.Mock<Promise<Size & { uri: string; base64?: string }>, [unknown]>;
 };
 type FakeContext = {
   resize: jest.Mock<FakeContext, [{ width?: number; height?: number }]>;
@@ -88,7 +88,8 @@ function fakeContext(source: Size): FakeContext {
         release: jest.fn(),
         saveAsync: jest.fn((options: unknown) => {
           saveCalls.push({ size: rendered, options });
-          return Promise.resolve({ uri: `file:///cache/ImageManipulator/${String(saveCalls.length)}.webp`, ...rendered });
+          const base64 = (options as { base64?: boolean }).base64 === true ? { base64: 'UklGRgAAAABXRUJQ' } : {};
+          return Promise.resolve({ uri: `file:///cache/ImageManipulator/${String(saveCalls.length)}.webp`, ...rendered, ...base64 });
         }),
       };
       renderedImages.push(image);
@@ -262,5 +263,53 @@ describe('preparePhoto', () => {
     await expect(preparePhoto('file:///document/uploads/g-source.jpg')).rejects.toThrow('decode failed');
 
     expect(mockDeletedUris).toEqual(['file:///document/uploads/1.webp', 'file:///cache/garment-cutout/a.png']);
+  });
+});
+
+describe('prepareCheckPhoto', () => {
+  test('cuts the item out, decodes it capped at 784 px and answers a WebP 0.8 as base64', async () => {
+    cutOutMock.mockResolvedValue('file:///cache/garment-cutout/b.png');
+    sourceOfSize({ width: 4000, height: 3000 });
+
+    const base64 = await prepareCheckPhoto('file:///cache/ImagePicker/shot.jpg');
+
+    expect(base64).toBe('UklGRgAAAABXRUJQ');
+    expect(cutOutMock).toHaveBeenCalledWith('file:///cache/ImagePicker/shot.jpg');
+    expect(manipulateMock.mock.calls).toEqual([['file:///cache/garment-cutout/b.png', { maxWidth: 784, maxHeight: 784 }]]);
+    expect(saveCalls).toEqual([{ size: { width: 784, height: 588 }, options: { format: SaveFormat.WEBP, compress: 0.8, base64: true } }]);
+  });
+
+  test('keeps nothing: the saved WebP and the cut-out are deleted, nothing moves into uploads, every native object is released', async () => {
+    cutOutMock.mockResolvedValue('file:///cache/garment-cutout/b.png');
+    sourceOfSize({ width: 4000, height: 3000 }, { ignoreLoadOptions: true });
+
+    await prepareCheckPhoto('file:///cache/ImagePicker/shot.jpg');
+
+    expect(mockMovedUris).toEqual([]);
+    expect(mockDeletedUris.sort()).toEqual(['file:///cache/ImageManipulator/1.webp', 'file:///cache/garment-cutout/b.png']);
+    expect(renderedImages).toHaveLength(2);
+    for (const image of renderedImages) expect(image.release).toHaveBeenCalledTimes(1);
+    expect(manipulateMock.mock.results[0]?.value).toEqual(expect.objectContaining({ release: expect.any(Function) as unknown }));
+    expect((manipulateMock.mock.results[0]?.value as FakeContext).release).toHaveBeenCalledTimes(1);
+  });
+
+  test('without a cut-out it reads the source photo and deletes only its own WebP', async () => {
+    cutOutMock.mockResolvedValue(null);
+    sourceOfSize({ width: 600, height: 800 });
+
+    await prepareCheckPhoto('file:///cache/ImagePicker/shot.jpg');
+
+    expect(manipulateMock.mock.calls[0]?.[0]).toBe('file:///cache/ImagePicker/shot.jpg');
+    expect(mockDeletedUris).toEqual(['file:///cache/ImageManipulator/1.webp']);
+  });
+
+  test('a failed decode propagates and still deletes the cut-out', async () => {
+    cutOutMock.mockResolvedValue('file:///cache/garment-cutout/b.png');
+    manipulateMock.mockImplementation(() => {
+      throw new Error('decode failed');
+    });
+
+    await expect(prepareCheckPhoto('file:///cache/ImagePicker/shot.jpg')).rejects.toThrow('decode failed');
+    expect(mockDeletedUris).toEqual(['file:///cache/garment-cutout/b.png']);
   });
 });

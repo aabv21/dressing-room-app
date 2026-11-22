@@ -87,3 +87,28 @@ export async function preparePhoto(sourceUri: string): Promise<{ fullUri: string
     if (cutoutUri !== null) deleteQuietly(cutoutUri);
   }
 }
+
+/**
+ * "Should I buy it?"'s photo: the same cut-out and 784 px WebP as an upload, answered as base64 and never
+ * kept (the saved WebP and the cut-out are deleted). Throws when the photo can't be decoded.
+ */
+export async function prepareCheckPhoto(sourceUri: string): Promise<string> {
+  const cutoutUri = await cutOutGarment(sourceUri);
+  const contexts: Context[] = [];
+  const images: ImageRef[] = [];
+  let savedUri: string | null = null;
+  try {
+    const context = ImageManipulator.manipulate(cutoutUri ?? sourceUri, { maxWidth: FULL.longestSide, maxHeight: FULL.longestSide });
+    contexts.push(context);
+    const full = await renderWithin(context, FULL.longestSide, images);
+    const saved = await full.saveAsync({ format: SaveFormat.WEBP, compress: FULL.compress, base64: true });
+    savedUri = saved.uri;
+    if (saved.base64 === undefined) throw new Error('no base64 from the encoder');
+    return saved.base64;
+  } finally {
+    for (const image of images) image.release();
+    for (const context of contexts) context.release();
+    if (savedUri !== null) deleteQuietly(savedUri);
+    if (cutoutUri !== null) deleteQuietly(cutoutUri);
+  }
+}

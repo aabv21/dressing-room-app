@@ -16,7 +16,8 @@ code (components, hooks, utils) stays outside `src/app/`.
   `camera`, `review`, `garment/[id]`, `rate` (pushed from Today and Build as
   `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`), `city` (Today's city, a modal
   sheet), `plan` (the planner, pushed from Today as `/plan`, and from Build as
-  `/plan?day=<YYYY-MM-DD>&ids=<garment ids>`) and `trip` ("Pack for a trip", pushed from Today).
+  `/plan?day=<YYYY-MM-DD>&ids=<garment ids>`), `trip` ("Pack for a trip", pushed from Today) and
+  `buy-check` ("Should I buy it?", pushed from For you's header).
 - Leaving never drops work silently: the camera with unsent shots and the garment detail with
   unsaved edits ask first through `usePreventRemove` (Discard / Keep editing), and Android's back on
   Forgot password's code step returns to the email step. `review`, `rate` and the garment detail
@@ -114,7 +115,9 @@ user's own voice ("I'll wear it", "Export my data") say "I" or "my".
   attempts and is due at once.
 - `cutout.ts`: the only caller of `modules/garment-cutout` ([its README](../modules/garment-cutout/README.md)).
 - `preparePhoto.ts`: the cut-out, one decode capped at 784 px saved as WebP 0.8, and a 256 px WebP
-  0.7 thumbnail built from that image.
+  0.7 thumbnail built from that image. `prepareCheckPhoto` makes the same 784 px WebP for "Should I
+  buy it?" and answers it as base64, deleting the saved file and the cut-out: that photo is never
+  uploaded.
 - `queueSteps.ts`: the real prepare, upload and commit steps; `permanentUploadError.ts`: a rejected
   upload that retrying can't fix.
 
@@ -318,6 +321,31 @@ on it logs one. Server side: `planned_outfits` and `plan_outfit`
   `saved_trips` (then "Saved ✓"), "New trip" goes back to the form, which lists the saved trips
   (open shows the snapshot without a call; Delete). Errors: an unknown city, the 5-a-day quota,
   the geocoder down, offline; a closet without a required slot says what to add.
+
+## Should I buy it? (`src/buyCheck/`)
+
+A photo of a piece the user is thinking of buying, compared with their closet by `buy-check`
+([`api.md`](api.md#buy-check), [`ai.md`](ai.md#should-i-buy-it)). Nothing is kept: not the photo,
+not the answer.
+
+- `buyCheckClient.ts`: `checkPurchase({ image, date, language })` sends the base64 WebP with
+  `mediaType: 'image/webp'` through `aiClient.ts`'s shared `invoke`, so 429 is `over_quota` and 503
+  `unavailable`; `isBuyCheckResponse` checks the answer (catalog category and colors, at most 3
+  duplicate ids, a whole non-negative count, a known verdict).
+- `useBuyCheck.ts`: the flow. "Take a photo" asks for the camera, then opens `expo-image-picker`'s
+  camera for one shot (not the burst camera, which feeds the upload queue); "From gallery" picks one
+  photo. `prepareCheckPhoto` resizes it on the device, then `checkPurchase` sends it with the local
+  day and the app's language. "Try again" resends the prepared photo without picking again; "Add to
+  my closet" hands the original photo to the upload queue once, like a gallery import; "Check
+  another" forgets both.
+- `src/app/buy-check.tsx`: the intro and the privacy line ("The photo goes to Anthropic for
+  analysis and isn't stored."), then the result card: the verdict as a sentence ("This would open
+  12 new outfits", "You already have something very similar", "Think it over before buying"), what
+  the item looks like, the new-outfit count, and "Similar in your closet" with each duplicate's
+  thumbnail opening its garment (a duplicate deleted since is left out). A photo that isn't clothing,
+  the 5-a-day quota (no retry), offline, the AI unavailable and a photo the device can't decode each
+  have their own line.
+- For you's header carries the "Should I buy it?" button, in every state of the ideas.
 
 ## The daily reminder (`src/reminder/`)
 

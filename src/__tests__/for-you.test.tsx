@@ -227,6 +227,21 @@ describe('the ideas', () => {
   });
 });
 
+describe('should I buy it', () => {
+  test('the header opens the check, in English and Spanish, whatever the ideas’ state', async () => {
+    mockedFetch.mockReturnValue(failed('over_quota'));
+    await renderIn('en');
+    await fireEvent.press(await screen.findByRole('button', { name: 'Should I buy it?' }));
+    expect(mockedPush).toHaveBeenCalledWith('/buy-check');
+  });
+
+  test('reads ¿Lo compro? in Spanish', async () => {
+    mockedFetch.mockReturnValue(ok(IDEAS));
+    await renderIn('es');
+    expect(await screen.findByRole('button', { name: '¿Lo compro?' })).toBeOnTheScreen();
+  });
+});
+
 describe('the other states', () => {
   test('too_small asks for more pieces and links to the closet', async () => {
     mockedFetch.mockReturnValue(ok({ kind: 'too_small' }));
