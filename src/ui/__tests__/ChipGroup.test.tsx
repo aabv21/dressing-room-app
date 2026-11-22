@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 import { ChipGroup } from '../ChipGroup';
+import { colors } from '../theme';
 
 const options = [
   { value: 'week', label: 'Week' },
@@ -46,4 +47,13 @@ test('pressing a chip is a selection tick; a disabled chip stays still', async (
   expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
   await fireEvent.press(screen.getByRole('checkbox', { name: 'Year' }));
   expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});
+
+test.each(['commit', 'accent'] as const)('a selected %s chip is the accent violet with a white label', async (tone) => {
+  await render(<ChipGroup options={options} selected={['month']} onChange={jest.fn()} multiple={false} tone={tone} />);
+  expect(StyleSheet.flatten(screen.getByRole('radio', { name: 'Month' }).props.style)).toMatchObject({
+    backgroundColor: colors.selected,
+    borderColor: colors.selected,
+  });
+  expect(StyleSheet.flatten(screen.getByText('Month').props.style)).toMatchObject({ color: colors.onFill });
 });

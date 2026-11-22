@@ -28,7 +28,7 @@ function polygonFor(type: BodyType): string {
   }
 }
 
-const FILL_OFF = '#d9cdf7';
+const FILL_OFF = colors.silhouetteOff;
 
 export function Silhouette({ type, selected }: { type: BodyType; selected: boolean }): React.JSX.Element {
   const fill = selected ? colors.accent : FILL_OFF;

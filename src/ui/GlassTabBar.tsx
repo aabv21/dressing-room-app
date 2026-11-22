@@ -7,7 +7,7 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useI18n } from '../i18n';
 import { tapHaptic } from './feedback';
 import { TABS, useBottomChrome } from './layout';
-import { textScale } from './theme';
+import { colors, fontSizes, shadows, textScale } from './theme';
 
 // NOTE: expo-blur blurs only on iOS, so Android gets a near-opaque frosted fill; upgrade path: wrap the
 // tab navigator's scenes in a BlurTargetView and pass it as `blurTarget`.
@@ -44,7 +44,7 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
         {/* NOTE: white at 0 alpha, not `transparent` (transparent BLACK, a grey blend); start/end aim at 115deg,
             but expo-linear-gradient applies them per axis, so a non-square capsule renders another angle. */}
         <LinearGradient
-          colors={['rgba(255,255,255,0.65)', 'rgba(255,255,255,0)']}
+          colors={[colors.glass[65], colors.glass[0]]}
           start={{ x: 0.047, y: 0.289 }}
           end={{ x: 0.953, y: 0.711 }}
           locations={[0, 0.4]}
@@ -93,9 +93,9 @@ export function GlassTabBar(props: BottomTabBarProps): React.JSX.Element {
                   testID={`tab-lens-${tab.route}`}
                 />
                 <View style={styles.tabContent}>
-                  <Icon size={18} color={selected ? '#6d28d9' : '#5f5b6b'} />
+                  <Icon size={18} color={selected ? colors.accentText : colors.tabInactive} />
                   <Text
-                    style={[styles.label, { color: selected ? '#6d28d9' : '#5f5b6b' }]}
+                    style={[styles.label, { color: selected ? colors.accentText : colors.tabInactive }]}
                     maxFontSizeMultiplier={textScale.compact}
                     numberOfLines={1}
                   >
@@ -118,20 +118,20 @@ const styles = StyleSheet.create({
     right: 10,
     height: 56,
     borderRadius: 30,
-    boxShadow: '0px 12px 28px rgba(50,20,110,0.18)',
+    boxShadow: shadows.tabBar,
   },
   capsule: {
     flex: 1,
     borderRadius: 30,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: colors.glass[80],
   },
   blurOverlay: {
-    backgroundColor: 'rgba(255,255,255,0.42)',
+    backgroundColor: colors.glass[42],
   },
   opaqueFallback: {
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
   },
   row: {
     flex: 1,
@@ -139,9 +139,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 5,
   },
+  // Android's 48 dp minimum touch target.
   tab: {
     flex: 1,
-    height: 46,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -160,12 +161,12 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    borderRadius: 23,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    boxShadow: '0px 2px 8px rgba(80,40,160,0.16), inset 0px 1px 0px #ffffff',
+    borderRadius: 24,
+    backgroundColor: colors.glass[90],
+    boxShadow: shadows.tabLens,
   },
   label: {
-    fontSize: 10,
+    fontSize: fontSizes.micro,
     fontWeight: '600',
   },
 });

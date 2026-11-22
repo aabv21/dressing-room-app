@@ -22,7 +22,7 @@ import type { AnchoredCta } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen, ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
 import { useLargeText } from '../../ui/layout';
-import { colors, layout, selectionRing, spacing } from '../../ui/theme';
+import { colors, fontSizes, layout, selectionRing, spacing } from '../../ui/theme';
 
 type RowKey = 'top' | 'bottom' | 'shoes' | 'extra';
 
@@ -42,6 +42,22 @@ const CHIP_SLOP = (layout.minHitTarget - 36) / 2;
 
 function rowOf(key: RowKey): Row {
   return ROWS.find((row) => row.key === key) ?? TOP_ROW;
+}
+
+function isFilled(row: Row, selection: BuildSelection): boolean {
+  return Object.keys(selection).some((slot) => (row.slots as readonly string[]).includes(slot));
+}
+
+/** The required rows still empty, top to bottom; a one-piece fills the Top row too. */
+function missingRows(selection: BuildSelection): Row[] {
+  const onePiece = selection.one_piece !== undefined;
+  return ROWS.filter((row) => !row.optional && !(row.key === 'top' && onePiece) && !isFilled(row, selection));
+}
+
+/** "a top, a bottom and shoes". */
+function joinList(items: readonly string[], and: string): string {
+  const last = items.at(-1);
+  return items.length < 2 || last === undefined ? (last ?? '') : `${items.slice(0, -1).join(', ')} ${and} ${last}`;
 }
 
 function SlotRow({
@@ -151,9 +167,18 @@ export default function BuildScreen(): React.JSX.Element {
     (id: string) => {
       const item = byId.get(id);
       if (item === undefined) return;
-      setPicked((previous) => selectGarment(retainSelection(previous, usable), item));
+      const next = selectGarment(selection, item);
+      setPicked(next);
+      // A pick in a required row moves on to the next empty one below it; the optional row holds several.
+      if (!selectionIds(next).includes(id) || active.optional) return;
+      const after = ROWS.slice(ROWS.indexOf(active) + 1);
+      const upNext = missingRows(next).find((row) => after.includes(row));
+      if (upNext !== undefined) {
+        setActiveKey(upNext.key);
+        setCategory('all');
+      }
     },
-    [byId, usable],
+    [byId, selection, active],
   );
 
   const rowValue = (row: Row): { value: string; chosen: boolean } => {
@@ -211,10 +236,15 @@ export default function BuildScreen(): React.JSX.Element {
 
   const complete = canRate(selection);
   const ids = selectionIds(selection).join(',');
+  const missing = joinList(
+    missingRows(selection).map((row) => t(`today.missing.${row.key === 'extra' ? 'accessory' : row.key}`)),
+    t('rate.and'),
+  );
   const cta = useMemo<React.ComponentProps<typeof AnchoredCta>>(
     () => ({
       primary: {
-        label: t('build.rate'),
+        // Disabled, it says what's missing instead of leaving the user to guess.
+        label: complete || missing === '' ? t('build.rate') : t('build.rate.missing', { slots: missing }),
         tone: 'ai',
         icon: Sparkles,
         disabled: !complete,
@@ -223,7 +253,7 @@ export default function BuildScreen(): React.JSX.Element {
         },
       },
     }),
-    [t, complete, ids],
+    [t, complete, ids, missing],
   );
 
   return (
@@ -256,7 +286,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 13,
@@ -273,23 +303,23 @@ const styles = StyleSheet.create({
     borderColor: colors.dashed,
   },
   slotActive: {
-    borderColor: colors.accent,
+    borderColor: colors.selected,
     boxShadow: selectionRing,
   },
   slotLabel: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   slotValue: {
     flexShrink: 1,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   slotPlaceholder: {
     flexShrink: 1,
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   // Bleeds to the screen edges so chips scroll out under them (the Closet tab's chip row).
   chipRow: {

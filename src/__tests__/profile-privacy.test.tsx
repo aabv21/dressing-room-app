@@ -227,7 +227,7 @@ afterEach(() => {
 test('shows the privacy note, Export my data and a destructive Delete account', async () => {
   await openProfile();
 
-  expect(screen.getByRole('header', { name: 'PRIVACY' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Privacy' })).toBeTruthy();
   expect(screen.getByText(/visible only to you/)).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Export my data' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Delete account' })).toBeTruthy();

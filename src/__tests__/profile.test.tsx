@@ -63,6 +63,7 @@ import { renderRouter } from 'expo-router/testing-library';
 import { signOut } from '../auth/authService';
 import { translate } from '../i18n';
 import { kvGet, kvRemove, kvSet } from '../lib/kv';
+import { SAVED_NOTE_MS } from '../app/(tabs)/profile';
 import { saveProfile } from '../profile/profileRepository';
 import type { Profile } from '../profile/profileRepository';
 import { currentAuth, resetAuth, setAuth } from '../test/authMock';
@@ -106,8 +107,10 @@ async function openProfile(profile: Profile | null = profileRow()) {
   return router;
 }
 
+const SAVE_NAME = /^(Save changes|Saved|Guardar cambios|Guardado)$/;
+
 function saveButton() {
-  return screen.getByRole('button', { name: /^(Save changes|Saved|Guardar cambios|Guardado)$/ });
+  return screen.getByRole('button', { name: SAVE_NAME });
 }
 
 beforeEach(() => {
@@ -118,12 +121,14 @@ beforeEach(() => {
   mockedSaveProfile.mockResolvedValue({ ok: true });
 });
 
-test('shows every section prefilled, the account email, and a disabled Save', async () => {
+test('shows every section prefilled and the account email, with no Save until something changes', async () => {
   await openProfile();
 
-  for (const heading of ['YOUR CLOTHES', 'YOUR BODY', 'YOUR STYLE', 'LANGUAGE', 'ACCOUNT']) {
+  for (const heading of ['Your clothes', 'Your body', 'Your style', 'Language', 'Account']) {
     expect(screen.getByRole('header', { name: heading })).toBeTruthy();
+    expect(screen.getByText(heading.toUpperCase())).toBeTruthy();
   }
+  expect(screen.getByRole('header', { name: 'Profile' })).toBeTruthy();
   expect(screen.getByRole('radio', { name: /^Feminine/ })).toBeSelected();
   expect(screen.getByRole('radio', { name: 'Hourglass' })).toBeSelected();
   expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.68 m');
@@ -131,7 +136,7 @@ test('shows every section prefilled, the account email, and a disabled Save', as
   expect(screen.getByRole('checkbox', { name: 'Casual' })).toBeChecked();
   expect(screen.getByLabelText('Your city, for the weather').props.value).toBe('Bogotá');
   expect(screen.getByText('ana@example.com')).toBeTruthy();
-  expect(saveButton()).toBeDisabled();
+  expect(screen.queryByRole('button', { name: SAVE_NAME })).toBeNull();
 });
 
 test('edits enable Save, and Save sends only the changed fields', async () => {
@@ -170,7 +175,7 @@ test('a height never saved shows as not set (not the slider default) until the s
   expect(screen.getByTestId('body-height-value')).toHaveTextContent('Not set');
   expect(screen.getByText('Move the slider to set your height.')).toBeTruthy();
   expect(screen.getByTestId('body-height-slider').props.accessibilityValue).toMatchObject({ text: 'Not set' });
-  expect(saveButton()).toBeDisabled();
+  expect(screen.queryByRole('button', { name: SAVE_NAME })).toBeNull();
 
   await fireEvent(screen.getByTestId('body-height-slider'), 'valueChange', 172);
 
@@ -189,7 +194,7 @@ test('undoing an edit makes the form clean again', async () => {
   expect(saveButton()).toBeEnabled();
   await fireEvent.press(screen.getByRole('checkbox', { name: 'Urban' }));
 
-  expect(saveButton()).toBeDisabled();
+  expect(screen.queryByRole('button', { name: SAVE_NAME })).toBeNull();
 });
 
 test('switching to a clothing type without the saved silhouette clears it on Save', async () => {
@@ -240,14 +245,14 @@ test("a field's error shows once the user leaves it, and clears as soon as it is
   });
 });
 
-test('a failed save shows the error and keeps every edit', async () => {
+test('a failed save shows the error by the button, as an alert, and keeps every edit', async () => {
   mockedSaveProfile.mockResolvedValueOnce({ ok: false, error: 'profile.error.network' });
   await openProfile();
 
   await fireEvent.press(screen.getByRole('checkbox', { name: 'Urban' }));
   await fireEvent.press(saveButton());
 
-  expect(await screen.findByText(translate('en', 'profile.error.network'))).toBeTruthy();
+  expect(await screen.findByRole('alert')).toHaveTextContent(translate('en', 'profile.error.network'));
   expect(screen.getByRole('checkbox', { name: 'Urban' })).toBeChecked();
   expect(saveButton()).toBeEnabled();
 });
@@ -256,13 +261,13 @@ test('switching the language to English relabels the screen and the tabs, and sa
   kvSet(LOCALE_PREFERENCE_KEY, 'es');
   await openProfile();
   expect(screen.getByText('PERFIL')).toBeTruthy();
-  expect(screen.getByRole('header', { name: 'TU ROPA' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Tu ropa' })).toBeTruthy();
   expect(screen.getByText('Perfil')).toBeTruthy();
 
   await fireEvent.press(screen.getByRole('tab', { name: 'English' }));
 
   expect(screen.getByText('PROFILE')).toBeTruthy();
-  expect(screen.getByRole('header', { name: 'YOUR CLOTHES' })).toBeTruthy();
+  expect(screen.getByRole('header', { name: 'Your clothes' })).toBeTruthy();
   expect(screen.getByText('Profile')).toBeTruthy();
   expect(screen.queryByText('PERFIL')).toBeNull();
   await waitFor(() => {
@@ -271,7 +276,7 @@ test('switching the language to English relabels the screen and the tabs, and sa
   expect(kvGet(LOCALE_PREFERENCE_KEY)).toBe('en');
   expect(screen.getByRole('checkbox', { name: 'Use device language' })).not.toBeChecked();
   // The language is saved on its own; it never makes the form dirty.
-  expect(saveButton()).toBeDisabled();
+  expect(screen.queryByRole('button', { name: SAVE_NAME })).toBeNull();
 });
 
 test('"Use device language" saves null and makes the preference "system"', async () => {
@@ -390,4 +395,47 @@ test('a failed profile read shows a retry (and sign-out) instead of an empty for
 
   expect(await screen.findByTestId('profile-form')).toBeTruthy();
   expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.90 m');
+});
+
+test('household mode is listed as coming soon, with what it will do, and is not a control', async () => {
+  await openProfile();
+
+  expect(screen.getByText('Household mode')).toBeTruthy();
+  expect(screen.getByText('Coming soon')).toBeTruthy();
+  expect(screen.getByText("A parent manages the kids' closets from one account.")).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Household/ })).toBeNull();
+  expect(screen.getByLabelText("Household mode, coming soon. A parent manages the kids' closets from one account.")).toBeTruthy();
+});
+
+test('"Saved" goes away after a moment, leaving no button for an unchanged form', async () => {
+  await openProfile();
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Urban' }));
+  jest.useFakeTimers();
+  try {
+    await fireEvent.press(saveButton());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('button', { name: 'Saved' })).toBeDisabled();
+
+    await act(async () => {
+      jest.advanceTimersByTime(SAVED_NOTE_MS);
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('button', { name: SAVE_NAME })).toBeNull();
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
+test('editing after a failed save clears its error', async () => {
+  mockedSaveProfile.mockResolvedValueOnce({ ok: false, error: 'profile.error.network' });
+  await openProfile();
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Urban' }));
+  await fireEvent.press(saveButton());
+  await screen.findByRole('alert');
+
+  await fireEvent.press(screen.getByRole('checkbox', { name: 'Elegant' }));
+
+  expect(screen.queryByRole('alert')).toBeNull();
 });

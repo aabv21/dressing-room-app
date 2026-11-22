@@ -1,7 +1,7 @@
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { androidRipple, pressedStyle, tapHaptic } from './feedback';
-import { colors, layout, radii } from './theme';
+import { colors, fontSizes, layout, radii } from './theme';
 
 const CHIP_HEIGHT = 36;
 // The visible chip stays small; hitSlop tops the tap area up to the 44pt minimum.
@@ -17,7 +17,7 @@ export type ChipOption<T extends string> = {
 
 /**
  * Pill chips. `multiple` (default) toggles each value; otherwise a radio group where tapping the
- * selected chip clears it. `tone="accent"`: violet selection, bold labels; `stretch`: equal shares.
+ * selected chip clears it. `tone="accent"`: violet outlines and bold labels; `stretch`: equal shares.
  */
 export function ChipGroup<T extends string>(props: {
   options: readonly ChipOption<T>[];
@@ -80,7 +80,7 @@ export function ChipGroup<T extends string>(props: {
               styles.chip,
               accent ? styles.chipAccent : null,
               stretch ? styles.stretch : null,
-              isOn ? (accent ? styles.chipAccentOn : styles.chipOn) : null,
+              isOn ? styles.chipOn : null,
               disabled ? styles.disabled : null,
               pressed && Platform.OS === 'ios' && pressedStyle,
             ]}
@@ -115,21 +115,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: radii.pill,
   },
   chipOn: {
-    backgroundColor: colors.commit,
-    borderColor: colors.commit,
+    backgroundColor: colors.selected,
+    borderColor: colors.selected,
   },
   chipAccent: {
     borderColor: colors.tintBorder,
-  },
-  chipAccentOn: {
-    backgroundColor: colors.accentText,
-    borderColor: colors.accentText,
   },
   stretch: {
     flexGrow: 1,
@@ -143,17 +139,17 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.15)',
+    borderColor: colors.swatchEdge,
   },
   label: {
     color: colors.ink,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   labelAccent: {
     fontWeight: '700',
   },
   labelOn: {
-    color: '#ffffff',
+    color: colors.onFill,
     fontWeight: '700',
   },
 });

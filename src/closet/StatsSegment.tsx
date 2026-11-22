@@ -1,6 +1,7 @@
 // The Closet tab's Stats segment, computed on the device from the closet and the wear history; no AI cost.
 import { Image } from 'expo-image';
 import { router, useIsFocused } from 'expo-router';
+import { RotateCw } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -17,7 +18,7 @@ import { KpiTile } from '../ui/charts/KpiTile';
 import { ProportionBar } from '../ui/charts/ProportionBar';
 import { ChipGroup } from '../ui/ChipGroup';
 import { useLargeText } from '../ui/layout';
-import { colors, layout, radii, spacing } from '../ui/theme';
+import { colors, fontSizes, layout, radii, shadows, spacing } from '../ui/theme';
 import type { GarmentColor } from './catalog';
 import { useCloset } from './ClosetProvider';
 import { formatMonthDay } from './DiarySegment';
@@ -186,6 +187,7 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
     wears: history,
     offlineSince,
     failed: loadFailed,
+    reload,
   } = useWears(addDays(rangeEnd, -STREAK_HISTORY_DAYS), rangeEnd, { enabled: focused, record: 'replace' });
   // A pin tapped past midnight moves "today" forward before the next focus refetches.
   const [tapDay, setToday] = useState<string | null>(null);
@@ -388,7 +390,15 @@ export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorF
         />
       </ScrollView>
 
-      {loadFailed ? <Text style={styles.error}>{t('stats.error')}</Text> : null}
+      {loadFailed ? (
+        <View style={styles.failed}>
+          <Text style={styles.error}>{t('stats.error')}</Text>
+          <Pressable accessibilityRole="button" onPress={reload} style={styles.retry}>
+            <RotateCw size={14} color={colors.accentText} />
+            <Text style={styles.retryLabel}>{t('stats.retry')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {offlineSince === null ? null : (
         <Text style={styles.offline}>{t('stats.offline', { date: formatMonthDay(locale, offlineSince) })}</Text>
       )}
@@ -494,13 +504,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm - 2,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: colors.glass[85],
     borderWidth: 1,
-    borderColor: '#ffffff',
+    borderColor: colors.surface,
     borderRadius: radii.cell + 4,
     padding: spacing.sm + 4,
     gap: spacing.sm,
-    boxShadow: '0 6px 18px rgba(60, 30, 120, 0.06)',
+    boxShadow: shadows.card,
   },
   // Wraps the aside under the title when a large text size leaves no room for both.
   cardHeader: {
@@ -512,25 +522,45 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flexShrink: 1,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '800',
     color: colors.ink,
   },
   cardAside: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '600',
     color: colors.muted,
   },
   muted: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     color: colors.muted,
   },
   error: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.error,
   },
+  failed: {
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
+  retry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs + 2,
+    minHeight: layout.minHitTarget,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.surface,
+  },
+  retryLabel: {
+    fontSize: fontSizes.body,
+    fontWeight: '700',
+    color: colors.accentText,
+  },
   offline: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.muted,
   },
   insight: {
@@ -544,7 +574,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   insightText: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     lineHeight: 18,
     color: colors.ink,
   },
@@ -576,9 +606,9 @@ const styles = StyleSheet.create({
     height: THUMB_SIZE,
     borderRadius: 9,
     overflow: 'hidden',
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#eee9f8',
+    borderColor: colors.divider,
   },
   thumbImage: {
     width: '100%',
@@ -586,7 +616,7 @@ const styles = StyleSheet.create({
   },
   unusedLabel: {
     flex: 1,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.ink,
   },
   minis: {
@@ -605,22 +635,22 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.hairline,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
   },
   miniText: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
     color: colors.ink,
   },
   pinned: {
     flexShrink: 1,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
     color: colors.positiveText,
   },
   statusNote: {
     flexShrink: 1,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '600',
     color: colors.muted,
   },

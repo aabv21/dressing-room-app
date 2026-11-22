@@ -450,7 +450,7 @@ state with a fixed rubric built from the same levels:
   booleans, and `weakest_piece` as a string enum of the outfit's slots plus `none`.
 - The parser rejects a refusal, a missing text block, invalid JSON and any value outside the schema
   (null; the function then answers 503 `rating_unavailable`). Indices are normalized like Jev's
-  scores and every confidence is 0, so the app shows "AI confidence: estimated".
+  scores and every confidence is 0, so the app says "This score is an estimate".
 
 System prompt (verbatim, fixed; no per-user text):
 

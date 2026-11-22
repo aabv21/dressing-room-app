@@ -6,7 +6,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import type { Garment } from '../closet/garmentRepository';
 import { formatWearCount, useI18n } from '../i18n';
-import { colors, spacing } from '../ui/theme';
+import { colors, fontSizes, spacing } from '../ui/theme';
 import { orderPieces, pieceLabel } from './outfitDisplay';
 
 function PieceRow({
@@ -35,7 +35,7 @@ function PieceRow({
       accessibilityLabel={`${label}, ${wears}`}
       testID={`outfit-piece-${garment.id}`}
     >
-      <View style={[styles.thumb, compact ? styles.thumbCompact : null]}>
+      <View style={[styles.thumb, compact ? styles.thumbCompact : null]} testID={`outfit-thumb-${garment.id}`}>
         {source === null ? null : (
           <Image
             source={source}
@@ -87,7 +87,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderRadius: 13,
     paddingVertical: 7,
     paddingHorizontal: 9,
@@ -100,7 +100,9 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 10,
     overflow: 'hidden',
-    backgroundColor: colors.tint,
+    backgroundColor: colors.thumbFill,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    borderColor: colors.hairline,
   },
   thumbCompact: {
     width: 36,
@@ -115,11 +117,11 @@ const styles = StyleSheet.create({
   },
   label: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   wears: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
   },
 });

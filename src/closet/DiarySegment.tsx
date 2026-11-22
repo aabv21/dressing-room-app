@@ -19,7 +19,7 @@ import { dequeueWear, queuedWears } from '../outfits/wearQueue';
 import { useWears } from '../stats/useWears';
 import { deleteWear, type WearWithItems } from '../stats/wearsRepository';
 import { useLargeText } from '../ui/layout';
-import { colors, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
+import { colors, fontSizes, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
 import { slotOf } from './catalog';
 import { useCloset } from './ClosetProvider';
 import type { Garment } from './garmentRepository';
@@ -33,7 +33,7 @@ const MINI_HEIGHT = 28;
 const MINI_SLOP = (layout.minHitTarget - MINI_HEIGHT) / 2;
 // Calendar greys and a worn day's darker number; the muted ink is the lightest keeping 4.5:1 on the cells.
 const DAY_MUTED = colors.muted;
-const DAY_INK = '#4a4656';
+const DAY_INK = colors.inkSoft;
 
 const formats = new Map<string, Intl.DateTimeFormat>();
 
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
   },
   monthTitle: {
     flexShrink: 1,
-    fontSize: 16,
+    fontSize: fontSizes.title,
     fontWeight: '800',
     color: colors.ink,
   },
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
   weekday: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 11,
+    fontSize: fontSizes.micro,
     fontWeight: '700',
     color: DAY_MUTED,
   },
@@ -487,11 +487,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'transparent',
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: colors.glass[60],
     overflow: 'hidden',
   },
   cellWorn: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderColor: colors.hairline,
   },
   cellToday: {
@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   cellNumber: {
-    fontSize: 11,
+    fontSize: fontSizes.micro,
     lineHeight: 13,
     color: DAY_MUTED,
   },
@@ -532,12 +532,12 @@ const styles = StyleSheet.create({
   },
   empty: {
     textAlign: 'center',
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.muted,
     paddingVertical: spacing.sm,
   },
   wear: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: radii.cell + 2,
@@ -554,7 +554,7 @@ const styles = StyleSheet.create({
   },
   wearTitle: {
     flexShrink: 1,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '800',
     color: colors.ink,
   },
@@ -565,16 +565,16 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   muted: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     color: colors.muted,
   },
   error: {
     flexShrink: 1,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.error,
   },
   offline: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     color: colors.muted,
   },
   mini: {
@@ -584,10 +584,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.hairline,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
   },
   miniText: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
     color: colors.error,
   },

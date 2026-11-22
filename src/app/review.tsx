@@ -18,9 +18,10 @@ import type { RequestError } from '../lib/requestResult';
 import { useClothingType } from '../profile/useClothingType';
 import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
+import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
-import { colors, gradients, radii, spacing } from '../ui/theme';
+import { colors, fontSizes, gradients, radii, spacing } from '../ui/theme';
 
 const CLOCK_TICK_MS = 30_000;
 const ERROR_ROOM = 56;
@@ -100,6 +101,7 @@ function ReviewCard(props: {
         ]}
       >
         <View style={styles.titleRow}>
+          <BackChevron label={t('review.back')} onPress={leaveToCloset} />
           <ScreenTitle title={t('review.title')} />
           <Text style={styles.progressText}>{t('review.progress', { index, total })}</Text>
         </View>
@@ -185,7 +187,10 @@ function CaughtUp(): React.JSX.Element {
   return (
     <LinearGradient colors={gradients.background} style={styles.fill}>
       <View style={[styles.content, { paddingTop: insets.top }]}>
-        <ScreenTitle title={t('review.title')} />
+        <View style={styles.titleRow}>
+          <BackChevron label={t('review.back')} onPress={leaveToCloset} />
+          <ScreenTitle title={t('review.title')} />
+        </View>
         <View style={styles.caughtUp}>
           <Text style={styles.caughtUpTitle}>{t('review.done.title')}</Text>
           <Text style={styles.caughtUpBody}>{t('review.done.body')}</Text>
@@ -329,8 +334,8 @@ const styles = StyleSheet.create({
   },
   titleRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   batch: {
     gap: spacing.xs,
@@ -345,19 +350,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1.5,
     borderColor: colors.accent,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.glass[80],
   },
   batchButtonDim: {
     opacity: 0.6,
   },
   batchLabel: {
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   progressText: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   track: {
@@ -378,18 +383,18 @@ const styles = StyleSheet.create({
     borderColor: colors.tintBorder,
     backgroundColor: colors.tint,
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   editingRow: {
     gap: spacing.sm,
     paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth * 2,
-    borderBottomColor: '#eee9f8',
+    borderBottomColor: colors.divider,
   },
   editingLabel: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   doubt: {
     gap: spacing.sm,
@@ -401,7 +406,7 @@ const styles = StyleSheet.create({
   },
   doubtText: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   doubtLead: {
     fontWeight: '700',
@@ -415,7 +420,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.errorTint,
     textAlign: 'center',
     color: colors.error,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   caughtUp: {
     marginTop: spacing.xl,
@@ -424,13 +429,13 @@ const styles = StyleSheet.create({
   },
   caughtUpTitle: {
     color: colors.ink,
-    fontSize: 20,
+    fontSize: fontSizes.headline,
     fontWeight: '800',
     textAlign: 'center',
   },
   caughtUpBody: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
 });

@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 import { SegmentTabs } from '../../closet/SegmentTabs';
+import { colors } from '../theme';
 
 const options = [
   { value: 'items', label: 'Items' },
@@ -32,4 +34,12 @@ test('pressing a segment is a selection tick', async () => {
   await render(<SegmentTabs options={options} value="stats" onChange={jest.fn()} accessibilityLabel="Closet sections" />);
   await fireEvent.press(screen.getByRole('tab', { name: 'Diary' }));
   expect(Haptics.selectionAsync).toHaveBeenCalledTimes(1);
+});
+
+test('the selected segment is the accent violet, like a selected chip', async () => {
+  await render(<SegmentTabs options={options} value="stats" onChange={jest.fn()} accessibilityLabel="Closet sections" />);
+  expect(StyleSheet.flatten(screen.getByRole('tab', { name: 'Stats' }).props.style)).toMatchObject({
+    backgroundColor: colors.selected,
+  });
+  expect(StyleSheet.flatten(screen.getByText('Stats').props.style)).toMatchObject({ color: colors.onFill });
 });

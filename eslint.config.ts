@@ -33,4 +33,9 @@ export default defineConfig(
     files: ['scripts/**/*.ts', 'integration/**/*.ts'],
     rules: { 'security/detect-non-literal-fs-filename': 'off' },
   },
+  {
+    // Scans the repo's own `src/` files, listed by `readdirSync`.
+    files: ['src/ui/__tests__/themeUsage.test.ts'],
+    rules: { 'security/detect-non-literal-fs-filename': 'off' },
+  },
 );

@@ -16,14 +16,21 @@ code (components, hooks, utils) stays outside `src/app/`.
   `camera`, `review`, `garment/[id]`, `rate` (pushed from Today and Build as
   `/rate?ids=<comma-separated garment ids>[&occasion=<occasion>]`) and `city` (Today's city, a modal
   sheet).
+- Leaving never drops work silently: the camera with unsent shots and the garment detail with
+  unsaved edits ask first through `usePreventRemove` (Discard / Keep editing), and Android's back on
+  Forgot password's code step returns to the email step. `review`, `rate` and the garment detail
+  share the `BackChevron` beside their title.
 
 ## Shared UI (`src/ui/`)
 
 Components not tied to one route: `Screen` (the scrolling screen with its anchored CTA and keyboard
-handling), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
-(`useBottomChrome`, `useLargeText`), `ActionNotice` (an action's error or queued note above the
+handling; `ScreenTitle` shows the title upper-cased but gives screen readers the words as written), `AnchoredCta`, `ChipGroup`, `GlassTabBar`, `OptionCard`, `TextField`, `layout.ts`
+(`useBottomChrome`, `useLargeText`), `ActionNotice` and `UndoNotice` (an action's error, queued note or Undo button above the
 anchored buttons), `a11y.ts` (iOS screen-reader announcements; Android hears the live regions) and
-`theme.ts`. `feedback.ts` holds `tapHaptic` (a light impact
+`theme.ts`: the color tokens (components hard-code no color, so a dark palette can follow), the
+`fontSizes` type scale (11 pt at the smallest, 15 pt body) and the shadows. `useWaitStage` times an
+AI wait, so Today, the rating and For you say "Still thinking…" at 6 s and "Almost there…" at 20 s. A chosen chip or segment
+is filled with the `selected` violet, which Build's active slot row takes as its border. `feedback.ts` holds `tapHaptic` (a light impact
 for commit actions, a selection tick for choices, silent on a device without haptics) and the
 pressed styles. `charts/` holds the Stats charts: `KpiTile`, `HorizontalBars` (most worn; bars grow
 with reanimated unless reduced motion is on, rows tappable) and `ProportionBar` (the colors, real
@@ -32,6 +39,8 @@ garment hexes, each segment and legend entry tappable).
 ## Translations (`src/i18n/`)
 
 `en.ts` is the source of truth and `es.ts` the only other table (neutral Latin American Spanish).
+The app speaks to the user in the second person, never as "I" or "we"; only button labels in the
+user's own voice ("I'll wear it", "Export my data") say "I" or "my".
 `I18nProvider` follows the device language, with an in-app override.
 
 ## The closet (`src/closet/`)
@@ -122,7 +131,9 @@ database CHECKs), `bodyType.ts`, `useCurrentCity` (expo-location, when-in-use on
 known), `OnboardingProvider` (re-reads the profile itself before any onboarding step renders, so a
 failed launch read can't overwrite a finished profile with defaults), and the shared form: `profileDraft.ts` (the
 state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx` (`ClothingSection`,
-`BodySection`, `StyleSection`), used by onboarding and the Profile tab.
+`BodySection`, `StyleSection`), used by onboarding and the Profile tab. The tab shows "Save changes"
+only while there's a change (or a save, its error, or "Saved" for 2 seconds), with a failed save in
+the button's notice slot until the next edit, and lists household mode as "Coming soon", a row with no action.
 
 ## Supabase client and storage (`src/lib/`)
 
@@ -152,7 +163,9 @@ state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx
   line.
 - `buildSelection.ts`: Build's selection: one garment per slot, a one-piece and top/bottom exclude
   each other, one bag, hat or accessory, so a built outfit has at most five pieces against
-  `rate-outfit`'s six; `canRate`, `selectionIds` and `retainSelection`.
+  `rate-outfit`'s six; `canRate`, `selectionIds` and `retainSelection`. On the Build tab a pick in a
+  required row moves on to the next empty one below it, and the disabled button names what's missing
+  ("Pick shoes to rate").
 - `useStoredQuery.ts`: a function answer fetched one request at a time for the latest inputs and
   shown over its stored copy until this session has one (`offline` when the fetch couldn't
   connect); Today's list and For you are built on it.
@@ -167,11 +180,16 @@ state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx
   Diary. `WearQueueFlusher.tsx` flushes on mount, foreground and reconnect.
 - `useWearLog.ts`: "I'll wear it" for Today and the rating screen: one wear at a time, one wear id
   per outfit until it succeeds, logged or queued, marked worn, announced, and the failed or queued
-  note kept with the outfit it was for.
+  note kept with the outfit it was for. A logged wear is announced with "Undo available", and for 5
+  seconds after (15 with a screen reader on) `undo` takes it back: out of the queue if it's still
+  there, else `deleteWear` (the trigger lowers the counts), then `unmarkWornToday` and a closet
+  refresh. A failed undo, including one whose wear a flush is still sending (no row to delete yet),
+  says "Couldn't undo" and offers Undo again for a new window.
 - `wornToday.ts`: `useWornToday`, the outfits logged today in kv `outfit.worn.<userId>`, shared by
-  Today and the rating screen; Diary's Delete calls `unmarkWornToday`.
-- `OutfitStack.tsx`, `ScoreRing.tsx`, and `types.ts` (the functions' response types, re-exported
-  from their `handler.ts`).
+  Today and the rating screen; Diary's Delete and the undo call `unmarkWornToday`.
+- `OutfitStack.tsx`, `ScoreRing.tsx` (the number and arc count up to the score, or show it at once
+  with Reduce Motion; the rating screen adds a success haptic as the result arrives), and `types.ts`
+  (the functions' response types, re-exported from their `handler.ts`).
 
 ## Stats and Diary (`src/stats/`)
 

@@ -85,7 +85,7 @@ test('3 queued shows "1 of 3", with the title, and polls while focused', async (
   mockCloset.garments = three();
   await renderReview();
 
-  expect(screen.getByRole('header', { name: 'REVIEW' })).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Review' })).toBeOnTheScreen();
   expect(screen.getByText('1 of 3')).toBeOnTheScreen();
   expect(usePendingPolling).toHaveBeenCalledWith(true);
 });
@@ -173,7 +173,7 @@ test('a failed read asks the basics, and Confirm stays disabled until there is a
   mockedConfirmReview.mockResolvedValue({ ok: true });
   await renderReview();
 
-  expect(screen.getByText("We couldn't read this photo. Fill in the basics.")).toBeOnTheScreen();
+  expect(screen.getByText("This photo couldn't be read. Fill in the basics.")).toBeOnTheScreen();
   expect(screen.getByText("The AI isn't sure: what is it?")).toBeOnTheScreen();
   const confirm = screen.getByRole('button', { name: 'Confirm' });
   expect(confirm).toBeDisabled();
@@ -261,7 +261,7 @@ test('over quota shows its notice', async () => {
   mockCloset.garments = [garment({ id: 'g-1', extraction_status: 'over_quota' })];
   await renderReview();
 
-  expect(screen.getByText("Today's AI limit is reached. Fill in the basics.")).toBeOnTheScreen();
+  expect(screen.getByText("Today's AI limit is reached; it renews tomorrow. Fill in the basics.")).toBeOnTheScreen();
 });
 
 test("an empty queue shows the caught-up state, whose button goes back", async () => {
@@ -419,4 +419,20 @@ describe('confirming the garments the AI was sure of', () => {
       expect(screen.queryByText("Some couldn't be saved. The rest are still here.")).not.toBeOnTheScreen();
     });
   });
+});
+
+test('the card has a back button that leaves to the closet', async () => {
+  mockCloset.garments = three();
+  await renderReview();
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+  expect(router.back).toHaveBeenCalled();
+});
+
+test('with nothing left, the back button still leaves to the closet, even from a deep link', async () => {
+  jest.mocked(router.canGoBack).mockReturnValueOnce(false);
+  await render(<ReviewScreen />);
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Back' }));
+  expect(router.replace).toHaveBeenCalledWith('/closet');
 });

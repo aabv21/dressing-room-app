@@ -1,8 +1,9 @@
 // The "How does it look?" result screen (mockup 01 screen 3): the score ring, label, AI confidence,
 // reasons, a one-tap swap, and Save / I'll wear it. Rendered directly with the closet, the AI
 // client and the outfit repository mocked.
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { randomUUID } from 'expo-crypto';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 
 import RateScreen from '../app/rate';
@@ -25,7 +26,7 @@ const BOOTS = '00000000-0000-4000-8000-000000000004';
 
 const mockParams: { ids?: string; occasion?: string } = {};
 jest.mock('expo-router', () => ({
-  router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), canGoBack: jest.fn(() => true) },
+  router: { back: jest.fn(), replace: jest.fn(), push: jest.fn(), dismissTo: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
 }));
 
@@ -57,6 +58,13 @@ jest.mock('../outfits/outfitRepository', () => ({
 }));
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn() }));
+// Reduce Motion on, so the ring shows its score at once; ScoreRing.test covers the count-up.
+jest.mock('react-native-reanimated', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
+  ...(require('../test/reanimatedMock') as Record<string, unknown>),
+  useReducedMotion: () => true,
+}));
+jest.mock('../stats/wearsRepository', () => ({ deleteWear: jest.fn(() => Promise.resolve({ ok: true })) }));
 
 const mockedRate = jest.mocked(rateOutfit);
 const mockedLogWear = jest.mocked(logWear);
@@ -102,20 +110,22 @@ beforeEach(() => {
   jest.mocked(router.back).mockClear();
   jest.mocked(router.replace).mockClear();
   jest.mocked(router.push).mockClear();
+  jest.mocked(router.dismissTo).mockClear();
   mockRefresh.mockClear();
   kvRemove('outfit.worn.user-1');
   kvRemove(wearQueueKey('user-1'));
   kvRemove(storedForYouKey('user-1'));
 });
 
-test('rates the outfit on mount and shows the score, label and AI confidence', async () => {
+test('rates the outfit on mount and shows the score and label, with no confidence line when the AI is sure', async () => {
   mockedRate.mockReturnValue(ok(result()));
   await render(<RateScreen />);
 
   expect(await screen.findByText('78%')).toBeOnTheScreen();
   expect(screen.getByText('Looks good')).toBeOnTheScreen();
-  expect(screen.getByText('AI confidence: 85%')).toBeOnTheScreen();
+  expect(screen.queryByText(/AI confidence|isn't very sure|estimate/)).toBeNull();
   expect(screen.getByText('HOW DOES IT LOOK?')).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'How does it look?' })).toBeOnTheScreen();
   expect(mockedRate).toHaveBeenCalledTimes(1);
   expect(mockedRate).toHaveBeenCalledWith({
     garmentIds: [TOP, SKIRT, HEELS],
@@ -142,12 +152,35 @@ test('an unknown occasion param is sent as no occasion', async () => {
   expect(mockedRate).toHaveBeenCalledWith(expect.objectContaining({ occasion: null }));
 });
 
-test('an estimated rating shows the estimated confidence', async () => {
+test('an estimated rating says so in words', async () => {
   mockedRate.mockReturnValue(ok(result({ estimated: true, confidence: null })));
   await render(<RateScreen />);
 
-  expect(await screen.findByText('AI confidence: estimated')).toBeOnTheScreen();
-  expect(screen.queryByText(/AI confidence: \d/)).toBeNull();
+  expect(await screen.findByText('This score is an estimate.')).toBeOnTheScreen();
+  expect(screen.queryByText(/%$/, { includeHiddenElements: false })).toBeTruthy();
+  expect(screen.queryByText(/AI confidence/)).toBeNull();
+});
+
+test.each([
+  [59, true],
+  [60, false],
+] as const)('a confidence of %i shows the low-confidence line: %s', async (confidence, shown) => {
+  mockedRate.mockReturnValue(ok(result({ confidence })));
+  await render(<RateScreen />);
+  await screen.findByText('78%');
+
+  expect(screen.queryByText("The AI isn't very sure about this one.") !== null).toBe(shown);
+});
+
+test('the result arrives with a success haptic, once', async () => {
+  const notify = jest.mocked(Haptics.notificationAsync);
+  notify.mockClear();
+  mockedRate.mockReturnValue(ok(result()));
+  await render(<RateScreen />);
+  await screen.findByText('78%');
+
+  expect(notify).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledWith(Haptics.NotificationFeedbackType.Success);
 });
 
 test('renders good and warn reasons with their icons, localizing the colors', async () => {
@@ -487,12 +520,37 @@ test('offline, I\'ll wear it is queued and shows Logged with the note', async ()
   expect(screen.queryByText("Logged — it syncs when you're back online.")).toBeNull();
 });
 
-test('a 429 shows the quota message', async () => {
+test('a 429 says when the quota renews and offers Build instead of a retry', async () => {
   mockedRate.mockResolvedValue({ ok: false, error: 'over_quota' });
   await render(<RateScreen />);
 
   expect(await screen.findByText("You've used today's AI ratings. Try again tomorrow.")).toBeOnTheScreen();
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  await fireEvent.press(screen.getByRole('button', { name: 'Build your own' }));
+  // Back down to the tabs, on Build, instead of stacking a second tab navigator over the rating.
+  expect(router.dismissTo).toHaveBeenCalledWith('/build');
+});
+
+test('a long rating says so in stages', async () => {
+  jest.useFakeTimers();
+  try {
+    mockedRate.mockReturnValue(new Promise(() => undefined));
+    await render(<RateScreen />);
+
+    expect(screen.getByText('Looking at your outfit…')).toBeOnTheScreen();
+    await act(async () => {
+      jest.advanceTimersByTime(6000);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Still thinking…')).toBeOnTheScreen();
+    await act(async () => {
+      jest.advanceTimersByTime(14000);
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Almost there…')).toBeOnTheScreen();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test.each(['network', 'unavailable'] as const)('a %s error shows a retry that rates again', async (error) => {
@@ -665,4 +723,31 @@ test('the ring is named in Spanish too', async () => {
   } finally {
     kvSet('locale-preference', 'system');
   }
+});
+
+test('Undo shows after the wear and brings "I\'ll wear it" back, with the swap', async () => {
+  mockedRate.mockReturnValue(ok(result()));
+  mockedLogWear.mockResolvedValue({ ok: true });
+  await render(<RateScreen />);
+
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Undo' }));
+
+  expect(await screen.findByRole('button', { name: "I'll wear it" })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('a failed undo says so and keeps Undo for a retry', async () => {
+  const { deleteWear } = jest.requireMock<{ deleteWear: jest.Mock }>('../stats/wearsRepository');
+  deleteWear.mockResolvedValueOnce({ ok: false, error: 'network' });
+  mockedRate.mockReturnValue(ok(result()));
+  mockedLogWear.mockResolvedValue({ ok: true });
+  await render(<RateScreen />);
+
+  await fireEvent.press(await screen.findByRole('button', { name: "I'll wear it" }));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Undo' }));
+
+  expect(await screen.findByText("Couldn't undo. You can delete it from your Diary.")).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Logged ✓' })).toBeDisabled();
 });

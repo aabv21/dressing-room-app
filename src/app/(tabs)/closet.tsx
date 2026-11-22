@@ -19,10 +19,11 @@ import { useNow } from '../../closet/useNow';
 import { pluralKey, useI18n } from '../../i18n';
 import { PERF_HUD_HEIGHT, PerfHud } from '../../perf/PerfHud';
 import { useFrameStats } from '../../perf/useFrameStats';
+import { OTHER_HEX } from '../../stats/statsModel';
 import type { AnchoredCta } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen, ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
-import { colors, layout, radii, spacing } from '../../ui/theme';
+import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 
 // NOTE: fixture mode is temporary (perf-gate builds only; the env var is a LAN URL to `pnpm perf:serve`,
 // never a secret; empty = unset); upgrade path: remove it once the gate runs on real Supabase garments.
@@ -98,7 +99,6 @@ function ReviewBanner({ count }: { count: number }): React.JSX.Element {
 type Segment = 'items' | 'stats' | 'diary';
 
 const SEGMENTS: readonly Segment[] = ['items', 'stats', 'diary'];
-const OTHER_SWATCH = '#d4d0dc';
 
 function ClosetTabs({ value, onChange }: { value: Segment; onChange: (next: Segment) => void }): React.JSX.Element {
   const { t } = useI18n();
@@ -110,7 +110,7 @@ function ClosetTabs({ value, onChange }: { value: Segment; onChange: (next: Segm
 function ColorFilterChip({ filter, onClear }: { filter: ColorFilter; onClear: () => void }): React.JSX.Element {
   const { t } = useI18n();
   const label = filter.id === 'other' ? t('stats.colors.other') : t(`garment.color.${filter.id}`);
-  const swatch = filter.id === 'other' ? OTHER_SWATCH : PALETTE_HEX[filter.id];
+  const swatch = filter.id === 'other' ? OTHER_HEX : PALETTE_HEX[filter.id];
   return (
     <Pressable
       accessibilityRole="button"
@@ -375,11 +375,11 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.15)',
+    borderColor: colors.swatchEdge,
   },
   colorChipText: {
     color: colors.accentText,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
   },
   loading: {
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   },
   offline: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   banner: {
     minHeight: layout.minHitTarget,
@@ -416,7 +416,7 @@ const styles = StyleSheet.create({
   bannerText: {
     flexShrink: 1,
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
 });

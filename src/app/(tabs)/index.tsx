@@ -1,7 +1,7 @@
 // Today: the weather (opens the city modal), an optional occasion, and the day's outfit with
 // "Another", "I'll wear it" and "How does it look?" (the rating).
 import { router } from 'expo-router';
-import { Check, Dices, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
+import { Check, Dices, Layers, RotateCw, Shirt, Shuffle, Sparkles, WifiOff } from 'lucide-react-native';
 import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -13,11 +13,13 @@ import { formatWeather, formatWeekday } from '../../outfits/outfitDisplay';
 import { OutfitStack } from '../../outfits/OutfitStack';
 import { useLuckyList, useTodayOccasion } from '../../outfits/useLuckyList';
 import { useWearLog } from '../../outfits/useWearLog';
-import { ActionNotice } from '../../ui/ActionNotice';
+import type { AiError } from '../../outfits/aiClient';
+import { ActionNotice, UndoNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen } from '../../ui/Screen';
-import { colors, layout, radii, spacing } from '../../ui/theme';
+import { useWaitStage } from '../../ui/useWaitStage';
+import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 
 // Room for a message shown above the buttons, so it never covers the card's last row.
 const NOTICE_ROOM = 56;
@@ -94,9 +96,12 @@ function CardHeader({ onRate }: { onRate?: () => void }): React.JSX.Element {
 
 function LoadingCard(): React.JSX.Element {
   const { t } = useI18n();
+  const stage = useWaitStage(true);
+  const label = stage === 'start' ? t('today.loading') : t(`wait.${stage}`);
   return (
-    <View style={styles.card} accessible accessibilityLabel={t('today.loading')} accessibilityLiveRegion="polite">
+    <View style={styles.card} accessible accessibilityLabel={label} accessibilityLiveRegion="polite">
       <CardHeader />
+      {stage === 'start' ? null : <Text style={[styles.muted, styles.waitText]}>{label}</Text>}
       {[0, 1, 2].map((row) => (
         <View key={row} style={styles.placeholderRow}>
           <View style={styles.placeholderThumb} />
@@ -129,6 +134,34 @@ function Message({ children }: { children: string }): React.JSX.Element {
   );
 }
 
+/**
+ * The way out of an error. Over quota can't succeed again today and a missing piece won't come back
+ * on a retry, so those lead to Build and the closet instead.
+ */
+function errorAction(error: AiError, t: ReturnType<typeof useI18n>['t'], reload: () => void): CtaAction {
+  if (error === 'over_quota') {
+    return {
+      label: t('today.buildOwn'),
+      tone: 'commit',
+      icon: Layers,
+      onPress: () => {
+        router.push('/build');
+      },
+    };
+  }
+  if (error === 'not_found' || error === 'incomplete') {
+    return {
+      label: t('today.tooSmall.cta'),
+      tone: 'commit',
+      icon: Shirt,
+      onPress: () => {
+        router.push('/closet');
+      },
+    };
+  }
+  return { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: reload };
+}
+
 export default function TodayScreen(): React.JSX.Element {
   const { t, locale } = useI18n();
   const [occasion, setOccasion] = useTodayOccasion();
@@ -157,9 +190,31 @@ export default function TodayScreen(): React.JSX.Element {
   }
 
   let notice: React.ReactNode = undefined;
+  // The queued note and Undo stack for the first seconds after an offline wear.
+  let noticeRows = 1;
   const wearError = outfit === undefined ? null : wearLog.errorFor(outfit.garmentIds);
   if (wearError !== null) {
     notice = <ActionNotice tone="error">{t(`outfit.error.${wearError}`)}</ActionNotice>;
+  } else if (outfit !== undefined && wearLog.canUndo(outfit.garmentIds)) {
+    const { garmentIds } = outfit;
+    const undoFailed = wearLog.undoFailedFor(garmentIds);
+    const queued = wearLog.isQueued(garmentIds);
+    noticeRows = undoFailed || queued ? 2 : 1;
+    notice = (
+      <View style={styles.notices}>
+        {undoFailed ? <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice> : null}
+        {!undoFailed && queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
+        <UndoNotice
+          label={t('outfit.undo')}
+          hint={t('outfit.undo.hint')}
+          onPress={() => {
+            void wearLog.undo(garmentIds);
+          }}
+        />
+      </View>
+    );
+  } else if (outfit !== undefined && wearLog.undoFailedFor(outfit.garmentIds)) {
+    notice = <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice>;
   } else if (outfit !== undefined && wearLog.isQueued(outfit.garmentIds)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
@@ -172,10 +227,7 @@ export default function TodayScreen(): React.JSX.Element {
   } else if (lucky.state === 'error') {
     const error = lucky.error ?? 'unknown';
     body = <Message>{t(`today.error.${error}`)}</Message>;
-    // Over quota can't succeed again today, so there's no retry.
-    if (error !== 'over_quota') {
-      primary = { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: lucky.reload };
-    }
+    primary = errorAction(error, t, lucky.reload);
   } else if (lucky.state === 'too_small') {
     const slots = lucky.missing.map((slot) => t(`today.missing.${slot}`)).join(', ');
     body = <Message>{t('today.tooSmall', { n: lucky.missing.length, slots })}</Message>;
@@ -191,9 +243,7 @@ export default function TodayScreen(): React.JSX.Element {
     // Every outfit was hidden (a piece went to the laundry) and the refetch failed: say why, offer a retry.
     const error = lucky.refetchError;
     body = <Message>{t(`today.error.${error}`)}</Message>;
-    if (error !== 'over_quota') {
-      primary = { label: t('today.retry'), tone: 'commit', icon: RotateCw, onPress: lucky.reload };
-    }
+    primary = errorAction(error, t, lucky.reload);
   } else if (outfit === undefined) {
     body = <Message>{occasion === null ? t('today.empty') : t('today.empty.occasion')}</Message>;
   } else {
@@ -267,7 +317,7 @@ export default function TodayScreen(): React.JSX.Element {
       </ScrollView>
       {lucky.offline ? <OfflineNote /> : null}
       {body}
-      {notice === undefined ? null : <View style={styles.noticeRoom} />}
+      {notice === undefined ? null : <View style={{ height: NOTICE_ROOM * noticeRows }} />}
     </Screen>
   );
 }
@@ -281,7 +331,7 @@ const styles = StyleSheet.create({
   },
   weatherText: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   weatherAction: {
     color: colors.accentText,
@@ -296,13 +346,13 @@ const styles = StyleSheet.create({
     paddingVertical: (layout.minHitTarget - 36) / 2,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: colors.glass[75],
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.95)',
+    borderColor: colors.glass[95],
     borderRadius: radii.card,
     padding: 10,
     gap: spacing.sm - 2,
-    shadowColor: '#3c1e78',
+    shadowColor: colors.shadow,
     shadowOpacity: 0.08,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
@@ -325,7 +375,7 @@ const styles = StyleSheet.create({
   },
   muted: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   chipAi: {
     minHeight: CHIP_AI_HEIGHT,
@@ -333,14 +383,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#e3d8ff',
+    borderColor: colors.accentBorder,
     borderRadius: radii.pill,
   },
   chipAiLabel: {
     color: colors.accentText,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '700',
   },
   offline: {
@@ -353,6 +403,9 @@ const styles = StyleSheet.create({
   offlineText: {
     flexShrink: 1,
   },
+  waitText: {
+    paddingHorizontal: 2,
+  },
   fresh: {
     marginTop: 2,
     paddingHorizontal: 2,
@@ -361,7 +414,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderRadius: 13,
     paddingVertical: 7,
     paddingHorizontal: 9,
@@ -387,14 +440,14 @@ const styles = StyleSheet.create({
   },
   message: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: fontSizes.title,
     fontWeight: '600',
     lineHeight: 22,
     textAlign: 'center',
     paddingTop: spacing.lg,
     paddingHorizontal: spacing.sm,
   },
-  noticeRoom: {
-    height: NOTICE_ROOM,
+  notices: {
+    gap: spacing.sm,
   },
 });

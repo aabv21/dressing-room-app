@@ -2,7 +2,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useI18n } from '../i18n';
-import { colors, layout, radii } from './theme';
+import { colors, fontSizes, layout, radii } from './theme';
 
 // Apple requires "Continue with Apple" wherever Google sign-in is offered on iOS; Android has no
 // native Apple button, so it's hidden there. Apple's native button, not a custom one: it's
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   googleButton: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
   },
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   },
   googleGlyph: {
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: fontSizes.body,
     color: colors.ink,
   },
   // Wraps inside the pill at large text sizes instead of spilling past its edges.
@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     textAlign: 'center',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: fontSizes.body,
     color: colors.ink,
   },
 });

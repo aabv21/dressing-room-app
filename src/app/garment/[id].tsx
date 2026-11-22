@@ -2,8 +2,8 @@
 // Review's photo, chip editors and anchored CTA.
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useIsFocused, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronLeft, ImageIcon, Trash2 } from 'lucide-react-native';
+import { useIsFocused, useLocalSearchParams, usePreventRemove } from 'expo-router';
+import { Check, ImageIcon, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -22,10 +22,11 @@ import type { RequestError } from '../../lib/requestResult';
 import { useClothingType } from '../../profile/useClothingType';
 import { announceForAccessibility } from '../../ui/a11y';
 import { AnchoredCta } from '../../ui/AnchoredCta';
+import { BackChevron } from '../../ui/BackChevron';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { CtaBackdrop } from '../../ui/CtaBackdrop';
 import { ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
-import { colors, gradients, layout, radii, spacing } from '../../ui/theme';
+import { colors, fontSizes, gradients, layout, radii, spacing } from '../../ui/theme';
 
 type GarmentStatus = Garment['status'];
 
@@ -175,6 +176,14 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     ]);
   }, [t, remove]);
 
+  // A back press, gesture or the chevron would drop the draft silently; a delete leaves on purpose.
+  usePreventRemove(dirty && !deleting, ({ repeat }) => {
+    Alert.alert(t('garment.discard.title'), t('garment.discard.message'), [
+      { text: t('garment.discard.keep'), style: 'cancel' },
+      { text: t('garment.discard.discard'), style: 'destructive', onPress: repeat },
+    ]);
+  });
+
   // The new photo uploads through the queue; this says so until the garment's photo version moves.
   const [replacedVersion, setReplacedVersion] = useState<number | null>(null);
   // NOTE: the queue reports counts, so any pending upload stands in for this one; upgrade path: per-garment queue state.
@@ -225,16 +234,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
         ]}
       >
         <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('garment.back')}
-            // Narrower than 44 pt to sit close to the title; the slop keeps the 44 pt target.
-            hitSlop={{ left: 8, right: 6 }}
-            style={styles.backButton}
-            onPress={leaveToCloset}
-          >
-            <ChevronLeft size={22} color={colors.ink} />
-          </Pressable>
+          <BackChevron label={t('garment.back')} onPress={leaveToCloset} />
           <View style={styles.headerTitle}>
             <ScreenTitle title={title} />
           </View>
@@ -393,12 +393,6 @@ const styles = StyleSheet.create({
     minHeight: layout.minHitTarget,
     justifyContent: 'center',
   },
-  backButton: {
-    width: 30,
-    minHeight: layout.minHitTarget,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-  },
   deleteButton: {
     alignItems: 'flex-end',
   },
@@ -407,22 +401,22 @@ const styles = StyleSheet.create({
   },
   wears: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   section: {
     gap: spacing.sm,
     paddingVertical: spacing.sm,
     borderBottomWidth: StyleSheet.hairlineWidth * 2,
-    borderBottomColor: '#eee9f8',
+    borderBottomColor: colors.divider,
   },
   label: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   donated: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   notice: {
@@ -433,7 +427,7 @@ const styles = StyleSheet.create({
     borderColor: colors.tintBorder,
     backgroundColor: colors.tint,
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '600',
   },
   hint: {
@@ -445,7 +439,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.tint,
     textAlign: 'center',
     color: colors.accentText,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   error: {
     alignSelf: 'center',
@@ -456,7 +450,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.errorTint,
     textAlign: 'center',
     color: colors.error,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   notFound: {
     flex: 1,
@@ -466,13 +460,13 @@ const styles = StyleSheet.create({
   },
   notFoundTitle: {
     color: colors.ink,
-    fontSize: 20,
+    fontSize: fontSizes.headline,
     fontWeight: '800',
     textAlign: 'center',
   },
   notFoundBody: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
 });

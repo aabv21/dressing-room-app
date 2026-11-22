@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Eye, EyeOff } from 'lucide-react-native';
 
 import { useI18n } from '../i18n';
-import { colors, layout, radii, spacing } from './theme';
+import { colors, fontSizes, layout, radii, spacing } from './theme';
 
 const MIN_HIT_TARGET = layout.minHitTarget;
 
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   label: {
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
     color: colors.ink,
   },
@@ -143,13 +143,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   input: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: radii.cell,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     color: colors.ink,
     minHeight: MIN_HIT_TARGET,
   },
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: radii.cell,
@@ -184,11 +184,11 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.error,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     fontWeight: '600',
   },
   hint: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
   },
 });

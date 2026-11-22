@@ -1,5 +1,5 @@
-import { Check, Download, LogOut, Trash2 } from 'lucide-react-native';
-import { useRef, useState } from 'react';
+import { Check, Download, LogOut, Trash2, Users } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { usePrivacyActions } from '../../account/usePrivacyActions';
@@ -16,13 +16,17 @@ import { saveProfile } from '../../profile/profileRepository';
 import type { ProfilePatch, Result } from '../../profile/profileRepository';
 import type { BodyField } from '../../profile/validation';
 import { announceForAccessibility } from '../../ui/a11y';
+import { ActionNotice } from '../../ui/ActionNotice';
 import { Screen } from '../../ui/Screen';
-import { colors, layout, radii, spacing } from '../../ui/theme';
+import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 import { LanguageToggle } from '../../ui/LanguageToggle';
+
+/** How long "Saved" stays on the button after a save. */
+export const SAVED_NOTE_MS = 2000;
 
 function SectionHeading({ children }: { children: string }): React.JSX.Element {
   return (
-    <Text style={styles.heading} accessibilityRole="header">
+    <Text style={styles.heading} accessibilityRole="header" accessibilityLabel={children}>
       {children.toUpperCase()}
     </Text>
   );
@@ -111,6 +115,28 @@ function PrivacySection({ exporting, deleting }: ReturnType<typeof usePrivacyAct
   );
 }
 
+/** A preview of a later feature: one row, not a control. */
+function HouseholdSection(): React.JSX.Element {
+  const { t } = useI18n();
+  const title = t('profile.household.title');
+  const soon = t('profile.household.soon');
+  const body = t('profile.household.body');
+  return (
+    <View style={styles.card} accessible accessibilityLabel={`${title}, ${soon.toLocaleLowerCase()}. ${body}`}>
+      <View style={styles.household}>
+        <Users size={18} color={colors.muted} />
+        <View style={styles.householdText}>
+          <View style={styles.householdHead}>
+            <Text style={styles.rowLabel}>{title}</Text>
+            <Text style={styles.soon}>{soon}</Text>
+          </View>
+          <Text style={styles.muted}>{body}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 /** Account and Privacy share the Privacy actions' busy state. */
 function AccountAndPrivacy(): React.JSX.Element {
   const privacy = usePrivacyActions();
@@ -161,7 +187,7 @@ function LanguageSection({ onSave }: { onSave: (language: 'en' | 'es' | null) =>
         >
           <Text style={styles.rowLabel}>{t('profile.language.device')}</Text>
           <View style={[styles.checkbox, followsDevice ? styles.checkboxOn : null]}>
-            {followsDevice ? <Check size={14} color="#ffffff" strokeWidth={3} /> : null}
+            {followsDevice ? <Check size={14} color={colors.onFill} strokeWidth={3} /> : null}
           </View>
         </Pressable>
         {error !== undefined ? (
@@ -198,9 +224,20 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         Object.entries(validation.errors).filter(([field]) => showAllErrors || touched.has(field as BodyField)),
       );
 
+  useEffect(() => {
+    if (!justSaved) return undefined;
+    const timer = setTimeout(() => {
+      setJustSaved(false);
+    }, SAVED_NOTE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [justSaved]);
+
   function edit(patch: Partial<ProfileDraft>): void {
     setDraft((previous) => ({ ...previous, ...patch }));
     setJustSaved(false);
+    setSaveError(undefined);
   }
 
   async function handleSave(): Promise<void> {
@@ -258,19 +295,26 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
     return undefined;
   }
 
+  // Only while there's something to save, saving, or to report: an invalid draft keeps it so Save can say why.
+  const showSave = dirty || !validation.ok || saving || saveError !== undefined || justSaved;
   return (
     <Screen
       title={t('screen.profile')}
-      cta={{
-        primary: {
-          label: justSaved && !dirty ? t('profile.saved') : t('profile.save'),
-          tone: 'commit',
-          disabled: saving || (validation.ok && !dirty),
-          onPress: () => {
-            void handleSave();
-          },
-        },
-      }}
+      {...(showSave
+        ? {
+            cta: {
+              primary: {
+                label: justSaved && !dirty ? t('profile.saved') : t('profile.save'),
+                tone: 'commit' as const,
+                disabled: saving || (validation.ok && !dirty),
+                onPress: () => {
+                  void handleSave();
+                },
+              },
+              ...(saveError === undefined ? {} : { notice: <ActionNotice tone="error">{t(saveError)}</ActionNotice> }),
+            },
+          }
+        : {})}
     >
       <View style={styles.form} testID="profile-form">
         <SectionHeading>{t('profile.section.clothes')}</SectionHeading>
@@ -288,12 +332,10 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         <SectionHeading>{t('profile.section.style')}</SectionHeading>
         <StyleSection value={draft} onChange={edit} />
         <LanguageSection onSave={saveLanguage} />
+        <SectionHeading>{t('profile.section.household')}</SectionHeading>
+        <HouseholdSection />
         <AccountAndPrivacy />
-        {saveError !== undefined ? (
-          <Text style={styles.error} accessibilityLiveRegion="polite">
-            {t(saveError)}
-          </Text>
-        ) : null}
+        {saveError === undefined ? null : <View style={styles.noticeRoom} />}
       </View>
     </Screen>
   );
@@ -345,12 +387,12 @@ const styles = StyleSheet.create({
   heading: {
     marginTop: spacing.md,
     color: colors.ink,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '900',
     letterSpacing: 1,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: 14,
@@ -367,7 +409,7 @@ const styles = StyleSheet.create({
   rowLabel: {
     flex: 1,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   divider: {
     height: 1,
@@ -393,11 +435,40 @@ const styles = StyleSheet.create({
   },
   muted: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: fontSizes.caption,
+  },
+  household: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+  },
+  householdText: {
+    flex: 1,
+    gap: 2,
+  },
+  householdHead: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  soon: {
+    overflow: 'hidden',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.tint,
+    color: colors.accentText,
+    fontSize: fontSizes.caption,
+    fontWeight: '700',
+  },
+  noticeRoom: {
+    height: 56,
   },
   email: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   signOut: {
@@ -410,11 +481,11 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.hairline,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
   },
   signOutLabel: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   disabled: {
@@ -422,7 +493,7 @@ const styles = StyleSheet.create({
   },
   privacyNote: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     lineHeight: 18,
     paddingTop: 8,
   },
@@ -436,14 +507,14 @@ const styles = StyleSheet.create({
   },
   message: {
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
   },
   spinner: {
     marginVertical: spacing.lg,
   },
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
     paddingBottom: 6,
   },

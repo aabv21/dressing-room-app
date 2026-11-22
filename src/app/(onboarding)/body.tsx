@@ -10,7 +10,7 @@ import { BodySection } from '../../profile/ProfileForm';
 import { announceForAccessibility } from '../../ui/a11y';
 import { Screen } from '../../ui/Screen';
 import { StepBar } from '../../ui/StepBar';
-import { colors } from '../../ui/theme';
+import { colors, fontSizes } from '../../ui/theme';
 
 function BodyStep() {
   const { t } = useI18n();
@@ -93,7 +93,7 @@ export default function BodyRoute() {
 const styles = StyleSheet.create({
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
 });

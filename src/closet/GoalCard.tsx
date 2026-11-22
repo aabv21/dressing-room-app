@@ -2,7 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { useI18n, type MessageKey } from '../i18n';
-import { colors, gradients, radii, spacing } from '../ui/theme';
+import { colors, fontSizes, gradients, radii, shadows, spacing } from '../ui/theme';
 import type { FirstOutfitProgress } from './closetSelectors';
 
 const STEPS = 3;
@@ -66,20 +66,20 @@ const styles = StyleSheet.create({
   },
   step: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
   },
   stepDone: {
     color: colors.accentText,
     fontWeight: '700',
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    backgroundColor: colors.glass[80],
     borderWidth: 1,
-    borderColor: '#ffffff',
+    borderColor: colors.surface,
     borderRadius: 18,
     padding: 14,
     gap: 9,
-    boxShadow: '0px 6px 18px rgba(60,30,120,0.08)',
+    boxShadow: shadows.goal,
   },
   // Wraps the progress under the title when a large text size leaves no room for both.
   row: {
@@ -92,12 +92,12 @@ const styles = StyleSheet.create({
   title: {
     flexShrink: 1,
     color: colors.ink,
-    fontSize: 15,
+    fontSize: fontSizes.body,
     fontWeight: '700',
   },
   muted: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     lineHeight: 18,
   },
   track: {

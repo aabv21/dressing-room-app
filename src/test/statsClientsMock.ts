@@ -1,5 +1,6 @@
-// Stand-ins for the wears repository in suites that render the Closet tab (or a route tree that
-// lands on it) but don't test Stats. The real module loads the Supabase client at import time.
+// Stand-ins for the wears repository in suites that render the Closet tab, Today or the rating (whose
+// undo deletes a wear), or a route tree that lands on one, but don't test it. The real module loads
+// the Supabase client at import time.
 // Use with:
 //
 //   jest.mock('../stats/wearsRepository', () => require('../test/statsClientsMock'));

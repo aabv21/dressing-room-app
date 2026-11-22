@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, layout, radii, spacing } from '../theme';
+import { colors, fontSizes, layout, radii, spacing } from '../theme';
 
 const BAR_HEIGHT = 16;
 // A light fill (white, cream, ...) needs a hairline border to stay visible on the near-white card.
@@ -108,7 +108,7 @@ const styles = StyleSheet.create({
   },
   hairline: {
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: colors.swatchEdgeSoft,
   },
   legend: {
     flexDirection: 'row',
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   legendLabel: {
-    fontSize: 12,
+    fontSize: fontSizes.caption,
     color: colors.ink,
   },
 });

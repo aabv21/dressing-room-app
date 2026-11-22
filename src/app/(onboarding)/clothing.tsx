@@ -12,7 +12,7 @@ import { announceForAccessibility } from '../../ui/a11y';
 import { LinkText } from '../../ui/LinkText';
 import { Screen } from '../../ui/Screen';
 import { StepBar } from '../../ui/StepBar';
-import { colors } from '../../ui/theme';
+import { colors, fontSizes } from '../../ui/theme';
 
 function ClothingStep() {
   const { t } = useI18n();
@@ -95,11 +95,11 @@ export default function ClothingRoute() {
 const styles = StyleSheet.create({
   subtitle: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
   },
   error: {
     color: colors.error,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
   centered: {
@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   },
   signOut: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '600',
   },
 });

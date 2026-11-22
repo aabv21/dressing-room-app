@@ -479,12 +479,15 @@ describe('stats', () => {
     expect(readStoredWears('user-1')).toEqual({ from: '2025-11-08', to: '2026-11-08', wears: history() });
   });
 
-  test('a failed history fetch shows an error line', async () => {
-    mockedListWears.mockRejectedValue(new Error('offline'));
+  test('a failed history fetch shows an error line with a retry that reads it again', async () => {
+    mockedListWears.mockRejectedValueOnce(new Error('offline'));
     await render(<ClosetScreen />);
     await fireEvent.press(tab('Stats'));
 
     expect(await screen.findByText("Couldn't load your outfit history. Check your internet and try again.")).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('60%')).toBeOnTheScreen();
+    expect(mockedListWears).toHaveBeenCalledTimes(2);
   });
 });
 

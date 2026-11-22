@@ -11,11 +11,26 @@ import { deleteGarment, updateGarment, type Garment } from '../closet/garmentRep
 import { garment } from '../test/garmentFixture';
 
 const mockParams: { id: string } = { id: 'g-1' };
+// The latest `usePreventRemove` pair; `attemptRemove()` plays a back press, gesture or swipe (camera.test's pattern).
+let mockPreventRemoveCallback: ((options: { repeat: () => void }) => void) | undefined;
 jest.mock('expo-router', () => ({
   router: { back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) },
   useLocalSearchParams: () => mockParams,
   useIsFocused: jest.fn(() => true),
+  usePreventRemove: (preventRemove: boolean, callback?: (options: { repeat: () => void }) => void) => {
+    mockPreventRemoveCallback = preventRemove ? callback : undefined;
+    return () => {
+      mockPreventRemoveCallback = undefined;
+    };
+  },
 }));
+
+/** A removal attempt; returns whether the screen blocked it. */
+function attemptRemove(repeat: () => void = jest.fn()): boolean {
+  if (mockPreventRemoveCallback === undefined) return false;
+  mockPreventRemoveCallback({ repeat });
+  return true;
+}
 
 const mockCloset: { garments: Garment[]; status: 'loading' | 'ready' | 'offline' } = { garments: [], status: 'ready' };
 const mockReplaceLocal = jest.fn();
@@ -118,7 +133,7 @@ function confirmEveryAlert(): jest.SpyInstance {
 test('shows the garment: title, full photo cached by version, wear count and status', async () => {
   await renderDetail();
 
-  expect(screen.getByRole('header', { name: 'JEANS' })).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Jeans' })).toBeOnTheScreen();
   expect(screen.getByLabelText('Garment photo').props.source).toEqual([
     expect.objectContaining({ uri: 'https://signed/user-1/g-1/full.webp', cacheKey: 'g-1:full:2' }),
   ]);
@@ -249,7 +264,7 @@ test('a failed delete keeps the screen and shows the message', async () => {
   await fireEvent.press(screen.getByRole('button', { name: 'Delete garment' }));
 
   expect(await screen.findByText("Couldn't delete. Check your internet and try again.")).toBeOnTheScreen();
-  expect(screen.getByRole('header', { name: 'JEANS' })).toBeOnTheScreen();
+  expect(screen.getByRole('header', { name: 'Jeans' })).toBeOnTheScreen();
   expect(mockRemoveLocal).not.toHaveBeenCalled();
   expect(router.back).not.toHaveBeenCalled();
   alert.mockRestore();
@@ -547,5 +562,49 @@ describe('donated: not offered by the status picker', () => {
     expect(screen.getByText('Donated')).toBeOnTheScreen();
     expect(screen.queryByRole('radio', { name: 'Available' })).not.toBeOnTheScreen();
     expect(screen.queryByRole('radiogroup', { name: 'Status' })).not.toBeOnTheScreen();
+  });
+});
+
+describe('leaving with unsaved edits', () => {
+  test('an unchanged garment leaves without asking', async () => {
+    await renderDetail();
+    expect(attemptRemove()).toBe(false);
+  });
+
+  test('asks first: Keep editing stays, Discard leaves', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    await renderDetail();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Striped' }));
+
+    const repeat = jest.fn();
+    expect(attemptRemove(repeat)).toBe(true);
+    expect(alert).toHaveBeenCalledWith('Discard your changes?', expect.any(String), expect.any(Array));
+    const buttons = alert.mock.calls[0]?.[2] ?? [];
+    buttons.find((button) => button.style === 'cancel')?.onPress?.();
+    expect(repeat).not.toHaveBeenCalled();
+    expect(buttons.find((button) => button.style === 'cancel')?.text).toBe('Keep editing');
+    buttons.find((button) => button.style === 'destructive')?.onPress?.();
+    expect(repeat).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
+  });
+
+  test('a delete turns the guard off, so leaving after it never asks', async () => {
+    const alert = confirmEveryAlert();
+    let finish: (result: { ok: true }) => void = () => undefined;
+    mockedDeleteGarment.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    await renderDetail();
+    await fireEvent.press(screen.getByRole('radio', { name: 'Striped' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Delete garment' }));
+
+    expect(attemptRemove()).toBe(false);
+    finish({ ok: true });
+    await waitFor(() => {
+      expect(router.back).toHaveBeenCalled();
+    });
+    alert.mockRestore();
   });
 });

@@ -121,7 +121,8 @@ optional occasion:
    that pass the outfit rules are rated with Jev, 5 at a time, and none starts after 15 s. The best
    is offered only when it beats the score by 5 points or more.
 8. **Answer.** The result is cached (a degraded one, such as a Claude estimate, for an hour only),
-   and the app shows the score, its label, Jev's confidence, template reasons and the swap.
+   and the app shows the score, its label, template reasons and the swap, plus a line in words when
+   Jev's confidence is below 60 or the score is a Claude estimate.
 
 ## The other request paths
 

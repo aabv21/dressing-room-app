@@ -2,7 +2,7 @@
 // for a low score) with Save / I'll wear it. Pushed from Today and Build: `/rate?ids=…[&occasion=…]`.
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, ChevronLeft, CircleAlert, RotateCw, Sparkles } from 'lucide-react-native';
+import { Check, CircleAlert, Layers, RotateCw, Sparkles } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -31,11 +31,14 @@ import { ScoreRing, ScoreRingPlaceholder } from '../outfits/ScoreRing';
 import type { RatingReason, RatingResult } from '../outfits/types';
 import { useWearLog } from '../outfits/useWearLog';
 import { announceForAccessibility } from '../ui/a11y';
-import { ActionNotice } from '../ui/ActionNotice';
-import { AnchoredCta } from '../ui/AnchoredCta';
+import { ActionNotice, UndoNotice } from '../ui/ActionNotice';
+import { AnchoredCta, type CtaAction } from '../ui/AnchoredCta';
+import { BackChevron } from '../ui/BackChevron';
 import { CtaBackdrop } from '../ui/CtaBackdrop';
+import { tapHaptic } from '../ui/feedback';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
-import { colors, gradients, layout, radii, spacing } from '../ui/theme';
+import { useWaitStage } from '../ui/useWaitStage';
+import { colors, fontSizes, gradients, layout, radii, spacing } from '../ui/theme';
 
 type Translate = ReturnType<typeof useI18n>['t'];
 
@@ -45,6 +48,14 @@ type Rating = { kind: 'loading' } | { kind: 'result'; result: RatingResult } | {
 const NOTICE_ROOM = 56;
 /** Below this score with no swap shown, the rating points to For you. */
 const FOR_YOU_BELOW = 70;
+/** Below this confidence the rating says the AI isn't sure; above it the number would read as a second score. */
+const LOW_CONFIDENCE = 60;
+
+/** The confidence in words, only when it should temper the score; null otherwise. */
+function confidenceNote(result: RatingResult, t: Translate): string | null {
+  if (result.estimated || result.confidence === null) return t('rate.confidence.estimated');
+  return result.confidence < LOW_CONFIDENCE ? t('rate.confidence') : null;
+}
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -154,7 +165,7 @@ function SwapCard({
         style={[styles.swapButton, disabled ? styles.dimmed : null]}
       >
         <LinearGradient colors={gradients.ai} style={styles.swapButtonFill}>
-          <Sparkles size={13} color="#ffffff" fill="#ffffff" />
+          <Sparkles size={13} color={colors.onFill} fill={colors.onFill} />
           <Text style={styles.swapButtonLabel}>{t('rate.swap.cta')}</Text>
         </LinearGradient>
       </Pressable>
@@ -203,6 +214,7 @@ function ResultBody({
   onSwap: (fromId: string, toId: string) => void;
 }): React.JSX.Element {
   const { t, locale } = useI18n();
+  const note = confidenceNote(result, t);
   const reasons = result.reasons.flatMap((reason) => {
     const text = reasonText(reason, t, locale);
     return text === null ? [] : [{ reason, text }];
@@ -224,11 +236,7 @@ function ResultBody({
   return (
     <>
       <ScoreRing score={result.score} caption={t(`rating.label.${result.label}`)} />
-      <Text style={styles.confidence}>
-        {result.estimated || result.confidence === null
-          ? t('rate.confidence.estimated')
-          : t('rate.confidence', { value: result.confidence })}
-      </Text>
+      {note === null ? null : <Text style={styles.confidence}>{note}</Text>}
       {reasons.length === 0 ? null : (
         <View style={styles.reasons}>
           {reasons.map(({ reason, text }) => (
@@ -285,9 +293,9 @@ function RateOutfit({
     if (!rateable) return;
     let current = true;
     void rateOutfit({ garmentIds: ids, occasion, date: localDate() }).then((outcome) => {
-      if (current) {
-        setRating(outcome.ok ? { kind: 'result', result: outcome.result } : { kind: 'error', error: outcome.error });
-      }
+      if (!current) return;
+      if (outcome.ok) tapHaptic('success');
+      setRating(outcome.ok ? { kind: 'result', result: outcome.result } : { kind: 'error', error: outcome.error });
     });
     return () => {
       current = false;
@@ -304,7 +312,8 @@ function RateOutfit({
   }, []);
 
   // Shared with Today, so an outfit logged on either screen (or before a restart) stays logged here.
-  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued } = useWearLog(localDate());
+  const { log, busy: wearBusy, isLogged, errorFor, clearError, isQueued, canUndo, undo, undoFailedFor } =
+    useWearLog(localDate());
   const logged = isLogged(ids);
   // Save, one at a time and never during a wear. The ref locks a second tap before the re-render lands.
   const saving = useRef(false);
@@ -353,15 +362,38 @@ function RateOutfit({
     [wearBusy, clearError],
   );
 
+  const waitStage = useWaitStage(rating.kind === 'loading');
+
   const retry = useCallback(() => {
     setRating({ kind: 'loading' });
     setAttempt((value) => value + 1);
   }, []);
 
   let notice: React.ReactNode = undefined;
+  // The queued note and Undo stack for the first seconds after an offline wear.
+  let noticeRows = 1;
   const actionError = saveError ?? errorFor(ids);
   if (actionError !== null) {
     notice = <ActionNotice tone="error">{t(`outfit.error.${actionError}`)}</ActionNotice>;
+  } else if (canUndo(ids)) {
+    const undoFailed = undoFailedFor(ids);
+    const queued = isQueued(ids);
+    noticeRows = undoFailed || queued ? 2 : 1;
+    notice = (
+      <View style={styles.notices}>
+        {undoFailed ? <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice> : null}
+        {!undoFailed && queued ? <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice> : null}
+        <UndoNotice
+          label={t('outfit.undo')}
+          hint={t('outfit.undo.hint')}
+          onPress={() => {
+            void undo(ids);
+          }}
+        />
+      </View>
+    );
+  } else if (undoFailedFor(ids)) {
+    notice = <ActionNotice tone="error">{t('outfit.undoFailed')}</ActionNotice>;
   } else if (logged && isQueued(ids)) {
     notice = <ActionNotice tone="queued">{t('outfit.queued')}</ActionNotice>;
   }
@@ -373,7 +405,7 @@ function RateOutfit({
       <View style={styles.loading}>
         <ScoreRingPlaceholder />
         <Text style={styles.loadingText} accessibilityLiveRegion="polite">
-          {t('rate.loading')}
+          {waitStage === 'start' ? t('rate.loading') : t(`wait.${waitStage}`)}
         </Text>
       </View>
     );
@@ -385,16 +417,21 @@ function RateOutfit({
       </Text>
     );
     const retryable = error === 'network' || error === 'unavailable' || error === 'unknown';
-    cta = (
-      <AnchoredCta
-        chrome="none"
-        primary={
-          retryable
-            ? { label: t('rate.retry'), tone: 'commit', icon: RotateCw, onPress: retry }
-            : { label: t('rate.goBack'), tone: 'commit', onPress: leaveToBuild }
-        }
-      />
-    );
+    let primary: CtaAction = { label: t('rate.goBack'), tone: 'commit', onPress: leaveToBuild };
+    if (retryable) {
+      primary = { label: t('rate.retry'), tone: 'commit', icon: RotateCw, onPress: retry };
+    } else if (error === 'over_quota') {
+      // Back down to the tabs under this screen, on Build; `navigate` would stack another tab navigator.
+      primary = {
+        label: t('rate.buildOwn'),
+        tone: 'commit',
+        icon: Layers,
+        onPress: () => {
+          router.dismissTo('/build');
+        },
+      };
+    }
+    cta = <AnchoredCta chrome="none" primary={primary} />;
   } else {
     const { result } = rating;
     body = (
@@ -439,20 +476,11 @@ function RateOutfit({
         style={styles.fill}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top, paddingBottom: insets.bottom + (notice === undefined ? 0 : NOTICE_ROOM) },
+          { paddingTop: insets.top, paddingBottom: insets.bottom + (notice === undefined ? 0 : NOTICE_ROOM * noticeRows) },
         ]}
       >
         <View style={styles.header}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('rate.back')}
-            // Narrower than 44 pt so the title sits close to it; the slop keeps the 44 pt target.
-            hitSlop={{ left: 8, right: 6 }}
-            style={styles.backButton}
-            onPress={leaveToBuild}
-          >
-            <ChevronLeft size={22} color={colors.ink} />
-          </Pressable>
+          <BackChevron label={t('rate.back')} onPress={leaveToBuild} />
           <View style={styles.headerTitle}>
             <ScreenTitle title={t('rate.title')} />
           </View>
@@ -500,12 +528,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
   },
-  backButton: {
-    width: 30,
-    minHeight: layout.minHitTarget,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-  },
   loading: {
     alignItems: 'center',
     gap: spacing.md,
@@ -513,16 +535,19 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     textAlign: 'center',
   },
   confidence: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     textAlign: 'center',
   },
   reasons: {
     gap: spacing.sm - 2,
+  },
+  notices: {
+    gap: spacing.sm,
   },
   reason: {
     flexDirection: 'row',
@@ -535,7 +560,7 @@ const styles = StyleSheet.create({
   reasonText: {
     flex: 1,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     lineHeight: 19,
   },
   swapCard: {
@@ -548,7 +573,7 @@ const styles = StyleSheet.create({
   },
   swapText: {
     color: colors.ink,
-    fontSize: 14,
+    fontSize: fontSizes.body,
     lineHeight: 19,
   },
   swapPrefix: {
@@ -568,8 +593,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   swapButtonLabel: {
-    color: '#ffffff',
-    fontSize: 13,
+    color: colors.onFill,
+    fontSize: fontSizes.bodySmall,
     fontWeight: '700',
   },
   dimmed: {
@@ -577,7 +602,7 @@ const styles = StyleSheet.create({
   },
   noBetterSwap: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     textAlign: 'center',
   },
   forYouLink: {
@@ -589,7 +614,7 @@ const styles = StyleSheet.create({
   },
   forYouText: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: fontSizes.bodySmall,
     textAlign: 'center',
   },
   forYouAccent: {
@@ -597,12 +622,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: colors.glass[75],
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.95)',
+    borderColor: colors.glass[95],
     borderRadius: radii.card,
     padding: 10,
-    shadowColor: '#3c1e78',
+    shadowColor: colors.shadow,
     shadowOpacity: 0.08,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
@@ -610,7 +635,7 @@ const styles = StyleSheet.create({
   },
   errorMessage: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: fontSizes.title,
     fontWeight: '600',
     lineHeight: 22,
     textAlign: 'center',
