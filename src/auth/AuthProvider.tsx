@@ -9,6 +9,7 @@ import { useOnResume } from '../lib/useOnResume';
 import { readStoredSession, startAuthAutoRefresh, supabase } from '../lib/supabase';
 import { getProfile, saveProfile } from '../profile/profileRepository';
 import type { Profile, ProfilePatch } from '../profile/profileRepository';
+import { flushPendingUnregister } from '../push/pushRegistration';
 import { turnOffReminder } from '../reminder/dailyReminder';
 import {
   cacheOnboarding,
@@ -144,6 +145,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   }
 
   useEffect(() => {
+    // A sign-out that couldn't reach the server left its push token pending; retry at launch.
+    void flushPendingUnregister();
     const stopAutoRefresh = startAuthAutoRefresh();
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       let nextUserId = session?.user.id ?? null;
@@ -195,6 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         // A session proves the account still exists, so its kv writes are allowed again.
         allowUserKeys(nextUserId);
         forgetOtherAccounts(nextUserId);
+        void flushPendingUnregister();
         try {
           forgetInterruptedDeletions(nextUserId);
         } catch {

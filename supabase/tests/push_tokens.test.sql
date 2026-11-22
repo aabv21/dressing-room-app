@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(41);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -179,7 +179,7 @@ select is(
 );
 
 -- The same phone token registered later by B (B signed in on A's phone), through the API as the
--- app does: the server's clock decides, so only B gets it, until A registers it again.
+-- app does: B takes the token over, so only B gets it, until A registers it again.
 update public.push_tokens set last_review_push_at = null;
 set local role authenticated;
 select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-2222-2222-222222222222', 'role', 'authenticated')::text, true);
@@ -190,6 +190,11 @@ select is(
   (select count(*)::int from public.claim_review_push('11111111-1111-1111-1111-111111111111')),
   0,
   'a token registered later by another account is never pushed for the older one'
+);
+select is(
+  (select array_agg(user_id::text) from public.push_tokens where token = 'ExponentPushToken[aaaa]'),
+  array['22222222-2222-2222-2222-222222222222'],
+  'registering a token takes it over: the older account''s row is gone'
 );
 
 set local role authenticated;
@@ -202,6 +207,11 @@ select is(
   (select count(*)::int from public.claim_review_push('11111111-1111-1111-1111-111111111111')),
   1,
   'registering it again makes A its newest holder'
+);
+select is(
+  (select array_agg(user_id::text) from public.push_tokens where token = 'ExponentPushToken[aaaa]'),
+  array['11111111-1111-1111-1111-111111111111'],
+  'and B''s row is gone in turn'
 );
 
 -- weekly_summary_targets(): A's wears this week and their pieces unused for 6 months.

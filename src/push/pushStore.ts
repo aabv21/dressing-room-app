@@ -2,7 +2,7 @@
 // shape, so account deletion clears it); the server's push_tokens row is what it sends to.
 import { useMemo, useSyncExternalStore } from 'react';
 
-import { kvGet, kvGetJson, kvSet, parseJson } from '../lib/kv';
+import { kvGet, kvGetJson, kvRemove, kvSet, parseJson } from '../lib/kv';
 
 /** `token` is the Expo push token this phone registered, null when nothing is stored on the server. */
 export type PushSettings = { token: string | null; reviewReady: boolean; weekly: boolean };
@@ -45,4 +45,21 @@ export function writePush(userId: string, settings: PushSettings): void {
 export function usePushSettings(userId: string): PushSettings {
   const raw = useSyncExternalStore(subscribe, () => kvGet(pushKey(userId)));
   return useMemo(() => parseJson(raw, isSettings) ?? DEFAULT_PUSH, [raw]);
+}
+
+/**
+ * Tokens a sign-out couldn't unregister, kept device-wide (not `<name>.<id>`, so forgetting an
+ * account keeps them) until `push-unregister` succeeds.
+ */
+export const PENDING_UNREGISTER_KEY = 'push.pendingUnregister';
+
+const isTokenList = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
+export function readPendingUnregister(): string[] {
+  return kvGetJson(PENDING_UNREGISTER_KEY, isTokenList) ?? [];
+}
+
+export function writePendingUnregister(tokens: readonly string[]): void {
+  if (tokens.length === 0) kvRemove(PENDING_UNREGISTER_KEY);
+  else kvSet(PENDING_UNREGISTER_KEY, JSON.stringify([...new Set(tokens)]));
 }

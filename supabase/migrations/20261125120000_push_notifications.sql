@@ -59,7 +59,7 @@ grant update (token, platform, review_ready, weekly) on public.push_tokens to au
 -- `updated_at` is the server's registration time: a shared phone token goes to its newest holder,
 -- the account signed in on that phone now. clock_timestamp(), not now(): two registrations in one
 -- transaction still order. Only a client write moves it, so a server claim doesn't make a row newer.
--- NOTE: taking over a token needs knowing it and the app never shows one; upgrade: an Edge Function that registers tokens, if one ever leaks.
+-- NOTE: taking over (or unregistering) a token needs knowing it, and the app never shows one; upgrade: an Edge Function that registers tokens, if one ever leaks.
 create function public.push_tokens_stamp()
 returns trigger
 language plpgsql
@@ -76,6 +76,27 @@ revoke execute on function public.push_tokens_stamp() from public, anon, authent
 create trigger push_tokens_stamp
   before insert or update of token, platform, review_ready, weekly on public.push_tokens
   for each row execute function public.push_tokens_stamp();
+
+-- A token belongs to one phone, and the phone to whoever signed in on it last: registering a token
+-- removes every other account's row for it, so a new account always takes the token over cleanly.
+-- security definer: those rows are invisible to the caller under RLS.
+create function public.push_tokens_take_over()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from public.push_tokens where token = new.token and user_id <> new.user_id;
+  return null;
+end;
+$$;
+
+revoke execute on function public.push_tokens_take_over() from public, anon, authenticated;
+
+create trigger push_tokens_take_over
+  after insert or update of token on public.push_tokens
+  for each row execute function public.push_tokens_take_over();
 
 -- public.claim_review_push() --------------------------------------------------------------------
 

@@ -34,6 +34,9 @@ jest.mock('../../lib/useOnResume', () => ({
   },
 }));
 
+const mockFlushPendingUnregister = jest.fn(() => Promise.resolve());
+jest.mock('../../push/pushRegistration', () => ({ flushPendingUnregister: () => mockFlushPendingUnregister() }));
+
 import * as Notifications from 'expo-notifications';
 
 import { I18nProvider, useLocalePreference } from '../../i18n/I18nProvider';
@@ -898,5 +901,22 @@ test("a session that ends turns off the account's daily reminder, keeping its ti
   });
   await waitFor(() => {
     expect(readReminder('user-1')).toMatchObject({ enabled: false, notificationId: null, hour: 6, minute: 45 });
+  });
+});
+
+describe('pending push unregistrations', () => {
+  test('are flushed at launch and again after a sign-in, but not on a token refresh', async () => {
+    await renderHook(() => useAuth(), { wrapper });
+    expect(mockFlushPendingUnregister).toHaveBeenCalledTimes(1);
+
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-2', email: 'b@example.com' } });
+    });
+    expect(mockFlushPendingUnregister).toHaveBeenCalledTimes(2);
+
+    await act(() => {
+      authStateCallback?.('TOKEN_REFRESHED', { user: { id: 'user-2', email: 'b@example.com' } });
+    });
+    expect(mockFlushPendingUnregister).toHaveBeenCalledTimes(2);
   });
 });

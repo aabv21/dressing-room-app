@@ -10,7 +10,7 @@ import { translate, type Locale } from '../i18n';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';
 import { askReminderPermission } from '../reminder/dailyReminder';
-import { readPush, writePush } from './pushStore';
+import { readPendingUnregister, readPush, writePendingUnregister, writePush } from './pushStore';
 
 export type PushClient = SupabaseClient<Database>;
 
@@ -87,23 +87,46 @@ export async function setPushPreferences(
   return 'saved';
 }
 
-/** How long sign-out waits for the token delete on a stalled network. */
+/** How long sign-out waits for the unregister call on a stalled network. */
 export const FORGET_TIMEOUT_MS = 5_000;
 
-/**
- * Sign-out: deletes this phone's row while the session still can, and turns both off on the device.
- * Never throws; offline, the row stays until Expo reports the token gone or a newer account registers it.
- */
-export async function forgetPushToken(userId: string, client: PushClient = supabase): Promise<void> {
-  const stored = readPush(userId).token;
-  if (stored === null) return;
-  writePush(userId, { token: null, reviewReady: false, weekly: false });
+/** Asks `push-unregister` to drop every row holding `token`; true once it answered success. Never throws. */
+async function unregister(client: PushClient, token: string): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stalled = new Promise<boolean>((resolve) => {
     timer = setTimeout(() => {
       resolve(false);
     }, FORGET_TIMEOUT_MS);
   });
-  await Promise.race([deleteRow(client, stored).catch(() => false), stalled]);
+  const call = client.functions
+    .invoke('push-unregister', { body: { token } })
+    .then(({ error }) => error === null)
+    .catch(() => false);
+  const done = await Promise.race([call, stalled]);
   clearTimeout(timer);
+  return done;
+}
+
+/**
+ * Sign-out: unregisters this phone's token, then turns both off on the device. A token the server
+ * didn't confirm waits in the device's pending list for `flushPendingUnregister`. Never throws.
+ */
+export async function forgetPushToken(userId: string, client: PushClient = supabase): Promise<void> {
+  const stored = readPush(userId).token;
+  if (stored === null) return;
+  if (!(await unregister(client, stored))) writePendingUnregister([...readPendingUnregister(), stored]);
+  writePush(userId, { token: null, reviewReady: false, weekly: false });
+}
+
+/** At launch and after a sign-in: retries the pending tokens, keeping each that fails again. Never throws. */
+export async function flushPendingUnregister(client: PushClient = supabase): Promise<void> {
+  const pending = readPendingUnregister();
+  if (pending.length === 0) return;
+  const failed: string[] = [];
+  for (const token of pending) {
+    if (!(await unregister(client, token))) failed.push(token);
+  }
+  // A sign-out may have added a token meanwhile: keep it with the failures.
+  const added = readPendingUnregister().filter((token) => !pending.includes(token));
+  writePendingUnregister([...failed, ...added]);
 }

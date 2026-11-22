@@ -15,8 +15,8 @@ jest.mock('expo-constants', () => ({
 import * as Notifications from 'expo-notifications';
 
 import { allowUserKeys, kvKeys, kvRemove } from '../../lib/kv';
-import { forgetPushToken, setPushPreferences, type PushClient } from '../pushRegistration';
-import { readPush, writePush } from '../pushStore';
+import { flushPendingUnregister, forgetPushToken, setPushPreferences, type PushClient } from '../pushRegistration';
+import { readPendingUnregister, readPush, writePush } from '../pushStore';
 
 const mocked = jest.mocked(Notifications);
 const USER_ID = 'user-1';
@@ -24,12 +24,30 @@ const TOKEN = 'ExponentPushToken[device-1]';
 
 type Answer = { error: { message: string } | null };
 
-/** A supabase-js stand-in recording the push_tokens upserts and deletes. */
-function fakeClient({ upsert = { error: null }, remove = { error: null } }: { upsert?: Answer; remove?: Answer | Promise<never> } = {}) {
+type InvokeAnswer = { data: unknown; error: Error | null };
+
+/** A supabase-js stand-in recording the push_tokens upserts and deletes and the push-unregister calls. */
+function fakeClient({
+  upsert = { error: null },
+  remove = { error: null },
+  unregister = () => Promise.resolve({ data: null, error: null }),
+}: {
+  upsert?: Answer;
+  remove?: Answer | Promise<never>;
+  unregister?: (token: string) => Promise<InvokeAnswer>;
+} = {}) {
   const upserts: { row: unknown; options: unknown }[] = [];
   const deletes: { column: string; value: string }[] = [];
   const tables: string[] = [];
+  const unregistered: string[] = [];
   const client = {
+    functions: {
+      invoke: (name: string, options: { body: { token: string } }) => {
+        if (name !== 'push-unregister') throw new Error(`unexpected function ${name}`);
+        unregistered.push(options.body.token);
+        return unregister(options.body.token);
+      },
+    },
     from: (table: string) => {
       tables.push(table);
       return {
@@ -46,7 +64,7 @@ function fakeClient({ upsert = { error: null }, remove = { error: null } }: { up
       };
     },
   } as unknown as PushClient;
-  return { client, upserts, deletes, tables };
+  return { client, upserts, deletes, tables, unregistered };
 }
 
 function deniedStatus(): Notifications.NotificationPermissionsStatus {
@@ -148,27 +166,101 @@ describe('setPushPreferences', () => {
 });
 
 describe('forgetPushToken', () => {
-  test('deletes this phone’s row and turns both off on the device', async () => {
+  test('unregisters this phone’s token on the server, then turns both off on the device', async () => {
     writePush(USER_ID, { token: TOKEN, reviewReady: true, weekly: true });
-    const { client, deletes } = fakeClient();
+    const { client, unregistered } = fakeClient();
 
     await forgetPushToken(USER_ID, client);
 
-    expect(deletes).toEqual([{ column: 'token', value: TOKEN }]);
+    expect(unregistered).toEqual([TOKEN]);
     expect(readPush(USER_ID)).toEqual({ token: null, reviewReady: false, weekly: false });
+    expect(readPendingUnregister()).toEqual([]);
   });
 
   test('does nothing without a stored token', async () => {
-    const { client, tables } = fakeClient();
+    const { client, unregistered } = fakeClient();
     await forgetPushToken(USER_ID, client);
-    expect(tables).toEqual([]);
+    expect(unregistered).toEqual([]);
   });
 
-  test('never throws when the delete fails, so sign-out still goes ahead', async () => {
+  test.each([
+    ['an error answer', () => Promise.resolve({ data: null, error: new Error('FunctionsFetchError') })],
+    ['a network failure', () => Promise.reject(new TypeError('Network request failed'))],
+  ])('offline (%s), the token waits in the device’s pending list and sign-out still goes ahead', async (_label, unregister) => {
     writePush(USER_ID, { token: TOKEN, reviewReady: true, weekly: true });
-    const { client } = fakeClient({ remove: Promise.reject(new TypeError('Network request failed')) });
+    const { client } = fakeClient({ unregister });
 
     await expect(forgetPushToken(USER_ID, client)).resolves.toBeUndefined();
+
+    expect(readPendingUnregister()).toEqual([TOKEN]);
     expect(readPush(USER_ID).token).toBeNull();
+  });
+
+  test('a stalled network gives up after the timeout and keeps the token pending', async () => {
+    jest.useFakeTimers();
+    try {
+      writePush(USER_ID, { token: TOKEN, reviewReady: true, weekly: true });
+      const { client } = fakeClient({ unregister: () => new Promise<never>(() => undefined) });
+
+      const pending = forgetPushToken(USER_ID, client);
+      await jest.advanceTimersByTimeAsync(5_000);
+      await pending;
+
+      expect(readPendingUnregister()).toEqual([TOKEN]);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('the pending list survives the account’s own kv being forgotten', async () => {
+    writePush(USER_ID, { token: TOKEN, reviewReady: true, weekly: true });
+    const { client } = fakeClient({ unregister: () => Promise.resolve({ data: null, error: new Error('offline') }) });
+    await forgetPushToken(USER_ID, client);
+
+    expect(kvKeys().filter((key) => key.split('.').includes(USER_ID))).toEqual(['push.user-1']);
+    expect(kvKeys()).toContain('push.pendingUnregister');
+  });
+});
+
+describe('flushPendingUnregister', () => {
+  test('the next launch unregisters each pending token and drops it on success', async () => {
+    writePush(USER_ID, { token: TOKEN, reviewReady: true, weekly: true });
+    const offline = fakeClient({ unregister: () => Promise.resolve({ data: null, error: new Error('offline') }) });
+    await forgetPushToken(USER_ID, offline.client);
+    const online = fakeClient();
+
+    await flushPendingUnregister(online.client);
+
+    expect(online.unregistered).toEqual([TOKEN]);
+    expect(readPendingUnregister()).toEqual([]);
+  });
+
+  test('a token that fails again stays for the next try; the others go', async () => {
+    const { client: offlineClient } = fakeClient({ unregister: () => Promise.resolve({ data: null, error: new Error('offline') }) });
+    writePush(USER_ID, { token: 'ExponentPushToken[one]', reviewReady: true, weekly: false });
+    await forgetPushToken(USER_ID, offlineClient);
+    writePush(USER_ID, { token: 'ExponentPushToken[two]', reviewReady: true, weekly: false });
+    await forgetPushToken(USER_ID, offlineClient);
+    const { client, unregistered } = fakeClient({
+      unregister: (token) => Promise.resolve({ data: null, error: token === 'ExponentPushToken[one]' ? new Error('500') : null }),
+    });
+
+    await flushPendingUnregister(client);
+
+    expect(unregistered).toEqual(['ExponentPushToken[one]', 'ExponentPushToken[two]']);
+    expect(readPendingUnregister()).toEqual(['ExponentPushToken[one]']);
+  });
+
+  test('nothing pending: no call', async () => {
+    const { client, unregistered } = fakeClient();
+    await flushPendingUnregister(client);
+    expect(unregistered).toEqual([]);
+  });
+
+  test('never throws', async () => {
+    writePush(USER_ID, { token: TOKEN, reviewReady: true, weekly: true });
+    await forgetPushToken(USER_ID, fakeClient({ unregister: () => Promise.reject(new TypeError('x')) }).client);
+    await expect(flushPendingUnregister(fakeClient({ unregister: () => Promise.reject(new TypeError('x')) }).client)).resolves.toBeUndefined();
+    expect(readPendingUnregister()).toEqual([TOKEN]);
   });
 });

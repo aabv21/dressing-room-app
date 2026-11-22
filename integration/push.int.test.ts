@@ -1,9 +1,10 @@
 // integration/push.int.test.ts
 //
 // Server push on the full local stack: push_tokens through the API as the app writes it (own rows
-// only, the server's push time out of reach), the "ready to review" push from extract-attributes
-// once a batch is done (once an hour, a dead token deleted), and the weekly-summary function behind
-// its secret. Expo's push service is `mockServices.ts` on the host (`EXPO_PUSH_URL` in config.toml).
+// only, the server's push time out of reach, a new account taking a token over), push-unregister
+// with no session, the "ready to review" push from extract-attributes once a batch is done (once an
+// hour, a dead token deleted), and the weekly-summary function behind its secret. Expo's push
+// service is `mockServices.ts` on the host (`EXPO_PUSH_URL` in config.toml).
 //
 // Needs the Edge Runtime: `pnpm db:start` (or `db:start:ci`) and `pnpm env:local`.
 
@@ -89,6 +90,16 @@ async function tokenRows(token: string): Promise<number> {
   return data.length;
 }
 
+/** What the app's pending-list flush sends after a sign-out: no session, the anon key only. */
+function pushUnregister(body: unknown): Promise<Response> {
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+  return fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ''}/functions/v1/push-unregister`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', apikey: anonKey, authorization: `Bearer ${anonKey}` },
+    body: JSON.stringify(body),
+  });
+}
+
 function weeklySummary(secret: string): Promise<Response> {
   return fetch(`${process.env.EXPO_PUBLIC_SUPABASE_URL ?? ''}/functions/v1/weekly-summary`, {
     method: 'POST',
@@ -137,6 +148,32 @@ describe('push_tokens through the API', () => {
     // Turning both off, as the app does.
     expect((await userA.client.from('push_tokens').delete().eq('token', userA.token)).error).toBeNull();
     expect(await tokenRows(userA.token)).toBe(0);
+  });
+});
+
+describe('taking over and unregistering a token', () => {
+  test('a new account registering the same phone token removes the old account’s row', async () => {
+    const previous = await signedInUser('push-takeover-a');
+    const next = await signedInUser('push-takeover-b');
+    await optIn(previous, { review_ready: true, weekly: true });
+
+    await optIn({ ...next, token: previous.token }, { review_ready: false, weekly: true });
+
+    const { data, error } = await serviceClient().from('push_tokens').select('user_id').eq('token', previous.token);
+    expect(error).toBeNull();
+    expect(data).toEqual([{ user_id: next.id }]);
+  });
+
+  test('push-unregister deletes the token with only the anon key, and answers 204 whether or not a row matched', async () => {
+    const user = await signedInUser('push-unregister');
+    await optIn(user, { review_ready: true, weekly: false });
+
+    const first = await pushUnregister({ token: user.token });
+    expect(first.status).toBe(204);
+    expect(await tokenRows(user.token)).toBe(0);
+
+    expect((await pushUnregister({ token: user.token })).status).toBe(204);
+    expect((await pushUnregister({ token: 'not-a-token' })).status).toBe(400);
   });
 });
 
