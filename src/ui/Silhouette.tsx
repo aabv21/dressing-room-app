@@ -3,11 +3,7 @@ import Svg, { Circle, Polygon } from 'react-native-svg';
 import type { BodyType } from '../profile/bodyType';
 import { colors } from './theme';
 
-/**
- * Body outlines on mockup 03's 60×100 grid: a head circle plus one polygon (shoulders → waist →
- * hips → hem). The first five are the mockup's own points; trapezoid, triangle and oval (the
- * masculine-only shapes) are drawn in the same style.
- */
+/** Body outlines on a 60×100 grid: a head circle plus one polygon (shoulders → waist → hips → hem). */
 function polygonFor(type: BodyType): string {
   switch (type) {
     case 'hourglass':

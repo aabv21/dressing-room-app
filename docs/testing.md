@@ -135,8 +135,14 @@ Accounts, onboarding and the profile:
   mounted instead of unmounting the navigator.
 - `src/__tests__/auth-screens.test.tsx` — Welcome, Sign in and Forgot password: field validation
   before any call, the social buttons (no Apple on Android, cancel shows nothing, disabled while one
-  runs), service errors, and the reset code's two steps (format, invalid code, resend, change
-  email).
+  runs), service errors (an email in use under the email field), and the reset code's two steps
+  (format, invalid code, resend, change email).
+- `src/auth/__tests__/AuthProvider.test.tsx` — the session, an offline launch, the language sync,
+  and the shared profile: read at sign-in (no row as `{}`), an error until a retry succeeds (loading
+  while it runs), a failed refresh keeping the last good profile, a foreground or reconnect after an
+  offline launch reading it again, `replaceProfileLocal` merging a saved patch, and another account
+  or a sign-out dropping it. Screen suites stand it in with
+  `src/test/authMock.ts`, a store that re-renders on `setAuth`.
 - `src/auth/__tests__/authService.test.ts` — sign-up, sign-in, sign-out (offline falls back to a
   local sign-out), the password-reset request (no account and the email rate limit both answer
   ok) and its confirmation, against a fake client. `errors.test.ts` maps Auth and native errors to
@@ -157,7 +163,8 @@ Accounts, onboarding and the profile:
 - `src/profile/__tests__/` — `profileRepository.test.ts` (updates of only the patch, an update that
   reaches no row as an error, the server-stamped onboarding time, error mapping),
   `profileDraft.test.ts` (the form state, its patch and the changed fields), `validation.test.ts`
-  (the measurement ranges), `bodyType.test.ts` (the body-type table), `useCurrentCity.test.tsx`
+  (the measurement ranges), `bodyType.test.ts` (the body-type table), `useClothingType.test.tsx`
+  (every category until the shared profile is known), `useCurrentCity.test.tsx`
   (city-level precision only) and `ProfileForm.test.tsx` (the body-type grid and the height row at
   a large text size).
 
@@ -181,8 +188,15 @@ Outfits, Stats and Diary:
   once sending each wear once), `withQueuedWears` for Stats and Diary, and a wear being sent that
   can't be dequeued. `WearQueueFlusher.test.tsx`: flushes on mount with the stored session as the
   guard, on foreground and reconnect, and refreshes the closet after a send.
-- `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping and
-  `localDate`), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
+- `src/outfits/__tests__/useStoredQuery.test.tsx` — one request in flight with triggers queued
+  once for the latest inputs, a queued trigger dropped once disabled, the stored answer while the
+  first fetch runs and offline, a failed refetch keeping this session's answer, reload, another
+  query's answer kept only as the last one, and nothing set or stored after unmount.
+- `src/outfits/__tests__/useWearLog.test.tsx` — a wear logged once (a second tap ignored), marked
+  worn and refreshing the closet; a failure kept for its outfit and announced, with the retry
+  reusing the wear id; the offline queue and its note; and a late answer after unmount still
+  marking the outfit worn.
+- `src/outfits/__tests__/` — `aiClient.test.ts` (the function wrappers' error mapping), `buildSelection.test.ts`, `outfitDisplay.test.ts` (slot order, piece labels, the
   weather line), `outfitRepository.test.ts` (`log_wear` and `save_outfit`), `storedLucky.test.ts`
   and `storedForYou.test.ts` (the offline copies), `OutfitStack.test.tsx` (a piece label wraps at
   a large text size) and `ScoreRing.test.tsx` (one progressbar named "Score", the number and
@@ -199,12 +213,14 @@ Outfits, Stats and Diary:
   `wearsRepository.test.ts` (the wears query, its paging in ranges of 1000 until a short page,
   at most 20 pages, a failed later page throwing, and Diary's delete) and `storedWears.test.ts` (the
   stored year round-trips, a malformed value reads as null, `wearsInRange` refuses a range before
-  the stored one, and a fetched month merges into the stored range).
+  the stored one, and a fetched month merges into the stored range) and `useWears.test.tsx` (a
+  range with its queued wears, replaced or merged into the stored record, the stored fallback
+  for each, a new range never showing the previous one's wears, reload and a local delete).
 
 Shared UI, the app shell and helpers:
 
 - `src/ui/__tests__/` — `AnchoredCta.test.tsx` and `ChipGroup.test.tsx` (roles, states and the CTA
-  label's cap), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection and the
+  label's cap), `ActionNotice.test.tsx` (an error is an alert, both notes are live regions), `GlassTabBar.test.tsx` and `SegmentTabs.test.tsx` (tablists, selection and the
   large content viewer), `OptionCard.test.tsx` (the emoji's cap), `layout.test.ts`
   (`useBottomChrome` and `useLargeText`), `theme.test.ts` (error text contrast), `Screen.test.tsx`
   (the status-bar scrim above scrolled content, the CTA backdrop with no chrome) and
@@ -220,7 +236,9 @@ Shared UI, the app shell and helpers:
   language, the override and its persistence).
 - `src/lib/__tests__/` — `supabase.test.ts` (the client's options, a missing URL or key named in the
   error, auto-refresh with the app state), `fetchWithTimeout.test.ts` (12 s, 45 s for function
-  POSTs, 60 s for uploads) and `storedSession.test.ts`.
+  POSTs, 60 s for uploads), `storedSession.test.ts`, `kv.test.ts` (`kvGetJson` is null for a
+  missing key, invalid JSON or a guard miss), `localDate.test.ts` (the local `YYYY-MM-DD`) and `useOnResume.test.tsx` (foreground and
+  reconnect, the first network report only a baseline, the latest callback without resubscribing).
 - `src/perf/__tests__/` — `frameStats.test.ts` (dropped frames at 60 and 120 Hz, the inferred
   refresh rate) and `PerfHud.test.tsx` (tap to reset, long-press to clear the image caches).
 - `src/__tests__/smoke.test.tsx` — the Today screen renders.
@@ -328,16 +346,22 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   lines and their template fallbacks, and the store-search query.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs, weather bands and
   conditions, and the forecast and geocoding parsers.
-- `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `mapLimit`, the
-  profile and garments read with the user's token (enums checked, non-uuid ids refused before any
-  request), and the cached weather.
-- `supabase/functions/_shared/__tests__/apple.test.ts` — `appleEnvFrom`, the ES256 client secret
-  (a PEM with literal `\n`s too), the id_token's Apple user, and the token exchange and revoke
-  calls.
+- `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
+  0000), `mapLimit`, the profile and garments read with the user's token (enums checked, non-uuid
+  ids refused before any request), and the cached weather.
+- `supabase/functions/_shared/__tests__/env.test.ts` — `readEnv`: only the asked capabilities'
+  variables, a throw naming a missing one, the real API hosts as fallbacks for unset or empty base
+  URLs, trailing slashes trimmed, and `appleEnvFrom`'s trimmed base URL.
+- `supabase/functions/_shared/__tests__/http.test.ts` — `fetchWithDeadline` (an abort once the
+  deadline passes, the body read inside it, the response passed through intact, a body-less answer),
+  `callerOf`, `readJson` and `reply` (it logs only the outcome word).
+- `supabase/functions/_shared/__tests__/apple.test.ts` — `appleEnvFrom` (from `env.ts`), the ES256
+  client secret (a PEM with literal `\n`s too), the id_token's Apple user, and the token exchange
+  and revoke calls.
 - `supabase/functions/_shared/__tests__/photoStore.test.ts` — the Storage boundary against a fake
   `fetch`: photo paths (non-uuid ids refused), the URL, method and service-role headers of every
   call, listing past 1000 entries and at most 5 folders at a time, removal in chunks of 1000,
-  signing one path or 500 per call, a missing object as `null` (a 404, or Storage's 400 with
+  signing 500 paths per call, a missing object as `null` (a 404, or Storage's 400 with
   `"statusCode": "404"`), a throw on a 5xx, and that no function file outside `photoStore.ts`
   contains `/storage/v1/`.
 - `supabase/functions/_shared/__tests__/gateway.test.ts` — the gateway's JWT check, read from

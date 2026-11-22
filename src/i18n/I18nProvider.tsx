@@ -40,11 +40,7 @@ export function I18nProvider({ children }: { children: ReactNode }): React.JSX.E
   return <LocalePreferenceContext.Provider value={value}>{children}</LocalePreferenceContext.Provider>;
 }
 
-/**
- * Reads the persisted locale preference. Outside an `I18nProvider` (e.g. a test rendering a
- * component in isolation) this defaults to `'system'`, matching `useI18n`'s own no-provider
- * fallback to the device locale.
- */
+/** The persisted preference; `'system'` outside an `I18nProvider` (e.g. an isolated component test). */
 export function useLocalePreference(): LocalePreferenceContextValue {
   const context = useContext(LocalePreferenceContext);
   if (context !== undefined) {

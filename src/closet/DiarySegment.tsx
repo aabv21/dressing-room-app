@@ -1,25 +1,23 @@
-// The Closet tab's Diary segment (mockup 04 screen 3, spec §3.6): a Monday-first month calendar
-// with each worn day's outfit thumbnail, and under it the selected day's wears with their pieces,
-// occasion and score. Deleting a wear lowers the pieces' wear counts (a database trigger) and, for
-// today's wear, clears Today's "Logged ✓" so the outfit can be logged again.
+// The Closet tab's Diary segment. Deleting a wear lowers its pieces' wear counts (a database trigger)
+// and, for today's wear, clears Today's "Logged ✓" so the outfit can be logged again.
 import { Image } from 'expo-image';
 import { useIsFocused } from 'expo-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
 import { pluralKey, useI18n, type Locale } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
-import { localDate } from '../outfits/aiClient';
-import { orderPieces } from '../outfits/outfitDisplay';
+import { localDate } from '../lib/localDate';
+import { capitalize, orderPieces } from '../outfits/outfitDisplay';
 import { OutfitStack } from '../outfits/OutfitStack';
 import { outfitIdentity, unmarkWornToday } from '../outfits/wornToday';
 import { monthGrid } from '../stats/periods';
 import { diaryByDay } from '../stats/statsModel';
-import { dequeueWear, queuedWears, withQueuedWears } from '../outfits/wearQueue';
-import { mergeStoredWears, readStoredWears, wearsInRange } from '../stats/storedWears';
-import { deleteWear, listWears, type WearWithItems } from '../stats/wearsRepository';
+import { dequeueWear, queuedWears } from '../outfits/wearQueue';
+import { useWears } from '../stats/useWears';
+import { deleteWear, type WearWithItems } from '../stats/wearsRepository';
 import { useLargeText } from '../ui/layout';
 import { colors, layout, radii, selectionRing, spacing, textScale } from '../ui/theme';
 import { slotOf } from './catalog';
@@ -33,8 +31,7 @@ const NAV_SIZE = 32;
 const NAV_SLOP = (layout.minHitTarget - NAV_SIZE) / 2;
 const MINI_HEIGHT = 28;
 const MINI_SLOP = (layout.minHitTarget - MINI_HEIGHT) / 2;
-// Mockup 04's calendar greys (`.cal .h`, `.d`) and a worn day's darker number (`.d.w`). The light
-// grey is the theme's muted ink, the lightest that keeps 4.5:1 on the translucent day cells.
+// Calendar greys and a worn day's darker number; the muted ink is the lightest keeping 4.5:1 on the cells.
 const DAY_MUTED = colors.muted;
 const DAY_INK = '#4a4656';
 
@@ -51,19 +48,11 @@ function dateFormat(locale: Locale, options: Intl.DateTimeFormatOptions): Intl.D
   return format;
 }
 
-function capitalize(text: string): string {
-  const [first, ...rest] = text;
-  return first === undefined ? text : first.toLocaleUpperCase() + rest.join('');
-}
-
 function utcDate(day: string): Date {
   return new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10))));
 }
 
-/**
- * "October 2026" / "Octubre 2026". The month name and the year are joined by hand: Spanish's
- * month-and-year pattern is "octubre de 2026", while mockup 04 reads "Octubre 2026".
- */
+/** "October 2026" / "Octubre 2026": joined by hand, since Spanish's own pattern is "octubre de 2026". */
 export function formatMonthTitle(locale: Locale, year: number, month: number): string {
   const name = dateFormat(locale, { month: 'long' }).format(new Date(Date.UTC(year, month - 1, 1)));
   return `${capitalize(name)} ${String(year)}`;
@@ -252,15 +241,7 @@ export function DiarySegment(): React.JSX.Element {
   const { userId } = useAuth();
   const { garments, thumbUrls, refresh } = useCloset();
   const focused = useIsFocused();
-  const [today, setToday] = useState(() => localDate());
-  const [month, setMonth] = useState<Month>(() => monthOf(today));
-  // Keyed by month, so a month switch never shows the previous month's wears in the new grid.
-  // `offlineSince` is set when the month comes from the stored history because the fetch failed.
-  const [loaded, setLoaded] = useState<{ key: string; wears: WearWithItems[]; offlineSince: string | null } | null>(
-    null,
-  );
-  const [failedKey, setFailedKey] = useState<string | null>(null);
-  const [reload, setReload] = useState(0);
+  const [month, setMonth] = useState<Month>(() => monthOf(localDate()));
   const [picked, setPicked] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<{ id: string; error: RequestError } | null>(null);
@@ -270,48 +251,15 @@ export function DiarySegment(): React.JSX.Element {
   const lastDay = weeks.flat().filter((cell) => cell.inMonth).at(-1)?.day ?? `${key}-01`;
 
   // Refetched on focus (a wear logged on Today shows on return), on a month switch and after a delete.
-  useEffect(() => {
-    if (!focused) {
-      return undefined;
-    }
-    let current = true;
-    const from = `${key}-01`;
-    listWears(from, lastDay).then(
-      (wears) => {
-        const day = localDate();
-        // Stored only up to today: the rest of the month hasn't happened yet.
-        if (userId !== null) mergeStoredWears(userId, from, lastDay < day ? lastDay : day, wears);
-        if (current) {
-          setToday(day);
-          setLoaded({ key, wears: userId === null ? wears : withQueuedWears(userId, wears, from, lastDay), offlineSince: null });
-          setFailedKey(null);
-        }
-      },
-      () => {
-        if (!current) return;
-        const stored = userId === null ? null : readStoredWears(userId);
-        const wears = stored === null ? null : wearsInRange(stored, from, lastDay);
-        if (userId !== null && stored !== null && wears !== null) {
-          setLoaded({ key, wears: withQueuedWears(userId, wears, from, lastDay), offlineSince: stored.to });
-          setFailedKey(null);
-        } else {
-          setFailedKey(key);
-        }
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [focused, key, lastDay, reload, userId]);
-
-  const wears = loaded?.key === key ? loaded.wears : null;
-  const failed = failedKey === key;
-  const offlineSince = loaded?.key === key ? loaded.offlineSince : null;
+  const { wears, offlineSince, failed, today, reload, removeLocal } = useWears(`${key}-01`, lastDay, {
+    enabled: focused,
+    record: 'merge',
+  });
   // Read with the month's wears: a queued wear (sent or deleted since) moves both.
   const queuedIds = useMemo(
     () => new Set(userId === null ? [] : queuedWears(userId).map((queued) => queued.wearId)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `loaded` changes whenever the queue's rows can have
-    [userId, loaded],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `wears` changes whenever the queue's rows can have
+    [userId, wears],
   );
   const byDay = useMemo(() => diaryByDay(wears ?? []), [wears]);
   const byId = useMemo(() => new Map(garments.map((g) => [g.id, g])), [garments]);
@@ -327,8 +275,7 @@ export function DiarySegment(): React.JSX.Element {
     setDeleteError(null);
   }, []);
 
-  // One delete at a time: a second tap on the confirm (Android lets one through) is ignored before
-  // the busy state renders.
+  // One delete at a time: a second confirm tap (Android lets one through) is ignored before busy renders.
   const deleting = useRef(false);
   const remove = useCallback(
     async (wear: WearWithItems) => {
@@ -354,11 +301,11 @@ export function DiarySegment(): React.JSX.Element {
         );
         if (!stillWorn) unmarkWornToday(userId, wear.garmentIds);
       }
-      setLoaded((prev) => (prev === null ? prev : { ...prev, wears: prev.wears.filter((w) => w.id !== wear.id) }));
-      setReload((n) => n + 1);
+      removeLocal(wear.id);
+      reload();
       void refresh();
     },
-    [userId, wears, refresh],
+    [userId, wears, refresh, removeLocal, reload],
   );
 
   const confirmDelete = useCallback(

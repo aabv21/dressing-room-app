@@ -1,7 +1,7 @@
-// The last good year of wears, kept on the device so Stats and Diary stay readable offline (spec
-// §5.4: "stats and diary stay readable"). One record per user, replaced by every successful fetch.
+// The last good year of wears, so Stats and Diary stay readable offline. One record per user.
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { OCCASIONS } from '../closet/catalog';
-import { kvGet, kvSet } from '../lib/kv';
+import { kvGetJson, kvSet } from '../lib/kv';
 import { addDays } from './periods';
 import type { WearWithItems } from './wearsRepository';
 
@@ -14,10 +14,6 @@ export function storedWearsKey(userId: string): string {
 export type StoredWears = { from: string; to: string; wears: WearWithItems[] };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 function isWear(value: unknown): value is WearWithItems {
   return (
@@ -32,25 +28,18 @@ function isWear(value: unknown): value is WearWithItems {
   );
 }
 
-/** The stored record, or null when there is none or it doesn't parse. */
 export function readStoredWears(userId: string): StoredWears | null {
-  const raw = kvGet(storedWearsKey(userId));
-  if (raw === null) return null;
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      !isRecord(parsed) ||
-      typeof parsed.from !== 'string' ||
-      typeof parsed.to !== 'string' ||
-      !Array.isArray(parsed.wears) ||
-      !parsed.wears.every(isWear)
-    ) {
-      return null;
-    }
-    return { from: parsed.from, to: parsed.to, wears: parsed.wears };
-  } catch {
+  const parsed = kvGetJson(storedWearsKey(userId), isRecord);
+  if (
+    parsed === null ||
+    typeof parsed.from !== 'string' ||
+    typeof parsed.to !== 'string' ||
+    !Array.isArray(parsed.wears) ||
+    !parsed.wears.every(isWear)
+  ) {
     return null;
   }
+  return { from: parsed.from, to: parsed.to, wears: parsed.wears };
 }
 
 export function storeWears(userId: string, from: string, to: string, wears: readonly WearWithItems[]): void {
@@ -67,9 +56,8 @@ export function wearsInRange(stored: StoredWears, from: string, to: string): Wea
 }
 
 /**
- * Folds one fetched range (Diary's month) into the stored record: inside or touching the stored
- * range, its days replace the stored ones and the range grows to cover both; a disjoint range
- * replaces the record only when it is newer, and starts one when nothing is stored.
+ * Folds a fetched range (Diary's month) in: inside or touching the stored range, its days replace the
+ * stored ones and the range grows; a disjoint range replaces the record only when newer.
  */
 export function mergeStoredWears(userId: string, from: string, to: string, wears: readonly WearWithItems[]): void {
   const stored = readStoredWears(userId);

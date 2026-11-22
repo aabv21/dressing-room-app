@@ -29,6 +29,17 @@ answers 401. `gateway.test.ts` pins the setting per function.
 status. A 200 either carries the result or, for the fire-and-forget and account functions,
 `{ "outcome": "<word>" }`.
 
+**Environment.** Each `index.ts` reads its variables once at startup through `_shared/env.ts`'s
+`readEnv`, asking only for what that function uses. A missing required variable throws there, so the
+worker never boots: the gateway answers an error (most likely a 503, which the app shows as
+"unavailable") instead of the function running half-configured. The Apple variables are the
+exception: `appleEnvFrom` answers null without them and the Apple calls are skipped.
+
+**Shared code.** `_shared/http.ts` holds `json` and `reply` (the answer plus its logged outcome word),
+`readJson`, `callerOf` (the bearer and its `sub`) and `fetchWithDeadline`, which every outbound call
+uses so a stalled body can't outlive its timeout. `_shared/guards.ts` holds `isRecord` and the `UUID`
+pattern.
+
 **Logs.** Each function logs one JSON line per call with an outcome word (and the garment id for
 `extract-attributes`), never a photo, profile, prompt, token or model answer. The words per function
 are in [`ai.md`](ai.md) and in each section below.
@@ -44,7 +55,9 @@ insert is `on conflict do nothing`.
 | App: any Supabase request | 12 s | `REQUEST_TIMEOUT_MS`, `src/lib/fetchWithTimeout.ts` |
 | App: a `POST` to `/functions/v1/` | 45 s | `FUNCTION_TIMEOUT_MS` |
 | App: a Storage upload | 60 s | `UPLOAD_TIMEOUT_MS` (signing and listing keep 12 s) |
-| Functions: each PostgREST call | 8 s | `POSTGREST_TIMEOUT_MS`, `_shared/userContext.ts` (not `extract-attributes`, which has its own client with no timeout, nor the raw Auth calls in `delete-account`) |
+| Functions: each PostgREST call | 8 s | `POSTGREST_TIMEOUT_MS`, `_shared/userContext.ts` |
+| Functions: each Storage call | 10 s | `STORAGE_TIMEOUT_MS`, `_shared/photoStore.ts` |
+| Functions: each Auth call in `delete-account` | 10 s | `AUTH_TIMEOUT_MS`, `delete-account/handler.ts` |
 | Claude: extraction | 30 s | `CLAUDE_TIMEOUT_MS`, `extract-attributes/handler.ts` |
 | Claude: rating fallback and For you lines | 20 s | `CLAUDE_TIMEOUT_MS`, `userContext.ts` (For you's lines also stop 38 s after the request arrived) |
 | Jev | 10 s | `JEV_TIMEOUT_MS` |

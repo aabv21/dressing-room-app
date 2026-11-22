@@ -66,10 +66,7 @@ function parseHeight(heightCm: number | null): Parsed<number | null> {
   return { ok: true, value: heightCm };
 }
 
-/**
- * Validates the Body step's height, measurements and sizes. Empty (or whitespace-only) text means
- * "not provided" and becomes `null` in the patch, so clearing a field clears the saved value.
- */
+/** Blank text becomes `null` in the patch, so clearing a field clears the saved value. */
 export function validateBody(input: BodyInput): BodyValidation {
   const parsed = {
     heightCm: parseHeight(input.heightCm),

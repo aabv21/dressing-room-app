@@ -39,7 +39,7 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 
 - `src/app/`: Expo Router routes only. `src/ui/`, `src/i18n/`, `src/closet/`, `src/auth/`, `src/profile/`, `src/lib/`, `src/outfits/`, `src/stats/`, `src/account/`, `src/perf/`: the app's modules ([`docs/app.md`](docs/app.md)).
 - `src/test/`: shared Jest helpers, never imported by app code.
-- `supabase/functions/`: seven Edge Functions, each a runtime-neutral `handler.ts` plus a Deno-only `index.ts`; `_shared/` holds what they share ([`docs/api.md`](docs/api.md), [`docs/ai.md`](docs/ai.md)).
+- `supabase/functions/`: seven Edge Functions, each a runtime-neutral `handler.ts` plus a Deno-only `index.ts`; `_shared/` holds what they share, including `env.ts` (the startup env read), `http.ts` (replies, the caller, deadlines) and `guards.ts` ([`docs/api.md`](docs/api.md), [`docs/ai.md`](docs/ai.md)).
 - `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql`, `supabase/config.toml`: schema, pgTAP, local seed and local config ([`docs/database.md`](docs/database.md), [`docs/local-stack.md`](docs/local-stack.md)).
 - `modules/garment-cutout/`: the local native background-removal module ([its README](modules/garment-cutout/README.md)).
 - `integration/`: Jest suites and mocks against the live local stack ([`docs/testing.md`](docs/testing.md#integration)).

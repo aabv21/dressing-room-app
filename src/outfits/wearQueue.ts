@@ -1,9 +1,8 @@
-// "I'll wear it" while offline (spec §5.4: "writes queue until the connection returns"): a wear the
-// network couldn't send waits in kv, keyed by user, and `WearQueueFlusher` sends it on the next
-// launch, foreground or reconnect. `log_wear` is idempotent per client wear id, so a wear that did
-// reach the server before its answer was lost is never logged twice.
+// "I'll wear it" offline (docs/app.md#outfits-srcoutfits). `log_wear` is idempotent per client wear id,
+// so a wear that reached the server before its answer was lost is never logged twice.
+import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import { OCCASIONS } from '../closet/catalog';
-import { kvGet, kvSet } from '../lib/kv';
+import { kvGetJson, kvSet } from '../lib/kv';
 import type { RequestError, RequestResult } from '../lib/requestResult';
 import type { WearWithItems } from '../stats/wearsRepository';
 import type { LogWearInput } from './outfitRepository';
@@ -11,10 +10,6 @@ import type { LogWearInput } from './outfitRepository';
 /** The queue's kv key; its `<name>.<id>` shape lets the account cleanup clear and refuse it. */
 export function wearQueueKey(userId: string): string {
   return `wear.queue.${userId}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isInput(value: unknown): value is LogWearInput {
@@ -31,14 +26,7 @@ function isInput(value: unknown): value is LogWearInput {
 
 /** The queued wears, oldest first; an unreadable record reads as empty. */
 export function queuedWears(userId: string): LogWearInput[] {
-  const raw = kvGet(wearQueueKey(userId));
-  if (raw === null) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isInput) : [];
-  } catch {
-    return [];
-  }
+  return kvGetJson(wearQueueKey(userId), Array.isArray)?.filter(isInput) ?? [];
 }
 
 function writeQueue(userId: string, wears: readonly LogWearInput[]): void {
@@ -118,10 +106,7 @@ export type FlushResult = { sent: number; dropped: number; remaining: number };
 type FlushDeps = {
   /** `logWear`, passed in by `WearQueueFlusher` like the session check below. */
   send: (input: LogWearInput) => Promise<RequestResult>;
-  /**
-   * The stored session's user (`storedSessionUserId`); nothing is sent under another account's
-   * session.
-   */
+  /** The stored session's user (`storedSessionUserId`); nothing is sent under another account's session. */
   sessionUserId: () => string | null;
 };
 

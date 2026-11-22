@@ -7,9 +7,8 @@ import { useI18n } from '../i18n';
 import { garmentPhotoPath, signedPhotoUrls, type Garment } from './garmentRepository';
 
 /**
- * A signed URL for the garment's full photo, or null until it is signed (or if signing failed).
- * Signed again whenever `photo_version` changes: a replaced photo keeps its storage path, so only a
- * new signature (a new URL) gets past an HTTP or CDN cache that still holds the old photo.
+ * Null until signed (or if signing failed). Re-signed on each `photo_version`: a replaced photo keeps its
+ * path, so only a new URL gets past an HTTP or CDN cache of the old one.
  */
 function useFullPhotoUrl(g: Pick<Garment, 'id' | 'user_id' | 'photo_version'>): string | null {
   const path = garmentPhotoPath(g.user_id, g.id, 'full');
@@ -37,9 +36,8 @@ function useFullPhotoUrl(g: Pick<Garment, 'id' | 'user_id' | 'photo_version'>): 
 }
 
 /**
- * Mockup 02's `.garment`: the full cut-out photo over a transparency checkerboard. Cached by
- * `photo_version`, so a re-signed URL still hits the disk cache and a replaced photo never shows
- * the old one.
+ * The full photo over a checkerboard, cached by `photo_version`: a re-signed URL still hits the disk
+ * cache and a replaced photo never shows the old one.
  */
 export function GarmentPhoto({ garment }: { garment: Pick<Garment, 'id' | 'user_id' | 'photo_version'> }): React.JSX.Element {
   const { t } = useI18n();

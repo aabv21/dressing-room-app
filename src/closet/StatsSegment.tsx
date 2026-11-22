@@ -1,19 +1,16 @@
-// The Closet tab's Stats segment (mockup 04 screens 1–2, spec §3.6): period chips, four KPI
-// tiles, most worn, colors, closet balance and the unused-for-6-months list. Everything is
-// computed on the device from the closet and the wear history; nothing here costs AI.
+// The Closet tab's Stats segment, computed on the device from the closet and the wear history; no AI cost.
 import { Image } from 'expo-image';
 import { router, useIsFocused } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { useAuth } from '../auth/AuthProvider';
 import { formatWearCount, pluralKey, useI18n } from '../i18n';
 import type { RequestError } from '../lib/requestResult';
-import { localDate } from '../outfits/aiClient';
+import { localDate } from '../lib/localDate';
 import { pieceLabel } from '../outfits/outfitDisplay';
-import { addDays, daysBetween, periodRange, type Period } from '../stats/periods';
+import { addDays, daysBetween, periodRange, STREAK_HISTORY_DAYS, type Period } from '../stats/periods';
 import { colorShares, kpis, mostWorn, slotBalance, unusedSixMonths } from '../stats/statsModel';
-import { useWearHistory } from '../stats/useWearHistory';
+import { useWears } from '../stats/useWears';
 import type { WearWithItems } from '../stats/wearsRepository';
 import { HorizontalBars } from '../ui/charts/HorizontalBars';
 import { KpiTile } from '../ui/charts/KpiTile';
@@ -175,19 +172,21 @@ function UnusedRow({
   );
 }
 
-/**
- * The Stats segment's body, rendered under the Closet title and segment tabs. A color tap hands
- * `onColorSelect` the colors to filter Items by ("Other" stands for every color not shown).
- */
+/** A color tap hands `onColorSelect` the colors to filter Items by ("Other": every color not shown). */
 export function StatsSegment({ onColorSelect }: { onColorSelect: (filter: ColorFilter) => void }): React.JSX.Element {
   const { t, locale } = useI18n();
   const { garments, thumbUrls, replaceLocal } = useCloset();
   const focused = useIsFocused();
   const [period, setPeriod] = useState<Period>('month');
-  const { userId } = useAuth();
-  // Fetched once per focus: the streak needs a year back, which covers every period's range too,
-  // so a period switch only re-derives from the same history. Offline, the stored year shows.
-  const { today: historyDay, wears: history, offlineSince, failed: loadFailed } = useWearHistory(userId, focused);
+  // Fetched on focus: the streak needs a year back, which covers every period's range too, so a
+  // period switch only re-derives from the same history. Offline, the stored year shows.
+  const rangeEnd = localDate();
+  const {
+    today: historyDay,
+    wears: history,
+    offlineSince,
+    failed: loadFailed,
+  } = useWears(addDays(rangeEnd, -STREAK_HISTORY_DAYS), rangeEnd, { enabled: focused, record: 'replace' });
   // A pin tapped past midnight moves "today" forward before the next focus refetches.
   const [tapDay, setToday] = useState<string | null>(null);
   const today = tapDay !== null && tapDay > historyDay ? tapDay : historyDay;

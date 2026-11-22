@@ -7,6 +7,7 @@ import {
   cacheRead,
   consumeQuota,
   getLocalWeather,
+  isIsoDate,
   loadGarments,
   loadProfile,
   mapLimit,
@@ -96,6 +97,21 @@ describe('userIdFromJwt', () => {
     ['a payload that is an array', `Bearer ${token([USER_ID])}`],
   ])('%s → null', (_label, header) => {
     expect(userIdFromJwt(header)).toBeNull();
+  });
+});
+
+describe('isIsoDate', () => {
+  test('takes a real calendar date written YYYY-MM-DD', () => {
+    expect(isIsoDate('2026-11-08')).toBe(true);
+    expect(isIsoDate('0001-01-01')).toBe(true);
+  });
+
+  test.each([['2026-02-30'], ['2026-1-08'], ['20261108'], [20261108], [null]])('refuses %p', (value) => {
+    expect(isIsoDate(value)).toBe(false);
+  });
+
+  test('refuses year 0000, which Postgres has no date for', () => {
+    expect(isIsoDate('0000-12-31')).toBe(false);
   });
 });
 

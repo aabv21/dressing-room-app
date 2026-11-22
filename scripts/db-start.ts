@@ -1,17 +1,5 @@
-// scripts/db-start.ts
-//
-// `pnpm db:start` / `pnpm db:start:ci`: makes sure a local-only Apple test key exists, then runs
-// `supabase start` (extra arguments are passed through) with it in `LOCAL_APPLE_PRIVATE_KEY`, which
-// `supabase/config.toml` reads as `APPLE_PRIVATE_KEY = "env(LOCAL_APPLE_PRIVATE_KEY)"`.
-//
-// The key is a fresh P-256 key generated on this machine into gitignored `supabase/.temp/`, kept
-// across restarts, never committed and never registered with Apple: it only signs the client
-// secrets the local `apple-token` and `delete-account` functions send to integration/mockServices.ts,
-// and `integration/account.int.test.ts` reads the same file to verify them. Without it (a bare
-// `supabase start`), `APPLE_PRIVATE_KEY` stays unset and the functions skip Apple (`skipped`).
-//
-// Usage:
-//   node scripts/db-start.ts [supabase start flags…]
+// `pnpm db:start`: `supabase start` (extra arguments passed through) with a local-only Apple test key in
+// `LOCAL_APPLE_PRIVATE_KEY`, generated once into gitignored `supabase/.temp/` (docs/local-stack.md#mock-apple).
 
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
@@ -32,7 +20,6 @@ export function newLocalAppleKey(): string {
 export async function ensureLocalAppleKey(path: string = LOCAL_APPLE_KEY_PATH): Promise<string> {
   try {
     // `path` is this script's fixed key path, or a test's temp directory.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     const existing = (await readFile(path, 'utf8')).trim();
     if (existing !== '') return existing;
   } catch (error) {
@@ -41,9 +28,7 @@ export async function ensureLocalAppleKey(path: string = LOCAL_APPLE_KEY_PATH): 
     if (!missing) throw error;
   }
   const key = newLocalAppleKey();
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await mkdir(dirname(path), { recursive: true });
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await writeFile(path, `${key}\n`, { encoding: 'utf8', mode: 0o600 });
   return key;
 }
@@ -63,7 +48,6 @@ async function main(args: readonly string[]): Promise<void> {
   });
 }
 
-/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
 function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
   return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
 }

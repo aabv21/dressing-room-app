@@ -39,15 +39,12 @@ const FUNCTION_TIMEOUT_MS = 60_000;
 // `supabase/functions/export-data/handler.ts`).
 const EDGE_SUPABASE_URL = 'http://kong:8000';
 // Fixed paths next to this file, the repo's config and the start script's key file, never user input.
-// eslint-disable-next-line security/detect-non-literal-fs-filename
 const PHOTO = new Uint8Array(readFileSync(new URL('fixtures/garment.webp', import.meta.url)));
-// eslint-disable-next-line security/detect-non-literal-fs-filename
 const CONFIG_TOML = readFileSync(new URL('../supabase/config.toml', import.meta.url), 'utf8');
 
 /** The local Apple test key `scripts/db-start.ts` passed to the stack, as a PEM. */
 function localAppleKey(): string {
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     return readFileSync(LOCAL_APPLE_KEY_PATH, 'utf8').trim().replace(/\\n/g, '\n');
   } catch (error) {
     throw new Error(

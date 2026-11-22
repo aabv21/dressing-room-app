@@ -1,11 +1,5 @@
-// scripts/perf-fixtures.ts
-//
-// Generates and serves the performance fixtures used by the closet grid's fixture mode and the
-// on-device scroll-performance gate: 500 distinct 256x256 transparent WebP garment thumbnails.
-//
-// Usage:
-//   node scripts/perf-fixtures.ts generate [count=500]
-//   node scripts/perf-fixtures.ts serve [port=8787]
+// `pnpm perf:generate [count=500]` / `pnpm perf:serve [port=8787]`: the closet grid's fixture mode and scroll gate
+// fixtures, distinct 256x256 transparent WebP garment thumbnails.
 
 import { createServer } from 'node:http';
 import { mkdir, readFile } from 'node:fs/promises';
@@ -35,9 +29,7 @@ export function fixtureFileName(index: number): string {
   return `${String(index).padStart(4, '0')}.webp`;
 }
 
-// `restrict-template-expressions` flags bare numbers in template literals (it wants an explicit
-// string conversion at each interpolation site); `n` centralizes that conversion so the path and
-// pattern builders below read as plain arithmetic instead of a wall of `String(...)` calls.
+// `n` is the string conversion `restrict-template-expressions` wants, so the builders below read as arithmetic.
 function n(value: number): string {
   return String(value);
 }
@@ -94,9 +86,8 @@ export function fixtureSvg(spec: FixtureSpec, size = 256): string {
 }
 
 /**
- * The fixture file a request asks for: only `/perf/NNNN.webp` (1–9999) matches, and the path is built
- * from that number, never from the request's text, so no request can name another file (a `..`, an
- * encoded escape or a link) under or outside `root`. Null for anything else.
+ * The fixture file a request asks for, or null: only `/perf/NNNN.webp` (1–9999) matches, and the path is built
+ * from that number, never the request's text, so no request can name another file (`..`, an escape, a link).
  */
 export function fixtureFileFor(root: string, urlPath: string): string | null {
   const match = /^\/perf\/(\d{4})\.webp$/.exec(urlPath);
@@ -111,16 +102,13 @@ const DEFAULT_PORT = 8787;
 const DEFAULT_SIZE = 256;
 
 function repoRoot(): string {
-  // scripts/perf-fixtures.ts -> repo root is one directory up.
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }
 
 async function generate(count: number): Promise<void> {
-  // Imported dynamically so the test suite and the `serve` command never load sharp's native
-  // binding.
+  // Imported dynamically so the tests and `serve` never load sharp's native binding.
   const sharp = (await import('sharp')).default;
   const outDir = join(repoRoot(), FIXTURES_DIR, FIXTURES_SUBDIR);
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- the repo's own `.perf-fixtures` folder, built from the repo root
   await mkdir(outDir, { recursive: true });
   for (let i = 1; i <= count; i += 1) {
     const svg = fixtureSvg(fixtureSpec(i), DEFAULT_SIZE);
@@ -159,7 +147,7 @@ function serve(port: number): void {
       res.end();
       return;
     }
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- built by fixtureFileFor from a number, never from the request's text
+    // Built by fixtureFileFor from a number, never from the request's text.
     readFile(file)
       .then((data) => {
         res.writeHead(200, {
@@ -201,7 +189,6 @@ async function main(): Promise<void> {
   process.exitCode = 1;
 }
 
-/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
 export function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
   return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
 }

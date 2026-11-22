@@ -27,17 +27,9 @@ function useMounted(): { readonly current: boolean } {
 }
 
 /**
- * The Profile tab's Privacy actions. One flow at a time: from the moment an export starts or the
- * first delete confirm opens until it ends (or is cancelled), a second tap on either does nothing.
- *
- * "Export my data": the share sheet must be available; then the `export-data` document replaces
- * any earlier export in the cache directory as `dressing-room-export-YYYY-MM-DD.json` and goes to
- * the share sheet. A failure of the function, the file or the share sheet shows one message.
- *
- * "Delete account": two confirms, then `runDeletion` (see `deletionFlow.ts`). A deletion lands on
- * Welcome; `reauth` shows its message in an Alert, since the local sign-out takes this screen
- * away (unless another account has signed in by then); any other failure keeps the user here
- * with a message. Profile's Sign out stays disabled while either flow is busy.
+ * One flow at a time, from an export's start or the first delete confirm until it ends or is cancelled.
+ * Any export failure (function, file or share sheet) shows one message; `reauth` shows an Alert, since
+ * the local sign-out takes this screen away; other deletion failures stay here with a message.
  */
 export function usePrivacyActions(): { exporting: Action; deleting: Action } {
   const { t } = useI18n();

@@ -24,10 +24,8 @@ import { ChipGroup } from '../../ui/ChipGroup';
 import { Screen, ScreenTitle, useScreenContentInsets } from '../../ui/Screen';
 import { colors, layout, radii, spacing } from '../../ui/theme';
 
-// NOTE: fixture mode is temporary, gated behind `EXPO_PUBLIC_PERF_FIXTURES_URL`, and goes away once
-// real garments arrive from Supabase. The env var is set only for the on-device performance gate
-// build and never carries a secret — it's just a LAN URL to the fixture server started by
-// `pnpm perf:serve`. An empty value counts as unset.
+// NOTE: fixture mode is temporary (perf-gate builds only; the env var is a LAN URL to `pnpm perf:serve`,
+// never a secret; empty = unset); upgrade path: remove it once the gate runs on real Supabase garments.
 function perfFixturesUrl(): string | undefined {
   const url = process.env.EXPO_PUBLIC_PERF_FIXTURES_URL;
   return url ? url : undefined;
@@ -57,8 +55,7 @@ function PerfFixtureCloset({ baseUrl }: { baseUrl: string }): React.JSX.Element 
     [insets.top, insets.bottom],
   );
 
-  // Mockup 02's anchored CTA, disabled in fixture mode. It makes the gate screen representative:
-  // the CTA's fade sits over the scrolling grid as it does in the real closet.
+  // Disabled, but its fade sits over the scrolling grid as in the real closet, so the gate is representative.
   const cta = useMemo<React.ComponentProps<typeof AnchoredCta>>(
     () => ({
       secondary: { label: t('closet.gallery'), tone: 'ghost', icon: ImageIcon, onPress: noop, disabled: true },
@@ -103,7 +100,6 @@ type Segment = 'items' | 'stats' | 'diary';
 const SEGMENTS: readonly Segment[] = ['items', 'stats', 'diary'];
 const OTHER_SWATCH = '#d4d0dc';
 
-/** Mockup 04's segment pills under the Closet title. */
 function ClosetTabs({ value, onChange }: { value: Segment; onChange: (next: Segment) => void }): React.JSX.Element {
   const { t } = useI18n();
   const options = useMemo(() => SEGMENTS.map((segment) => ({ value: segment, label: t(`closet.segment.${segment}`) })), [t]);
@@ -146,8 +142,7 @@ function ItemsSegment({
   const [filter, setFilter] = useState<Slot | 'all'>('all');
   const [category, setCategory] = useState<GarmentCategory | 'all'>('all');
 
-  // A pending garment joins the review queue once it turns stale (10 minutes), so the clock
-  // ticks the banner forward even when the list itself doesn't change.
+  // A pending garment joins the review queue once stale (10 minutes), so the clock ticks the banner.
   const now = useNow(CLOCK_TICK_MS);
   const reviewCount = useMemo(() => reviewQueue(garments, now).length, [garments, now]);
 
@@ -163,7 +158,7 @@ function ItemsSegment({
   const counts = useMemo(() => new Map(Object.entries(slotCounts(visible))), [visible]);
   // A filter whose slot just emptied (e.g. its last garment was deleted) falls back to everything.
   const activeFilter = filter !== 'all' && !counts.has(filter) ? 'all' : filter;
-  // The categories in the chosen slot, in catalog order; a chosen one that just emptied falls back to all.
+  // In catalog order; a chosen category that just emptied falls back to all.
   const categories = useMemo(() => {
     const present = categoryCounts(visible, activeFilter);
     return GARMENT_CATEGORIES.filter((value) => present.has(value));
@@ -242,7 +237,7 @@ function ItemsSegment({
       {reviewCount > 0 ? <ReviewBanner count={reviewCount} /> : null}
       {colorFilter === null ? null : <ColorFilterChip filter={colorFilter} onClear={onClearColor} />}
       {activeCount > 0 ? (
-        // One row that scrolls sideways, as in mockup 02, rather than wrapping under the header.
+        // One row that scrolls sideways rather than wrapping under the header.
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -318,7 +313,7 @@ function ItemsSegment({
   );
 }
 
-/** Mockup 04: the Closet tab's Items | Stats | Diary segments, each under the same title and pills. */
+/** Items | Stats | Diary, each under the same title and pills. */
 function RealCloset(): React.JSX.Element {
   const { t } = useI18n();
   const focused = useIsFocused();
@@ -387,13 +382,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  // Bleeds to the screen edges so chips scroll out under them, while the first chip still lines up
-  // with the title. The vertical padding keeps the chips' 44 pt hitSlop inside the scroll view,
-  // which would otherwise clip touches to the 36 pt chip.
   loading: {
     alignSelf: 'center',
     marginVertical: spacing.lg,
   },
+  // Bleeds to the screen edges with the first chip still aligned to the title; the vertical padding
+  // keeps the chips' 44 pt hitSlop inside the scroll view, which would clip touches to the 36 pt chip.
   chipRow: {
     marginHorizontal: -spacing.md,
     marginVertical: -CHIP_SLOP,

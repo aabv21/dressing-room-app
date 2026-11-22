@@ -1,10 +1,5 @@
-// integration/expo-file-system.stub.ts
-//
-// Stands in for `expo-file-system` under the `integration` Jest project (see jest.config.ts's
-// `moduleNameMapper`): `src/closet/garmentRepository.ts` imports `File` for
-// `uploadGarmentPhoto`, and the real module needs Expo's native runtime, which plain Node lacks.
-// Integration tests upload through `uploadGarmentPhotoBytes` instead (the unit tests cover the
-// file read), so constructing a `File` here means a test took the wrong path: fail loudly.
+// Mapped over `expo-file-system` for the `integration` project (no native runtime): tests upload through
+// `uploadGarmentPhotoBytes`, so constructing a `File` means a test took the wrong path.
 
 export function File(): never {
   throw new Error(

@@ -1,19 +1,30 @@
 import Storage from 'expo-sqlite/kv-store';
 
-/**
- * Synchronous key-value storage backed by `expo-sqlite/kv-store`'s SQLite-backed store. These
- * functions are the only intended callers of `expo-sqlite/kv-store` in this app — anything
- * that needs on-device persistence of small values (e.g. the locale preference) should go through
- * them rather than importing the store directly.
- */
+/** The app's only `expo-sqlite/kv-store` caller: small on-device values go through these. */
 
 export function kvGet(key: string): string | null {
   return Storage.getItemSync(key);
 }
 
-// Accounts whose device data was dropped (a deletion). A write to a key with one of their ids as
-// a dot-separated segment is refused, so a request that resolves after the cleanup (a closet
-// re-sign, For you, the lucky list, a logged wear) can't bring that data back.
+/** `raw` parsed as JSON when it passes `guard`; null when absent, unreadable or of another shape. */
+export function parseJson<T>(raw: string | null, guard: (value: unknown) => value is T): T | null {
+  if (raw === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  return guard(value) ? value : null;
+}
+
+/** The value stored under `key`, read like `parseJson`. */
+export function kvGetJson<T>(key: string, guard: (value: unknown) => value is T): T | null {
+  return parseJson(kvGet(key), guard);
+}
+
+// Accounts whose data was dropped (a deletion): a key with their id as a segment is refused, so a
+// request resolving after the cleanup (a closet re-sign, For you, a logged wear) can't bring it back.
 const refusedUsers = new Set<string>();
 // Single keys refused after an explicit sign-out (an account's display caches), so a request that
 // resolves after the sign-out can't write them back for the next person on the phone.
@@ -35,9 +46,8 @@ export function refuseKeys(keys: readonly string[]): void {
 }
 
 /**
- * Refuses every later per-user write for `userId` (keys named `<name>.<userId>[.<more>]`, and the
- * writers that check `kvUserRefused`) until `allowUserKeys`. NOTE: kept in memory, so it lasts the
- * process: a deleted account can't sign in again, and the cleanup already removed what it had.
+ * Refuses `<name>.<userId>[.<more>]` writes (and `kvUserRefused` checkers) until `allowUserKeys`.
+ * NOTE: in memory, so it lasts the process: enough, since a deleted account can't sign in again.
  */
 export function refuseUserKeys(userId: string): void {
   refusedUsers.add(userId);

@@ -1,6 +1,5 @@
 /** @jest-environment node */
 // scripts/__tests__/backup.test.ts
-/* eslint-disable security/detect-non-literal-fs-filename -- every path is under this test's own mkdtemp folder. */
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

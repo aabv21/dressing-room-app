@@ -13,7 +13,7 @@ import { isRecord } from '../../supabase/functions/_shared/guards.ts';
 import type { DataExport } from '../../supabase/functions/export-data/handler.ts';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';
-import { localDate } from '../outfits/aiClient';
+import { localDate } from '../lib/localDate';
 
 export type { DataExport };
 
@@ -24,9 +24,8 @@ export type AccountError = 'network' | 'unknown';
 export type AccountFailure = { ok: false; error: AccountError };
 
 /**
- * `deleteAccount`'s failures: `reauth` means this device's session can't make or confirm the
- * deletion (no session, or a 401 Auth doesn't explain as a deleted user), so the user must sign in
- * again and retry, which then gets a definite answer.
+ * `reauth`: this session can't make or confirm the deletion (no session, or a 401 Auth doesn't explain
+ * as a deleted user), so the user signs in again and retries for a definite answer.
  */
 export type DeleteFailure = { ok: false; error: AccountError | 'reauth' };
 
@@ -58,12 +57,8 @@ async function tokenUser(client: Client, session: SessionToken): Promise<'gone' 
 }
 
 /**
- * Deletes the signed-in account. `ok` only when the function answers `{ outcome: 'deleted' }`, or
- * when it answers 401 and Auth says `user_not_found` for the very token that was sent (a retry
- * after a lost 200, while that token is still unexpired). The token is read once and sent
- * explicitly, so the 401 and the Auth check are about the same token. Every other 401, and a
- * device with no session, is `reauth`: a revoked session or refresh token doesn't mean the account
- * is gone. Never throws.
+ * Which answers count as deleted: docs/app.md#account-deletion-on-the-device. The token is read once
+ * and sent explicitly, so a 401 and the Auth check are about the same token. Never throws.
  */
 export async function deleteAccount(client: Client = supabase): Promise<{ ok: true } | DeleteFailure> {
   try {
@@ -98,10 +93,8 @@ export async function deleteAccount(client: Client = supabase): Promise<{ ok: tr
 }
 
 /**
- * Checks, without deleting anything, whether `userId`'s account still exists, for a deletion whose
- * answer never arrived: `gone` when Auth answers `user_not_found` to this session's token, `exists`
- * when it returns this same user, `unknown` for anything else (no session, another user's session,
- * Auth unreachable, an expired token). Never throws.
+ * Verify only, for a deletion whose answer never arrived: `gone` on `user_not_found`, `exists` for this
+ * same user, `unknown` otherwise (no session, another user, Auth unreachable, an expired token). Never throws.
  */
 export async function verifyAccount(userId: string, client: Client = supabase): Promise<'gone' | 'exists' | 'unknown'> {
   try {

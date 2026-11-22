@@ -1,6 +1,5 @@
-// Mockup 01's stacked outfit (screen 1's `.item` rows): each piece's thumbnail, short label and
-// wear count, outerwear first and shoes last. Rendered by Today's lucky card and the rate screen;
-// the caller provides the surrounding card.
+// The stacked outfit for Today's card and the rating: each piece's thumbnail, label and wear count,
+// outerwear first. The caller provides the surrounding card.
 import { Image } from 'expo-image';
 import { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';

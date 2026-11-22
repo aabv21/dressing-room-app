@@ -1,17 +1,5 @@
-// The `apple-token` Edge Function's request handler. Right after Sign in with Apple the app sends
-// the credential's one-time `authorizationCode`; this exchanges it at Apple's `/auth/token` for a
-// refresh token and stores it in `public.apple_tokens` (service role), so `delete-account` can
-// revoke it. `signInWithIdToken` keeps no Apple refresh token, which is why this exists.
-// Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
-// `index.ts` serves it under Deno.
-//
-// The token is bound to the caller: it's stored only when the exchange's id_token (issued by Apple
-// for this app) names the Apple user linked to the caller's account (`auth.identities`, read with the
-// service role). Otherwise nothing is stored and the new token is revoked, best effort, so a code
-// from someone else's sign-in can't park their token under this account.
-//
-// The app fires this and forgets it, so everything past the caller check answers 200 with an
-// outcome word. The response and the logs never carry the code, the token or the Apple user id.
+// Stores the caller's own Apple refresh token for `delete-account` (docs/database.md, "Account deletion and
+// data export"). Past the caller check it answers 200; never returns or logs the code, token or Apple id.
 
 import { type AppleTokens, exchangeCode, revokeToken } from '../_shared/apple.ts';
 import type { AppleEnv, SupabaseEnv } from '../_shared/env.ts';

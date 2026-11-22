@@ -13,33 +13,18 @@ import { quietDevToastsForE2e } from '../lib/e2eLaunch';
 import { OnboardingArrivalContext } from '../ui/onboardingArrival';
 import { colors } from '../ui/theme';
 
-// Keeps the native splash screen up while `AuthProvider`'s first `onAuthStateChange` event (and,
-// for a signed-in user, its profile load) is still pending, so the app never flashes an
-// intermediate route before the guards below know which group to show.
+// The splash stays up until `AuthProvider` first settles (auth event, then the profile when signed
+// in), so no intermediate route flashes before the guards know which group to show.
 void SplashScreen.preventAutoHideAsync();
 quietDevToastsForE2e();
 
 type Settled = { status: 'signedOut' | 'signedIn'; onboardingComplete: boolean; userId: string | null };
 
-/**
- * `status` returns to `'loading'` on every user change, not just the app's first launch (see
- * `AuthProvider`'s `userChanged` branch) — e.g. the moment `signInWithEmail` succeeds and GoTrue's
- * session lands, before `loadProfile` resolves. Returning `null` for every `'loading'` would
- * unmount the entire navigator on each sign-in, blanking the screen the user was just looking at
- * mid-request. Only the *first* settle (before anything has ever rendered) hides behind `null` +
- * the native splash; every `'loading'` after that keeps rendering the *last settled* guard
- * combination (so `(auth)` or `(onboarding)`/`(tabs)` stays mounted, not a blank `<Stack>` with
- * every `Stack.Protected` false) and overlays a small busy indicator.
- *
- * Finishing onboarding (the same account going from incomplete to complete) lands on the Closet,
- * where the first goal is adding favorites; every other way into the tabs opens on Today.
- *
- * `lastSettled` is `useState`, not a ref: it's read during render to decide what to show, and a
- * ref's `.current` may not reflect the value actually committed for this render (React's
- * react-hooks/refs rule flags exactly that read-during-render pattern). Setting state during
- * render like this is React's own sanctioned way to derive state from a prop/context change
- * without an extra render round-trip — see https://react.dev/reference/react/useState#storing-information-from-previous-renders.
- */
+// `status` goes back to `'loading'` on every user change (e.g. right after sign-in, before the profile
+// loads); unmounting the navigator then would blank the screen mid-request, so only the first load
+// renders `null` (behind the splash) and later ones keep the last settled guards under a busy overlay.
+// Finishing onboarding lands on the Closet (first goal: favorites); every other way in opens on Today.
+// `lastSettled` is state set during render, not a ref: it's read during render (react-hooks/refs).
 function Guards() {
   const { status, userId, onboardingComplete } = useAuth();
   const [lastSettled, setLastSettled] = useState<Settled | null>(null);
@@ -79,8 +64,7 @@ function Guards() {
   } else if (lastSettled !== null) {
     active = lastSettled;
   } else {
-    // First-ever render, still loading: nothing has settled yet, so there's no guard tree to
-    // show — the native splash screen stays up instead (see the module-level `preventAutoHideAsync`).
+    // First-ever load: no guards have settled yet, so the splash stays up.
     return null;
   }
 
@@ -94,14 +78,12 @@ function Guards() {
       </Stack.Protected>
       <Stack.Protected guard={active.status === 'signedIn' && active.onboardingComplete}>
         <Stack.Screen name="(tabs)" />
-        {/* Closet screens without the tab bar, pushed over the tabs. The camera is a
-            full-screen modal, matching mockup 02 screen 2 having no tab bar or back header of its
-            own; review (screen 3) and the garment detail are plain pushes, so the back gesture returns
-            to the closet. */}
+        {/* Closet screens without the tab bar. The camera is a full-screen modal; review and the
+            garment detail are plain pushes, so the back gesture returns to the closet. */}
         <Stack.Screen name="camera" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="review" />
         <Stack.Screen name="garment/[id]" />
-        {/* Mockup 01 screen 3, pushed from Today and Build with the outfit's garment ids. */}
+        {/* The rating, pushed from Today and Build with the outfit's garment ids. */}
         <Stack.Screen name="rate" />
         {/* Today's city: a sheet over the tabs, so closing it lands back on Today. */}
         <Stack.Screen name="city" options={{ presentation: 'modal' }} />

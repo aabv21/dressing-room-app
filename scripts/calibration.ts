@@ -1,7 +1,5 @@
-// The Jev calibration math: how well the composite score agrees with hand labels (Spearman's ρ and
-// band accuracy), and the weights, bands and confidence aggregate that agree best. Pure: no files,
-// no network. `scripts/calibrate.ts` is the CLI around it; `docs/ai.md`'s "Calibration" explains
-// the workflow.
+// The Jev calibration math, pure (no files, no network): agreement with hand labels and the config that
+// agrees best. `scripts/calibrate.ts` is the CLI; the method: docs/ai.md#calibration.
 
 import {
   type ConfidenceAggregate,
@@ -53,11 +51,8 @@ export type CalibrationError = { error: 'not_enough_data' | 'missing_answers'; d
 export const MIN_LABELED = 10;
 
 /**
- * Dimensions the weight search never moves. Calibration outfits carry no weather, so `weather_fit`
- * is always the neutral 0.5 and its weight can't be learned from them.
- * NOTE: weather's weight stays untuned; ceiling: it keeps the hand-set value; upgrade path: label
- * outfits rated with known weather and unfreeze it. The `min` confidence aggregate still includes
- * `weather_fit`'s confidence, as production computes it.
+ * Never moved by the weight search: calibration outfits carry no weather, so `weather_fit` is always 0.5.
+ * NOTE: weather's weight stays hand-set (untuned); upgrade path: label outfits rated with known weather, unfreeze it.
  */
 export const FROZEN_DIMENSIONS: readonly RatingDimension[] = ['weather_fit'];
 
@@ -89,10 +84,7 @@ function ranks(values: readonly number[]): number[] {
   return values.map((value) => (first.get(value) ?? 0) + ((count.get(value) ?? 1) + 1) / 2);
 }
 
-/**
- * Spearman's ρ: the Pearson correlation of the average ranks. Null when it is undefined: fewer than
- * 2 pairs, or either side constant.
- */
+/** Spearman's ρ: the Pearson correlation of the average ranks; null with fewer than 2 pairs or a constant side. */
 export function spearman(xs: readonly number[], ys: readonly number[]): number | null {
   if (xs.length !== ys.length || xs.length < 2) return null;
   const rx = ranks(xs);
@@ -186,12 +178,8 @@ const toWeights = (units: ReadonlyMap<RatingDimension, number>): Weights =>
   Object.fromEntries(RATING_DIMENSIONS.map((dimension) => [dimension, (units.get(dimension) ?? 0) / UNITS])) as Weights;
 
 /**
- * Coordinate descent over the weights on the 0.05 grid, starting from `config.weights`, with the
- * `FROZEN_DIMENSIONS` held at their weight (moves happen among the other 7, so the sum stays 1).
- * For each dimension in `RATING_DIMENSIONS` order, it takes the best single move of 0.05 to or from
- * that dimension (another dimension on the other side), if it raises ρ, or keeps ρ and raises band
- * accuracy under `config.bands`. Sweeps repeat until one changes nothing. Every move strictly
- * improves (ρ, accuracy), so it terminates, and it is deterministic.
+ * Coordinate descent over the weights on the 0.05 grid from `config.weights`, `FROZEN_DIMENSIONS` held; the
+ * moves: docs/ai.md#calibration. Every move strictly improves (ρ, accuracy), so it terminates, deterministically.
  */
 export function searchWeights(
   samples: readonly Sample[],
@@ -233,10 +221,9 @@ export function searchWeights(
 }
 
 /**
- * The integer `good` and `fair` thresholds (0 < fair < good ≤ 100) with the best band accuracy for
- * these scores. Ties go to the smallest |good − current good| + |fair − current fair|, then to the
- * lower `good`, then the lower `fair`. `great` isn't labeled, so it stays, unless `good` reaches it:
- * then it becomes `good + 1` (at most 100), so the `good` band never vanishes.
+ * The integer `good` and `fair` (0 < fair < good ≤ 100) with the best band accuracy; ties go to the smallest
+ * |Δgood| + |Δfair|, then lower `good`, then lower `fair`. `great` stays unless `good` reaches it: then it
+ * becomes `good + 1` (at most 100), so the `good` band never vanishes.
  */
 export function searchBands(samples: readonly { label: Label; score: number }[], current: RatingBands): RatingBands {
   const scores = samples.map(({ score }) => score);
@@ -253,10 +240,7 @@ export function searchBands(samples: readonly { label: Label; score: number }[],
   return { great: Math.min(100, Math.max(current.great, best.good + 1)), good: best.good, fair: best.fair };
 }
 
-/**
- * Spearman's ρ between each outfit's confidence (under `aggregate`) and whether its score fell in
- * the labeled band (1/0). A useful confidence is high where the score is right.
- */
+/** ρ between confidence under `aggregate` and band correctness (1/0): a useful confidence is high where it's right. */
 function confidenceSpearman(samples: readonly Sample[], config: RatingConfig, aggregate: ConfidenceAggregate): number | null {
   const withAggregate = { ...config, confidenceAggregate: aggregate };
   const confidences: number[] = [];
@@ -276,9 +260,8 @@ function countBy(values: readonly string[]): Record<string, number> {
 }
 
 /**
- * Agreement between `config`'s composite score and the hand labels, and the suggested weights,
- * bands and confidence aggregate. Refuses fewer than `MIN_LABELED` outfits or a single distinct
- * label (`not_enough_data`), and a labeled outfit with no answer (`missing_answers`).
+ * Agreement between `config`'s score and the hand labels, plus the suggested weights, bands and aggregate.
+ * Refuses fewer than `MIN_LABELED` outfits or one distinct label (`not_enough_data`), and a missing answer.
  */
 export function evaluate(
   labeled: readonly LabeledOutfit[],

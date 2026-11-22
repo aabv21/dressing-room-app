@@ -23,8 +23,8 @@ jest.mock('../auth/AuthProvider', () => ({
 
 jest.mock('../outfits/aiClient', () => ({
   fetchForYou: jest.fn(),
-  localDate: () => '2026-11-20',
 }));
+jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-20' }));
 
 const mockedFetch = jest.mocked(fetchForYou);
 const mockedPush = jest.mocked(router.push);

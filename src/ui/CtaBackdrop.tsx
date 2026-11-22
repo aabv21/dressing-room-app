@@ -4,11 +4,9 @@ import { useBottomChrome } from './layout';
 import { gradients } from './theme';
 
 /**
- * Mockup 02's `.cta.nobar` fade reaches the screen's bottom edge. On a `chrome="none"` screen,
- * AnchoredCta's zone ends `ctaBottom` above it, so content scrolling under the buttons would show
- * through that strip; this fills it with the background's last color. `Screen` renders it for a
- * `chrome="none"` screen with a CTA; a screen with its own layout renders it just before the
- * AnchoredCta.
+ * On a `chrome="none"` screen the CTA zone ends `ctaBottom` above the bottom edge, so content would
+ * show through that strip; this fills it. `Screen` renders it; a screen with its own layout renders it
+ * just before the AnchoredCta.
  */
 export function CtaBackdrop(): React.JSX.Element {
   const { ctaBottom } = useBottomChrome('none');

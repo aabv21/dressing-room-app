@@ -1,6 +1,3 @@
-// Pure display helpers for a built or rated outfit: the slot order pieces render in, a garment's
-// short label, and the Today screen's weather line.
-
 import { CATEGORY_SLOT, type GarmentCategory, type GarmentColor, type Slot } from '../closet/catalog';
 import { translate, type Locale, type MessageKey } from '../i18n';
 import type { ForYouCard, WeatherSummary } from './types';
@@ -26,7 +23,7 @@ function rankOf(category: GarmentCategory | null): number {
   return SLOT_RANK.get(CATEGORY_SLOT[category]) ?? SLOT_ORDER.length;
 }
 
-/** Sorts pieces into display order (`SLOT_ORDER`); a stable sort, so same-slot pieces keep their input order. */
+/** A stable sort into `SLOT_ORDER`, so same-slot pieces keep their input order. */
 export function orderPieces<T extends { category: GarmentCategory | null }>(pieces: readonly T[]): T[] {
   return pieces
     .map((piece, index) => ({ piece, index }))
@@ -46,9 +43,10 @@ export function pieceLabel(
   return firstColor === undefined ? categoryLabel : `${categoryLabel} · ${t(`garment.color.${firstColor}`)}`;
 }
 
-function capitalize(word: string): string {
-  const [first, ...rest] = word;
-  return first === undefined ? word : first.toLocaleUpperCase() + rest.join('');
+/** For a weekday or month name opening a label. */
+export function capitalize(text: string): string {
+  const [first, ...rest] = text;
+  return first === undefined ? text : first.toLocaleUpperCase() + rest.join('');
 }
 
 /** The capitalized weekday, e.g. "Martes": Today's header always names the day. */
@@ -65,11 +63,7 @@ export function formatWeather(weather: WeatherSummary | null, locale: Locale, no
   return `${weekday} · ${String(Math.round(weather.tempC))} °C, ${condition}`;
 }
 
-/**
- * The first For you idea for the outfit's weakest slot (mockup 01 screen 3's "Un cinturón camel lo
- * mejoraría"): the rating screen names it after "Missing something?". Taken from the stored For you
- * answer, so it costs no model call; null when there's none for that slot.
- */
+/** The first stored For you idea for the weakest slot, named after "Missing something?" (no model call). */
 export function missingPieceIdea(ideas: readonly ForYouCard[], weakestSlot: Slot | null): ForYouCard | null {
   if (weakestSlot === null) return null;
   return ideas.find((idea) => CATEGORY_SLOT[idea.category] === weakestSlot) ?? null;

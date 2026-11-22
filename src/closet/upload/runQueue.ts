@@ -3,13 +3,8 @@ import { listQueue, removeItem, saveItem, type QueueItem } from './queueStore';
 
 export { PermanentUploadError };
 
-/**
- * Drives queued garment photos through capture → prepare → upload → commit, resumably: each
- * stage is persisted before the next starts, so an app kill or lost connection only ever repeats
- * the stage that was interrupted, never an earlier one, and never leaves two copies of the same
- * garment. `queueStore.ts` only persists items; this module decides what runs next and how
- * failures back off.
- */
+// Drives queued photos through prepare → upload → commit. Each stage is persisted before the next, so
+// a kill or lost connection repeats only the interrupted stage and never duplicates a garment.
 
 export type QueueSteps = {
   prepare(sourceUri: string): Promise<{ fullUri: string; thumbUri: string }>;
@@ -41,13 +36,8 @@ export type RunQueueResult = { committed: number; failed: number; waiting: numbe
 const inFlight = new Map<string, Promise<RunQueueResult>>();
 
 /**
- * Set when a call to `runQueue` arrives while a pass for that user is already running. Without
- * this, an item enqueued mid-pass (e.g. from the camera screen while a previous batch is still
- * uploading) would sit until some later, unrelated trigger called `runQueue` again — the running
- * pass took its item list once, up front, and never looks again. Checked (and cleared) after each
- * sweep through `due`; set, it starts another sweep inside the same shared promise instead of
- * resolving, so the overlapping caller's own `await runQueue(...)` only settles once its item has
- * actually been attempted.
+ * Set when `runQueue` is called mid-pass: the running pass read its items once, up front, so it sweeps
+ * again inside the same shared promise and the overlapping caller settles only once its item was tried.
  */
 const rerunRequested = new Set<string>();
 
@@ -55,10 +45,8 @@ const rerunRequested = new Set<string>();
 const paused = new Set<string>();
 
 /**
- * Pauses `userId`'s queue and resolves once a pass already running has stopped. A stage in flight
- * finishes, but nothing after it starts (no upload, no commit, no next item), so once this
- * resolves nothing more of this user's reaches the server until `resumeQueue`. Account deletion
- * uses it so no photo lands after the server has listed the user's storage.
+ * Resolves once a running pass has stopped: a stage in flight finishes but nothing after it starts, so
+ * no photo lands after account deletion's server listing until `resumeQueue`.
  */
 export async function pauseQueue(userId: string): Promise<void> {
   paused.add(userId);
@@ -161,16 +149,9 @@ async function runQueuePass(
 }
 
 /**
- * Advances one item through every remaining stage. Returns whether it committed, failed for good,
- * failed but will retry after its backoff, or was stopped by `pauseQueue` between two stages (its row keeps the last stage reached and its
- * attempts, due at once).
- *
- * Each call is one attempt, and it is claimed (persisted as `attempts + 1` with its backoff)
- * before any stage runs: a native crash or OOM in `prepare`, or a kill mid-upload, never reaches
- * the `catch`, so without the claim the next launch would re-run the same item forever. Every stage
- * save carries the claimed values forward, so one claim covers all three stages; a run that
- * succeeds removes the item, so its claim never costs a later run anything, and a run that fails
- * normally counts exactly once (the `catch` reuses the claim instead of adding another).
+ * One attempt through the remaining stages, claimed (`attempts + 1` with its backoff) before any stage
+ * runs: a native crash, OOM or kill never reaches the `catch`, so without the claim the item would rerun
+ * forever. Every stage save carries the claim forward and the `catch` reuses it, so a failure counts once.
  */
 async function advanceToCommit(
   item: QueueItem,
@@ -179,8 +160,7 @@ async function advanceToCommit(
   now: () => number,
   stopped: () => boolean,
 ): Promise<'committed' | 'failed' | 'retry' | 'stopped'> {
-  // Only a crashed run can leave an item at the limit without `failed` set: give up instead of
-  // running it a ninth time.
+  // Only a crashed run leaves an item at the limit without `failed`: give up instead of a ninth run.
   if (item.attempts >= MAX_ATTEMPTS) {
     store.saveItem({ ...item, failed: true });
     return 'failed';
@@ -188,8 +168,7 @@ async function advanceToCommit(
   const attempts = item.attempts + 1;
   let current: QueueItem = { ...item, attempts, nextAttemptAt: now() + backoffMs(attempts) };
   store.saveItem(current);
-  // A pause isn't a failure: the item keeps its stage, gives back the claimed attempt and is due
-  // again as soon as the queue runs.
+  // A pause isn't a failure: the item keeps its stage, gives back the attempt and is due at once.
   const stop = (): 'stopped' => {
     store.saveItem({ ...current, attempts: item.attempts, nextAttemptAt: 0 });
     return 'stopped';

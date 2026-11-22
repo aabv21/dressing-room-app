@@ -1,4 +1,3 @@
-// Deno entry point for `for-you`; the logic is in `handler.ts`.
 import { readEnv } from '../_shared/env.ts';
 import { handleForYou } from './handler.ts';
 

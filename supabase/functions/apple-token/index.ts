@@ -1,4 +1,3 @@
-// Deno entry point for `apple-token`; the logic is in `handler.ts`.
 import { appleEnvFrom, readEnv } from '../_shared/env.ts';
 import { handleAppleToken } from './handler.ts';
 

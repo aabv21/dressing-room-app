@@ -26,6 +26,14 @@ jest.mock('../../profile/profileRepository', () => ({
   saveProfile: (userId: string, patch: { language: 'en' | 'es' | null }) => mockSaveProfile(userId, patch),
 }));
 
+// The latest callback AuthProvider passed to `useOnResume`; a test calls it as a foreground or reconnect.
+let mockOnResume: () => void = () => undefined;
+jest.mock('../../lib/useOnResume', () => ({
+  useOnResume: (callback: () => void) => {
+    mockOnResume = callback;
+  },
+}));
+
 import { I18nProvider, useLocalePreference } from '../../i18n/I18nProvider';
 import { allowUserKeys, kvGet, kvRemove, kvSet } from '../../lib/kv';
 import { AuthProvider, useAuth } from '../AuthProvider';
@@ -704,5 +712,164 @@ describe('an account deletion under way when the session ends', () => {
     expect(kvGet(`closet.v1.${DELETED}`)).toBeNull();
     expect(kvGet('account.deleting.user-2')).toBe('deleting');
     kvRemove('account.deleting.user-2');
+  });
+});
+
+describe('the profile, read once for the app', () => {
+  const signIn = async (userId = 'user-1') => {
+    const hook = await renderHook(() => useAuth(), { wrapper });
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: userId } });
+    });
+    return hook;
+  };
+
+  test('exposes the profile read at sign-in', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: '2026-01-01T00:00:00Z', language: 'en' });
+
+    const { result } = await signIn();
+
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+    expect(result.current.profile).toEqual({ onboarding_completed_at: '2026-01-01T00:00:00Z', language: 'en' });
+  });
+
+  test('no row reads as an empty profile', async () => {
+    const { result } = await signIn();
+
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+    expect(result.current.profile).toEqual({});
+  });
+
+  test('a failed first read is an error with no profile, until a refresh succeeds', async () => {
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('error');
+    });
+    expect(result.current.profile).toBeNull();
+
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null });
+    await act(async () => {
+      await result.current.refreshProfile();
+    });
+
+    expect(result.current.profileStatus).toBe('ready');
+    expect(result.current.profile).toEqual({ onboarding_completed_at: null });
+  });
+
+  test('a retry after a failed first read is loading while it runs', async () => {
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('error');
+    });
+
+    mockGetProfile.mockReturnValue(new Promise(() => undefined));
+    await act(async () => {
+      void result.current.refreshProfile();
+      await Promise.resolve();
+    });
+
+    expect(result.current.profileStatus).toBe('loading');
+  });
+
+  test('after an offline launch, returning to the foreground or reconnecting reads the profile again', async () => {
+    mockGetProfile.mockImplementation(offline);
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('error');
+    });
+
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+    await act(async () => {
+      mockOnResume();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+    expect(result.current.profile).toEqual({ onboarding_completed_at: null, language: 'es' });
+  });
+
+  test('a resume with the profile already read reads nothing', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null });
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+    const reads = mockGetProfile.mock.calls.length;
+
+    await act(async () => {
+      mockOnResume();
+      await Promise.resolve();
+    });
+
+    expect(mockGetProfile.mock.calls.length).toBe(reads);
+  });
+
+  test('a failed refresh keeps the last good profile', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+
+    mockGetProfile.mockImplementation(offline);
+    await act(async () => {
+      await result.current.refreshProfile();
+    });
+
+    expect(result.current.profileStatus).toBe('ready');
+    expect(result.current.profile).toEqual({ onboarding_completed_at: null, language: 'es' });
+  });
+
+  test('replaceProfileLocal merges a saved patch into the shared profile', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+
+    await act(async () => {
+      result.current.replaceProfileLocal({ language: 'en' });
+      await Promise.resolve();
+    });
+
+    expect(result.current.profile).toEqual({ onboarding_completed_at: null, language: 'en' });
+  });
+
+  test('another account never shows the previous account’s profile while its own loads', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null, language: 'es' });
+    const { result } = await signIn('user-1');
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+
+    mockGetProfile.mockReturnValue(new Promise(() => undefined));
+    await act(() => {
+      authStateCallback?.('SIGNED_IN', { user: { id: 'user-2' } });
+    });
+
+    expect(result.current.profileStatus).toBe('loading');
+    expect(result.current.profile).toBeNull();
+  });
+
+  test('signing out drops the profile', async () => {
+    mockGetProfile.mockResolvedValue({ onboarding_completed_at: null });
+    const { result } = await signIn();
+    await waitFor(() => {
+      expect(result.current.profileStatus).toBe('ready');
+    });
+
+    await act(() => {
+      authStateCallback?.('SIGNED_OUT', null);
+    });
+
+    expect(result.current.profile).toBeNull();
   });
 });

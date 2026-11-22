@@ -1,8 +1,9 @@
-import { AGE_GROUPS, BODY_TYPES, STYLES } from '../../../supabase/functions/_shared/rating.ts';
 import { Constants } from '../../lib/database.types';
 import { en } from '../../i18n/en';
 import { es } from '../../i18n/es';
 import {
+  AGE_GROUPS,
+  BODY_TYPES,
   CATEGORY_SLOT,
   GARMENT_CATEGORIES,
   GARMENT_COLORS,
@@ -14,6 +15,7 @@ import {
   PALETTE_HEX,
   SEASONS,
   SLOTS,
+  STYLES,
   categoriesFor,
   slotOf,
   type ClothingType,

@@ -5,10 +5,8 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 /**
- * Generates the raw/hashed nonce pair used by Sign in with Apple and Google: the hashed value is
- * sent to the provider (Apple requires the SHA-256 hash; `signInWithIdToken` verifies it against
- * the ID token's `nonce` claim), and the raw value is sent to Supabase so it can redo that hash
- * and match it.
+ * A nonce pair: the SHA-256 hash goes to the provider (Apple requires it; it lands in the ID
+ * token's `nonce` claim), and the raw value to Supabase, which hashes it again to match.
  */
 export async function createNonce(): Promise<{ raw: string; hashed: string }> {
   const raw = bytesToHex(getRandomBytes(32));

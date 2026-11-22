@@ -1,9 +1,5 @@
-// `node scripts/calibrate.ts <export | collect | eval>`: the Jev calibration workflow (see
-// `docs/owner-runbook.md`'s "6. Calibration"; the math is in `docs/ai.md`'s "Calibration"). `export` turns a user's saved outfits into unlabeled entries in
-// `calibration/labels.local.json`, `collect` asks Jev once for every labeled outfit without an
-// answer and saves the answers to `calibration/answers.local.json`, and `eval` prints the agreement
-// report with suggested weights. Both `.local.json` files hold personal data and are gitignored;
-// `eval` only prints, it never writes a config.
+// `node scripts/calibrate.ts <export | collect | eval>`: the Jev calibration CLI. The workflow:
+// docs/owner-runbook.md#6-calibration; the math: docs/ai.md#calibration.
 
 import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -57,10 +53,7 @@ type Malformed<E extends string> = { error: E; detail: string };
 
 const isLabel = (value: unknown): value is Label => LABELS.some((label) => label === value);
 
-/**
- * A labels file: a JSON array of entries with a unique non-empty `id`, a `labeler`, a `label` (one
- * of bad/ok/good, or null) and a `state`.
- */
+/** A labels file: a JSON array of entries with a unique `id`, a `labeler`, a `label` (or null) and a `state`. */
 export function parseLabelsFile(text: string): { entries: LabelEntry[] } | Malformed<'malformed_labels'> {
   const fail = (detail: string): Malformed<'malformed_labels'> => ({ error: 'malformed_labels', detail });
   let parsed: unknown;
@@ -85,8 +78,7 @@ export function parseLabelsFile(text: string): { entries: LabelEntry[] } | Malfo
       labeler: item.labeler,
       label: item.label,
       description: typeof item.description === 'string' ? item.description : '',
-      // NOTE: only the shape is checked, not every enum (the export writes them from validated
-      // rows); upgrade path: validate the enums too if labels files start being written by hand.
+      // NOTE: shape only, not enums (export writes valid ones); upgrade path: validate enums if labels get hand-written.
       state: item.state as RatingState,
     });
   }
@@ -100,7 +92,6 @@ function isStateShaped(value: unknown): boolean {
   return Array.isArray(value.outfit) && (value.outfit as unknown[]).every((piece) => isRecord(piece) && typeof piece.slot === 'string');
 }
 
-/** The entries someone has labeled. */
 export function labeledOutfits(entries: readonly LabelEntry[]): LabeledOutfit[] {
   return entries.flatMap(({ id, labeler, label, state }) => (label === null ? [] : [{ id, labeler, label, state }]));
 }
@@ -146,7 +137,6 @@ function confusionTable(confusion: Confusion): string[] {
   ];
 }
 
-/** The Markdown report `eval` prints. */
 /** Why `frozen` keep their weights, with the verb and the movable count derived; null if none is frozen. */
 export function frozenWeightsNote(frozen: readonly string[], total: number): string | null {
   if (frozen.length === 0) return null;
@@ -156,6 +146,7 @@ export function frozenWeightsNote(frozen: readonly string[], total: number): str
   return `${list} ${one ? 'is held at its current weight' : 'are held at their current weights'}: the calibration outfits carry no weather, so ${one ? 'its answer is' : 'their answers are'} always neutral and ${one ? 'its weight' : 'their weights'} can't be learned from them. The other ${String(total - frozen.length)} weights share the rest.`;
 }
 
+/** The Markdown report `eval` prints. */
 export function formatReport(report: CalibrationReport, config: RatingConfig): string {
   const { suggested } = report;
   const frozenNote = frozenWeightsNote(FROZEN_DIMENSIONS, RATING_DIMENSIONS.length);
@@ -287,9 +278,8 @@ const slotRank = (category: GarmentCategory | null): number =>
   category === null ? SLOTS.length : SLOTS.indexOf(slotOf(category));
 
 /**
- * Each complete saved outfit as an unlabeled entry: the `RatingState` `rate-outfit` would send (via
- * the same `ratingState`), with no occasion (saved outfits don't keep one), no weather, and the
- * season of the day it was saved; plus a readable description to label it by.
+ * Each complete saved outfit as an unlabeled entry: `rate-outfit`'s own `ratingState` with no occasion
+ * (saved outfits don't keep one), no weather and the season it was saved in, plus a description to label by.
  */
 export function exportEntries(rows: ExportRows, labeler: string): LabelEntry[] {
   const profile = isRecord(rows.profile) ? profileFrom(rows.profile) : null;
@@ -327,10 +317,7 @@ export function pendingAnswers(entries: readonly LabelEntry[], answered: Readonl
   return entries.filter(({ id, label }) => label !== null && !answered.has(id));
 }
 
-/**
- * Asks `jev` once for every pending outfit (at most `MAX_CONCURRENT_JEV` at once) and adds the
- * bodies that parse to `bodies`; the rest are listed in `failed` and asked again next run.
- */
+/** Asks `jev` once per pending outfit and adds the bodies that parse; the rest go in `failed`, asked again next run. */
 export async function collectAnswers(
   entries: readonly LabelEntry[],
   bodies: Readonly<Record<string, unknown>>,
@@ -353,10 +340,7 @@ export async function collectAnswers(
   return { bodies: { ...bodies, ...Object.fromEntries(added) }, added: [...added.keys()], failed };
 }
 
-/**
- * What `collect` prints: the count saved, and the outfits that failed (exit 1). When every call
- * failed, the likely cause is the key or the base URL, so it says so.
- */
+/** What `collect` prints: the count saved and the failures (exit 1), hinting at the key or base URL if all failed. */
 export function collectSummary(
   result: { added: readonly string[]; failed: readonly string[] },
   answersPath: string,
@@ -392,7 +376,6 @@ function requireEnv(vars: Record<string, string | undefined>, command: string): 
 async function readOptional(path: string): Promise<string | undefined> {
   try {
     // The paths are this script's fixed calibration files or ones the owner passed on the command line.
-    // eslint-disable-next-line security/detect-non-literal-fs-filename
     return await readFile(path, 'utf8');
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
@@ -407,14 +390,11 @@ async function readRequired(path: string, hint: string): Promise<string> {
 }
 
 /**
- * Writes a calibration file readable by the owner only, since it holds personal data. `mode` only
- * applies when the file is created, so an existing file is narrowed with `chmod` too.
+ * Writes a calibration file readable by the owner only (personal data). `mode` only applies when the file
+ * is created, so an existing file is narrowed with `chmod` too.
  */
 export async function writeLocalJson(path: string, value: unknown): Promise<void> {
-  // Same fixed calibration paths as above.
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   await chmod(path, 0o600);
 }
 
@@ -510,7 +490,6 @@ async function main(argv: readonly string[]): Promise<number> {
   }
 }
 
-/** True when `moduleUrl` is the script Node was started with (`process.argv[1]`). */
 function isEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
   return invokedPath !== undefined && moduleUrl === pathToFileURL(invokedPath).href;
 }

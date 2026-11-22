@@ -3,13 +3,13 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Check, MapPin, X } from 'lucide-react-native';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthProvider';
 import { useI18n, type MessageKey } from '../i18n';
 import { cityToPatch, type CityPatch } from '../profile/profileDraft';
-import { getProfile, saveProfile } from '../profile/profileRepository';
+import { saveProfile, type ProfilePatch } from '../profile/profileRepository';
 import { useCurrentCity } from '../profile/useCurrentCity';
 import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
@@ -18,6 +18,13 @@ import { TextField } from '../ui/TextField';
 import { colors, gradients, layout, spacing } from '../ui/theme';
 
 type Load = { status: 'loading' } | { status: 'error' } | { status: 'ready'; saved: CityPatch };
+
+/** The saved city from the shared profile; coordinates only with both halves. */
+function savedCity(profile: ProfilePatch): CityPatch {
+  const lat = profile.city_lat ?? null;
+  const lon = profile.city_lon ?? null;
+  return cityToPatch(profile.city_name ?? '', lat !== null && lon !== null ? { lat, lon } : null);
+}
 
 function close(): void {
   if (router.canGoBack()) {
@@ -33,21 +40,29 @@ function samePatch(a: CityPatch, b: CityPatch): boolean {
 
 export default function CityScreen(): React.JSX.Element {
   const { t } = useI18n();
-  const { userId } = useAuth();
+  const { userId, profile, profileStatus, refreshProfile, replaceProfileLocal } = useAuth();
   const insets = useScreenContentInsets('none');
   const { request: requestCity } = useCurrentCity();
 
-  const [load, setLoad] = useState<Load>({ status: 'loading' });
-  const [attempt, setAttempt] = useState(0);
-  const [name, setName] = useState('');
+  const load = useMemo<Load>(() => {
+    if (profileStatus === 'ready' && profile !== null) return { status: 'ready', saved: savedCity(profile) };
+    return { status: profileStatus === 'error' ? 'error' : 'loading' };
+  }, [profile, profileStatus]);
+  // Null until the user changes the field: it shows the saved city meanwhile.
+  const [edited, setEdited] = useState<{ name: string; coords: { lat: number; lon: number } | null } | null>(null);
+  const saved = load.status === 'ready' ? load.saved : null;
+  const name = edited?.name ?? saved?.city_name ?? '';
   // Coordinates only travel with the name they were geocoded to; typing a city drops them.
-  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const coords = useMemo(() => {
+    if (edited !== null) return edited.coords;
+    return saved !== null && saved.city_lat !== null && saved.city_lon !== null ? { lat: saved.city_lat, lon: saved.city_lon } : null;
+  }, [edited, saved]);
   const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ key: MessageKey; error: boolean } | undefined>(undefined);
   // Locks a second Save tap before the re-render that disables the button lands.
   const busy = useRef(false);
-  // Counts the user's own edits: a location lookup that resolves after they typed doesn't overwrite it.
+  // The user's edits: a slow location lookup must not overwrite what they typed.
   const edits = useRef(0);
   const mounted = useRef(true);
 
@@ -57,28 +72,6 @@ export default function CityScreen(): React.JSX.Element {
       mounted.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (userId === null) return undefined;
-    let current = true;
-    getProfile(userId).then(
-      (profile) => {
-        if (!current) return;
-        const lat = profile?.city_lat ?? null;
-        const lon = profile?.city_lon ?? null;
-        const saved = cityToPatch(profile?.city_name ?? '', lat !== null && lon !== null ? { lat, lon } : null);
-        setName(saved.city_name ?? '');
-        setCoords(saved.city_lat !== null && saved.city_lon !== null ? { lat: saved.city_lat, lon: saved.city_lon } : null);
-        setLoad({ status: 'ready', saved });
-      },
-      () => {
-        if (current) setLoad({ status: 'error' });
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [userId, attempt]);
 
   const locate = useCallback(async () => {
     setMessage(undefined);
@@ -94,8 +87,7 @@ export default function CityScreen(): React.JSX.Element {
       announceForAccessibility(t(key));
       return;
     }
-    setName(result.city.name);
-    setCoords({ lat: result.city.lat, lon: result.city.lon });
+    setEdited({ name: result.city.name, coords: { lat: result.city.lat, lon: result.city.lon } });
   }, [requestCity, t]);
 
   const save = useCallback(async () => {
@@ -117,8 +109,9 @@ export default function CityScreen(): React.JSX.Element {
       announceForAccessibility(t(result.error));
       return;
     }
+    replaceProfileLocal(patch);
     close();
-  }, [load, userId, name, coords, t]);
+  }, [load, userId, name, coords, t, replaceProfileLocal]);
 
   let body: React.ReactNode;
   let cta: React.ReactNode = null;
@@ -137,8 +130,7 @@ export default function CityScreen(): React.JSX.Element {
           label: t('onboarding.retry'),
           tone: 'commit',
           onPress: () => {
-            setLoad({ status: 'loading' });
-            setAttempt((value) => value + 1);
+            void refreshProfile();
           },
         }}
       />
@@ -153,8 +145,7 @@ export default function CityScreen(): React.JSX.Element {
           value={name}
           onChangeText={(next) => {
             edits.current += 1;
-            setName(next);
-            setCoords(null);
+            setEdited({ name: next, coords: null });
           }}
           autoCapitalize="words"
           autoComplete="postal-address-locality"

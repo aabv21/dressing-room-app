@@ -1,9 +1,5 @@
-// Open-Meteo request URLs and response parsing: forecast/geocoding query builders, the WMO
-// weather-code and temperature-band mappings, and the location cache key.
-//
-// Runtime-neutral (no imports beyond the guards, nothing Deno- or Node-only) so Jest exercises it
-// under Node and the Edge Function runs it under Deno. It builds URLs and parses responses but
-// never fetches, so its tests never reach the real Open-Meteo service.
+// Open-Meteo URLs, response parsing, the weather bands and the location cache key. Never fetches,
+// so its tests never reach the real service.
 
 import { isRecord } from './guards.ts';
 
@@ -63,10 +59,7 @@ export function conditionOf(code: number): WeatherCondition {
   return 'clear';
 }
 
-/**
- * Maps a `/v1/forecast` response body to a `WeatherSummary`, or `null` if any field needed is
- * missing or the wrong shape. Never throws: the body is an untrusted network response.
- */
+/** `null` if any needed field is missing or mistyped; never throws (an untrusted response). */
 export function parseForecast(body: unknown): WeatherSummary | null {
   if (!isRecord(body)) return null;
 
@@ -102,10 +95,7 @@ export function parseGeocode(body: unknown): { lat: number; lon: number } | null
   return { lat, lon };
 }
 
-/**
- * The weather/lucky cache key for a city: coordinates (rounded to ~1 km) when known, else a
- * normalized name, else `null` when there is no location at all.
- */
+/** Coordinates (rounded to ~1 km) when known, else a normalized name, else `null`. */
 export function locationKey(city: { name: string | null; lat: number | null; lon: number | null }): string | null {
   if (city.lat !== null && city.lon !== null) {
     return `${city.lat.toFixed(2)},${city.lon.toFixed(2)}`;

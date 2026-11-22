@@ -1,11 +1,5 @@
-// The Claude Haiku 5.5 fallback rater, used when Jev is down, slow or over its limits: the same
-// dimensions and levels as the Jev request, answered as level indices through a structured
-// output, then normalized like Jev's scores. Confidence is 0, since a single sampled index carries
-// no probability spread; the app labels the confidence "estimated".
-//
-// Runtime-neutral (only the shared modules imported, nothing Deno- or Node-only). The model's
-// output is untrusted: the schema bounds it and `parseFallback` re-checks every value. See
-// `docs/ai.md`'s "Outfit rating".
+// The Claude fallback rater when Jev fails (docs/ai.md#claude-fallback). Confidence is 0 (one sampled
+// index has no spread); the untrusted output is re-checked by `parseFallback`.
 
 import { firstText } from './extraction.ts';
 import { isRecord } from './guards.ts';
@@ -74,7 +68,6 @@ function fallbackSchema(state: RatingState): Record<string, unknown> {
   };
 }
 
-/** The Messages API request body that rates one outfit with the fixed rubric. */
 export function buildFallbackRequest(state: RatingState): Record<string, unknown> {
   return {
     model: FALLBACK_MODEL,
@@ -92,10 +85,7 @@ export function buildFallbackRequest(state: RatingState): Record<string, unknown
   };
 }
 
-/**
- * Maps a Messages API response body to the same shape as `parseJevAnswers`, with every confidence
- * 0. Never throws; null for a refusal, unparseable output or any value outside the schema.
- */
+/** `parseJevAnswers`' shape, every confidence 0. Never throws; null for a refusal, bad output or out-of-schema value. */
 export function parseFallback(body: unknown, levels: Record<RatingDimension, number>): RatingAnswers | null {
   if (!isRecord(body) || body.stop_reason === 'refusal') return null;
   const text = firstText(body.content);

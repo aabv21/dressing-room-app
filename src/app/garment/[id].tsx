@@ -1,12 +1,11 @@
-// A garment's detail (spec §3.3 "Garment CRUD"): every attribute editable, the status, replacing
-// the photo and deleting. No mockup of its own: it reuses mockup 02 review's photo, chip editors and
-// anchored CTA. A root Stack screen inside the tabs guard, so there's no tab bar.
+// A garment's detail: every attribute editable, the status, replacing the photo and deleting. Reuses
+// Review's photo, chip editors and anchored CTA.
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useIsFocused, useLocalSearchParams } from 'expo-router';
 import { Check, ChevronLeft, ImageIcon, Trash2 } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { GARMENT_FIELDS } from '../../closet/catalog';
 import { useCloset, usePendingPolling } from '../../closet/ClosetProvider';
@@ -21,6 +20,7 @@ import { formatWearCount, useI18n } from '../../i18n';
 import { Constants } from '../../lib/database.types';
 import type { RequestError } from '../../lib/requestResult';
 import { useClothingType } from '../../profile/useClothingType';
+import { announceForAccessibility } from '../../ui/a11y';
 import { AnchoredCta } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
 import { CtaBackdrop } from '../../ui/CtaBackdrop';
@@ -48,8 +48,8 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   const { replaceLocal } = useCloset();
   const { enqueueReplacement, pending: uploading, failed: uploadsFailed } = useUploadQueue();
 
-  // A pending garment counts as failed after 10 minutes; until then the AI may still overwrite
-  // the attributes, so they aren't editable yet and the closet keeps polling for the result.
+  // A pending garment counts as failed after 10 minutes; until then the AI may still overwrite the
+  // attributes, so they aren't editable and the closet keeps polling.
   const now = useNow(CLOCK_TICK_MS);
   const reading = isLivePending(garment, now);
   usePendingPolling(useIsFocused() && reading);
@@ -59,8 +59,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   useEffect(() => {
     latest.current = garment;
   }, [garment]);
-  // False once the screen is gone or the garment deleted: a late save result must not bring the
-  // garment back into the closet through `replaceLocal`.
+  // False once the screen is gone or the garment deleted: a late save must not re-add it via `replaceLocal`.
   const active = useRef(true);
   useEffect(() => {
     active.current = true;
@@ -73,7 +72,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   const report = useCallback(
     (next: Failure) => {
       setFailure(next);
-      AccessibilityInfo.announceForAccessibility(failureText(next, t));
+      announceForAccessibility(failureText(next, t));
     },
     [t],
   );
@@ -109,9 +108,8 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     setDraft((current) => changedFields({ ...stored, ...patch }, { ...stored, ...current }));
   }, [garment.id, patch, stored, replaceLocal, report]);
 
-  // The status saves on tap, one save at a time: the chips are disabled until it lands. The tapped
-  // chip shows at once; a failure goes back to the last confirmed status. A refresh that moves the
-  // stored status resets the confirmed one to it.
+  // The status saves on tap, one at a time (chips disabled until it lands). The tapped chip shows at
+  // once; a failure reverts to the last confirmed status, which a refresh resets to the stored one.
   const [statusSaving, setStatusSaving] = useState<GarmentStatus | null>(null);
   const [confirmedStatus, setConfirmedStatus] = useState({ stored: garment.status, value: garment.status });
   if (confirmedStatus.stored !== garment.status) {
@@ -138,12 +136,11 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
     [garment.id, replaceLocal, report],
   );
   const [deleting, setDeleting] = useState(false);
-  // One write at a time: a field save, a status save and a delete each wait for the others, so
-  // no two `replaceLocal` calls race from different snapshots and a late save can't re-add a
-  // deleted garment.
+  // One write at a time (field save, status save, delete), so no two `replaceLocal` calls race from
+  // different snapshots and a late save can't re-add a deleted garment.
   const busy = saving || statusSaving !== null;
   // While the AI reads the photo the status waits too: any write moves `updated_at`, and the
-  // extraction's guarded write-back would then skip, losing what it read.
+  // extraction's guarded write-back would then skip.
   const statusLocked = busy || deleting || reading;
   const statusOptions = useMemo(
     () => STATUSES.map((value) => ({ value, label: t(`garment.status.${value}`), disabled: statusLocked })),
@@ -180,8 +177,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
 
   // The new photo uploads through the queue; this says so until the garment's photo version moves.
   const [replacedVersion, setReplacedVersion] = useState<number | null>(null);
-  // NOTE: the queue reports counts, not items, so any upload pending or given up stands in for this
-  // garment's replacement. Upgrade path: expose each garment's queue state from UploadQueueProvider.
+  // NOTE: the queue reports counts, so any pending upload stands in for this one; upgrade path: per-garment queue state.
   const replacing = replacedVersion === garment.photo_version && uploading > 0;
   const replaceFailed = replacedVersion === garment.photo_version && uploading === 0 && uploadsFailed > 0;
   const replacePhoto = useCallback(async () => {
@@ -211,7 +207,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
   let message: React.ReactNode = null;
   if (failure !== null) {
     message = (
-      <Text style={styles.error} accessibilityRole="alert">
+      <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">
         {failureText(failure, t)}
       </Text>
     );
@@ -232,7 +228,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t('garment.back')}
-            // Narrower than 44 pt so the title sits close to it; the slop keeps the 44 pt target.
+            // Narrower than 44 pt to sit close to the title; the slop keeps the 44 pt target.
             hitSlop={{ left: 8, right: 6 }}
             style={styles.backButton}
             onPress={leaveToCloset}
@@ -301,7 +297,7 @@ function GarmentDetail({ garment, onDeleted }: { garment: Garment; onDeleted: ()
       <CtaBackdrop />
       <AnchoredCta
         chrome="none"
-        // By the buttons, not at the end of the form, so it's on screen however far it scrolls.
+        // By the buttons, so it's on screen however far the form scrolls.
         {...(message === null ? {} : { notice: message })}
         secondary={{
           label: t('garment.replacePhoto'),

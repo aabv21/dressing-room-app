@@ -26,11 +26,9 @@ const QUOTA_LIMIT = 100;
 const POLL_INTERVAL_MS = 250;
 
 // Fixed paths in this repo, never user input.
-// eslint-disable-next-line security/detect-non-literal-fs-filename
 const PHOTO = readFileSync(new URL('fixtures/garment.webp', import.meta.url));
 function claudeFixture(name: string): unknown {
   const url = new URL(`../supabase/functions/_shared/__tests__/fixtures/${name}.json`, import.meta.url);
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
   return JSON.parse(readFileSync(url, 'utf8')) as unknown;
 }
 const OK = claudeFixture('claude-ok');

@@ -3,8 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, layout, radii, spacing } from '../theme';
 
 const BAR_HEIGHT = 16;
-// A light fill (white, cream, ...) needs a hairline border to stay visible against the card's
-// own near-white background (mockup 04's `.prop span { border:1px solid #ddd }` on white).
+// A light fill (white, cream, ...) needs a hairline border to stay visible on the near-white card.
 const LIGHT_FILL_LUMA_THRESHOLD = 0.85;
 const LEGEND_SWATCH_SIZE = 9;
 const LEGEND_ROW_HEIGHT = 20;
@@ -31,9 +30,8 @@ function needsHairline(hex: string): boolean {
 }
 
 /**
- * Mockup 04's "Tus colores" proportion bar: real garment hexes, since color is the data itself
- * (not a magnitude hue). Each segment and legend entry taps to the same `onSelect(id)`, both
- * with a 44pt hit target; screen readers get the legend entries only.
+ * Real garment hexes, since color is the data itself. Segments and legend entries tap to the same
+ * `onSelect(id)` (44pt targets); screen readers get the legend entries only.
  */
 export function ProportionBar(props: {
   segments: readonly ProportionSegment[];

@@ -9,10 +9,7 @@ import type { QueueSteps } from './runQueue';
 
 type Client = SupabaseClient<Database>;
 
-/**
- * The item belongs to another account than the one now signed in (a sign-out or user switch while
- * a pass was running). Retryable: the item runs again once its owner signs back in.
- */
+/** Another account signed in mid-pass. Retryable: the item runs again once its owner signs back in. */
 export class SessionMismatchError extends Error {
   constructor() {
     super('upload queued by a different account than the current session');
@@ -21,12 +18,8 @@ export class SessionMismatchError extends Error {
 }
 
 /**
- * The real queue stages: prepare the photo on-device, upload both variants (upserts, so a retry
- * overwrites), then create the row or, for a replacement, bump its `photo_version`.
- *
- * NOTE: a replacement's commit re-reads the row each attempt, so a bump whose response was lost
- * and then retried bumps twice (1 → 3). Ceiling: harmless, the version only has to change;
- * upgrade path: store the version read at enqueue time and bump with an `eq('photo_version', …)` guard.
+ * Uploads are upserts, so a retry overwrites; a replacement's commit bumps `photo_version`.
+ * NOTE: a retried bump after a lost response bumps twice (1 → 3), harmless; upgrade: an `eq('photo_version', …)` guard.
  */
 export function createQueueSteps(client: Client = supabase): QueueSteps {
   // Reads the stored session (no network unless the token needs refreshing).

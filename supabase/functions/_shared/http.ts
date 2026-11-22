@@ -1,5 +1,5 @@
-// What every function does over HTTP: answering JSON with a logged outcome word, reading the body
-// and the caller, and calling out with a deadline. Runtime-neutral, like the rest of `_shared`.
+// What every function does over HTTP: JSON replies with a logged outcome word, the body and the
+// caller, and outbound calls with a deadline.
 
 import { isRecord, UUID } from './guards.ts';
 
@@ -23,9 +23,8 @@ export async function readJson(request: Request): Promise<unknown> {
 }
 
 /**
- * The `sub` of the bearer token, without verifying the signature: with `verify_jwt` on, the
- * gateway has already verified it before the function runs. Null for anything that isn't a
- * bearer JWT whose `sub` is a uuid (the anon and service-role keys have no `sub`).
+ * The bearer token's `sub`, unverified: with `verify_jwt` on, the gateway already verified it. Null
+ * unless a bearer JWT with a uuid `sub` (the anon and service-role keys have none).
  */
 export function userIdFromJwt(authHeader: string | null): string | null {
   if (authHeader === null) return null;
@@ -55,9 +54,8 @@ export function callerOf(request: Request): { auth: string; userId: string } | n
 const NULL_BODY = new Set([101, 204, 205, 304]);
 
 /**
- * `fetchFn` with its signal aborted once `ms` passes, reading the body included: the answer comes
- * back already buffered, so a stalled body can't outlive the deadline either. Like the web
- * `fetch`, `fetchFn` must honor the signal; the abort rejects the call.
+ * Aborts after `ms`, reading the body included (it comes back buffered, so a stalled body can't
+ * outlive the deadline). `fetchFn` must honor the signal.
  */
 export async function fetchWithDeadline(fetchFn: typeof fetch, url: string, init: RequestInit, ms: number): Promise<Response> {
   const controller = new AbortController();

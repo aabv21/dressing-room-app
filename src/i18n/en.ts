@@ -10,7 +10,6 @@ export const en = {
   'wear.other': '{count} wears',
 
   'grid.empty': 'Take photos of a top, a bottom and shoes to start.',
-  'grid.loadError': "Couldn't load this photo",
 
   'closet.gallery': 'Gallery',
   'closet.burstMode': 'Take photos',
@@ -172,7 +171,6 @@ export const en = {
   'auth.welcome.title': 'DRESS\nWITHOUT DOUBT',
   'auth.welcome.subtitle': 'Your closet in your pocket, and an AI that tells you how good it looks.',
   'auth.welcome.cta': 'Create account',
-  'auth.social.apple': 'Continue with Apple',
   'auth.social.google': 'Continue with Google',
   'auth.divider.email': 'or with your email',
   'auth.field.email': 'Email',

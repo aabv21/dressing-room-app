@@ -2,11 +2,8 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import { openDatabaseSync } from 'expo-sqlite';
 
-/**
- * Persisted, resumable upload queue storage: one row per garment photo, surviving app restarts
- * and offline launches. `runQueue.ts` drives items through these stages; this module only
- * persists them and manages their on-device copies under `Paths.document/uploads/`.
- */
+// The persisted upload queue (one row per photo, surviving restarts) and its copies under
+// `Paths.document/uploads/`; `runQueue.ts` drives the stages.
 
 export type QueueStage = 'captured' | 'prepared' | 'uploaded';
 
@@ -38,9 +35,7 @@ type QueueRow = {
   created_at: number;
 };
 
-// NOTE: the database opens at import, so this module is the only one that may import expo-sqlite's
-// queue file, and tests mock expo-sqlite before importing it. Upgrade path: open it lazily on the
-// first call if a screen ever needs this module without the queue.
+// NOTE: the database opens at import (tests mock expo-sqlite first); upgrade: open it lazily if a screen needs this module.
 const db = openDatabaseSync('upload-queue.db');
 
 /** The schema version in `PRAGMA user_version`: a later change migrates from it. */
@@ -65,9 +60,7 @@ db.execSync(`
     created_at INTEGER NOT NULL
   );
 `);
-// NOTE: a table created before version 1 keeps its columns without the CHECKs (SQLite can't add one
-// in place) and stays at version 0, so a future migration sees what it really has; no released
-// install has one. Only a table created here is stamped with this version.
+// NOTE: only a table created here is stamped; a pre-v1 one (none released) lacks the CHECKs and stays at 0 for a migration.
 if (!tableExisted) db.execSync(`PRAGMA user_version = ${String(SCHEMA_VERSION)}`);
 
 function rowToItem(row: QueueRow): QueueItem {
@@ -122,17 +115,10 @@ function getRow(garmentId: string): QueueRow | null {
   return db.getFirstSync<QueueRow>('SELECT * FROM upload_queue WHERE garment_id = ?;', [garmentId]);
 }
 
-// NOTE: named `<garmentId>-<uuid>-source.<ext>`, not a fixed `<garmentId>-source.<ext>`.
-// A fixed name would let a replacement's copy collide with (and be deleted alongside) the row a
-// worker already in flight for the same garment is using — see `saveItem`/`removeItem` below,
-// which key on `source_uri` instead of only `garment_id` to survive that race. Ceiling: file names
-// are no longer predictable from `garmentId` alone; upgrade path: none needed, callers always get
-// the name back from the returned `QueueItem.sourceUri`.
+// NOTE: a uuid keeps a replacement's copy apart from an in-flight worker's (see `saveItem`); callers read `sourceUri`.
 function copyIntoUploads(garmentId: string, sourceUri: string): string {
   const uploadsDir = new Directory(Paths.document, 'uploads');
-  // `idempotent: true` (not `overwrite`) is what makes a second `create()` call on an already-
-  // existing directory succeed silently instead of throwing — `overwrite` only controls whether an
-  // *existing* directory's contents are replaced, not whether "already exists" itself is an error.
+  // `idempotent` (not `overwrite`) is what lets `create()` succeed on an existing directory.
   uploadsDir.create({ intermediates: true, idempotent: true });
   const ext = Paths.extname(sourceUri).replace(/^\./, '') || 'jpg';
   const destination = new File(uploadsDir, `${garmentId}-${Crypto.randomUUID()}-source.${ext}`);
@@ -141,7 +127,6 @@ function copyIntoUploads(garmentId: string, sourceUri: string): string {
   return destination.uri;
 }
 
-/** Deletes a file at `uri`, ignoring a file that is already gone. */
 function deleteIfExists(uri: string | null): void {
   if (uri === null) return;
   const file = new File(uri);
@@ -207,16 +192,9 @@ export function enqueueReplacement(userId: string, garmentId: string, sourceUri:
     createdAt: Date.now(),
   };
   upsert(item);
-  // The old row's files are only ours to delete here if no worker is (or will be) mid-run on them:
-  // a 'captured' item has nothing prepared yet, and a failed item's run already gave up. Anything
-  // else (prepared/uploaded, not failed) may have a worker about to call `saveItem`/`removeItem`
-  // with its own stale snapshot — those calls are keyed on `source_uri`, so once this replacement
-  // has overwritten the row, the worker's write no-ops and its `removeItem` deletes the files
-  // named in its own (old) snapshot, never the replacement's.
-  // NOTE: a prepared/uploaded row with no worker running (waiting out a backoff) keeps its files
-  // in uploads/ once replaced, since nothing will finish it. Ceiling: one photo's three files per
-  // such replacement; upgrade path: a sweep of uploads/ for files no row names, when the queue
-  // provider mounts.
+  // Only a `captured` or failed row's files are safe to delete: any other may have a worker mid-run,
+  // whose own `removeItem` cleans up its snapshot (keyed on `source_uri`, never the replacement's).
+  // NOTE: a replaced prepared/uploaded row in backoff leaks its 3 files; upgrade: sweep orphans on provider mount.
   if (previous !== null && (previous.stage === 'captured' || previous.failed === 1)) {
     deleteIfExists(previous.source_uri);
     deleteIfExists(previous.full_uri);
@@ -233,12 +211,8 @@ export function listQueue(userId: string): QueueItem[] {
   return rows.map(rowToItem);
 }
 
-// `saveItem`/`removeItem` are called by a running `runQueue` worker holding a `QueueItem` it read
-// at the start of its pass. If `enqueueReplacement` swaps that same garment's row for a new one
-// (new `source_uri`) while the worker is mid-run, the worker's write must not clobber the
-// replacement or delete its files: both statements below are conditioned on `source_uri` still
-// matching the snapshot the caller holds, so a stale write affects zero rows instead of the
-// replacement's row, so no photo is lost and no garment duplicated.
+// A `runQueue` worker calls these with the snapshot it read; both also match `source_uri`, so after
+// `enqueueReplacement` swapped the row a stale write affects zero rows and the replacement survives.
 
 export function saveItem(item: QueueItem): void {
   db.runSync(
@@ -271,9 +245,7 @@ export function saveItem(item: QueueItem): void {
 
 export function removeItem(item: QueueItem): void {
   db.runSync('DELETE FROM upload_queue WHERE garment_id = ? AND source_uri = ?;', [item.garmentId, item.sourceUri]);
-  // Even when no row matched (a replacement took the row over), the snapshot's files are still
-  // this caller's to delete: every copy and prepared file has a unique name, so they are never the
-  // replacement's.
+  // The snapshot's files are this caller's even when a replacement took the row: every name is unique.
   deleteIfExists(item.sourceUri);
   deleteIfExists(item.fullUri);
   deleteIfExists(item.thumbUri);

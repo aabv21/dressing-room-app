@@ -67,10 +67,20 @@ import { useAuth } from '../auth/AuthProvider';
 
 const mockedUseAuth = jest.mocked(useAuth);
 
-type AuthState = { status: 'loading' | 'signedOut' | 'signedIn'; userId: string | null; email: string | null; onboardingComplete: boolean; refreshProfile: () => Promise<boolean> };
+type AuthState = ReturnType<typeof useAuth>;
 
 function authState(overrides: Partial<AuthState>): AuthState {
-  return { status: 'signedOut', userId: null, email: null, onboardingComplete: false, refreshProfile: jest.fn(), ...overrides };
+  return {
+    status: 'signedOut',
+    userId: null,
+    email: null,
+    onboardingComplete: false,
+    profile: null,
+    profileStatus: 'loading',
+    refreshProfile: jest.fn(),
+    replaceProfileLocal: jest.fn(),
+    ...overrides,
+  };
 }
 
 function renderAt(initialUrl: string) {

@@ -1,4 +1,3 @@
-// Deno entry point for `extract-attributes`; the logic is in `handler.ts`.
 import { readEnv } from '../_shared/env.ts';
 import { handleExtract } from './handler.ts';
 

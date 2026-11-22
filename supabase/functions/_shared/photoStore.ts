@@ -1,21 +1,11 @@
-// The one place the functions reach the `garments` Storage bucket: building a photo's path, listing
-// and removing a user's objects, signing URLs and downloading an object, all with the service role.
-// No other function file builds a `/storage/v1/` URL (a `functions` test checks this), so every
-// photo access can be found, reviewed and changed here.
-//
-// Paths are `{uid}/{garmentId}/{full,thumb}.webp`. Storage answers a missing object with a 404, or
-// (the version the local stack runs) a 400 whose body says `statusCode: "404"`; both count as
-// missing (`null`), and any other failure throws.
-//
-// Runtime-neutral: every effect goes through the injected `fetch`, so Jest drives it under Node and
-// the Edge Functions run it under Deno.
+// The functions' only path to the `garments` bucket (service role; a test bans `/storage/v1/`
+// elsewhere). Paths, limits and missing-object handling: docs/database.md, the `garments` bucket.
 
 import type { ServiceEnv } from './env.ts';
 import { isRecord, UUID } from './guards.ts';
 import { fetchWithDeadline } from './http.ts';
 import { mapLimit, restJson, serviceHeaders, UpstreamError } from './userContext.ts';
 
-/** What a Storage call needs: the project URL and the service-role key. */
 export type StorageEnv = ServiceEnv;
 
 export type PhotoKind = 'full' | 'thumb';
@@ -27,13 +17,12 @@ const BUCKET = 'garments';
 export const LIST_PAGE = 1000;
 /** The most paths one remove call takes. */
 export const REMOVE_CHUNK = 1000;
-/** At most this many folder listings in flight at once. */
+/** Folder listings in flight at once. */
 export const LIST_CONCURRENCY = 5;
 /** The most paths one batch-sign call takes. */
 export const SIGN_CHUNK = 500;
 /** Every Storage call, the body included. */
-// NOTE: a 1000-object remove can outlast this while Storage still finishes; the function then
-// answers 500 and a retry recovers (fewer objects, or already_deleted). Upgrade path: smaller batches.
+// NOTE: a 1000-object remove can outlast this (the function answers 500; a retry recovers); upgrade: smaller batches.
 export const STORAGE_TIMEOUT_MS = 10_000;
 
 const storageUrl = (env: StorageEnv, route: string): string => `${env.supabaseUrl}/storage/v1/${route}`;
@@ -65,9 +54,8 @@ async function isNotFound(response: Response): Promise<boolean> {
 }
 
 /**
- * The entries one level under `prefix` (which ends in `/`): files by path, folders by their own
- * prefix. Paged until an empty page, the offset advancing by the rows received: a short page alone
- * doesn't prove the end, since the server may cap a page below `LIST_PAGE`.
+ * One level under `prefix` (ending in `/`): files by path, folders by prefix. Paged until an empty
+ * page: a short page doesn't prove the end, since the server may cap a page below `LIST_PAGE`.
  */
 async function listLevel(env: StorageEnv, fetchFn: typeof fetch, prefix: string): Promise<{ files: string[]; folders: string[] }> {
   const files: string[] = [];
@@ -96,18 +84,14 @@ async function listLevel(env: StorageEnv, fetchFn: typeof fetch, prefix: string)
   }
 }
 
-/**
- * Every object path under `prefix`. Storage's list answers one level at a time, a folder with a
- * null `id`, so each level is paged until an empty page and its folders are listed
- * `LIST_CONCURRENCY` at a time.
- */
+/** Every object path under `prefix`; Storage lists one level at a time (a folder has a null `id`). */
 async function listObjects(env: StorageEnv, fetchFn: typeof fetch, prefix: string): Promise<string[]> {
   const { files, folders } = await listLevel(env, fetchFn, prefix);
   const nested = await mapLimit(folders, LIST_CONCURRENCY, (folder) => listObjects(env, fetchFn, folder));
   return [...files, ...nested.flat()];
 }
 
-/** Every object path under `{uid}/`, at any depth; throws when any listing fails. */
+/** Throws when any listing fails. */
 export async function listUserObjects(env: StorageEnv, fetchFn: typeof fetch, userId: string): Promise<string[]> {
   assertUuid(userId, 'user id');
   return listObjects(env, fetchFn, `${userId}/`);
@@ -133,10 +117,7 @@ export async function removeObjects(env: StorageEnv, fetchFn: typeof fetch, path
 /** Storage's relative `signedURL` (`/object/sign/…?token=…`) as an absolute URL. */
 const absoluteSignedUrl = (env: StorageEnv, signedURL: string): string => encodeURI(`${env.supabaseUrl}/storage/v1${signedURL}`);
 
-/**
- * The signed URL of every path in `paths` that exists (by path), `SIGN_CHUNK` paths per call. A
- * missing object is simply absent from the map; a failed call throws.
- */
+/** Signed URLs by path, `SIGN_CHUNK` per call; a missing object is absent, a failed call throws. */
 export async function signedUrls(
   env: StorageEnv,
   fetchFn: typeof fetch,

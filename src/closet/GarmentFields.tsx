@@ -75,7 +75,7 @@ type Translate = (key: MessageKey, params?: Readonly<Record<string, string | num
 
 const MAX_COLORS = 3;
 
-// Formality is stored 1-5; review offers three choices (mockup 02: Casual / Formal / Both).
+// Formality is stored 1-5; review offers three choices (Casual / Formal / Both).
 type FormalityChoice = 'casual' | 'formal' | 'both';
 const FORMALITY_CHOICES: readonly { choice: FormalityChoice; value: number }[] = [
   { choice: 'casual', value: 2 },
@@ -285,7 +285,7 @@ function editorProps(
   }
 }
 
-/** One field's choices as chips (mockup 02 review's `.pick`). */
+/** One field's choices as chips. */
 export function FieldEditor(props: {
   field: GarmentField;
   values: FieldValues;
@@ -312,7 +312,7 @@ export function FieldEditor(props: {
   );
 }
 
-/** A field the AI was sure of (mockup 02 review's `.row`): "Label · Value ✓", tap to edit. */
+/** A field the AI was sure of: "Label · Value ✓", tap to edit. */
 export function ConfirmedRow(props: { field: GarmentField; values: FieldValues; onEdit: () => void }): React.JSX.Element {
   const { field, values, onEdit } = props;
   const { t } = useI18n();

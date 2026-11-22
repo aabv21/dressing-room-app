@@ -8,16 +8,12 @@ type Target = { longestSide: number; compress: number };
 const FULL: Target = { longestSide: 784, compress: 0.8 };
 const THUMB: Target = { longestSide: 256, compress: 0.7 };
 
-/**
- * The resize that brings the longer side down to `target`, or `null` when it is already no longer
- * than that (never upscaled). Only one side is given, so the manipulator keeps the aspect ratio.
- */
+/** Brings the longer side down to `target` (`null`: never upscale); one side keeps the aspect ratio. */
 export function resizeFor(width: number, height: number, target: number): { width: number } | { height: number } | null {
   if (Math.max(width, height) <= target) return null;
   return width >= height ? { width: target } : { height: target };
 }
 
-/** Deletes a file, ignoring one that is already gone. */
 function deleteQuietly(uri: string): void {
   try {
     const file = new File(uri);
@@ -27,11 +23,7 @@ function deleteQuietly(uri: string): void {
   }
 }
 
-/**
- * Moves a manipulator output out of the caches directory (which the OS may purge while an item
- * waits offline) into `Paths.document/uploads/`, next to the queue item's source copy. The queue
- * deletes it once the item commits.
- */
+/** Out of the caches directory, which the OS may purge while an item waits offline; the queue deletes it on commit. */
 function moveIntoUploads(uri: string): string {
   const uploads = new Directory(Paths.document, 'uploads');
   uploads.create({ intermediates: true, idempotent: true });
@@ -44,9 +36,8 @@ function moveIntoUploads(uri: string): string {
 type Context = ReturnType<typeof ImageManipulator.manipulate>;
 
 /**
- * Renders `context`, then, if the result is still longer than `longestSide` (a decoder that
- * ignored its load options), renders it again resized. Every image rendered is pushed to `images`
- * so the caller can release it.
+ * Renders again resized if a decoder ignored its load options; every image rendered goes to `images` so
+ * the caller can release it.
  */
 async function renderWithin(context: Context, longestSide: number, images: ImageRef[]): Promise<ImageRef> {
   const rendered = await context.renderAsync();
@@ -64,19 +55,9 @@ async function saveWebp(image: ImageRef, target: Target): Promise<string> {
 }
 
 /**
- * Turns a queued photo into the two WebPs that get uploaded: the garment cut out on-device when
- * possible (the original photo otherwise), then a 784 px full image at quality 0.8 and a 256 px
- * thumbnail at 0.7. The cut-out PNG is a temporary file and is always deleted afterwards.
- *
- * The source is decoded once, downsampled while decoding to fit 784 px (iOS: CGImageSource with
- * EXIF orientation applied; Android: Glide's bounded decode; neither upscales), so a 48 MP photo
- * never exists in memory at full size. The thumbnail is then built from that rendered full image
- * rather than from the source again.
- *
- * NOTE: the bounded decode is only as lean as the platform loader: Android hands the bounds to the
- * app's image loader and, if that loader ignores them, decodes in full before downscaling. Ceiling:
- * one full-size bitmap per worker on such a loader; upgrade path: cap the source in the
- * garment-cutout module's decoder (already 2048 px for cut-outs) for the no-cut-out path too.
+ * One decode, downsampled while decoding (iOS CGImageSource with EXIF orientation, Android Glide), so a
+ * 48 MP photo never sits in memory at full size; the thumbnail comes from the full image. The cut-out PNG is temporary.
+ * NOTE: an Android loader ignoring the bounds decodes in full; upgrade: cap it in garment-cutout's decoder too.
  */
 export async function preparePhoto(sourceUri: string): Promise<{ fullUri: string; thumbUri: string }> {
   const cutoutUri = await cutOutGarment(sourceUri);

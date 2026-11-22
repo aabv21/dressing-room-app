@@ -66,13 +66,8 @@ export function formatWearCount(count: number, locale: Locale): string {
   if (count === 0) {
     return translate(locale, 'wear.never');
   }
-  // NOTE: not `Intl.PluralRules` — Hermes (React Native's JS engine) ships `Intl.Collator`,
-  // `Intl.DateTimeFormat` and `Intl.NumberFormat` but not `Intl.PluralRules`, so
-  // `new Intl.PluralRules(locale)` throws "undefined is not a constructor" on-device even though
-  // it works under Jest's Node environment. English and Spanish cardinal plural rules agree for
-  // all non-negative integers (singular only at exactly 1), so a direct comparison covers both
-  // supported locales without a polyfill. Upgrade path: pull in `@formatjs/intl-pluralrules`
-  // (force-polyfill variant for Hermes) if a locale with a richer plural system is ever added.
+  // NOTE: Hermes lacks `Intl.PluralRules` (throws on-device, not under Jest); en and es agree (singular only at 1).
+  // Upgrade: `@formatjs/intl-pluralrules` (Hermes force-polyfill) when a locale with richer plurals is added.
   const key = count === 1 ? 'wear.one' : 'wear.other';
   return translate(locale, key, { count });
 }
@@ -97,13 +92,10 @@ export function useI18n(): {
   locale: Locale;
   t: (key: MessageKey, params?: Readonly<Record<string, string | number>>) => string;
 } {
-  // NOTE: reads device languages once per mount; it does not react to an OS language
-  // change while the app is running. Upgrade path: swap to expo-localization's
-  // `useLocales()` if live-updating locale is ever needed.
+  // NOTE: reads device languages once per mount, not on an OS change; upgrade: expo-localization's `useLocales()`.
   const deviceLocale = useMemo(() => resolveLocale(getLocales().map((entry) => entry.languageTag)), []);
 
-  // Outside an `I18nProvider` (e.g. a component test rendered in isolation) this defaults to
-  // `'system'`, so `locale` falls back to `deviceLocale` and existing callers see no change.
+  // `'system'` outside an `I18nProvider` (e.g. an isolated component test), so `locale` is `deviceLocale`.
   const { preference } = useLocalePreference();
   const locale = useMemo(() => preferenceToLocale(preference, deviceLocale), [preference, deviceLocale]);
 

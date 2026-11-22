@@ -19,7 +19,7 @@ export type GridItem = {
   badge?: string;
 };
 
-/** Mockup 02's `.g.proc` cell, rendered before the garments (e.g. "Processing 3 photos…"). */
+/** A status cell rendered before the garments (e.g. "Processing 3 photos…"). */
 export type LeadingTile = {
   label: string;
   tone?: 'progress' | 'error';
@@ -31,9 +31,8 @@ const MVCP_DISABLED = { disabled: true } as const;
 type Cell = GridItem | typeof LEADING_KEY;
 
 const NUM_COLUMNS = 3;
-// Half of mockup 02's 6 pt grid gap. Each cell pads itself by this much, so neighbouring cells sit
-// 6 pt apart; the list's horizontal padding is reduced by the same amount so the outer cell edges
-// line up with the screen title.
+// Half the 6 pt grid gap, padded by each cell; the list's padding drops by as much so outer edges align
+// with the screen title.
 const CELL_INSET = 3;
 
 const GridCell = memo(function GridCell({
@@ -180,10 +179,8 @@ export function ClosetGrid(props: {
     onScrollActiveChange?.(false);
   }, [onScrollActiveChange]);
 
-  // A drag released with ~zero velocity has no momentum phase, so `onMomentumScrollEnd` alone
-  // would leave `active` stuck `true` and `useFrameStats` accumulating idle frames forever.
-  // `onScrollEndDrag` clears it for that case; a drag that *does* carry into momentum gets a
-  // following `onMomentumScrollBegin` that flips it back to `true`.
+  // A drag released at ~zero velocity has no momentum phase, so `onScrollEndDrag` clears `active` too
+  // (else `useFrameStats` counts idle frames forever); a following `onMomentumScrollBegin` sets it again.
   const onScrollEndDrag = useCallback(() => {
     onScrollActiveChange?.(false);
   }, [onScrollActiveChange]);
@@ -205,9 +202,8 @@ export function ClosetGrid(props: {
       renderItem={renderItem}
       keyExtractor={keyExtractor}
       getItemType={getItemType}
-      // New garments and the leading tile arrive at the top. FlashList's default anchoring keeps
-      // the first visible cell in place, which scrolled the title and goal card off-screen on every
-      // upload; the closet reads top-down, so the content stays put instead.
+      // New garments arrive at the top; FlashList's default anchoring scrolled the title and goal card
+      // off-screen on every upload.
       maintainVisibleContentPosition={MVCP_DISABLED}
       // The selection lives outside `data`, so a change must still re-render the visible cells.
       extraData={selectedIds}
@@ -241,13 +237,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  // Mockup 01's `.g.sel`: a 2 pt violet border with a soft halo.
+  // A 2 pt violet border with a soft halo.
   cellSelected: {
     borderWidth: 2,
     borderColor: colors.accent,
     boxShadow: selectionRing,
   },
-  // A cut-out is cropped to the garment, so it gets a margin inside the cell, as in the mockup.
+  // A cut-out is cropped to the garment, so it gets a margin inside the cell.
   image: {
     width: '84%',
     height: '84%',
