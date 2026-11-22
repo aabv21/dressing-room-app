@@ -161,6 +161,48 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"push_claim_starts": {
+                  Row: {
+                    "id": number,"started_at": string,"token": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "id"?: never,"started_at"?: string,"token": string,"user_id": string
+                  }
+                  Update: {
+                    "id"?: never,"started_at"?: string,"token"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"push_claims": {
+                  Row: {
+                    "attempts": number,"code_hash": string,"created_at": string,"expires_at": string,"nonce_hash": string,"token": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "attempts"?: number,"code_hash": string,"created_at"?: string,"expires_at": string,"nonce_hash": string,"token": string,"user_id": string
+                  }
+                  Update: {
+                    "attempts"?: number,"code_hash"?: string,"created_at"?: string,"expires_at"?: string,"nonce_hash"?: string,"token"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"push_tokens": {
+                  Row: {
+                    "device_secret_hash": string,"last_review_push_at": string | null,"platform": string,"review_ready": boolean,"token": string,"updated_at": string,"user_id": string,"weekly": boolean
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "device_secret_hash": string,"last_review_push_at"?: string | null,"platform": string,"review_ready"?: boolean,"token": string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
+                  }
+                  Update: {
+                    "device_secret_hash"?: string,"last_review_push_at"?: string | null,"platform"?: string,"review_ready"?: boolean,"token"?: string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"rating_cache": {
                   Row: {
                     "cache_key": string,"created_at": string,"result": NonNullable<Json>,"user_id": string
@@ -257,10 +299,18 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "consume_quota":
+            "claim_review_push":
+{ Args: { "p_user_id": string }; Returns: {
+              "language": string,"ready": number,"token": string
+            }[]
+                           },
+"consume_quota":
 { Args: { "p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
                            } |
 { Args: { "p_day": string,"p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
+                           },
+"finish_push_claim":
+{ Args: { "p_device_secret": string,"p_platform": string,"p_review_ready": boolean,"p_token": string,"p_user_id": string,"p_weekly": boolean }; Returns: boolean
                            },
 "keep_alive":
 { Args: Record<PropertyKey, never>; Returns: string
@@ -277,8 +327,25 @@ isOneToOne: false
 "prune_expired_caches":
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },
+"push_claim_attempt":
+{ Args: { "p_nonce_hash": string,"p_token": string,"p_user_id": string }; Returns: string
+                           },
+"register_push_token":
+{ Args: { "p_device_secret": string,"p_platform": string,"p_review_ready": boolean,"p_token": string,"p_weekly": boolean }; Returns: undefined
+                           },
+"request_weekly_summary":
+{ Args: Record<PropertyKey, never>; Returns: undefined
+                           },
 "save_outfit":
 { Args: { "p_garment_ids": (string)[],"p_score"?: number }; Returns: string
+                           },
+"start_push_claim":
+{ Args: { "p_code_hash": string,"p_nonce_hash": string,"p_token": string,"p_user_id": string }; Returns: boolean
+                           },
+"weekly_summary_targets":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "language": string,"outfits": number,"token": string,"unused": number,"user_id": string
+            }[]
                            }
           }
           Enums: {

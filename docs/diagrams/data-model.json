@@ -143,8 +143,8 @@
     {
       "id": "apple",
       "type": "database",
-      "label": "apple_tokens",
-      "sublabel": "refresh token to revoke",
+      "label": "apple · push claims",
+      "sublabel": "refresh token · reclaim codes",
       "row": 2,
       "col": 3,
       "size": [
@@ -167,8 +167,8 @@
     {
       "id": "plans",
       "type": "database",
-      "label": "plans · trips",
-      "sublabel": "planned_outfits · saved_trips",
+      "label": "plans · trips · push",
+      "sublabel": "planned · trips · push_tokens",
       "row": 4,
       "col": 1,
       "size": [

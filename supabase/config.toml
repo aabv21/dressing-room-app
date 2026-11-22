@@ -422,6 +422,8 @@ deno_version = 2
 # reason: rate-outfit and lucky-list never reach the real services locally.
 [edge_runtime.secrets]
 EXTRACT_WEBHOOK_SECRET = "local-only-not-a-secret"
+# Must match the `weekly_summary_secret` Vault secret in seed.sql.
+WEEKLY_SUMMARY_SECRET = "local-only-not-a-secret"
 ANTHROPIC_API_KEY = "local-only-not-a-key"
 ANTHROPIC_BASE_URL = "http://host.docker.internal:54499"
 TYPESAFE_API_KEY = "local-only-not-a-key"
@@ -441,11 +443,29 @@ APPLE_KEY_ID = "LOCALKEY00"
 APPLE_CLIENT_ID = "local.dressing-room.test"
 APPLE_BASE_URL = "http://host.docker.internal:54498"
 APPLE_PRIVATE_KEY = "env(LOCAL_APPLE_PRIVATE_KEY)"
+# Expo's push send points at integration/mockServices.ts too, so local pushes never reach Expo.
+# EXPO_ACCESS_TOKEN stays unset: it's only for Expo's enhanced push security on the hosted project.
+EXPO_PUSH_URL = "http://host.docker.internal:54498/--/api/v2/push/send"
 
 # Called by the garments insert webhook (pg_net), which authenticates with the
 # `x-webhook-secret` header checked inside the function, not with a user JWT.
 [functions.extract-attributes]
 verify_jwt = false
+
+# Called by the weekly-summary pg_cron job (pg_net), which authenticates with the `x-webhook-secret`
+# header checked inside the function, like extract-attributes.
+[functions.weekly-summary]
+verify_jwt = false
+
+# Called by the app with the anon key, signed in or not (a sign-out that couldn't reach the server
+# retries after it): the push token plus the phone's device secret in the body are the credential,
+# and no caller id is read.
+[functions.push-unregister]
+verify_jwt = false
+
+# Called by signed-in users reclaiming their phone's push token; the gateway verifies the JWT.
+[functions.push-claim]
+verify_jwt = true
 
 # Called by signed-in users; the gateway verifies the JWT before the function
 # runs, and the function reads garments and the profile with that same token.

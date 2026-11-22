@@ -64,6 +64,16 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   propio teléfono.
 - **Conteos de uso.** Cuántas solicitudes de IA de cada tipo hiciste cada día, para aplicar los
   límites diarios, y los resultados de solicitudes recientes, para que repetir una no cueste nada.
+- **Avisos de la app, solo si los activas.** En Perfil → "Avisos de la app", "Prendas listas para
+  revisar" y "Resumen semanal" están desactivados hasta que actives uno. Entonces la app guarda el
+  token de notificaciones push de tu teléfono (la dirección a la que los servicios push entregan),
+  qué avisos elegiste, el tipo de teléfono (iPhone o Android), cuándo te avisó por última vez que había
+  prendas listas, y una huella de un código aleatorio que la app crea en tu teléfono, para que solo tu
+  teléfono pueda registrar o quitar su token. El token se guarda solo para enviarte los avisos que
+  activaste. Si otra cuenta ya tiene el token de tu teléfono (por ejemplo, después de restaurar los
+  datos de la app), la app comprueba que tu teléfono lo recibe con un código de un solo uso enviado
+  como notificación silenciosa; para esa comprobación el servidor guarda el token, el id de tu cuenta
+  y huellas del código hasta por una hora.
 
 La app no tiene publicidad, ni analítica, ni rastreo, y tus datos nunca se venden.
 
@@ -97,6 +107,7 @@ pantalla con las voces de texto a voz de tu propio teléfono.
 | Apple | Tu identidad de Iniciar sesión con Apple y, cuando eliminas tu cuenta, una solicitud para revocar el acceso de la app | El inicio de sesión, y cortar ese vínculo cuando te vas |
 | Google | Tu identidad de Iniciar sesión con Google | El inicio de sesión |
 | Brevo | Tu correo electrónico y el código de confirmación o para restablecer la contraseña | Enviar los correos de tu cuenta |
+| Expo (notificaciones push) | Solo si activas un aviso: el token push de tu teléfono y el texto de cada aviso ("3 prendas listas para revisar", o el conteo semanal de outfits registrados y prendas que esperan a que las uses), que Expo entrega al servicio push de Apple o de Google para mostrarlo en tu teléfono | Entregar los avisos que activaste |
 
 Los servicios de IA reciben estas solicitudes desde el servidor de la app, nunca directamente desde
 tu teléfono, y el servidor nunca les envía tus fotos salvo para el reconocimiento de prendas y la
@@ -108,7 +119,9 @@ la tienda.
 ## Cuánto tiempo se guardan
 
 Tus datos se guardan hasta que los eliminas o eliminas tu cuenta, salvo los planes, que se borran
-30 días después de su día. Puedes eliminar cualquier prenda
+30 días después de su día, y el token push de tu teléfono, que se borra cuando desactivas ambos
+avisos, cuando cierras sesión en ese teléfono, cuando Apple o Google informan que el teléfono ya no lo
+acepta, o junto con tu cuenta. Puedes eliminar cualquier prenda
 (sus fotos también se borran), cualquier uso registrado, outfit guardado, plan o viaje guardado cuando quieras,
 volver a incluir una prenda en las sugerencias desde su detalle y restaurar todas las combinaciones
 ocultas desde Perfil. El dueño de la app guarda
@@ -122,8 +135,9 @@ Cada proveedor de arriba aplica sus propias reglas de conservación a lo que rec
 ## Tus opciones: exportar y eliminar
 
 - **Exportar.** Perfil → Privacidad → "Exportar mis datos" te da un archivo con tu perfil, tus
-  prendas (con los precios que hayas escrito), tus outfits, tus usos, tus outfits planeados, tus viajes guardados y las combinaciones que marcaste con "No es para mí", más enlaces a
-  tus fotos que funcionan durante 7 días.
+  prendas (con los precios que hayas escrito), tus outfits, tus usos, tus outfits planeados, tus viajes guardados, las combinaciones que marcaste con "No es para mí"
+  y tus preferencias de avisos (sin el token push), más enlaces a tus fotos que funcionan durante 7
+  días.
 - **Eliminar tu cuenta.** Perfil → Privacidad → "Eliminar cuenta", confirmado dos veces, borra tus
   fotos, revoca Iniciar sesión con Apple si lo usaste, y elimina tu cuenta y cada fila que le
   pertenece. Después la app borra su copia de tus datos en ese teléfono y cierra tu sesión.

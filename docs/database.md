@@ -210,6 +210,26 @@ saved trips per user`), holding a per-user advisory lock so two concurrent saves
 the count; the app lists the newest 50. Index
 `saved_trips_user_id_created_at_idx` on `(user_id, created_at desc)` backs the saved list.
 
+### `public.push_tokens`
+
+One opted-in phone per row for the server's two notices (`20261125120000_push_notifications.sql`):
+`(user_id uuid not null default auth.uid() references auth.users on delete cascade, token text not
+null, platform text not null, review_ready boolean not null default false, weekly boolean not null
+default false, last_review_push_at timestamptz, updated_at timestamptz not null default now(),
+device_secret_hash text not null, primary key (user_id, token))`. Checks: `platform in ('ios',
+'android')`, the token `^(ExponentPushToken|ExpoPushToken)\[.+\]$` and at most 255 characters, and
+`device_secret_hash` 64 lowercase hex characters. `push_tokens_token_idx` on `(token)` serves the
+server's lookups by token alone (a dead token, a takeover, `push-unregister`). The row goes when
+both switches are off, on sign-out, and with the account (the cascade).
+
+- `device_secret_hash` is the SHA-256 of the phone's own random secret (256 bits, kv
+  `push.deviceSecret`), so only that phone can register or unregister its token
+  ([Push notifications](#push-notifications)).
+- `last_review_push_at` is server-only: the 60-minute window between "ready to review" pushes.
+- `updated_at` is stamped by the `push_tokens_stamp` trigger with `clock_timestamp()` on a
+  registration (an insert, or an update of the token, platform or choices), never by a claim.
+- Not exported with the token: `export-data` reads every other column but the hash.
+
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache` (Plan 5), `public.trip_cache`
 
 Server-only caches for the `rate-outfit`, `lucky-list`, `for-you` and `trip-plan` Edge Functions (the first two
@@ -453,6 +473,14 @@ references from authenticated`. RLS runs before the check constraint, so a singl
 comparing `user_id = (select auth.uid())`. `revoke all from anon`; `revoke update, truncate,
 trigger, references from authenticated`: a saved trip is kept or deleted, never edited.
 
+### `public.push_tokens`
+
+`push_tokens_select_own` and `push_tokens_delete_own`, comparing `user_id = (select auth.uid())`.
+`revoke all from anon`; `revoke select, insert, update, truncate, trigger, references from
+authenticated`, then `grant select` on every column but `device_secret_hash`: clients read their own
+choices and delete their own rows, and write only through `register_push_token()`. A direct insert or
+update raises `42501`, and so does selecting the hash, even on the caller's own row.
+
 ### `public.rating_cache`, `public.lucky_cache`, `public.weather_cache` (Plan 4), `public.for_you_cache`, `public.apple_tokens` (Plan 5), `public.trip_cache`
 
 RLS is enabled with **zero policies** on all six, and `revoke all on <table> from anon,
@@ -567,6 +595,98 @@ and the function's own secrets with
 run from an empty directory: from the repo, the CLI also pushes `config.toml`'s local-only
 `[edge_runtime.secrets]` ([`owner-runbook.md`](owner-runbook.md#setting-a-hosted-secret)). `ANTHROPIC_BASE_URL` stays unset there, so the function uses
 `https://api.anthropic.com`.
+
+### Push notifications
+
+The server's two notices to opted-in phones, sent through Expo's push service
+([`api.md`](api.md#extract-attributes)); the table is [`push_tokens`](#publicpush_tokens).
+
+**`public.register_push_token(p_token, p_platform, p_review_ready, p_weekly, p_device_secret)`**
+is the only client write: `security definer`, `set search_path = ''`, execute granted to
+`authenticated` only. It takes the caller from `auth.uid()`, refuses (`22023`) a token outside the
+format, a platform other than `ios` or `android`, or a secret that isn't 32 to 128 hex characters
+(128 to 512 bits), and hashes the secret with `extensions.digest(…, 'sha256')`. Holding a per-token
+advisory lock, it then:
+
+- refuses with `42501` when another account holds the token under a **different** hash: someone who
+  only knows the token can neither register nor take it over;
+- deletes the other accounts' rows for the token when they hold the **same** hash: that phone, with
+  a new account signed in, takes the token over cleanly;
+- upserts the caller's row with both choices and the hash. The caller's own row may change hash: a
+  reinstall can keep the token but not the secret.
+
+A phone that gets `42501` for its own token (it lost its secret: restored app data, a kv reset) or a
+user whose token someone else registered first reclaims it by proving receipt of a push
+(`push_claims` below).
+
+NOTE: whoever holds the unlocked phone holds its secret and its pushes; upgrade path: OS-backed device
+attestation, if the app ever holds data worth it.
+
+**`public.push_claims`** (`token text, user_id uuid references auth.users on delete cascade,
+code_hash text not null, nonce_hash text not null, created_at, expires_at timestamptz not null,
+attempts smallint not null default 0 check (attempts between 0 and 5), primary key (token,
+user_id)`, index on `user_id`) is a reclaim in flight: the SHA-256 of a code the `push-claim` function
+pushed to the token, and of the nonce the claiming phone made, which the push echoes so a phone
+answers only its own claim's code. Keyed by account too, so one account's open claim never blocks
+another's. **`public.push_claim_starts`**
+(`id identity primary key, token, user_id … on delete cascade, started_at`, indexes on
+`(user_id, started_at)` and `(token, started_at)`) logs each start that sent a code, for the limits.
+Both have RLS on with no policies and `revoke all` from `anon` and `authenticated`, like the caches.
+Three `security definer` RPCs, `service_role` only:
+
+- `start_push_claim(p_user_id, p_token, p_code_hash, p_nonce_hash)`, under the same per-token
+  advisory lock as `register_push_token`, answers false (and logs nothing) for a token no row holds
+  (it can simply be registered) or one the caller already holds, and false when a limit is reached:
+  a start by that account on that token in the last 10 minutes, 5 starts by the account in the last
+  hour across tokens, or 6 distinct other accounts already claiming the token in the last hour (a
+  spam guard for the phone). Otherwise it starts or replaces the caller's claim for 10 minutes with
+  0 attempts, logs the start and answers true.
+- `push_claim_attempt(p_user_id, p_token, p_nonce_hash)` adds one to the caller's own unexpired claim
+  with that nonce while under 5 attempts and answers its `code_hash` (the function compares in
+  constant time), else null; a code carrying another claim's nonce spends nothing. It takes no lock:
+  `finish_push_claim` re-checks the claim under the token's lock.
+- `finish_push_claim(p_user_id, p_token, p_platform, p_review_ready, p_weekly, p_device_secret)`,
+  under the token's lock, deletes the caller's own unexpired claim, and only if it did: deletes every other claim on the
+  token and its other rows, and upserts the caller's row with the new secret's hash and both choices,
+  all in one transaction.
+
+NOTE: the per-token cap is a spam guard, so locking a token's claims for an hour takes the token plus 6
+accounts (Auth rate-limits sign-ups); upgrade path: a per-device quota, if it ever happens.
+
+`prune_expired_caches()` (redefined by this migration, the rest unchanged) deletes expired claims and
+starts over an hour old daily.
+
+**`public.claim_review_push(p_user_id)`** (`security definer`, `service_role` only; `extract-attributes`
+calls it after each matched write-back) answers nothing while the user has a live extraction
+(`pending`, unreviewed, not donated, created under 10 minutes ago, the app's stale timeout) or no
+unreviewed `done` garment. Otherwise it counts the review queue (unreviewed, not donated) and, in one
+`update … returning`, stamps `last_review_push_at = now()` on each `review_ready` row not pushed in
+the last 60 minutes (a token has one holder; the check that no other account registered it later
+stays as defense in depth); it returns those tokens with the
+profile language (`'en'` when unset) and the count. The update is the claim: a concurrent call waits
+on the row lock and then sees the new time, so two garments finishing together push once.
+
+**`public.weekly_summary_targets()`** (`security definer`, `stable`, `service_role` only) returns one
+row per `weekly` token (a token has one holder; the newest-holder check stays as defense in depth) with the profile language, `outfits` (wears with
+`worn_on` in the 7 UTC days ending today) and `unused` (Stats' rule: not donated, added over 182 days
+ago, never worn or last worn over 182 days ago); a user with both at 0 is left out.
+
+**The weekly job.** `public.request_weekly_summary()` (`security definer`, owned by `postgres`,
+execute revoked from clients) reads `weekly_summary_url` and `weekly_summary_secret` from the Vault
+and `net.http_post`s `{}` with `x-webhook-secret` and a 30 s timeout; without either value it does
+nothing, and any error is a warning carrying only the SQLSTATE, as in the extraction trigger. The
+pg_cron job `weekly-summary` runs it on Sundays at 13:00 UTC (`0 13 * * 0`). Its run history stays
+in `cron.job_run_details` (52 rows a year; `prune_expired_caches()` only prunes its own job's).
+
+**Local values** come from `supabase/seed.sql`: `weekly_summary_secret = 'local-only-not-a-secret'`
+(matching `WEEKLY_SUMMARY_SECRET` in `config.toml`) and `weekly_summary_url =
+'http://supabase_kong_dressing-room-app:8000/functions/v1/weekly-summary'`. **Hosted values** are set
+by hand ([`owner-runbook.md`](owner-runbook.md#3-secrets-keys-and-spend-caps)):
+
+```sql
+select vault.create_secret('https://<project-ref>.supabase.co/functions/v1/weekly-summary', 'weekly_summary_url');
+select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'weekly_summary_secret');
+```
 
 ### Logging a wear
 
@@ -754,7 +874,7 @@ inside them, never in `src/`.
      failed read of the row) is logged as `revoke_failed` and never blocks the deletion;
   3. with the service role, `DELETE /auth/v1/admin/users/{uid}`, after which every public table cascades away:
      `profiles`, `garments` (and through them `outfit_items`), `outfits`, `wears`,
-     `dismissed_outfits`, `planned_outfits`, `saved_trips`, `usage_counters`, `rating_cache`,
+     `dismissed_outfits`, `planned_outfits`, `saved_trips`, `push_tokens`, `push_claims`, `push_claim_starts`, `usage_counters`, `rating_cache`,
      `lucky_cache`, `for_you_cache`, `trip_cache` and `apple_tokens` all
      reference `auth.users` with `on delete cascade` (pinned by `insights_account.test.sql`).
   4. once this call has deleted the user, sweeps `garments/{uid}/` one last time, best effort:
@@ -773,7 +893,8 @@ inside them, never in `src/`.
   What the app does around the call (the marker, the paused queue, `reauth`, the local cleanup and
   the later checks) is in [`app.md`](app.md#account-deletion-on-the-device).
 - **`export-data`** — reads `profiles`, `garments` (every column, so `price` and `currency` too), `outfits` (with `items:outfit_items(garment_id)`),
-  `wears`, `dismissed_outfits`, `planned_outfits` and `saved_trips` with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
+  `wears`, `dismissed_outfits`, `planned_outfits`, `saved_trips` and `push_tokens` (every column but
+  the token and its secret's hash) with the caller's own token, so RLS applies, in pages (at most 1000 rows each, the
   `max_rows` cap) until a page comes back empty, and drops any row whose `user_id` isn't the
   caller's. Each page starts after the rows already received, so a lower hosted `max_rows` still
   reads every row. Photo URLs are signed with the service role for 7 days,

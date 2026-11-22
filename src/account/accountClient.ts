@@ -133,6 +133,7 @@ function isDataExport(value: unknown): value is DataExport {
     isRows(value.dismissedOutfits) &&
     isRows(value.plannedOutfits) &&
     isRows(value.savedTrips) &&
+    isRows(value.pushPreferences) &&
     Array.isArray(value.photos) &&
     value.photos.every(isPhoto)
   );

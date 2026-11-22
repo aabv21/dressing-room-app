@@ -3,6 +3,9 @@
 // queue, the function, the device cleanup and the local sign-out), with every seam mocked.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
 jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
+// Profile's notices and sign-out would load the Supabase client.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`)
+jest.mock('../push/pushRegistration', () => require('../test/pushClientsMock'));
 
 const mockQueue = {
   pause: jest.fn(() => Promise.resolve()),
@@ -160,6 +163,7 @@ const EXPORT: DataExport = {
   dismissedOutfits: [],
   plannedOutfits: [],
   savedTrips: [],
+  pushPreferences: [],
   photos: [],
 };
 

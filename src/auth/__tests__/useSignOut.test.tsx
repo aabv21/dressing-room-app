@@ -1,9 +1,11 @@
 jest.mock('../authService', () => ({ signOut: jest.fn() }));
 jest.mock('../AuthProvider', () => ({ useAuth: () => ({ userId: 'user-1' }) }));
+jest.mock('../../push/pushRegistration', () => ({ forgetPushToken: jest.fn(() => Promise.resolve()) }));
 
 import { act, renderHook } from '@testing-library/react-native';
 
 import { allowUserKeys, kvKeys, kvRemove, kvSet } from '../../lib/kv';
+import { forgetPushToken } from '../../push/pushRegistration';
 import { signOut } from '../authService';
 import { useSignOut } from '../useSignOut';
 
@@ -39,4 +41,26 @@ test('a failed sign-out keeps everything', async () => {
   });
 
   expect(kvKeys().sort()).toEqual(['closet.v1.user-1', 'wear.queue.user-1']);
+});
+
+test('the push token is deleted while the session can still do it, before signing out', async () => {
+  const order: string[] = [];
+  jest.mocked(forgetPushToken).mockImplementationOnce(() => {
+    order.push('forget');
+    return Promise.resolve();
+  });
+  mockedSignOut.mockImplementationOnce(() => {
+    order.push('signOut');
+    return Promise.resolve({ ok: true });
+  });
+  const { result } = await renderHook(() => useSignOut());
+
+  await act(async () => {
+    result.current.signOut();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
+  expect(forgetPushToken).toHaveBeenCalledWith('user-1');
+  expect(order).toEqual(['forget', 'signOut']);
 });

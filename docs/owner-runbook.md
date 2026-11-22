@@ -139,6 +139,30 @@ init`, the OAuth clients and the store records.
     is called.
   - The new app before `stylist` is deployed: "Ask your stylist" says something went wrong.
   - An old app on the new schema and function works: nothing it calls changed.
+- **Pending (after merge).** Wave 5b-4 (server push notifications), after 5b-3 and in this order:
+  1. `pnpm exec supabase db push` for `20261125120000_push_notifications.sql` (`push_tokens`,
+     `push_claims`, `register_push_token`, the three claim RPCs, `claim_review_push`,
+     `weekly_summary_targets`, `request_weekly_summary`, the `weekly-summary` pg_cron job and
+     `prune_expired_caches()` with the expired claims);
+  2. the weekly summary's Vault values and function secret, as listed in
+     [section 3](#3-secrets-keys-and-spend-caps) (the only place they're spelled out);
+  3. `pnpm exec supabase functions deploy weekly-summary push-unregister push-claim extract-attributes export-data`
+     (`weekly-summary`, `push-unregister` and `push-claim` are new: the first two keep
+     `verify_jwt = false` from `config.toml`, `push-claim` `true`; `extract-attributes` sends the
+     "ready to review" push; `export-data` adds `pushPreferences`);
+  4. then the app build (EAS `preview`, and the store profiles when they're set up). No native module
+     is added (`expo-notifications` was already in the build), but Profile gains the section; pushes
+     reach Android only after the [Firebase step](#4-eas-project-and-builds), and iOS after APNs.
+
+  Incompatible combinations:
+  - The new functions on the old schema: `extract-attributes` still extracts (the push claim fails
+    and is logged as `push: 'failed'`); `weekly-summary` answers 500; `export-data` answers 500 (no
+    `push_tokens`).
+  - The new app before the new `export-data`: the app refuses an export without `pushPreferences`.
+  - The new app on the old schema: turning a notice on says it couldn't save; nothing else changes.
+  - Without the Vault values the cron job does nothing; without `WEEKLY_SUMMARY_SECRET` the function
+    doesn't boot (the job's call fails, nothing else does).
+  - An old app on the new schema and functions works: it never registers a token.
 - **Done.** Keep the free project awake: the repository variables `SUPABASE_URL` and
   `SUPABASE_ANON_KEY` (`gh variable set …`) feed the daily `.github/workflows/keepalive.yml`; a
   manual `gh workflow run keepalive.yml` answers the server time from `public.keep_alive()`. GitHub
@@ -163,6 +187,18 @@ init`, the OAuth clients and the store records.
 
   Without them hosted garments reach review with empty fields, and the outfit functions answer 500
   (`index.ts` requires `TYPESAFE_API_KEY`; `rate-outfit` and `for-you` also `ANTHROPIC_API_KEY`).
+- **Pending (after merge, wave 5b-4).** The weekly summary's secrets: the Vault values (in the SQL
+  editor) and the function secret `WEEKLY_SUMMARY_SECRET` (the same random secret,
+  [from an empty directory](#setting-a-hosted-secret)):
+
+  ```sql
+  select vault.create_secret('https://lkmolwiywnnmzmsarjmb.supabase.co/functions/v1/weekly-summary', 'weekly_summary_url');
+  select vault.create_secret('<random secret, e.g. openssl rand -hex 32>', 'weekly_summary_secret');
+  ```
+
+  Leave `EXPO_PUSH_URL` unset (the functions then call `https://exp.host`). Optional:
+  `EXPO_ACCESS_TOKEN`, only if you turn on "Enhanced Security for Push Notifications" in the Expo
+  project's settings; without that setting, leave it unset too.
 - **Pending.** TypeSafe rate limits: check them against a lucky list's up to 30 ratings (5 at once),
   a rating's up to 8 swap checks and For you's up to 10 fits (5 at once); a 429 from Jev looks like
   a failure.
@@ -219,6 +255,27 @@ init`, the OAuth clients and the store records.
   build without them crashes at launch (`src/lib/supabase.ts` throws on a missing URL or key).
 - **Done.** The Android preview APK (`pnpm dlx eas-cli@27 build -p android --profile preview`), the
   family's install path.
+- **Pending (owner).** Push notifications on Android need FCM V1 credentials. Until they're in place,
+  turning a notice on in Profile says "Notifications aren't available on this phone yet" and
+  nothing else changes.
+  1. Create a Firebase project ("Dressing Room") in the Firebase console and add an Android app with
+     the package `com.aabv21.dressingroom`.
+  2. Download its `google-services.json` to the repo root. It holds only public identifiers (Expo's
+     docs say it may be committed), and Expo requires it for the app to register with FCM: add
+     `"googleServicesFile": "./google-services.json"` under `android` in `app.json` in the same pull
+     request, never before the file exists (a missing file breaks every prebuild).
+  3. In the Firebase console, Settings > Service accounts > Generate new private key. This JSON **is a
+     secret**: keep it outside the repo and never commit it.
+  4. `pnpm dlx eas-cli@27 credentials` > Android > `production` > Google Service Account > "Manage your
+     Google Service Account Key for Push Notifications (FCM V1)" > "Set up a Google Service Account
+     Key for Push Notifications (FCM V1)" > "Upload a new service account key"; repeat for `preview`
+     if EAS asks per profile. Then delete the downloaded key.
+  5. A new app build (EAS builds prebuild from scratch; a local build needs
+     `pnpm expo prebuild --clean`).
+- **Blocked (Apple enrollment).** Push notifications on iOS need APNs: once the Apple account exists,
+  set `"enableRemoteNotifications": true` in `expo-notifications`' plugin options in `app.json` (it
+  adds the `aps-environment` entitlement, which a personal-team build can't sign, so it stays `false`
+  until then) and let `eas build` create the push key, or upload one with `eas credentials`.
 - **As needed.** Local builds after a native change: `pnpm expo run:ios` / `pnpm expo run:android`
   (there is no EAS development profile and no `expo-dev-client`).
 
@@ -295,6 +352,16 @@ project:
   declines or redirects in one sentence. "New chat" clears it; leaving and coming back starts empty;
   the 21st message of the day says the 20 are used. Check the Anthropic console's usage for the
   session against `ai.md`'s per-message estimate.
+- **Pending (after Firebase).** Push notifications on the Android APK (and the iPhone once APNs is
+  set): in Profile, turn on "Garments ready to review" (the permission prompt once, then the switch
+  stays on) and upload two photos; when both are processed one notification arrives, "2 garments are
+  ready to review", in the app language, and tapping it opens Review (also with the app closed).
+  Upload another within the hour: no second notification. Turn on "Weekly summary" and run the job
+  by hand in the SQL editor (`select public.request_weekly_summary();`): the summary arrives and
+  opens Stats. Switch the profile language and run it again: the copy follows. Turn both off and
+  check `push_tokens` has no row for you; sign out with both on and check the same; sign in as
+  another account on the same phone and turn one on: the other account's row is gone. Before
+  Firebase is set up, turning one on says "Notifications aren't available on this phone yet".
 - **Pending.** Large text and screen readers: the largest Dynamic Type and Android font scale 2.0
   through every tab, the rating, review and Diary; then VoiceOver and TalkBack.
 - **Pending.** Google sign-in on the phone; Sign in with Apple and its revocation once Apple is

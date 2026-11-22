@@ -1,6 +1,6 @@
 /** @jest-environment node */
 // supabase/functions/_shared/__tests__/http.test.ts
-import { callerOf, fetchWithDeadline, readJson, reply } from '../http.ts';
+import { callerOf, fetchWithDeadline, readJson, reply, secretMatches } from '../http.ts';
 
 const { jest } = import.meta;
 
@@ -119,5 +119,21 @@ describe('reply', () => {
     } finally {
       info.mockRestore();
     }
+  });
+});
+
+describe('secretMatches', () => {
+  test.each([
+    ['the same secret', 'webhook-secret', true],
+    ['a different secret', 'nope', false],
+    ['one differing only in its last character', 'webhook-secreX', false],
+    ['a longer one sharing the prefix', 'webhook-secret-and-more', false],
+    ['no header', null, false],
+  ])('%s', (_label, given, expected) => {
+    expect(secretMatches(given, 'webhook-secret')).toBe(expected);
+  });
+
+  test('an unset expected secret matches nothing, not even an empty header', () => {
+    expect(secretMatches('', '')).toBe(false);
   });
 });

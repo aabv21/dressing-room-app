@@ -60,6 +60,15 @@ where it is kept, who processes it and how you can export or delete it. Question
   aloud is spoken by your phone's own voices.
 - **Usage counts.** How many AI requests of each kind you made each day, to enforce the daily
   limits, and the results of recent AI requests, so repeating one costs nothing.
+- **Notifications from the app, only if you turn them on.** In Profile → "Notifications from the
+  app", "Garments ready to review" and "Weekly summary" are off until you turn one on. Then the app
+  stores your phone's push token (the address push services deliver to), which notices you chose,
+  your phone type (iPhone or Android), when it last told you garments were ready, and a fingerprint of
+  a random code the app makes on your phone, so only your phone can register or remove its token. The
+  token is stored only to send the notices you turned on. If another account already holds your
+  phone's token (for example after restoring the app's data), the app proves your phone receives it
+  with a one-time code sent as a silent notification; for that check the server keeps the token, your
+  account id and fingerprints of the code for up to an hour.
 
 The app has no ads, no analytics and no tracking, and your data is never sold.
 
@@ -91,6 +100,7 @@ nothing about it reaches a server or a push service.
 | Apple | Your Sign in with Apple identity, and, when you delete your account, a request to revoke the app's access | Sign-in, and ending that link when you leave |
 | Google | Your Sign in with Google identity | Sign-in |
 | Brevo | Your email address and the confirmation or reset code | Sending your account's emails |
+| Expo (push notifications) | Only if you turn on a notice: your phone's push token and each notice's text ("3 garments are ready to review", or your week's count of logged outfits and pieces waiting to be worn), which Expo hands to Apple's or Google's push service to show on your phone | Delivering the notifications you turned on |
 
 The AI services receive these requests from the app's server, never directly from your phone, and
 the app's server never sends them your photos except for the garment recognition and the "Should I
@@ -102,7 +112,9 @@ generic words such as "camel blazer women"; the store's own privacy policy appli
 ## How long it is kept
 
 Your data stays until you delete it or delete your account, except plans, which go 30 days after
-their day. You can delete any garment (its photos
+their day, and your phone's push token, which is deleted when you turn both notices off, when you
+sign out on that phone, when Apple or Google report the phone no longer accepts it, or with your
+account. You can delete any garment (its photos
 are removed too), any logged wear, saved outfit, plan or saved trip at any time, put a piece back into
 suggestions from its detail screen, and restore every hidden combination from Profile. The owner keeps a nightly backup of the database
 and photos on their own computer, for recovery only, and keeps the 14 most recent ones; data you
@@ -114,7 +126,8 @@ Each processor above applies its own retention rules to what it receives from th
 ## Your choices: export and deletion
 
 - **Export.** Profile → Privacy → "Export my data" gives you a file with your profile, garments
-  (with any prices you entered), outfits, wears, planned outfits, saved trips and the combinations you marked "Not for me", plus links to your photos that work
+  (with any prices you entered), outfits, wears, planned outfits, saved trips, the combinations you marked "Not for me"
+  and your notification choices (not the push token itself), plus links to your photos that work
   for 7 days.
 - **Delete your account.** Profile → Privacy → "Delete account", confirmed twice, removes your
   photos, revokes Sign in with Apple if you used it, and deletes your account and every row that

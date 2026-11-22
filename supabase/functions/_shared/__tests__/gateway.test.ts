@@ -9,8 +9,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 const FUNCTIONS_DIR = new URL('../../', import.meta.url);
 
-/** The only function the gateway lets through unsigned: the database webhook, which checks its own secret. */
-const WEBHOOK_FUNCTIONS = ['extract-attributes'];
+/** The only functions the gateway lets through unsigned: the database's webhook and cron job, which check their own secrets. */
+const WEBHOOK_FUNCTIONS = ['extract-attributes', 'weekly-summary'];
+/** Called without a session (after sign-out): the push token and the phone's device secret are the credential; no user id is read. */
+const TOKEN_FUNCTIONS = ['push-unregister'];
 
 function functionNames(): string[] {
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
@@ -45,14 +47,31 @@ describe('the gateway verifies every user-called function’s JWT', () => {
     expect([...verifyJwtSettings().keys()].sort()).toEqual(functionNames());
   });
 
-  test.each(functionNames().filter((name) => !WEBHOOK_FUNCTIONS.includes(name)))(
+  test.each(functionNames().filter((name) => !WEBHOOK_FUNCTIONS.includes(name) && !TOKEN_FUNCTIONS.includes(name)))(
     '%s has verify_jwt = true',
     (name) => {
       expect(verifyJwtSettings().get(name)).toBe(true);
     },
   );
 
-  test('only the database webhook skips the gateway check, and it checks its own secret instead', () => {
+  test('push-unregister skips the gateway check and never trusts a caller id: it deletes only rows matching the token and device secret', () => {
+    expect(verifyJwtSettings().get('push-unregister')).toBe(false);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
+    const handler = readFileSync(new URL('push-unregister/handler.ts', FUNCTIONS_DIR), 'utf8');
+    expect(handler).not.toContain('userIdFromJwt');
+    expect(handler).not.toContain('callerOf');
+    expect(handler).toContain('device_secret_hash=eq.');
+  });
+
+  test('the weekly-summary cron call skips the gateway check, and checks its own secret instead', () => {
+    expect(verifyJwtSettings().get('weekly-summary')).toBe(false);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
+    const handler = readFileSync(new URL('weekly-summary/handler.ts', FUNCTIONS_DIR), 'utf8');
+    expect(handler).toContain("request.headers.get('x-webhook-secret')");
+    expect(handler).not.toContain('userIdFromJwt');
+  });
+
+  test('the extraction webhook skips the gateway check, and checks its own secret instead', () => {
     expect(verifyJwtSettings().get('extract-attributes')).toBe(false);
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path inside the repo.
     const handler = readFileSync(new URL('extract-attributes/handler.ts', FUNCTIONS_DIR), 'utf8');

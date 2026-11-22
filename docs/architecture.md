@@ -4,7 +4,7 @@ This page follows a garment from the camera to a rated outfit, then covers the o
 paths, the data model, failures, security, scaling and costs, the reasons behind each design
 choice, and how to regenerate the diagrams.
 
-![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo and Apple, a garment insert starts the extraction function, Auth mails through Brevo, GitHub Actions calls the keep-alive daily, and the owner's Mac backs up the database and photos](diagrams/system-context.svg)
+![System context: the Expo app talks only to the Supabase project through its API gateway; the Edge Functions reach Postgres and Storage with the user's token or the service role and call Anthropic, TypeSafe, Open-Meteo, Apple and Expo's push service, a garment insert starts the extraction function and a weekly cron job the summary function, Auth mails through Brevo, GitHub Actions calls the keep-alive daily, and the owner's Mac backs up the database and photos](diagrams/system-context.svg)
 
 System context: [interactive page](diagrams/system-context.html) · [source](diagrams/system-context.json)
 
@@ -24,15 +24,16 @@ It runs in three places:
   and Android. Background removal, resizing and the upload queue run here, and so do Stats and
   Diary, which are computed from the garments and wears already on the device.
 - **One Supabase project.** Auth, Postgres 17 with row-level security on every table, a private
-  Storage bucket, and ten Edge Functions. Every request from the app goes through the project's
+  Storage bucket, and thirteen Edge Functions. Every request from the app goes through the project's
   API gateway with the user's session token; the app holds no other credential.
 - **Three AI and data services,** called only from the Edge Functions: Anthropic (Claude Haiku
   5.5), TypeSafe (its Jev judgment model) and Open-Meteo (weather and geocoding). Apple and Google
   only take part in sign-in, and Apple once more when an account is deleted. Auth sends its emails
-  (the password-reset code) through Brevo's SMTP relay.
+  (the password-reset code) through Brevo's SMTP relay, and the functions send the opted-in push
+  notices through Expo's push service, which hands them to FCM and APNs.
 
 Locally, the same Supabase stack runs in Docker (`pnpm db:start`), and every Claude, Jev,
-Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic.ts`,
+Open-Meteo, Apple and Expo push call goes to a mock on the host (`integration/mockAnthropic.ts`,
 `integration/mockServices.ts`), so nothing local reaches a real API.
 
 ## What each component does
@@ -43,9 +44,12 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 | Upload queue | Phone | `src/closet/upload/`: a SQLite queue that takes each photo through prepare, upload and commit, saving the stage reached before the next starts. Two items at a time, backoff from 5 s doubling to 10 min, 8 attempts. |
 | `garment-cutout` | Phone | A local native module: iOS 17+ Vision foreground masks and Android ML Kit subject segmentation remove the photo's background. Without it, the original photo is kept. |
 | Auth | Supabase | Email and password (8 characters or more), Sign in with Apple and Sign in with Google through native ID tokens, and a 6-digit password-reset code by email, sent through Brevo's SMTP relay (Mailpit catches it locally). |
-| Postgres 17 | Supabase | Profiles, garments, outfits, wears, the daily quota counters, the AI result caches and the Apple refresh tokens. RLS on every table. Garment writes are narrowed by column grants; the app creates outfits and wears through the `log_wear` and `save_outfit` RPCs, and RLS limits any direct insert, or a wear's delete, to the caller's own rows. |
+| Postgres 17 | Supabase | Profiles, garments, outfits, wears, the daily quota counters, the AI result caches, the Apple refresh tokens and the opted-in phones' push tokens. RLS on every table. Garment writes are narrowed by column grants; the app creates outfits and wears through the `log_wear` and `save_outfit` RPCs, and RLS limits any direct insert, or a wear's delete, to the caller's own rows. |
 | Storage | Supabase | The private `garments` bucket: `{user id}/{garment id}/full.webp` and `thumb.webp`, 2 MiB at most per object, with folder policies that match RLS. |
-| `extract-attributes` | Edge Function | Called by the garment insert trigger through `pg_net`, with a shared secret header. Sends the photo to Claude and writes back enum-only attributes and the fields Claude doubted. |
+| `extract-attributes` | Edge Function | Called by the garment insert trigger through `pg_net`, with a shared secret header. Sends the photo to Claude and writes back enum-only attributes and the fields Claude doubted; once the user's batch is done, at most hourly, pushes "N garments are ready to review" to opted-in phones. |
+| `weekly-summary` | Edge Function | Called by a Sunday `pg_cron` job through `pg_net`, with its own secret header. Pushes each opted-in phone its week: outfits logged and pieces unused for 6 months, in the profile language. |
+| `push-claim` | Edge Function | Reclaims a push token another account holds under another device secret: pushes a code to that token and takes it over when the code comes back. |
+| `push-unregister` | Edge Function | Deletes the push token a sign-out couldn't, when called with the token and the phone's device secret; no session needed. |
 | `rate-outfit` | Edge Function | Rates a built outfit with Jev, falls back to Claude, and searches a swap for a weak outfit. |
 | `lucky-list` | Edge Function | Generates up to 200 candidate outfits from the closet, ranks the top 30 with Jev, and returns them with the day's weather. |
 | `for-you` | Edge Function | Ranks the wardrobe staples for the user's clothing type (41–58) by how many new outfits each opens, weighted by a Jev fit, and returns 3–5 with a Claude line and a store-search query. |
@@ -54,7 +58,7 @@ Open-Meteo and Apple call goes to a mock on the host (`integration/mockAnthropic
 | `stylist` | Edge Function | "Ask your stylist": a chat with Claude about the caller's closet. Sends an enum-only closet summary and runs three tools for the model (an outfit from the lucky rules, a garment search, today's weather) over the caller's own rows, in at most three rounds within 25 s. Stores nothing. |
 | `apple-token` | Edge Function | Exchanges a Sign in with Apple authorization code for the refresh token deletion needs, and stores it only when the token's Apple user is the caller. |
 | `delete-account` | Edge Function | Removes the caller's photos, revokes the Apple token and deletes the auth user, whose rows cascade. Safe to retry. |
-| `export-data` | Edge Function | Returns the caller's profile, garments, outfits, wears and 7-day signed photo URLs as one JSON document. |
+| `export-data` | Edge Function | Returns the caller's profile, garments, outfits, wears, plans, saved trips, notification choices (never the push token) and 7-day signed photo URLs as one JSON document. |
 | Backup job | Owner's Mac | `pnpm backup` under launchd at 03:30: a database dump, every photo and a sha256 manifest, keeping the newest 14. |
 
 Every user-called function runs with `verify_jwt = true`, so the gateway checks the session token
@@ -198,7 +202,7 @@ reconnect only asks Auth whether the account still exists.
 
 ## What gets stored where
 
-![Data model: auth.users owns every row through on-delete-cascade user_id keys; outfit_items and wears cascade from their outfit and garment; profiles, garments, outfits, outfit_items, wears, dismissed outfits, plans, saved trips and the photos are client tables under RLS, and the quota counters, result caches (trip plans included), Apple tokens and weather cache are service-role only](diagrams/data-model.svg)
+![Data model: auth.users owns every row through on-delete-cascade user_id keys; outfit_items and wears cascade from their outfit and garment; profiles, garments, outfits, outfit_items, wears, dismissed outfits, plans, saved trips, push tokens and the photos are client tables under RLS, and the quota counters, result caches (trip plans included), Apple tokens, push claims and weather cache are service-role only](diagrams/data-model.svg)
 
 Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/data-model.json)
 
@@ -214,7 +218,9 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | `public.trip_cache` | Trip plans by trip and closet; a degraded one is served for an hour, others for 6 hours | The daily job deletes entries after 7 hours |
 | `public.weather_cache` | Forecast summaries by place and hour, with no user id | 2 days (the same daily job; [`database.md`](database.md) has the details) |
 | `public.apple_tokens` | The Sign in with Apple refresh token, for revocation | Until the account is deleted |
-| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list, For you ideas, wear history and plans, a trip's packing check-offs, cached images, the daily reminder's time and its scheduled notification | Copies go after upload; the rest until sign-out or deletion clears it (sign-out turns the reminder off and keeps its time) |
+| `public.push_tokens` | Per opted-in phone: its Expo push token, platform, the two choices, the SHA-256 of its device secret and the last "ready to review" push time | Until both notices are turned off, the user signs out on that phone, Expo reports the token gone, or the account is deleted |
+| `public.push_claims` | A token reclaim in flight: the SHA-256 of the pushed code | 10 minutes (the daily job deletes expired ones) |
+| Phone | The session, the upload queue and its photo copies, offline copies of the closet, lucky list, For you ideas, wear history and plans, a trip's packing check-offs, cached images, the daily reminder's time and its scheduled notification, the notices' choices and push token, the device secret | Copies go after upload; the rest until sign-out or deletion clears it (sign-out turns the reminder off and keeps its time, and deletes the push token); the device secret stays with the app's data |
 | `~/dressing-room-backups/` | Nightly dumps and photos on the owner's Mac | The newest 14 complete backups |
 
 ## What happens when something fails
@@ -234,6 +240,8 @@ Data model: [interactive page](diagrams/data-model.html) · [source](diagrams/da
 | "I'll wear it" without a connection (Today or the rating) | The wear goes to an on-device queue, the outfit shows Logged ✓ with "Logged — it syncs when you're back online.", and Stats and Diary count it. The queue is sent on the next launch, foreground or reconnect; the client wear id makes a resend harmless. A wear the server refuses (a garment deleted meanwhile) is dropped. | Automatic. Every other write (saving an outfit, garment edits and status changes, Donate, the "Suggest tomorrow" pin, a Diary delete of a sent wear) needs the connection and shows its error instead: the owner's 2026-11-11 decision, so no edit can conflict with a later one. |
 | The network fails on Stats or Diary | Both show the stored wear history with an "Offline — your history as of …" note; Diary's Delete is disabled meanwhile. A Diary month older than the stored range shows the load error. | The next focus refetches. |
 | A deletion answer is lost | The marker stays, uploads stay paused, and the app says the deletion couldn't be confirmed. | The next check asks Auth: gone means the local cleanup; still there after 10 minutes lifts the marker. |
+| Expo's push service fails or times out (5 s) | The notice is dropped and logged as `push: 'failed'`; the extraction's own result is written all the same. A `DeviceNotRegistered` ticket deletes the token. | The next batch, at most an hour later; the next Sunday. |
+| Sign-out can't reach the server | The phone keeps the push token in a device-wide pending list. | The next launch or sign-in sends it to `push-unregister` with the device secret. |
 | A backup step fails | The run exits 1 and leaves its `.partial` folder; no complete backup is rotated away. | Fix the cause; the next run starts clean. |
 
 ## Security and privacy
@@ -360,11 +368,16 @@ target, so the owner sets spend caps or alerts with Anthropic and TypeSafe
   the piece that would lift the outfit. The rating screen takes it from the last For you ideas on the
   device for the outfit's weakest slot, which costs no Jev call; computing it per rating would add
   up to 10 Jev calls to every low score.
-- **A local daily reminder, over server push.** The phone schedules one repeating notification at
-  its own wall clock ([`app.md`](app.md#the-daily-reminder-srcreminder)), so there is no token
-  table, no sending function, and no FCM or APNs setup, and the reminder follows the user's time
-  zone. Server-sent notifications (garments ready to review, a weekly summary) would need all of
-  those.
+- **A local daily reminder, and server push only for what the server knows.** The phone schedules
+  the reminder at its own wall clock ([`app.md`](app.md#the-daily-reminder-srcreminder)), so it
+  needs no token and follows the user's time zone. "Garments ready to review" and the weekly summary
+  depend on server state, so they come from the functions through Expo's push service: one sender for
+  FCM and APNs, no third-party SDK in the functions, both notices opt-in and off by default.
+- **A device secret behind every push token.** A token alone never proves a phone: registration
+  (`register_push_token`) and the session-less `push-unregister` both need the phone's own random
+  secret, whose SHA-256 the row keeps, and a phone that lost its secret proves receipt of a pushed
+  code instead (`push-claim`). The ceiling is someone holding the unlocked phone
+  ([`red-team.md`](red-team.md)).
 - **The phone's own voices and recognizer for Listen and dictation.** `expo-speech` and the
   community `expo-speech-recognition` cost nothing per use and keep the server out of it; iOS
   recognizes on the device when it can, and Android uses its default recognizer (usually Google's),

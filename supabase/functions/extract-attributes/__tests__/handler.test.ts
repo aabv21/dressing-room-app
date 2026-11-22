@@ -17,7 +17,11 @@ const ENV: ExtractEnv = {
   webhookSecret: 'webhook-secret-test',
   anthropicApiKey: 'anthropic-key-test',
   anthropicBaseUrl: 'http://anthropic.test',
+  expoPushUrl: 'http://expo.test/--/api/v2/push/send',
+  expoAccessToken: '',
 };
+
+const TOKEN = 'ExponentPushToken[phone-a]';
 
 // Larger than one base64 chunk so the chunked encoder's seams are exercised.
 const IMAGE = Uint8Array.from({ length: 100_003 }, (_, index) => (index * 31 + 7) % 256);
@@ -28,7 +32,7 @@ function fixture(name: string): unknown {
   return JSON.parse(readFileSync(new URL(`../../_shared/__tests__/fixtures/${name}.json`, import.meta.url), 'utf8')) as unknown;
 }
 
-type RouteName = 'garment' | 'rpc' | 'profile' | 'storage' | 'claude' | 'patch';
+type RouteName = 'garment' | 'rpc' | 'profile' | 'storage' | 'claude' | 'patch' | 'claim' | 'expo' | 'deleteToken';
 type Call = { route: RouteName; method: string; url: string; headers: Headers; body: string | undefined };
 type Handler = (init: RequestInit) => Response | Promise<Response>;
 
@@ -43,10 +47,17 @@ const DEFAULT_ROUTES: Record<RouteName, Handler> = {
   storage: () => new Response(IMAGE, { status: 200, headers: { 'content-type': 'image/webp' } }),
   claude: () => json(200, fixture('claude-ok')),
   patch: () => json(200, [{ id: GARMENT_ID }]),
+  // Nobody opted in, or the batch isn't done: no push.
+  claim: () => json(200, []),
+  expo: () => json(200, { data: [{ status: 'ok', id: 'receipt-1' }] }),
+  deleteToken: () => json(200, [{ token: TOKEN }]),
 };
 
 function routeOf(method: string, url: URL): RouteName {
   if (url.origin === ENV.anthropicBaseUrl && url.pathname === '/v1/messages' && method === 'POST') return 'claude';
+  if (url.href === ENV.expoPushUrl && method === 'POST') return 'expo';
+  if (url.pathname === '/rest/v1/rpc/claim_review_push' && method === 'POST') return 'claim';
+  if (url.pathname === '/rest/v1/push_tokens' && method === 'DELETE') return 'deleteToken';
   if (url.pathname === '/rest/v1/garments' && method === 'GET') return 'garment';
   if (url.pathname === '/rest/v1/garments' && method === 'PATCH') return 'patch';
   if (url.pathname === '/rest/v1/rpc/consume_quota' && method === 'POST') return 'rpc';
@@ -163,6 +174,7 @@ describe('extraction', () => {
       'GET storage',
       'POST claude',
       'PATCH patch',
+      'POST claim',
     ]);
 
     const [garment, rpc, profile, storage, claude, patch] = calls;
@@ -279,8 +291,8 @@ describe('extraction', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ outcome: 'failed' });
-    expect(calls.at(-1)?.route).toBe('patch');
-    expect(calls.at(-1)?.url).toContain('extraction_status=eq.pending');
+    expect(calls.map((call) => call.route).slice(-2)).toEqual(['patch', 'claim']);
+    expect(calls.at(-2)?.url).toContain('extraction_status=eq.pending');
     expect(patchBody(calls)).toEqual({ extraction_status: 'failed' });
   });
 
@@ -399,8 +411,8 @@ describe('logging', () => {
     await handleExtract(webhook(), { env: ENV, fetch: failingFetch });
 
     expect(infoSpy.mock.calls).toEqual([
-      [JSON.stringify({ garment_id: GARMENT_ID, outcome: 'done' })],
-      [JSON.stringify({ garment_id: GARMENT_ID, outcome: 'failed' })],
+      [JSON.stringify({ garment_id: GARMENT_ID, outcome: 'done', push: 'none' })],
+      [JSON.stringify({ garment_id: GARMENT_ID, outcome: 'failed', push: 'none' })],
     ]);
     for (const args of infoSpy.mock.calls) {
       const line = args.map(String).join(' ');
@@ -413,5 +425,106 @@ describe('logging', () => {
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     }
+  });
+});
+
+describe('ready to review', () => {
+  const CLAIMED = () => json(200, [{ token: TOKEN, language: 'es', ready: 3 }]);
+
+  test('a write-back that ends the batch sends one push in the profile language, opening Review', async () => {
+    const { fetch, calls } = fakeFetch({ claim: CLAIMED });
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'done' });
+    expect(calls.map((call) => call.route).slice(-3)).toEqual(['patch', 'claim', 'expo']);
+    const claim = calls.find((call) => call.route === 'claim');
+    expect(JSON.parse(claim?.body ?? '')).toEqual({ p_user_id: USER_ID });
+    expect(claim?.headers.get('authorization')).toBe(`Bearer ${ENV.serviceRoleKey}`);
+    const expo = calls.find((call) => call.route === 'expo');
+    expect(JSON.parse(expo?.body ?? '')).toEqual([
+      {
+        to: TOKEN,
+        title: '3 prendas listas para revisar',
+        body: 'Toca para confirmar sus datos.',
+        data: { kind: 'reviewReady', url: '/review' },
+        channelId: 'app-notices',
+        sound: 'default',
+      },
+    ]);
+    expect(infoSpy.mock.calls).toEqual([[JSON.stringify({ garment_id: GARMENT_ID, outcome: 'done', push: 'sent' })]]);
+  });
+
+  test('a failed extraction can end the batch too', async () => {
+    const { fetch, calls } = fakeFetch({ claim: CLAIMED, claude: () => json(500, { type: 'error' }) });
+    expect(await (await handleExtract(webhook(), { env: ENV, fetch })).json()).toEqual({ outcome: 'failed' });
+    expect(calls.some((call) => call.route === 'expo')).toBe(true);
+  });
+
+  test.each([
+    ['the claim errors', { claim: () => json(500, { message: 'boom' }) }],
+    ['the claim answers rows of another shape', { claim: () => json(200, [{ token: 42 }]) }],
+    ['Expo answers 500', { claim: CLAIMED, expo: () => json(500, {}) }],
+    ['Expo is unreachable', { claim: CLAIMED, expo: () => Promise.reject(new TypeError('fetch failed')) }],
+    ['Expo rejects the message', { claim: CLAIMED, expo: () => json(200, { data: [{ status: 'error', details: { error: 'MessageRateExceeded' } }] }) }],
+  ] satisfies [string, Partial<Record<RouteName, Handler>>][])('%s: the extraction still answers its outcome', async (_label, overrides) => {
+    const { fetch } = fakeFetch(overrides);
+    const response = await handleExtract(webhook(), { env: ENV, fetch });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ outcome: 'done' });
+    expect(infoSpy.mock.calls).toEqual([[JSON.stringify({ garment_id: GARMENT_ID, outcome: 'done', push: 'failed' })]]);
+  });
+
+  test('a push that never answers is dropped after 5 s, and the extraction still answers', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    const { fetch } = fakeFetch({
+      claim: CLAIMED,
+      expo: (init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation was aborted.', 'AbortError'));
+          });
+        }),
+    });
+
+    const pending = handleExtract(webhook(), { env: ENV, fetch });
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(await (await pending).json()).toEqual({ outcome: 'done' });
+  });
+
+  test('a DeviceNotRegistered ticket deletes that token', async () => {
+    const { fetch, calls } = fakeFetch({
+      claim: CLAIMED,
+      expo: () => json(200, { data: [{ status: 'error', details: { error: 'DeviceNotRegistered' } }] }),
+    });
+    await handleExtract(webhook(), { env: ENV, fetch });
+
+    const deletion = calls.find((call) => call.route === 'deleteToken');
+    expect(new URL(deletion?.url ?? '').searchParams.get('token')).toBe(`in.("${TOKEN}")`);
+    expect(infoSpy.mock.calls).toEqual([[JSON.stringify({ garment_id: GARMENT_ID, outcome: 'done', push: 'failed' })]]);
+  });
+
+  test('a failing token delete is logged as failed and never fails the extraction', async () => {
+    const { fetch } = fakeFetch({
+      claim: CLAIMED,
+      expo: () => json(200, { data: [{ status: 'error', details: { error: 'DeviceNotRegistered' } }] }),
+      deleteToken: () => json(500, {}),
+    });
+    expect((await handleExtract(webhook(), { env: ENV, fetch })).status).toBe(200);
+  });
+
+  test('a skipped write-back claims nothing', async () => {
+    const { fetch, calls } = fakeFetch({ claim: CLAIMED, patch: () => json(200, []) });
+    await handleExtract(webhook(), { env: ENV, fetch });
+    expect(calls.some((call) => call.route === 'claim' || call.route === 'expo')).toBe(false);
+  });
+
+  test('the log never carries the token or the copy', async () => {
+    const { fetch } = fakeFetch({ claim: CLAIMED });
+    await handleExtract(webhook(), { env: ENV, fetch });
+    const line = infoSpy.mock.calls.flat().map(String).join(' ');
+    expect(line).not.toContain('ExponentPushToken');
+    expect(line).not.toContain('prendas');
   });
 });

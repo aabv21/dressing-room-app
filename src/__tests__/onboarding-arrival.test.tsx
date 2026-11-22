@@ -21,6 +21,9 @@ const mockAuthListeners = new Set<() => void>();
 // The closet providers wrap the signed-in navigator; this suite doesn't test the closet.
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`), not a module-scoped import
 jest.mock('../closet/ClosetProvider', () => require('../test/closetProvidersMock'));
+// Profile's notices and sign-out would load the Supabase client.
+// eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- jest.mock()'s factory can only reference globals (incl. `require`)
+jest.mock('../push/pushRegistration', () => require('../test/pushClientsMock'));
 // The signed-in layout mounts it; it would load the Supabase client through logWear.
 jest.mock('../outfits/WearQueueFlusher', () => ({ WearQueueFlusher: () => null }));
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-return -- same as above

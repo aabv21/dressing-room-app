@@ -5,7 +5,7 @@ Guidance for anyone, human or AI, working in this repository.
 ## Project
 
 Dressing Room is a digital closet and AI outfit rater for iPhone and Android, built as a portfolio demo with Expo (SDK 58) and Supabase.
-The app talks only to one Supabase project (Auth, Postgres with RLS, a private photo bucket, ten Edge Functions); only the functions call Claude, Jev (TypeSafe), Open-Meteo and Apple. Auth sends email through Brevo.
+The app talks only to one Supabase project (Auth, Postgres with RLS, a private photo bucket, thirteen Edge Functions); only the functions call Claude, Jev (TypeSafe), Open-Meteo, Apple and Expo's push service. Auth sends email through Brevo.
 What it does and what works now: [`README.md`](README.md). How it works: [`docs/architecture.md`](docs/architecture.md).
 
 ## Expo has changed — do not trust your training data
@@ -37,9 +37,9 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 
 ## Where things live
 
-- `src/app/`: Expo Router routes only. `src/ui/`, `src/i18n/`, `src/closet/`, `src/auth/`, `src/profile/`, `src/lib/`, `src/outfits/`, `src/planner/`, `src/trips/`, `src/buyCheck/`, `src/stylist/`, `src/reminder/`, `src/voice/`, `src/stats/`, `src/account/`, `src/perf/`: the app's modules ([`docs/app.md`](docs/app.md)).
+- `src/app/`: Expo Router routes only. `src/ui/`, `src/i18n/`, `src/closet/`, `src/auth/`, `src/profile/`, `src/lib/`, `src/outfits/`, `src/planner/`, `src/trips/`, `src/buyCheck/`, `src/stylist/`, `src/reminder/`, `src/push/`, `src/voice/`, `src/stats/`, `src/account/`, `src/perf/`: the app's modules ([`docs/app.md`](docs/app.md)).
 - `src/test/`: shared Jest helpers, never imported by app code.
-- `supabase/functions/`: ten Edge Functions, each a runtime-neutral `handler.ts` plus a Deno-only `index.ts`; `_shared/` holds what they share, including `env.ts` (the startup env read), `http.ts` (replies, the caller, deadlines) and `guards.ts` ([`docs/api.md`](docs/api.md), [`docs/ai.md`](docs/ai.md)).
+- `supabase/functions/`: thirteen Edge Functions, each a runtime-neutral `handler.ts` plus a Deno-only `index.ts`; `_shared/` holds what they share, including `env.ts` (the startup env read), `http.ts` (replies, the caller, deadlines, the webhook secret compare), `push.ts` (Expo push sends) and `guards.ts` ([`docs/api.md`](docs/api.md), [`docs/ai.md`](docs/ai.md)).
 - `supabase/migrations/`, `supabase/tests/`, `supabase/seed.sql`, `supabase/config.toml`: schema, pgTAP, local seed and local config ([`docs/database.md`](docs/database.md), [`docs/local-stack.md`](docs/local-stack.md)).
 - `modules/garment-cutout/`: the local native background-removal module ([its README](modules/garment-cutout/README.md)).
 - `integration/`: Jest suites and mocks against the live local stack ([`docs/testing.md`](docs/testing.md#integration)).
@@ -59,7 +59,9 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 - Edge Functions: no third-party imports, logic in `handler.ts` with `index.ts` Deno-only, and Storage only through `_shared/photoStore.ts` (a test enforces it).
 - A schema change is a new migration (never edit a merged one), `pnpm db:types` and pgTAP ([`docs/database.md`](docs/database.md#new-table-checklist)).
 - A cache lifetime change (`DEGRADED_TTL_MS`, `FOR_YOU_TTL_MS`, `TRIP_TTL_MS`) needs a new migration for `prune_expired_caches()`.
-- Per-user kv keys follow `<name>.<id>[.<more>]`, so account deletion clears and refuses them ([`docs/app.md`](docs/app.md#account-privacy-srcaccount)).
+- Per-user kv keys follow `<name>.<id>[.<more>]`, so account deletion clears and refuses them ([`docs/app.md`](docs/app.md#account-privacy-srcaccount)). The device-wide `push.deviceSecret`, `push.pendingUnregister` and `push.pendingClaim` deliberately don't.
+- Push tokens are written only through `register_push_token` with the phone's device secret, never by a direct table write, and a function that touches a token without a session checks that secret ([`docs/database.md`](docs/database.md#push-notifications)).
+- `app.json`'s `android.googleServicesFile` is added only together with `google-services.json`, and `expo-notifications`' `enableRemoteNotifications` stays `false` until the Apple account exists ([`docs/native-config.md`](docs/native-config.md#notifications)); the FCM service-account key is never committed.
 - In `app.json`, `expo-image-picker` stays before `expo-camera`, `cameraPermission: false` is never set, and neither plugin sets `microphonePermission: false`: dictation needs the microphone ([`docs/native-config.md`](docs/native-config.md#permissions)).
 - Google's `skip_nonce_check` stays `true` in `supabase/config.toml` and on the hosted project ([`docs/red-team.md`](docs/red-team.md#parked)).
 - Nothing is deployed to the hosted project before the owner merges.
@@ -67,7 +69,8 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 ## Conventions
 
 - Everything in English, except `src/i18n/es.ts` and the Spanish files the product needs: `locales/es.json`, `docs/privacy-policy.es.md` (change it with `docs/privacy-policy.md`),
-  and For you's es store-search words (`supabase/functions/_shared/searchTerms.ts` and the archetypes' search phrases in `_shared/archetypes.ts`).
+  For you's es store-search words (`supabase/functions/_shared/searchTerms.ts` and the archetypes' search phrases in `_shared/archetypes.ts`),
+  and the push notices' es copy (`supabase/functions/_shared/pushCopy.ts`).
 - `pnpm` pinned to an exact 11.x in `packageManager`; Node `>=24`.
 - TypeScript strict plus `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noImplicitOverride`, `verbatimModuleSyntax`, `erasableSyntaxOnly`, `allowImportingTsExtensions`, with `noEmit`: no build step, no `.js`/`.mjs` sources.
 - Lint: typescript-eslint `strictTypeChecked`, `eslint-plugin-security` and `eslint-plugin-react-hooks` (not `eslint-config-expo`; see [`CONTRIBUTING.md`](CONTRIBUTING.md#supply-chain-hardening)).
