@@ -29,9 +29,10 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   miniatura de 256 píxeles. Solo se suben esas dos versiones. La app no guarda nada en tu galería ni
   lee de ella más que las fotos que eliges.
 - **Fotos de "¿Lo compro?".** Una foto o captura de una prenda que piensas comprar se prepara igual
-  en tu teléfono y se envía a Anthropic para analizarla; luego se compara con tu clóset. No se
-  guarda en ningún lugar, y la respuesta tampoco. Solo si tocas "Agregar a mi clóset" se sube, como
-  cualquier foto de una prenda.
+  en tu teléfono y se envía a Anthropic para analizarla; luego se compara con tu clóset. Ni la app
+  ni su servidor guardan la foto ni la respuesta; Anthropic trata la foto según sus propias reglas
+  de conservación (ver "Cuánto tiempo se guardan"). Solo si tocas "Agregar a mi clóset" se sube,
+  como cualquier foto de una prenda.
 - **Tu clóset.** Los atributos de cada prenda (categoría, colores, estampado, material, formalidad,
   temporadas, abrigo, corte, ocasiones), su estado (disponible, en la lavandería, en préstamo o
   donada), cuántas veces la usas, si la sacaste de las sugerencias y, solo si lo escribes, cuánto
@@ -81,7 +82,7 @@ pantalla con las voces de texto a voz de tu propio teléfono.
 | Proveedor | Qué recibe | Para qué |
 |---|---|---|
 | Supabase | Todo lo anterior | Alojamiento: la base de datos, el inicio de sesión, el almacenamiento de fotos y las funciones del servidor que llaman a los servicios de abajo |
-| Anthropic (Claude) | Por cada prenda nueva, su foto preparada (sin fondo y de 784 píxeles como máximo) y el tipo de ropa que elegiste. Cuando el servicio de calificación no está disponible, el mismo resumen anónimo que recibe TypeSafe. Para "Para ti", solo descripciones genéricas de las prendas sugeridas, con cuántas de tus prendas y outfits combina cada una, y el idioma de la app (inglés o español) en que escribir las frases, sin nada más sobre ti. Para "¿Lo compro?", la foto que tomas o eliges (preparada igual) y tu tipo de ropa; Anthropic solo la analiza, y la app no guarda ni la foto ni la respuesta. | Reconocer los atributos de cada prenda; una calificación de respaldo; las frases cortas de las tarjetas de "Para ti"; reconocer una prenda que piensas comprar |
+| Anthropic (Claude) | Por cada prenda nueva, su foto preparada (sin fondo y de 784 píxeles como máximo) y el tipo de ropa que elegiste. Cuando el servicio de calificación no está disponible, el mismo resumen anónimo que recibe TypeSafe. Para "Para ti", solo descripciones genéricas de las prendas sugeridas, con cuántas de tus prendas y outfits combina cada una, y el idioma de la app (inglés o español) en que escribir las frases, sin nada más sobre ti. Para "¿Lo compro?", la foto que tomas o eliges (preparada igual) y tu tipo de ropa; ni la app ni su servidor guardan la foto ni la respuesta, y Anthropic la trata según sus propias reglas de conservación. | Reconocer los atributos de cada prenda; una calificación de respaldo; las frases cortas de las tarjetas de "Para ti"; reconocer una prenda que piensas comprar |
 | TypeSafe (Jev) | Solo un resumen anónimo: tu tipo de ropa, tipo de cuerpo, un rango de estatura (baja, media o alta), rango de edad y estilos; la ocasión, el clima y la temporada; y la categoría, los colores, el estampado, la formalidad y el corte de cada prenda. Nunca una foto, una medida exacta, una talla, tu nombre ni tu correo. | Calificar outfits y ordenar sugerencias |
 | Open-Meteo | Las coordenadas de tu ciudad, o el nombre de la ciudad cuando no las hay; para "Armar la maleta", el nombre de la ciudad de destino y el idioma de la app, y luego las coordenadas de ese lugar | El clima del día; el pronóstico diario de un viaje |
 | Apple | Tu identidad de Iniciar sesión con Apple y, cuando eliminas tu cuenta, una solicitud para revocar el acceso de la app | El inicio de sesión, y cortar ese vínculo cuando te vas |

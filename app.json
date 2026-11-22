@@ -46,13 +46,13 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Dressing Room uses the photos you pick to add your clothes to your closet."
+          "photosPermission": "Dressing Room uses the photos you pick to add clothes to your closet or to compare a piece with it."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Dressing Room uses your camera to photograph your clothes for your closet."
+          "cameraPermission": "Dressing Room uses your camera to photograph clothes for your closet or to compare a piece with it."
         }
       ],
       [

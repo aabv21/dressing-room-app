@@ -151,6 +151,22 @@ test('enqueue stores the photos, then runs the queue', async () => {
   );
 });
 
+test('enqueue answers how many photos were queued, so a caller can tell a failed copy', async () => {
+  await renderProvider();
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  const queued = { garmentId: 'a' } as ReturnType<typeof enqueuePhotos>['items'][number];
+  jest.mocked(enqueuePhotos).mockReturnValueOnce({ items: [queued], failed: 0 }).mockReturnValueOnce({ items: [], failed: 1 });
+
+  let counts: number[] = [];
+  await act(async () => {
+    counts = [queue?.enqueue(['file:///a.jpg']) ?? -1, queue?.enqueue(['file:///b.jpg']) ?? -1];
+    await Promise.resolve();
+  });
+
+  expect(counts).toEqual([1, 0]);
+  expect(alert).toHaveBeenCalledTimes(1);
+});
+
 test('enqueueReplacement stores the replacement, then runs the queue', async () => {
   await renderProvider();
   mockedRunQueue.mockClear();

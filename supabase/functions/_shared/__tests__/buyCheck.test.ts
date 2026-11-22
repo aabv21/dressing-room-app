@@ -1,6 +1,5 @@
 /** @jest-environment node */
 // supabase/functions/_shared/__tests__/buyCheck.test.ts
-import { ARCHETYPES } from '../archetypes.ts';
 import {
   buyVerdict,
   candidateGarment,
@@ -12,7 +11,7 @@ import {
 } from '../buyCheck.ts';
 import type { GarmentCategory } from '../catalog.ts';
 import type { GarmentAttributes } from '../extraction.ts';
-import { archetypeGain, pieceGain, wardrobeOf } from '../forYou.ts';
+import { pieceGain, wardrobeOf } from '../forYou.ts';
 import type { RuleGarment } from '../outfitRules.ts';
 
 let nextId = 0;
@@ -113,13 +112,26 @@ describe('buyVerdict', () => {
 });
 
 describe('pieceGain', () => {
-  it('gives an archetype the same gain as archetypeGain', () => {
-    const closet = [garment('t_shirt'), garment('shirt', { colors: ['light_blue'], formality: 3 }), garment('sneakers'), garment('boots', { colors: ['brown'] })];
-    for (const archetype of ARCHETYPES.slice(0, 12)) {
-      const piece = candidateGarment({ ...item(), ...archetype, material: null, occasions: [], formality: 3, warmth: 2 });
-      const asArchetype = { ...archetype, formality: 3, warmth: 2 };
-      expect(pieceGain(piece, closet, { season: null })).toEqual(archetypeGain(asArchetype, closet, { season: null }));
-    }
+  it('counts every complete outfit a candidate pair of shoes finishes, and the pieces in them', () => {
+    const closet = [
+      garment('t_shirt', { colors: ['black'] }),
+      garment('shirt', { colors: ['gray'] }),
+      garment('jeans', { colors: ['navy'] }),
+      garment('pants', { colors: ['beige'] }),
+      garment('dress', { colors: ['red'] }),
+      // Outerwear layers over an outfit; for shoes it fills no slot.
+      garment('blazer', { formality: 3 }),
+    ];
+    const sneakers = candidateGarment(item({ category: 'sneakers', colors: ['white'] }));
+    // 2 tops × 2 bottoms, plus the dress.
+    expect(pieceGain(sneakers, closet, { season: null })).toEqual({ newOutfits: 5, combinesWith: 5 });
+  });
+
+  it('is zero for a piece with no category', () => {
+    expect(pieceGain(candidateGarment(item({ category: null })), [garment('jeans'), garment('sneakers')], { season: null })).toEqual({
+      newOutfits: 0,
+      combinesWith: 0,
+    });
   });
 });
 

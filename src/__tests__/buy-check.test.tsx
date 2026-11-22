@@ -8,7 +8,7 @@ import { Alert } from 'react-native';
 import BuyCheckScreen from '../app/buy-check';
 import { checkPurchase, type BuyCheckResponse } from '../buyCheck/buyCheckClient';
 import type { Garment } from '../closet/garmentRepository';
-import { prepareCheckPhoto } from '../closet/upload/preparePhoto';
+import { deletePhoto, prepareCheckPhoto } from '../closet/upload/preparePhoto';
 import { garment } from '../test/garmentFixture';
 
 jest.mock('expo-router', () => ({ router: { back: jest.fn(), push: jest.fn() } }));
@@ -23,9 +23,9 @@ jest.mock('expo-image-picker', () => ({
 }));
 jest.mock('../lib/supabase', () => ({ supabase: {} }));
 jest.mock('../lib/localDate', () => ({ localDate: () => '2026-11-21' }));
-jest.mock('../closet/upload/preparePhoto', () => ({ prepareCheckPhoto: jest.fn() }));
+jest.mock('../closet/upload/preparePhoto', () => ({ prepareCheckPhoto: jest.fn(), deletePhoto: jest.fn() }));
 jest.mock('../buyCheck/buyCheckClient', () => ({ ...jest.requireActual<object>('../buyCheck/buyCheckClient'), checkPurchase: jest.fn() }));
-const mockEnqueue = jest.fn();
+const mockEnqueue = jest.fn<number, [readonly string[]]>();
 jest.mock('../closet/UploadQueueProvider', () => ({ useUploadQueue: () => ({ enqueue: mockEnqueue }) }));
 
 const OWNED = '00000000-0000-4000-8000-000000000008';
@@ -65,6 +65,7 @@ const mockedLibrary = jest.mocked(ImagePicker.launchImageLibraryAsync);
 const mockedCamera = jest.mocked(ImagePicker.launchCameraAsync);
 const mockedPermission = jest.mocked(ImagePicker.requestCameraPermissionsAsync);
 const mockedPush = jest.mocked(router.push);
+const mockedDelete = jest.mocked(deletePhoto);
 
 const picked = (uri: string): ImagePicker.ImagePickerResult => ({ canceled: false, assets: [{ uri, width: 3000, height: 4000 }] });
 
@@ -80,6 +81,7 @@ beforeEach(() => {
   mockedPermission.mockResolvedValue({ granted: true } as ImagePicker.CameraPermissionResponse);
   mockedPrepare.mockResolvedValue('UklGRg==');
   mockedCheck.mockResolvedValue({ ok: true, result: result() });
+  mockEnqueue.mockReturnValue(1);
 });
 
 async function fromGallery(): Promise<void> {
@@ -89,7 +91,9 @@ async function fromGallery(): Promise<void> {
 test('explains the check and that the photo is not stored, with both ways to add a photo', async () => {
   await render(<BuyCheckScreen />);
   expect(screen.getByRole('header', { name: 'Should I buy it?' })).toBeOnTheScreen();
-  expect(screen.getByText("The photo goes to Anthropic for analysis and isn't stored.")).toBeOnTheScreen();
+  expect(
+    screen.getByText("The app doesn't store the photo, and neither does its server; Anthropic handles it under its own retention rules."),
+  ).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'Take a photo' })).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'From gallery' })).toBeOnTheScreen();
 });
@@ -170,6 +174,63 @@ test('"Add to my closet" sends the same photo through the upload queue once', as
   expect(screen.queryByRole('button', { name: 'Add to my closet' })).toBeNull();
 });
 
+test('a photo the queue could not take is not shown as added, and Add stays', async () => {
+  mockEnqueue.mockReturnValue(0);
+  await render(<BuyCheckScreen />);
+  await fromGallery();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Add to my closet' }));
+
+  expect(mockEnqueue).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Added: it's on its way to your closet.")).toBeNull();
+  expect(screen.getByRole('button', { name: 'Add to my closet' })).toBeOnTheScreen();
+});
+
+async function fromCamera(): Promise<void> {
+  await fireEvent.press(screen.getByRole('button', { name: 'Take a photo' }));
+  await screen.findByText('This would open 12 new outfits');
+}
+
+test('"Check another" deletes the camera shot from the cache', async () => {
+  await render(<BuyCheckScreen />);
+  await fromCamera();
+  expect(mockedDelete).not.toHaveBeenCalled();
+
+  await fireEvent.press(screen.getByRole('button', { name: 'Check another' }));
+  expect(mockedDelete).toHaveBeenCalledWith(SHOT);
+});
+
+test('leaving the screen deletes the camera shot, added or not (the queue keeps its own copy)', async () => {
+  const first = await render(<BuyCheckScreen />);
+  await fromCamera();
+  await first.unmount();
+  expect(mockedDelete).toHaveBeenCalledWith(SHOT);
+
+  mockedDelete.mockClear();
+  const second = await render(<BuyCheckScreen />);
+  await fromCamera();
+  await fireEvent.press(screen.getByRole('button', { name: 'Add to my closet' }));
+  expect(mockEnqueue).toHaveBeenCalledWith([SHOT]);
+  await second.unmount();
+  expect(mockedDelete).toHaveBeenCalledWith(SHOT);
+});
+
+test('a camera shot the device cannot decode is deleted at once', async () => {
+  mockedPrepare.mockRejectedValue(new Error('decode failed'));
+  await render(<BuyCheckScreen />);
+  await fireEvent.press(screen.getByRole('button', { name: 'Take a photo' }));
+
+  expect(await screen.findByText("Couldn't open that photo. Try another one.")).toBeOnTheScreen();
+  expect(mockedDelete).toHaveBeenCalledWith(SHOT);
+});
+
+test('a photo picked from the gallery is never deleted', async () => {
+  const view = await render(<BuyCheckScreen />);
+  await fromGallery();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Check another' }));
+  await view.unmount();
+  expect(mockedDelete).not.toHaveBeenCalled();
+});
+
 test('"Check another" goes back to the start without keeping the result', async () => {
   await render(<BuyCheckScreen />);
   await fromGallery();
@@ -225,7 +286,9 @@ test('in Spanish', async () => {
   mockedCheck.mockResolvedValue({ ok: true, result: result({ duplicates: [{ id: OWNED }], newOutfits: 2, verdict: 'skip' }) });
   await render(<BuyCheckScreen />);
   expect(screen.getByRole('header', { name: '¿Lo compro?' })).toBeOnTheScreen();
-  expect(screen.getByText('La foto se envía a Anthropic para analizarla y no se guarda.')).toBeOnTheScreen();
+  expect(
+    screen.getByText('Ni la app ni su servidor guardan la foto; Anthropic la trata según sus propias reglas de conservación.'),
+  ).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole('button', { name: 'De la galería' }));
 
   expect(mockedCheck).toHaveBeenCalledWith(expect.objectContaining({ language: 'es' }));

@@ -832,7 +832,7 @@ export const en = {
   'buyCheck.title': 'Should I buy it?',
   'buyCheck.back': 'Back',
   'buyCheck.intro': 'Photograph the piece in the store, or pick a screenshot, to compare it with your closet.',
-  'buyCheck.privacy': "The photo goes to Anthropic for analysis and isn't stored.",
+  'buyCheck.privacy': "The app doesn't store the photo, and neither does its server; Anthropic handles it under its own retention rules.",
   'buyCheck.takePhoto': 'Take a photo',
   'buyCheck.pickPhoto': 'From gallery',
   'buyCheck.cameraDenied': 'Allow camera access in Settings to take a photo, or pick one from your gallery.',

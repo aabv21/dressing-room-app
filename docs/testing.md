@@ -47,7 +47,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   found nothing new committing nothing, polling, late results after sign-out or a user switch, a
   re-sign that lands after the account's deletion leaving no kv copy, foreground and reconnect),
   `GarmentPhoto.test.tsx` (the full photo signed once, and again for a new `photo_version`),
-  `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer,
+  `UploadQueueProvider.test.tsx` (when the queue runs, counts, `enqueue` answering how many photos
+  it queued, retry/discard, the backoff timer,
   `pause` waiting for the queue and keeping its photos, `clear`, `resume` with and without a run,
   and an unconfirmed deletion marker blocking every run and only verified on mount, foreground and
   reconnect, never deleted and with no Alert; on mount, each other account's `queue.purge.<id>`
@@ -284,7 +285,9 @@ Outfits, Stats and Diary:
   a gallery photo prepared on the device then sent with the local day and language; the camera
   asked for first (denied: an alert, no camera); a canceled picker; each verdict's sentence, the
   item and the count; duplicates opening their garment (a deleted one left out); "Add to my closet"
-  enqueuing the original photo once; "Check another"; not clothing, the quota (no retry), offline
+  enqueuing the original photo once, and not shown as added when the queue couldn't copy it; the
+  camera shot deleted on "Check another", on leaving and after a failed decode, never a gallery
+  pick; "Check another"; not clothing, the quota (no retry), offline
   ("Try again" resends without picking again), a photo the device can't decode (never sent); and
   the Spanish copy.
 - `src/buyCheck/__tests__/buyCheckClient.test.ts` — `checkPurchase`'s body and error mapping (413
@@ -415,6 +418,9 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
   fails.
 - `scripts/__tests__/mlkit-manifest.test.ts` — `modules/garment-cutout`'s Android manifest replaces
   the merged ML Kit dependencies value, so it must keep every model `expo-camera` declares.
+- `scripts/__tests__/usage-strings.test.ts` — the camera and photo-library usage strings name both
+  uses (the closet and comparing a piece with it) in English and Spanish, and `app.json`'s plugin
+  strings match `locales/en.json`.
 - `scripts/__tests__/perf-fixtures.test.ts` — the 500 fixture specs and file names, a transparent
   SVG, and `perf:serve` refusing paths outside the fixtures folder.
 - `scripts/__tests__/calibration.test.ts` — the Jev calibration: Spearman's ρ on a hand-computed set
@@ -505,7 +511,8 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
 - `supabase/functions/_shared/__tests__/buyCheck.test.ts` — "Should I buy it?"'s comparison:
   duplicates (same category, an overlapping primary color, a matching known pattern; donated pieces
   out, laundry, lent and unsuggested ones in; closest first, at most 3), the verdict's thresholds,
-  `pieceGain` matching `archetypeGain`, and the new outfits counted with no season over the wardrobe.
+  `pieceGain`'s count for candidate shoes (two tops × two bottoms plus a dress), and the new outfits
+  counted with no season over the wardrobe.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs (the daily forecast's included), the daily forecast's and the place's parsing, weather bands and
   conditions, and the forecast and geocoding parsers.
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
@@ -560,8 +567,9 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   another city, language, dates, occasion or closet, and the city matched regardless of case and
   spaces.
 - `supabase/functions/buy-check/__tests__/handler.test.ts` — 401/405 before any fetch; every 400
-  (not base64, a PNG, bytes that aren't the declared type, the date, the language) and 413 over
-  1.5 MB, all before any read; the answer with no duplicates and `buy`; the closet and profile read
+  (not base64, a PNG, bytes that aren't the declared type, the date, the language) and 413 for a
+  body over 2.1 MB (not JSON, a declared `Content-Length` read no further, an endless stream cut
+  off at the cap) or an image over 1.5 MB, all before any read; the answer with no duplicates and `buy`; the closet and profile read
   with the caller's token, then the `buy_check` quota (5, the local day), then Claude with the
   profile's clothing type; duplicates and `skip`; `not_garment`, Claude failures (503) and their
   spent quota; 429 with no Claude call; 500 when a read or the quota fails; no Storage, cache or other

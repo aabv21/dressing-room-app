@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import type { GarmentCategory } from '../../_shared/catalog.ts';
 import type { ClaudeEnv, SupabaseEnv } from '../../_shared/env.ts';
 import { EXTRACTION_CLAUDE_TIMEOUT_MS, EXTRACTION_MODEL } from '../../_shared/extraction.ts';
-import { BUY_CHECK_DAILY_LIMIT, type BuyCheckResponse, handleBuyCheck, MAX_IMAGE_BYTES } from '../handler.ts';
+import { BUY_CHECK_DAILY_LIMIT, type BuyCheckResponse, handleBuyCheck, MAX_BODY_BYTES, MAX_IMAGE_BYTES } from '../handler.ts';
 
 const { jest } = import.meta;
 
@@ -229,6 +229,54 @@ describe('request checks', () => {
     const { response, body, calls } = await check(world(), checkRequest({ ...INPUT, image: webp(MAX_IMAGE_BYTES + 1) }));
     expect(response.status).toBe(413);
     expect(body).toEqual({ error: 'image_too_large' });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a body over the cap → 413 before it is parsed, even when it isn’t JSON, and before any fetch', async () => {
+    expect(MAX_BODY_BYTES).toBe(2_100_000);
+    const { response, body, calls } = await check(world(), checkRequest('x'.repeat(MAX_BODY_BYTES + 1)));
+    expect(response.status).toBe(413);
+    expect(body).toEqual({ error: 'image_too_large' });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a declared Content-Length over the cap → 413 without reading the body', async () => {
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(1024));
+      },
+    });
+    const request = new Request('http://functions.test/buy-check', {
+      method: 'POST',
+      headers: { authorization: AUTH, 'content-length': String(MAX_BODY_BYTES + 1) },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    const { response, calls } = await check(world(), request);
+    expect(response.status).toBe(413);
+    expect(pulls).toBeLessThanOrEqual(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('an endless body with no Content-Length is cut off at the cap', async () => {
+    let pulled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 64 * 1024;
+        controller.enqueue(new Uint8Array(64 * 1024).fill(120));
+      },
+    });
+    const request = new Request('http://functions.test/buy-check', {
+      method: 'POST',
+      headers: { authorization: AUTH },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    const { response, calls } = await check(world(), request);
+    expect(response.status).toBe(413);
+    expect(pulled).toBeLessThan(MAX_BODY_BYTES + 512 * 1024);
     expect(calls).toHaveLength(0);
   });
 

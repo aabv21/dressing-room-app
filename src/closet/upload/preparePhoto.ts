@@ -14,6 +14,11 @@ export function resizeFor(width: number, height: number, target: number): { widt
   return width >= height ? { width: target } : { height: target };
 }
 
+/** Deletes a file the app created (a camera shot, a temporary render); a missing one is fine. */
+export function deletePhoto(uri: string): void {
+  deleteQuietly(uri);
+}
+
 function deleteQuietly(uri: string): void {
   try {
     const file = new File(uri);

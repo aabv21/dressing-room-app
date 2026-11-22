@@ -26,7 +26,8 @@ interface UploadQueueContextValue {
   pending: number;
   /** Photos that gave up (a permanent error, or 8 attempts) until retried or discarded. */
   failed: number;
-  enqueue: (uris: readonly string[]) => void;
+  /** Answers how many were queued: fewer than given when a copy failed (already alerted). */
+  enqueue: (uris: readonly string[]) => number;
   enqueueReplacement: (garmentId: string, uri: string) => void;
   retryFailed: () => void;
   discardFailed: () => void;
@@ -206,14 +207,16 @@ export function UploadQueueProvider({ children }: { children: ReactNode }): Reac
   const enqueue = useCallback(
     (uris: readonly string[]) => {
       if (userId === null || uris.length === 0) {
-        return;
+        return 0;
       }
       // A photo that couldn't be copied (e.g. a full disk) is reported; the others still run.
-      if (enqueuePhotos(userId, uris).failed > 0) {
+      const { items, failed } = enqueuePhotos(userId, uris);
+      if (failed > 0) {
         Alert.alert(t('closet.addFailed'));
       }
       syncCounts();
       void run();
+      return items.length;
     },
     [userId, syncCounts, run, t],
   );

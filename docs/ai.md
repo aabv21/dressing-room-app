@@ -697,7 +697,9 @@ photo or screenshot of a garment the user is thinking of buying and answers whet
 something they own and how many new outfits it would open. Claude only reads the item; the verdict
 is computed in code. The request and statuses are in [`api.md`](api.md#buy-check).
 
-1. Validates the photo before anything else: standard base64, at most 1.5 MB decoded, a WebP or a
+1. Reads the body through a byte count that stops at 2.1 MB (`MAX_BODY_BYTES`; a declared
+   `Content-Length` over it is refused unread), so an oversized body answers 413 before it's parsed.
+   Then validates the photo: standard base64, at most 1.5 MB decoded, a WebP or a
    JPEG whose first bytes match the declared type, plus the local day and the language. A refusal
    here costs nothing.
 2. Reads the caller's garments and profile under RLS (the profile only for the clothing type, which
@@ -706,7 +708,8 @@ is computed in code. The request and statuses are in [`api.md`](api.md#buy-check
 4. The [extraction](#garment-attribute-extraction) request, unchanged (same model, system prompt,
    schema and 30 s timeout), with the photo's own media type, then `parseExtraction`. `is_garment:
    false` answers `not_garment`; a refusal, invalid output or a failed call answers 503. Each spends
-   the quota, as extraction's failures do.
+   the quota, as extraction's failures do, so the app's "Try again" after a 503 spends another of
+   the day's 5 checks.
 5. Compares the sanitized attributes with the closet:
    - **Duplicates:** garments not donated (in the laundry, lent or out of suggestions still count:
      they're owned) of the same category, whose primary color is among the item's colors or the

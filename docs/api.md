@@ -245,7 +245,7 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | --- | --- | --- | --- |
 | 405 / 401 | as in `rate-outfit` | `invalid` | Method, token |
 | 400 | `{ error: 'invalid_input' }` | `invalid` | Malformed body or base64, another media type, bytes that aren't the declared type, no local day, another language |
-| 413 | `{ error: 'image_too_large' }` | `too_large` | Over 1.5 MB decoded |
+| 413 | `{ error: 'image_too_large' }` | `too_large` | A body over 2.1 MB (`MAX_BODY_BYTES`, counted while it's read, or a declared `Content-Length` over it), or an image over 1.5 MB decoded |
 | 429 | `{ error: 'over_quota' }` | `over_quota` | 5 checks already today; Claude isn't called |
 | 200 | `{ kind: 'not_garment' }` | `not_garment` | Claude says the photo shows no garment (the quota is spent) |
 | 503 | `{ error: 'analysis_unavailable' }` | `unavailable` / `unreadable` | Claude failed or timed out / refused or answered outside the schema (the quota is spent) |

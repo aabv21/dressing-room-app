@@ -335,11 +335,14 @@ not the answer.
 - `useBuyCheck.ts`: the flow. "Take a photo" asks for the camera, then opens `expo-image-picker`'s
   camera for one shot (not the burst camera, which feeds the upload queue); "From gallery" picks one
   photo. `prepareCheckPhoto` resizes it on the device, then `checkPurchase` sends it with the local
-  day and the app's language. "Try again" resends the prepared photo without picking again; "Add to
-  my closet" hands the original photo to the upload queue once, like a gallery import; "Check
-  another" forgets both.
-- `src/app/buy-check.tsx`: the intro and the privacy line ("The photo goes to Anthropic for
-  analysis and isn't stored."), then the result card: the verdict as a sentence ("This would open
+  day and the app's language. "Try again" resends the prepared photo without picking again (another
+  of the day's checks); "Add to my closet" hands the original photo to the upload queue once, like a
+  gallery import, and shows "Added" only when `enqueue` reports it queued (a failed copy is
+  alerted); "Check another" forgets both. A camera shot lives in the app's cache, so it's deleted
+  on "Check another", on leaving the screen and after a failed decode (the queue has its own copy
+  once added); a gallery pick is never deleted.
+- `src/app/buy-check.tsx`: the intro and the privacy line ("The app doesn't store the photo, and
+  neither does its server; Anthropic handles it under its own retention rules."), then the result card: the verdict as a sentence ("This would open
   12 new outfits", "You already have something very similar", "Think it over before buying"), what
   the item looks like, the new-outfit count, and "Similar in your closet" with each duplicate's
   thumbnail opening its garment (a duplicate deleted since is left out). A photo that isn't clothing,

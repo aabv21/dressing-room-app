@@ -835,7 +835,7 @@ export const es: Record<MessageKey, string> = {
   'buyCheck.title': '¿Lo compro?',
   'buyCheck.back': 'Volver',
   'buyCheck.intro': 'Toma una foto de la prenda en la tienda o elige una captura para compararla con tu clóset.',
-  'buyCheck.privacy': 'La foto se envía a Anthropic para analizarla y no se guarda.',
+  'buyCheck.privacy': 'Ni la app ni su servidor guardan la foto; Anthropic la trata según sus propias reglas de conservación.',
   'buyCheck.takePhoto': 'Tomar foto',
   'buyCheck.pickPhoto': 'De la galería',
   'buyCheck.cameraDenied': 'Permite el acceso a la cámara en Ajustes para tomar una foto, o elige una de tu galería.',

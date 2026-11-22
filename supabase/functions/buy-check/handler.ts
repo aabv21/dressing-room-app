@@ -12,7 +12,7 @@ import {
   parseExtraction,
 } from '../_shared/extraction.ts';
 import { isRecord } from '../_shared/guards.ts';
-import { callerOf, readJson, reply } from '../_shared/http.ts';
+import { callerOf, reply } from '../_shared/http.ts';
 import { consumeQuota, isIsoDate, loadGarments, loadProfile, runClaude } from '../_shared/userContext.ts';
 
 export type BuyCheckEnv = SupabaseEnv & ClaudeEnv;
@@ -26,6 +26,8 @@ export type BuyCheckResponse = { kind: 'not_garment' } | ({ kind: 'ok'; item: Ga
 export const BUY_CHECK_DAILY_LIMIT = 5;
 /** Decoded bytes; the app sends a 784 px photo of a few hundred KB, so this only stops abuse. */
 export const MAX_IMAGE_BYTES = 1_500_000;
+/** The request body: the image's base64 (4/3 of `MAX_IMAGE_BYTES`) plus room for the other fields. */
+export const MAX_BODY_BYTES = 2_100_000;
 const LANGUAGES = ['en', 'es'] as const;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
@@ -46,9 +48,44 @@ function signatureMatches(image: string, mediaType: ExtractionMediaType): boolea
   return text(0, 4) === 'RIFF' && text(8, 12) === 'WEBP';
 }
 
-/** `too_large` for an image over `MAX_IMAGE_BYTES`, null when malformed. `language` is checked but unused: the answer has no text. */
+/**
+ * The JSON body, read through a byte count that stops at `MAX_BODY_BYTES` (a declared length over it
+ * is refused unread), so an oversized or endless body never reaches the parser; null when not JSON.
+ */
+async function readCappedJson(request: Request): Promise<unknown> {
+  const declared = Number(request.headers.get('content-length') ?? 0);
+  if (declared > MAX_BODY_BYTES) return 'too_large';
+  const reader = request.body?.getReader();
+  if (reader === undefined) return null;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      await reader.cancel();
+      return 'too_large';
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** `too_large` for a body or image over its cap, null when malformed. `language` is checked but unused: the answer has no text. */
 async function readInput(request: Request): Promise<Input | 'too_large' | null> {
-  const body = await readJson(request);
+  const body = await readCappedJson(request);
+  if (body === 'too_large') return 'too_large';
   if (!isRecord(body)) return null;
   const { image, mediaType, date, language } = body;
   const knownType = EXTRACTION_MEDIA_TYPES.find((candidate) => candidate === mediaType);
