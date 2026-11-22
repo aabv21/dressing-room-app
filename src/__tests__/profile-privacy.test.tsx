@@ -160,6 +160,7 @@ const EXPORT: DataExport = {
   dismissedOutfits: [],
   plannedOutfits: [],
   savedTrips: [],
+  pushPreferences: [],
   photos: [],
 };
 

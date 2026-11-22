@@ -8,6 +8,9 @@ export type ClaudeEnv = { anthropicApiKey: string; anthropicBaseUrl: string };
 export type WeatherEnv = { openMeteoUrl: string; geocodingUrl: string };
 export type GeocodingEnv = Pick<WeatherEnv, 'geocodingUrl'>;
 export type WebhookEnv = { webhookSecret: string };
+/** `expoAccessToken` is empty unless Expo's enhanced push security is on. */
+export type PushEnv = { expoPushUrl: string; expoAccessToken: string };
+export type WeeklyEnv = { weeklySummarySecret: string };
 /** Everything an outfit function can read. */
 export type FnEnv = SupabaseEnv & JevEnv & ClaudeEnv & WeatherEnv;
 
@@ -19,6 +22,8 @@ type Capabilities = {
   weather: WeatherEnv;
   geocoding: GeocodingEnv;
   webhook: WebhookEnv;
+  push: PushEnv;
+  weekly: WeeklyEnv;
 };
 export type Capability = keyof Capabilities;
 
@@ -49,6 +54,11 @@ const VARIABLES: { [C in Capability]: Record<keyof Capabilities[C], Variable> } 
   },
   geocoding: { geocodingUrl: GEOCODING_URL },
   webhook: { webhookSecret: { name: 'EXTRACT_WEBHOOK_SECRET' } },
+  push: {
+    expoPushUrl: { name: 'EXPO_PUSH_URL', fallback: 'https://exp.host/--/api/v2/push/send', url: true },
+    expoAccessToken: { name: 'EXPO_ACCESS_TOKEN', fallback: '' },
+  },
+  weekly: { weeklySummarySecret: { name: 'WEEKLY_SUMMARY_SECRET' } },
 };
 
 const trimSlash = (url: string): string => url.replace(/\/+$/, '');

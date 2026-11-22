@@ -200,6 +200,7 @@ describe('exportData', () => {
     dismissedOutfits: [],
     plannedOutfits: [],
     savedTrips: [],
+    pushPreferences: [],
     photos: [],
   };
 
@@ -219,6 +220,7 @@ describe('exportData', () => {
     ['a document without its dismissed outfits', { data: { ...EXPORT, dismissedOutfits: undefined }, error: null }, 'unknown'],
     ['a document without its plans (an older function)', { data: { ...EXPORT, plannedOutfits: undefined }, error: null }, 'unknown'],
     ['a document without its saved trips', { data: { ...EXPORT, savedTrips: undefined }, error: null }, 'unknown'],
+    ['a document without its notification preferences (an older function)', { data: { ...EXPORT, pushPreferences: undefined }, error: null }, 'unknown'],
   ] as const)('%s is a failure', async (_label, answer, expected) => {
     const { client } = fakeClient(() => Promise.resolve(answer));
 

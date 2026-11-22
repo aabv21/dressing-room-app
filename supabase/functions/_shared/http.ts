@@ -50,6 +50,20 @@ export function callerOf(request: Request): { auth: string; userId: string } | n
   return auth === null || userId === null ? null : { auth, userId };
 }
 
+const encoder = new TextEncoder();
+
+/** A webhook's shared secret check, in time that depends only on the expected secret's length. */
+export function secretMatches(given: string | null, expected: string): boolean {
+  if (given === null || expected === '') return false;
+  const a = encoder.encode(given);
+  const b = encoder.encode(expected);
+  let difference = a.length ^ b.length;
+  b.forEach((byte, index) => {
+    difference |= byte ^ (a.at(index) ?? 0);
+  });
+  return difference === 0;
+}
+
 /** Statuses whose response can't carry a body. */
 const NULL_BODY = new Set([101, 204, 205, 304]);
 

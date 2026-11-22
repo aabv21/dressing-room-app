@@ -28,10 +28,15 @@ export type DataExport = {
   plannedOutfits: Row[];
   /** Saved trips with the plan's snapshot (`result`). */
   savedTrips: Row[];
+  /** Each phone's notification choices, without its push token. */
+  pushPreferences: Row[];
   photos: ExportPhoto[];
 };
 
 export const SIGNED_URL_TTL_S = 7 * 24 * 60 * 60;
+// Every push_tokens column but the token, which is a delivery address, not the user's data.
+const PUSH_PREFERENCE_COLUMNS = 'user_id,platform,review_ready,weekly,last_review_push_at,updated_at';
+
 /** PostgREST's `max_rows` (1000 here); paging by rows received still reads all under a smaller hosted cap. */
 export const PAGE = 1000;
 
@@ -87,7 +92,7 @@ export async function handleExportData(request: Request, deps: ExportDataDeps): 
 
   const { env, fetch: fetchFn } = deps;
   try {
-    const [profiles, garments, outfits, wears, dismissedOutfits, plannedOutfits, savedTrips] = await Promise.all([
+    const [profiles, garments, outfits, wears, dismissedOutfits, plannedOutfits, savedTrips, pushPreferences] = await Promise.all([
       readAll(env, fetchFn, auth, userId, 'profiles', '*', 'user_id'),
       readAll(env, fetchFn, auth, userId, 'garments', '*', 'created_at,id'),
       readAll(env, fetchFn, auth, userId, 'outfits', '*,items:outfit_items(garment_id)', 'created_at,id'),
@@ -95,6 +100,7 @@ export async function handleExportData(request: Request, deps: ExportDataDeps): 
       readAll(env, fetchFn, auth, userId, 'dismissed_outfits', '*', 'created_at,outfit_key'),
       readAll(env, fetchFn, auth, userId, 'planned_outfits', '*', 'planned_on,id'),
       readAll(env, fetchFn, auth, userId, 'saved_trips', '*', 'created_at,id'),
+      readAll(env, fetchFn, auth, userId, 'push_tokens', PUSH_PREFERENCE_COLUMNS, 'updated_at,platform'),
     ]);
     const body: DataExport = {
       exportedAt: new Date(now()).toISOString(),
@@ -105,6 +111,7 @@ export async function handleExportData(request: Request, deps: ExportDataDeps): 
       dismissedOutfits,
       plannedOutfits,
       savedTrips,
+      pushPreferences,
       photos: await photosOf(env, fetchFn, userId, garments),
     };
     return reply('exported', 200, body);

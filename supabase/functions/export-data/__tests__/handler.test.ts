@@ -46,6 +46,13 @@ const PLANNED: Row[] = [
 const TRIPS: Row[] = [
   { id: idOf(401), user_id: USER_ID, city: 'Lisbon', start_on: '2026-12-01', end_on: '2026-12-03', occasion: null, result: { kind: 'ok' }, created_at: '2026-11-09T08:30:00Z' },
 ];
+// The stored row holds the token; the export must never carry it.
+const PUSH: Row[] = [
+  { user_id: USER_ID, token: 'ExponentPushToken[secret]', platform: 'android', review_ready: true, weekly: false, last_review_push_at: null, updated_at: '2026-11-09T09:00:00Z' },
+];
+const PUSH_PREFERENCES: Row[] = [
+  { user_id: USER_ID, platform: 'android', review_ready: true, weekly: false, last_review_push_at: null, updated_at: '2026-11-09T09:00:00Z' },
+];
 const WEARS: Row[] = [{ id: idOf(201), user_id: USER_ID, outfit_id: idOf(101), worn_on: '2026-11-01', occasion: 'office', score: 82 }];
 
 const FOREIGN = {
@@ -55,6 +62,7 @@ const FOREIGN = {
   wear: { id: idOf(209), user_id: OTHER_ID, outfit_id: idOf(109), worn_on: '2026-11-01', occasion: null, score: null },
   planned: { id: idOf(309), user_id: OTHER_ID, planned_on: '2026-11-12', garment_ids: [idOf(9), idOf(10)], occasion: null },
   trip: { id: idOf(409), user_id: OTHER_ID, city: 'Porto', start_on: '2026-12-01', end_on: '2026-12-02', occasion: null, result: {} },
+  push: { user_id: OTHER_ID, token: 'ExponentPushToken[other]', platform: 'ios', review_ready: true, weekly: true },
   dismissed: { user_id: OTHER_ID, outfit_key: `${idOf(9)},${idOf(10)}`, created_at: '2026-11-02T09:00:00Z' },
 };
 
@@ -66,6 +74,7 @@ type Tables = {
   dismissed_outfits: Row[];
   planned_outfits: Row[];
   saved_trips: Row[];
+  push_tokens: Row[];
 };
 
 type World = {
@@ -88,6 +97,7 @@ function world(overrides: Partial<Omit<World, 'tables'>> & { tables?: Partial<Ta
     tables: { profiles: [PROFILE], garments: GARMENTS, outfits: OUTFITS, wears: WEARS, dismissed_outfits: DISMISSED,
       planned_outfits: PLANNED,
       saved_trips: TRIPS,
+      push_tokens: PUSH,
       ...tables,
     },
     // Garment 3 has no photo yet; garment 2 has only its full-size one.
@@ -101,7 +111,14 @@ function world(overrides: Partial<Omit<World, 'tables'>> & { tables?: Partial<Ta
   };
 }
 
-const TABLES = ['profiles', 'garments', 'outfits', 'wears', 'dismissed_outfits', 'planned_outfits', 'saved_trips'] as const;
+const TABLES = ['profiles', 'garments', 'outfits', 'wears', 'dismissed_outfits', 'planned_outfits', 'saved_trips', 'push_tokens'] as const;
+
+/** PostgREST's projection for a plain column list (`*` and embeds are answered whole). */
+function project(rows: Row[], select: string | null): Row[] {
+  if (select === null || select.includes('*') || select.includes('(')) return rows;
+  const columns = select.split(',');
+  return rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => columns.includes(key))));
+}
 
 const hrefOf = (input: RequestInfo | URL): string => (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
 
@@ -120,7 +137,7 @@ function fakeFetch(state: World): { fetch: typeof fetch; calls: Call[] } {
       const rows = state.tables[table];
       const limit = Math.min(Number(url.searchParams.get('limit') ?? rows.length), state.maxRows ?? Infinity);
       const offset = Number(url.searchParams.get('offset') ?? 0);
-      return json(200, rows.slice(offset, offset + limit));
+      return json(200, project(rows.slice(offset, offset + limit), url.searchParams.get('select')));
     }
     if (url.origin === ENV.supabaseUrl && url.pathname === '/storage/v1/object/sign/garments' && method === 'POST') {
       if (state.failSign === true) return json(500, { error: 'boom' });
@@ -168,6 +185,7 @@ type Export = {
   dismissedOutfits: Row[];
   plannedOutfits: Row[];
   savedTrips: Row[];
+  pushPreferences: Row[];
   photos: { garmentId: string; full: string | null; thumb: string | null }[];
 };
 
@@ -187,6 +205,7 @@ describe('export-data', () => {
       'photos',
       'plannedOutfits',
       'profile',
+      'pushPreferences',
       'savedTrips',
       'wears',
     ]);
@@ -198,10 +217,22 @@ describe('export-data', () => {
     expect(body.dismissedOutfits).toEqual(DISMISSED);
     expect(body.plannedOutfits).toEqual(PLANNED);
     expect(body.savedTrips).toEqual(TRIPS);
+    expect(body.pushPreferences).toEqual(PUSH_PREFERENCES);
     expect(body.photos).toEqual([
       { garmentId: idOf(1), full: signed(`${USER_ID}/${idOf(1)}/full.webp`), thumb: signed(`${USER_ID}/${idOf(1)}/thumb.webp`) },
       { garmentId: idOf(2), full: signed(`${USER_ID}/${idOf(2)}/full.webp`), thumb: null },
     ]);
+  });
+
+  test('exports the notification preferences without the push token', async () => {
+    const { fetch: fetchFn, calls } = fakeFetch(world());
+
+    const response = await handleExportData(request(), { env: ENV, fetch: fetchFn, now: () => NOW });
+
+    const text = await response.text();
+    expect(text).not.toContain('ExponentPushToken');
+    const read = calls.find(({ url }) => url.pathname === '/rest/v1/push_tokens');
+    expect(read?.url.searchParams.get('select')?.split(',')).not.toContain('token');
   });
 
   test('reads the rows with the caller token and signs only paths under the caller, for 7 days, with the service role', async () => {
@@ -242,6 +273,7 @@ describe('export-data', () => {
         dismissed_outfits: [FOREIGN.dismissed, ...DISMISSED],
         planned_outfits: [FOREIGN.planned, ...PLANNED],
         saved_trips: [...TRIPS, FOREIGN.trip],
+        push_tokens: [FOREIGN.push, ...PUSH],
       },
     });
     const { fetch: fetchFn, calls } = fakeFetch(state);
@@ -258,6 +290,7 @@ describe('export-data', () => {
     expect(body.dismissedOutfits).toEqual(DISMISSED);
     expect(body.plannedOutfits).toEqual(PLANNED);
     expect(body.savedTrips).toEqual(TRIPS);
+    expect(body.pushPreferences).toEqual(PUSH_PREFERENCES);
     const signedPaths = calls
       .filter(({ url }) => url.pathname.startsWith('/storage/'))
       .flatMap(({ body: sent }) => (JSON.parse(sent) as { paths: string[] }).paths);
@@ -294,7 +327,7 @@ describe('export-data', () => {
   test('answers a null profile and empty sections for a brand-new account, signing nothing', async () => {
     const { fetch: fetchFn, calls } = fakeFetch(
       world({
-        tables: { profiles: [], garments: [], outfits: [], wears: [], dismissed_outfits: [], planned_outfits: [], saved_trips: [] },
+        tables: { profiles: [], garments: [], outfits: [], wears: [], dismissed_outfits: [], planned_outfits: [], saved_trips: [], push_tokens: [] },
       }),
     );
 
@@ -310,12 +343,13 @@ describe('export-data', () => {
       dismissedOutfits: [],
       plannedOutfits: [],
       savedTrips: [],
+      pushPreferences: [],
       photos: [],
     });
     expect(calls.some(({ url }) => url.pathname.startsWith('/storage/'))).toBe(false);
   });
 
-  test.each([['garments'], ['wears'], ['dismissed_outfits'], ['planned_outfits'], ['saved_trips']] as const)('answers 500 when the %s read fails', async (table) => {
+  test.each([['garments'], ['wears'], ['dismissed_outfits'], ['planned_outfits'], ['saved_trips'], ['push_tokens']] as const)('answers 500 when the %s read fails', async (table) => {
     const { fetch: fetchFn } = fakeFetch(world({ failTable: table }));
 
     const response = await handleExportData(request(), { env: ENV, fetch: fetchFn, now: () => NOW });

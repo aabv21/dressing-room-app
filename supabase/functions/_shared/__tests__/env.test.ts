@@ -14,6 +14,21 @@ const SUPABASE = {
 };
 
 describe('readEnv', () => {
+  test('push: Expo itself and no access token unless set, so enhanced push security stays optional', () => {
+    expect(readEnv(getter(SUPABASE), ['push'])).toEqual({
+      expoPushUrl: 'https://exp.host/--/api/v2/push/send',
+      expoAccessToken: '',
+    });
+    expect(
+      readEnv(getter({ EXPO_PUSH_URL: 'http://mock:54498/--/api/v2/push/send/', EXPO_ACCESS_TOKEN: 'expo-token' }), ['push']),
+    ).toEqual({ expoPushUrl: 'http://mock:54498/--/api/v2/push/send', expoAccessToken: 'expo-token' });
+  });
+
+  test('weekly: the webhook secret is required', () => {
+    expect(() => readEnv(getter(SUPABASE), ['weekly'])).toThrow('missing env: WEEKLY_SUMMARY_SECRET');
+    expect(readEnv(getter({ WEEKLY_SUMMARY_SECRET: 's' }), ['weekly'])).toEqual({ weeklySummarySecret: 's' });
+  });
+
   test('reads the variables of each capability asked for', () => {
     expect(readEnv(getter({ ...SUPABASE, TYPESAFE_API_KEY: 'jev-key' }), ['supabase', 'jev'])).toEqual({
       supabaseUrl: 'https://x.supabase.co',

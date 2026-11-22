@@ -5,7 +5,7 @@ import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
 import type { ClaudeEnv, ServiceEnv, WebhookEnv } from '../_shared/env.ts';
 import { buildExtractionRequest, EXTRACTION_CLAUDE_TIMEOUT_MS, parseExtraction } from '../_shared/extraction.ts';
 import { isRecord, UUID } from '../_shared/guards.ts';
-import { json, readJson } from '../_shared/http.ts';
+import { json, readJson, secretMatches } from '../_shared/http.ts';
 import { downloadObject, photoPath } from '../_shared/photoStore.ts';
 import { consumeQuota, restJson, restRows, runClaude, serviceHeaders, UpstreamError } from '../_shared/userContext.ts';
 
@@ -25,20 +25,6 @@ const FAILED: WriteBack = { outcome: 'failed', patch: { extraction_status: 'fail
 
 function log(garmentId: string, outcome: ExtractOutcome | 'error'): void {
   console.info(JSON.stringify({ garment_id: garmentId, outcome }));
-}
-
-const encoder = new TextEncoder();
-
-/** Compares in time that depends only on the expected secret's length. */
-function secretMatches(given: string | null, expected: string): boolean {
-  if (given === null || expected === '') return false;
-  const a = encoder.encode(given);
-  const b = encoder.encode(expected);
-  let difference = a.length ^ b.length;
-  b.forEach((byte, index) => {
-    difference |= byte ^ (a.at(index) ?? 0);
-  });
-  return difference === 0;
 }
 
 async function readGarmentId(request: Request): Promise<string | null> {
