@@ -2,7 +2,7 @@
 //
 // Server push on the full local stack: push_tokens through register_push_token() as the app writes it
 // (own rows only, the device secret: another phone can't take a token, a new account on the same
-// phone does), push-unregister with no session, the "ready to review" push from extract-attributes once a batch is done (once an
+// phone does), push-claim (a code pushed to the token takes it over), push-unregister with no session, the "ready to review" push from extract-attributes once a batch is done (once an
 // hour, a dead token deleted), and the weekly-summary function behind its secret. Expo's push
 // service is `mockServices.ts` on the host (`EXPO_PUSH_URL` in config.toml).
 //
@@ -193,6 +193,37 @@ describe('taking over and unregistering a token', () => {
     expect((await pushUnregister({ token: user.token, device_secret: user.secret })).status).toBe(204);
     expect((await pushUnregister({ token: 'not-a-token', device_secret: user.secret })).status).toBe(400);
   });
+});
+
+describe('reclaiming a token by proving receipt of a push', () => {
+  test('push-claim sends a code to the token only, and the code takes the token over with the new secret', async () => {
+    const holder = await signedInUser('push-claim-holder');
+    const claimant = await signedInUser('push-claim-claimant');
+    await optIn(holder, { review_ready: true, weekly: true });
+
+    const start = await claimant.client.functions.invoke('push-claim', { body: { token: holder.token, step: 'start' } });
+    expect(start.error).toBeNull();
+    const pushed = await waitFor(() => pushesTo(holder.token), (pushes) => pushes.length > 0, 10_000);
+    expect(pushed).toHaveLength(1);
+    const code = String(pushed[0]?.data.code);
+    expect(pushed[0]?.data.type).toBe('push-claim');
+    expect(pushed[0]).not.toHaveProperty('title');
+
+    // A second start within 10 minutes sends nothing.
+    await claimant.client.functions.invoke('push-claim', { body: { token: holder.token, step: 'start' } });
+    await sleep(1_000);
+    expect(pushesTo(holder.token)).toHaveLength(1);
+
+    const confirm = (withCode: string) =>
+      claimant.client.functions.invoke('push-claim', {
+        body: { token: holder.token, step: 'confirm', code: withCode, device_secret: claimant.secret, platform: 'android', review_ready: true, weekly: false },
+      });
+    expect((await confirm('WRNGXY23')).error).not.toBeNull();
+    expect((await confirm(code)).error).toBeNull();
+
+    const { data } = await serviceClient().from('push_tokens').select('user_id').eq('token', holder.token);
+    expect(data).toEqual([{ user_id: claimant.id }]);
+  }, 30_000);
 });
 
 describe('ready to review', () => {

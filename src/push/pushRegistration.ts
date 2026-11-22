@@ -10,7 +10,16 @@ import { translate, type Locale } from '../i18n';
 import type { Database } from '../lib/database.types';
 import { supabase } from '../lib/supabase';
 import { askReminderPermission } from '../reminder/dailyReminder';
-import { deviceSecret, readPendingUnregister, readPush, writePendingUnregister, writePush } from './pushStore';
+import {
+  deviceSecret,
+  readPendingClaim,
+  readPendingUnregister,
+  readPush,
+  writePendingClaim,
+  writePendingUnregister,
+  writePush,
+  type PendingClaim,
+} from './pushStore';
 
 export type PushClient = SupabaseClient<Database>;
 
@@ -38,6 +47,54 @@ async function deviceToken(): Promise<string | null> {
 async function deleteRow(client: PushClient, token: string): Promise<boolean> {
   const { error } = await client.from('push_tokens').delete().eq('token', token);
   return error === null;
+}
+
+/** The token is this account's again: store the choices and take it off the unregister retries. */
+function saved(userId: string, token: string, choices: PushPreferences): void {
+  writePush(userId, { token, ...choices });
+  writePendingUnregister(readPendingUnregister().filter((pending) => pending !== token));
+}
+
+async function startClaim(client: PushClient, claim: PendingClaim): Promise<void> {
+  writePendingClaim(claim);
+  await client.functions.invoke('push-claim', { body: { token: claim.token, step: 'start' } }).catch(() => undefined);
+}
+
+/** At launch or sign-in: asks again for this account's pending claim (the server allows one code per 10 minutes). */
+export async function resumePushClaim(userId: string, client: PushClient = supabase): Promise<void> {
+  const claim = readPendingClaim();
+  if (claim === null) return;
+  // Another account's claim can't be confirmed with this session.
+  if (claim.userId !== userId) {
+    writePendingClaim(null);
+    return;
+  }
+  await startClaim(client, claim);
+}
+
+/** A claim code push arrived: confirms this account's pending claim. True once the token is this phone's. Never throws. */
+export async function confirmPushClaim(code: string, userId: string, client: PushClient = supabase): Promise<boolean> {
+  const claim = readPendingClaim();
+  if (claim?.userId !== userId) return false;
+  const ok = await within(() =>
+    client.functions
+      .invoke('push-claim', {
+        body: {
+          token: claim.token,
+          step: 'confirm',
+          code,
+          device_secret: deviceSecret(),
+          platform: claim.platform,
+          review_ready: claim.reviewReady,
+          weekly: claim.weekly,
+        },
+      })
+      .then(({ error }) => error === null),
+  );
+  if (!ok) return false;
+  writePendingClaim(null);
+  saved(userId, claim.token, { reviewReady: claim.reviewReady, weekly: claim.weekly });
+  return true;
 }
 
 async function turnOff(userId: string, client: PushClient): Promise<PushOutcome> {
@@ -70,22 +127,25 @@ export async function setPushPreferences(
   const registered = await deviceToken();
   if (registered === null) return 'unavailable';
   const previous = readPush(userId).token;
+  const platform = Platform.OS === 'ios' ? 'ios' : 'android';
   try {
-    // The server refuses (42501) a token another device registered: its secret differs.
     const { error } = await client.rpc('register_push_token', {
       p_token: registered,
-      p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
+      p_platform: platform,
       p_review_ready: next.reviewReady,
       p_weekly: next.weekly,
       p_device_secret: deviceSecret(),
     });
-    if (error !== null) return 'failed';
+    if (error !== null) {
+      // 42501: another account holds the token under another secret (this phone lost its secret, or
+      // someone learned the token). Prove receipt instead: the code arrives as a push.
+      if (error.code === '42501') await startClaim(client, { userId, token: registered, platform, ...next });
+      return 'failed';
+    }
   } catch {
     return 'failed';
   }
-  writePush(userId, { token: registered, ...next });
-  // This account holds the token again, so an earlier sign-out's retry must not delete it.
-  writePendingUnregister(readPendingUnregister().filter((token) => token !== registered));
+  saved(userId, registered, next);
   // A reinstall or restore can hand the phone a new token; the old row would only collect dead pushes.
   if (previous !== null && previous !== registered) await deleteRow(client, previous).catch(() => false);
   return 'saved';

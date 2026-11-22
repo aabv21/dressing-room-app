@@ -11,6 +11,7 @@ import { WearQueueFlusher } from '../outfits/WearQueueFlusher';
 import { I18nProvider } from '../i18n/I18nProvider';
 import { quietDevToastsForE2e } from '../lib/e2eLaunch';
 import { presentRemindersInForeground } from '../reminder/dailyReminder';
+import { PushClaimSync } from '../push/PushClaimSync';
 import { PushTapSync } from '../push/PushTapSync';
 import { DailyReminderSync } from '../reminder/DailyReminderSync';
 import { OnboardingArrivalContext } from '../ui/onboardingArrival';
@@ -113,6 +114,7 @@ function Guards() {
             <WearQueueFlusher />
             {active.onboardingComplete ? <DailyReminderSync /> : null}
             {active.onboardingComplete ? <PushTapSync /> : null}
+            {active.onboardingComplete ? <PushClaimSync userId={active.userId} /> : null}
           </ClosetProvider>
         ) : (
           stack

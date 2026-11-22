@@ -1,7 +1,8 @@
 -- Server push notifications (docs/database.md): `public.push_tokens`, written through
--- `register_push_token()` with the phone's device secret, the service-role-only RPCs
--- `claim_review_push()` and `weekly_summary_targets()`, and the weekly-summary pg_cron job, which
--- calls the Edge Function through pg_net with a Vault URL and secret like the extraction trigger.
+-- `register_push_token()` with the phone's device secret or reclaimed through `public.push_claims`,
+-- the service-role-only RPCs `claim_review_push()` and `weekly_summary_targets()`, the weekly-summary
+-- pg_cron job (pg_net, Vault URL and secret, like the extraction trigger) and the expired claims'
+-- cleanup in `prune_expired_caches()`.
 
 -- public.push_tokens ---------------------------------------------------------------------------
 
@@ -73,7 +74,9 @@ create trigger push_tokens_stamp
 -- account's row for the token under a different secret refuses the call (someone who only knows the
 -- token), while the same secret is that phone with a new account signed in, which takes the token
 -- over. The caller's own row may change secret (a reinstall can keep the token but not the secret).
--- NOTE: whoever holds the unlocked phone holds its secret; a reinstall that keeps an old account's token blocks the next account until Expo reports the token gone.
+-- A phone that lost its secret (restored app data) reclaims its token by proving it receives the
+-- token's pushes (push_claims below).
+-- NOTE: whoever holds the unlocked phone holds its secret and its pushes; upgrade: OS-backed device attestation, if the app ever holds data worth that.
 create function public.register_push_token(
   p_token text,
   p_platform text,
@@ -134,6 +137,114 @@ comment on function public.register_push_token(text, text, boolean, boolean, tex
 
 revoke execute on function public.register_push_token(text, text, boolean, boolean, text) from public, anon;
 grant execute on function public.register_push_token(text, text, boolean, boolean, text) to authenticated;
+
+-- public.push_claims ---------------------------------------------------------------------------
+
+-- A reclaim in flight: the push-claim function sent a code to the token as a push; whoever types
+-- it back proves the phone receives that token's pushes. Server-only, like the caches.
+create table public.push_claims (
+  token text primary key,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  code_hash text not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  attempts smallint not null default 0,
+  constraint push_claims_code_hash_check check (code_hash ~ '^[0-9a-f]{64}$'),
+  constraint push_claims_attempts_check check (attempts between 0 and 5)
+);
+
+comment on table public.push_claims is
+  'One reclaim per push token: the SHA-256 of the code pushed to it, 10 minutes and 5 attempts to '
+  'type it back. No client grants; only push-claim (service role) uses it.';
+
+create index push_claims_user_id_idx on public.push_claims (user_id);
+
+alter table public.push_claims enable row level security;
+
+revoke all on public.push_claims from anon, authenticated;
+
+-- Starts (or restarts) a claim, at most once per token per 10 minutes whoever asks, and only for a
+-- token some row holds: a token nobody holds simply registers.
+create function public.start_push_claim(p_user_id uuid, p_token text, p_code_hash text)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtextextended('push_tokens:' || p_token, 0));
+  if not exists (select 1 from public.push_tokens where token = p_token) then
+    return false;
+  end if;
+  if exists (select 1 from public.push_claims where token = p_token and created_at > now() - interval '10 minutes') then
+    return false;
+  end if;
+  insert into public.push_claims (token, user_id, code_hash, created_at, expires_at)
+  values (p_token, p_user_id, p_code_hash, now(), now() + interval '10 minutes')
+  on conflict (token) do update
+    set user_id = excluded.user_id, code_hash = excluded.code_hash, created_at = excluded.created_at,
+        expires_at = excluded.expires_at, attempts = 0;
+  return true;
+end;
+$$;
+
+-- Spends one of the claimant's 5 attempts on an unexpired claim and answers the code's hash, which
+-- the function compares in constant time; null when there is nothing left to attempt.
+create function public.push_claim_attempt(p_user_id uuid, p_token text)
+returns text
+language sql
+security definer
+set search_path = ''
+as $$
+  update public.push_claims
+  set attempts = attempts + 1
+  where token = p_token and user_id = p_user_id and expires_at > now() and attempts < 5
+  returning code_hash;
+$$;
+
+-- After a matching code, in one transaction: the token's other rows go, the claimant's row takes
+-- the new secret's hash, and the claim goes. False when the claim is gone or expired.
+create function public.finish_push_claim(
+  p_user_id uuid,
+  p_token text,
+  p_platform text,
+  p_review_ready boolean,
+  p_weekly boolean,
+  p_device_secret text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if p_platform is null or p_platform not in ('ios', 'android') or p_device_secret is null or p_device_secret !~ '^[0-9a-f]{32,128}$' then
+    raise exception using errcode = '22023', message = 'finish_push_claim: bad platform or device secret';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('push_tokens:' || p_token, 0));
+  delete from public.push_claims where token = p_token and user_id = p_user_id and expires_at > now();
+  if not found then
+    return false;
+  end if;
+  delete from public.push_tokens where token = p_token and user_id <> p_user_id;
+  insert into public.push_tokens (user_id, token, platform, review_ready, weekly, device_secret_hash)
+  values (p_user_id, p_token, p_platform, coalesce(p_review_ready, false), coalesce(p_weekly, false),
+          encode(extensions.digest(p_device_secret, 'sha256'), 'hex'))
+  on conflict (user_id, token) do update
+    set platform = excluded.platform,
+        review_ready = excluded.review_ready,
+        weekly = excluded.weekly,
+        device_secret_hash = excluded.device_secret_hash;
+  return true;
+end;
+$$;
+
+revoke execute on function public.start_push_claim(uuid, text, text) from public, anon, authenticated;
+revoke execute on function public.push_claim_attempt(uuid, text) from public, anon, authenticated;
+revoke execute on function public.finish_push_claim(uuid, text, text, boolean, boolean, text) from public, anon, authenticated;
+grant execute on function public.start_push_claim(uuid, text, text) to service_role;
+grant execute on function public.push_claim_attempt(uuid, text) to service_role;
+grant execute on function public.finish_push_claim(uuid, text, text, boolean, boolean, text) to service_role;
 
 -- public.claim_review_push() --------------------------------------------------------------------
 
@@ -289,3 +400,48 @@ comment on function public.request_weekly_summary() is
 revoke execute on function public.request_weekly_summary() from public, anon, authenticated;
 
 select cron.schedule('weekly-summary', '0 13 * * 0', 'select public.request_weekly_summary()');
+
+-- public.prune_expired_caches(): expired push claims -------------------------------------------
+
+-- The other lines are unchanged from 20261122120000_planner_trips.sql.
+create or replace function public.prune_expired_caches()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  delete from public.rating_cache
+  where created_at < now() - interval '30 days'
+     or (result -> 'degraded' = 'true'::jsonb and created_at < now() - interval '2 hours');
+
+  delete from public.lucky_cache
+  where created_at < now() - interval '30 days'
+     or (result -> 'degraded' = 'true'::jsonb and created_at < now() - interval '2 hours');
+
+  delete from public.weather_cache
+  where hour < now() - interval '2 days';
+
+  delete from public.for_you_cache f
+  where f.created_at < now() - interval '8 days'
+    and exists (
+      select 1 from public.for_you_cache newer
+      where newer.user_id = f.user_id and newer.created_at > f.created_at
+    );
+
+  delete from public.trip_cache
+  where created_at < now() - interval '7 hours';
+
+  delete from public.planned_outfits
+  where planned_on < (now() at time zone 'utc')::date - 30;
+
+  delete from public.push_claims
+  where expires_at < now();
+
+  delete from cron.job_run_details d
+  using cron.job j
+  where j.jobid = d.jobid
+    and j.jobname = 'prune-expired-caches'
+    and d.end_time < now() - interval '30 days';
+end;
+$$;

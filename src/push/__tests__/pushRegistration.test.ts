@@ -17,31 +17,42 @@ import { getRandomBytes } from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 
 import { allowUserKeys, kvKeys, kvRemove } from '../../lib/kv';
-import { flushPendingUnregister, forgetPushToken, setPushPreferences, type PushClient } from '../pushRegistration';
-import { deviceSecret, readPendingUnregister, readPush, writePendingUnregister, writePush } from '../pushStore';
+import {
+  confirmPushClaim,
+  flushPendingUnregister,
+  forgetPushToken,
+  resumePushClaim,
+  setPushPreferences,
+  type PushClient,
+} from '../pushRegistration';
+import { deviceSecret, readPendingClaim, readPendingUnregister, readPush, writePendingClaim, writePendingUnregister, writePush } from '../pushStore';
 
 const mocked = jest.mocked(Notifications);
 const USER_ID = 'user-1';
 const TOKEN = 'ExponentPushToken[device-1]';
 const SECRET = '1a'.repeat(32);
 
-type Answer = { error: { message: string } | null };
+type Answer = { error: { message: string; code?: string } | null };
 type InvokeAnswer = { data: unknown; error: Error | null };
 type Unregister = { token: string; device_secret: string };
+type Claim = Record<string, unknown>;
 
 /** A supabase-js stand-in recording register_push_token calls, own-row deletes and push-unregister calls. */
 function fakeClient({
   register = { error: null },
   remove = { error: null },
   unregister = () => Promise.resolve({ data: null, error: null }),
+  claim = () => Promise.resolve({ data: null, error: null }),
 }: {
   register?: Answer;
   remove?: Answer | Promise<never>;
   unregister?: (body: Unregister) => Promise<InvokeAnswer>;
+  claim?: (body: Claim) => Promise<InvokeAnswer>;
 } = {}) {
   const registered: unknown[] = [];
   const deletes: { table: string; column: string; value: string }[] = [];
   const unregistered: Unregister[] = [];
+  const claims: Claim[] = [];
   const client = {
     rpc: (name: string, args: unknown) => {
       if (name !== 'register_push_token') throw new Error(`unexpected rpc ${name}`);
@@ -49,7 +60,11 @@ function fakeClient({
       return Promise.resolve(register);
     },
     functions: {
-      invoke: (name: string, options: { body: Unregister }) => {
+      invoke: (name: string, options: { body: Unregister & Claim }) => {
+        if (name === 'push-claim') {
+          claims.push(options.body);
+          return claim(options.body);
+        }
         if (name !== 'push-unregister') throw new Error(`unexpected function ${name}`);
         unregistered.push(options.body);
         return unregister(options.body);
@@ -64,7 +79,7 @@ function fakeClient({
       }),
     }),
   } as unknown as PushClient;
-  return { client, registered, deletes, unregistered };
+  return { client, registered, deletes, unregistered, claims };
 }
 
 const offlineDelete = (): Promise<never> => Promise.reject(new TypeError('Network request failed'));
@@ -279,5 +294,75 @@ describe('flushPendingUnregister', () => {
     writePendingUnregister([TOKEN]);
     await expect(flushPendingUnregister(fakeClient({ unregister: () => Promise.reject(new TypeError('x')) }).client)).resolves.toBeUndefined();
     expect(readPendingUnregister()).toEqual([TOKEN]);
+  });
+});
+
+describe('reclaiming a token another device holds', () => {
+  const CLAIMED = { userId: USER_ID, token: TOKEN, platform: 'ios' as const, reviewReady: true, weekly: false };
+
+  test('a 42501 refusal starts a claim, which waits on the device for the code push', async () => {
+    const { client, claims } = fakeClient({ register: { error: { message: 'another device holds this token', code: '42501' } } });
+
+    expect(await setPushPreferences(USER_ID, { reviewReady: true, weekly: false }, 'en', client)).toBe('failed');
+
+    expect(claims).toEqual([{ token: TOKEN, step: 'start' }]);
+    expect(readPendingClaim()).toEqual(CLAIMED);
+    expect(readPush(USER_ID).token).toBeNull();
+  });
+
+  test('any other failure starts no claim', async () => {
+    const { client, claims } = fakeClient({ register: { error: { message: 'offline' } } });
+    await setPushPreferences(USER_ID, { reviewReady: true, weekly: false }, 'en', client);
+    expect(claims).toEqual([]);
+    expect(readPendingClaim()).toBeNull();
+  });
+
+  test('the code confirms the pending claim with the device secret, and the choices are saved', async () => {
+    writePendingClaim(CLAIMED);
+    writePendingUnregister([TOKEN]);
+    const { client, claims } = fakeClient();
+
+    expect(await confirmPushClaim('K7M2P9QX', USER_ID, client)).toBe(true);
+
+    expect(claims).toEqual([
+      { token: TOKEN, step: 'confirm', code: 'K7M2P9QX', device_secret: SECRET, platform: 'ios', review_ready: true, weekly: false },
+    ]);
+    expect(readPendingClaim()).toBeNull();
+    expect(readPush(USER_ID)).toEqual({ token: TOKEN, reviewReady: true, weekly: false });
+    expect(readPendingUnregister()).toEqual([]);
+  });
+
+  test('without a pending claim, or with another account’s, a code confirms nothing', async () => {
+    const none = fakeClient();
+    expect(await confirmPushClaim('K7M2P9QX', USER_ID, none.client)).toBe(false);
+    expect(none.claims).toEqual([]);
+
+    writePendingClaim({ ...CLAIMED, userId: 'user-2' });
+    const other = fakeClient();
+    expect(await confirmPushClaim('K7M2P9QX', USER_ID, other.client)).toBe(false);
+    expect(other.claims).toEqual([]);
+  });
+
+  test('a refused code keeps the claim for a retry at the next launch', async () => {
+    writePendingClaim(CLAIMED);
+    const { client } = fakeClient({ claim: () => Promise.resolve({ data: null, error: new Error('403') }) });
+
+    expect(await confirmPushClaim('WRNGXY23', USER_ID, client)).toBe(false);
+
+    expect(readPendingClaim()).toEqual(CLAIMED);
+    expect(readPush(USER_ID).token).toBeNull();
+  });
+
+  test('the next launch asks for a new code for this account’s claim, and drops another account’s', async () => {
+    writePendingClaim(CLAIMED);
+    const mine = fakeClient();
+    await resumePushClaim(USER_ID, mine.client);
+    expect(mine.claims).toEqual([{ token: TOKEN, step: 'start' }]);
+    expect(readPendingClaim()).toEqual(CLAIMED);
+
+    const theirs = fakeClient();
+    await resumePushClaim('user-2', theirs.client);
+    expect(theirs.claims).toEqual([]);
+    expect(readPendingClaim()).toBeNull();
   });
 });

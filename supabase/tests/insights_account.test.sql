@@ -175,7 +175,7 @@ select is(
       and att.attnum > 0
       and not att.attisdropped
   ),
-  array['apple_tokens', 'dismissed_outfits', 'for_you_cache', 'garments', 'lucky_cache', 'outfits', 'planned_outfits', 'profiles', 'push_tokens', 'rating_cache', 'saved_trips', 'trip_cache', 'usage_counters', 'wears']::text[],
+  array['apple_tokens', 'dismissed_outfits', 'for_you_cache', 'garments', 'lucky_cache', 'outfits', 'planned_outfits', 'profiles', 'push_claims', 'push_tokens', 'rating_cache', 'saved_trips', 'trip_cache', 'usage_counters', 'wears']::text[],
   'the set of public tables with a user_id column is the expected list'
 );
 

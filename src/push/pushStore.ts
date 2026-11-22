@@ -78,3 +78,29 @@ export function deviceSecret(): string {
   kvSet(DEVICE_SECRET_KEY, made);
   return made;
 }
+
+/** A reclaim this phone started (docs/app.md#notifications-from-the-app-srcpush): device-wide, one at a time. */
+export type PendingClaim = { userId: string; token: string; platform: 'ios' | 'android'; reviewReady: boolean; weekly: boolean };
+
+export const PENDING_CLAIM_KEY = 'push.pendingClaim';
+
+function isPendingClaim(value: unknown): value is PendingClaim {
+  if (typeof value !== 'object' || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.userId === 'string' &&
+    typeof entry.token === 'string' &&
+    (entry.platform === 'ios' || entry.platform === 'android') &&
+    typeof entry.reviewReady === 'boolean' &&
+    typeof entry.weekly === 'boolean'
+  );
+}
+
+export function readPendingClaim(): PendingClaim | null {
+  return kvGetJson(PENDING_CLAIM_KEY, isPendingClaim);
+}
+
+export function writePendingClaim(claim: PendingClaim | null): void {
+  if (claim === null) kvRemove(PENDING_CLAIM_KEY);
+  else kvSet(PENDING_CLAIM_KEY, JSON.stringify(claim));
+}

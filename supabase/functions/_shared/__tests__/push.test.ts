@@ -65,6 +65,16 @@ describe('sendPushes', () => {
     expect(call?.signal).not.toBeNull();
   });
 
+  test('a data-only message (a claim code) goes without title, sound or channel, at high priority', async () => {
+    const { fetchFn, calls } = fakeExpo(okTickets);
+
+    await sendPushes(ENV, fetchFn, [{ to: 'ExponentPushToken[1]', data: { type: 'push-claim', code: 'ABCD2345' } }]);
+
+    expect(JSON.parse(calls[0]?.body ?? '')).toEqual([
+      { to: 'ExponentPushToken[1]', data: { type: 'push-claim', code: 'ABCD2345' }, priority: 'high', _contentAvailable: true },
+    ]);
+  });
+
   test('sends the access token as a bearer when Expo’s enhanced security is on', async () => {
     const { fetchFn, calls } = fakeExpo(okTickets);
     await sendPushes({ ...ENV, expoAccessToken: 'expo-token' }, fetchFn, [message(1)]);

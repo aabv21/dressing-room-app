@@ -35,6 +35,7 @@ jest.mock('expo-notifications', () => ({
   getLastNotificationResponse: jest.fn(() => null),
   clearLastNotificationResponse: jest.fn(),
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
 // expo-speech's native module is absent under Jest: an English and a Mexican Spanish voice; a suite
 // that tests speaking sets these with `jest.mocked`.

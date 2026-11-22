@@ -4,3 +4,5 @@
 export const setPushPreferences = jest.fn(() => Promise.resolve('saved'));
 export const forgetPushToken = jest.fn(() => Promise.resolve());
 export const flushPendingUnregister = jest.fn(() => Promise.resolve());
+export const resumePushClaim = jest.fn(() => Promise.resolve());
+export const confirmPushClaim = jest.fn(() => Promise.resolve(false));

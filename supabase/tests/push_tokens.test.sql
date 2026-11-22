@@ -9,7 +9,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(44);
+select plan(59);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -233,6 +233,93 @@ select is(
   encode(extensions.digest(repeat('1a', 32), 'sha256'), 'hex'),
   'the row keeps the SHA-256 of the secret, never the secret'
 );
+
+-- push_claims: B lost nothing but holds phone two; to reclaim A's token B must prove receipt of a
+-- push: start (rate limited, only for a held token), attempts (at most 5, unexpired), finish.
+select has_table('public', 'push_claims', 'public.push_claims exists');
+select ok(
+  not has_table_privilege('authenticated', 'public.push_claims', 'SELECT')
+    and not has_table_privilege('authenticated', 'public.push_claims', 'INSERT')
+    and not has_table_privilege('authenticated', 'public.push_claims', 'UPDATE')
+    and not has_table_privilege('authenticated', 'public.push_claims', 'DELETE')
+    and not has_table_privilege('anon', 'public.push_claims', 'SELECT')
+    and not has_table_privilege('anon', 'public.push_claims', 'INSERT'),
+  'clients have no access to push_claims'
+);
+select ok(
+  not has_function_privilege('authenticated', 'public.start_push_claim(uuid, text, text)', 'execute')
+    and not has_function_privilege('authenticated', 'public.push_claim_attempt(uuid, text)', 'execute')
+    and not has_function_privilege('authenticated', 'public.finish_push_claim(uuid, text, text, boolean, boolean, text)', 'execute')
+    and has_function_privilege('service_role', 'public.start_push_claim(uuid, text, text)', 'execute')
+    and has_function_privilege('service_role', 'public.push_claim_attempt(uuid, text)', 'execute')
+    and has_function_privilege('service_role', 'public.finish_push_claim(uuid, text, text, boolean, boolean, text)', 'execute'),
+  'only the service role (push-claim) runs the claim functions'
+);
+select is(
+  public.start_push_claim('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[nobody]', repeat('c', 64)),
+  false,
+  'no claim for a token nobody holds (it can simply be registered)'
+);
+select is(
+  public.start_push_claim('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]', encode(extensions.digest('CODE1234', 'sha256'), 'hex')),
+  true,
+  'B starts a claim on A''s token'
+);
+select is(
+  public.start_push_claim('11111111-1111-1111-1111-111111111111', 'ExponentPushToken[aaaa]', repeat('d', 64)),
+  false,
+  'one start per token per 10 minutes, whoever asks'
+);
+select is(
+  public.push_claim_attempt('11111111-1111-1111-1111-111111111111', 'ExponentPushToken[aaaa]'),
+  null,
+  'only the claimant can attempt'
+);
+select is(
+  public.push_claim_attempt('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]'),
+  encode(extensions.digest('CODE1234', 'sha256'), 'hex'),
+  'an attempt answers the code''s hash for the function to compare'
+);
+select public.push_claim_attempt('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]') from generate_series(2, 5);
+select is(
+  public.push_claim_attempt('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]'),
+  null,
+  'the 6th attempt is refused'
+);
+update public.push_claims set attempts = 0, expires_at = now() - interval '1 second';
+select is(
+  public.push_claim_attempt('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]'),
+  null,
+  'an expired claim is refused'
+);
+select is(
+  public.finish_push_claim('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]', 'android', true, false, (select secret from phone where name = 'two')),
+  false,
+  'an expired claim can''t finish either'
+);
+update public.push_claims set expires_at = now() + interval '5 minutes';
+select is(
+  public.finish_push_claim('22222222-2222-2222-2222-222222222222', 'ExponentPushToken[aaaa]', 'android', true, false, (select secret from phone where name = 'two')),
+  true,
+  'a proven claim finishes'
+);
+select results_eq(
+  $$ select user_id, device_secret_hash = encode(extensions.digest(repeat('2b', 32), 'sha256'), 'hex') from public.push_tokens where token = 'ExponentPushToken[aaaa]' $$,
+  $$ values ('22222222-2222-2222-2222-222222222222'::uuid, true) $$,
+  'B now holds the token under phone two''s secret; A''s row is gone'
+);
+select is((select count(*)::int from public.push_claims), 0, 'the claim is gone');
+
+insert into public.push_claims (token, user_id, code_hash, expires_at) values
+  ('ExpoPushToken[old]', '22222222-2222-2222-2222-222222222222', repeat('e', 64), now() - interval '1 minute');
+select public.prune_expired_caches();
+select is((select count(*)::int from public.push_claims), 0, 'the daily cleanup deletes expired claims');
+
+-- Back to A on phone two (same secret: a takeover), as the weekly section expects.
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', '11111111-1111-1111-1111-111111111111', 'role', 'authenticated')::text, true);
+select public.register_push_token('ExponentPushToken[aaaa]', 'android', true, true, (select secret from phone where name = 'two'));
+reset role;
 
 -- weekly_summary_targets(): A's wears this week and their pieces unused for 6 months.
 insert into public.outfits (id, user_id) values ('bbbbbbbb-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111');

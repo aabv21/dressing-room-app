@@ -462,6 +462,10 @@ verify_jwt = false
 [functions.push-unregister]
 verify_jwt = false
 
+# Called by signed-in users reclaiming their phone's push token; the gateway verifies the JWT.
+[functions.push-claim]
+verify_jwt = true
+
 # Called by signed-in users; the gateway verifies the JWT before the function
 # runs, and the function reads garments and the profile with that same token.
 [functions.rate-outfit]

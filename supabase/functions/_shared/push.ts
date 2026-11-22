@@ -12,8 +12,17 @@ export const PUSH_CHANNEL_ID = 'app-notices';
 export const EXPO_PUSH_BATCH = 100;
 export const EXPO_PUSH_TIMEOUT_MS = 5_000;
 
-/** `data.url` is the route a tap opens. */
-export type PushMessage = { to: string; title: string; body: string; data: { url: string } & Record<string, unknown> };
+/** A visible notice (`data.url` is the route a tap opens), or a data-only message the app reads silently. */
+export type PushMessage =
+  | { to: string; title: string; body: string; data: { url: string } & Record<string, unknown> }
+  | { to: string; data: Record<string, unknown> };
+
+/** What Expo gets: a notice on the app's channel with the default sound; a data-only one at high priority, waking iOS. */
+function wireFormat(message: PushMessage): Record<string, unknown> {
+  return 'title' in message
+    ? { ...message, channelId: PUSH_CHANNEL_ID, sound: 'default' }
+    : { ...message, priority: 'high', _contentAvailable: true };
+}
 
 /** `dead` holds the tokens whose ticket said `DeviceNotRegistered`. */
 export type PushResult = { sent: number; failed: number; dead: string[] };
@@ -29,7 +38,7 @@ async function sendBatch(env: PushEnv, fetchFn: typeof fetch, batch: readonly Pu
   try {
     const headers: Record<string, string> = { accept: 'application/json', 'content-type': 'application/json' };
     if (env.expoAccessToken !== '') headers.authorization = `Bearer ${env.expoAccessToken}`;
-    const body = JSON.stringify(batch.map((message) => ({ ...message, channelId: PUSH_CHANNEL_ID, sound: 'default' })));
+    const body = JSON.stringify(batch.map(wireFormat));
     const response = await fetchWithDeadline(fetchFn, env.expoPushUrl, { method: 'POST', headers, body }, EXPO_PUSH_TIMEOUT_MS);
     if (!response.ok) return failed;
     const tickets = ticketsOf((await response.json()) as unknown, batch.length);
