@@ -402,6 +402,13 @@ test('a failed profile read shows a retry (and sign-out) instead of an empty for
   expect(screen.getByTestId('body-height-value')).toHaveTextContent('1.90 m');
 });
 
+test('the daily reminder section sits in Profile, off until turned on', async () => {
+  await openProfile();
+
+  expect(screen.getByRole('header', { name: 'Daily reminder' })).toBeTruthy();
+  expect(screen.getByRole('switch', { name: 'Daily notification' })).not.toBeChecked();
+});
+
 test('household mode is listed as coming soon, with what it will do, and is not a control', async () => {
   await openProfile();
 

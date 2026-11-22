@@ -153,7 +153,8 @@ failed launch read can't overwrite a finished profile with defaults), and the sh
 state, its mapping to columns and the changed-fields diff) plus `ProfileForm.tsx` (`ClothingSection`,
 `BodySection`, `StyleSection`), used by onboarding and the Profile tab. The tab shows "Save changes"
 only while there's a change (or a save, its error, or "Saved" for 2 seconds), with a failed save in
-the button's notice slot until the next edit, and lists household mode as "Coming soon", a row with no action.
+the button's notice slot until the next edit, holds the daily reminder's section
+([below](#the-daily-reminder-srcreminder)), and lists household mode as "Coming soon", a row with no action.
 
 ## Supabase client and storage (`src/lib/`)
 
@@ -256,6 +257,100 @@ the button's notice slot until the next edit, and lists household mode as "Comin
   with Reduce Motion; the rating screen adds a success haptic as the result arrives), and `types.ts`
   (the functions' response types, re-exported from their `handler.ts`).
 
+## The daily reminder (`src/reminder/`)
+
+A local notification at a time the user picks, inviting them to open Today. No server, no push
+token: the phone schedules it and shows it at its own wall clock, so it follows the local time zone
+when the user travels.
+
+- `reminderStore.ts`: the settings on this device, per account, in kv `reminder.<userId>`:
+  `{ enabled, hour, minute, notificationId, language }`, off at 07:30 by default. The key's
+  `<name>.<id>` shape lets account deletion clear and refuse it. `writeReminder` notifies
+  `useReminderSettings`, so Profile's switch follows a background write (a failed re-schedule
+  turns it off there too).
+- `dailyReminder.ts`: `turnOnReminder` creates the Android `daily-reminder` channel (Android 13
+  shows no permission prompt without one), asks for notification permission only when the system
+  still can (iOS provisional counts as allowed), then schedules one notification with a `DAILY`
+  trigger (`hour`, `minute`, the channel), "Your outfit for today is ready" / "Tu outfit de hoy
+  está listo" in the app language, and `data: { kind: 'dailyReminder', url: '/' }`; it answers
+  `on`, `denied` or `failed`. Before scheduling, `scheduleReminder` (a new time or language)
+  cancels the stored id and every scheduled notification whose `data.kind` is `dailyReminder`
+  (`getAllScheduledNotificationsAsync`), so one the kv lost track of can't keep firing; it schedules
+  nothing for an account whose kv is refused (a deletion). Every change runs after the previous one,
+  so two quick changes never leave two notifications. `turnOffReminder` cancels the same way and
+  keeps the time; `forgetReminder` reads the id synchronously and cancels in that same queue, for
+  the deletion, so a re-schedule already waiting can't outlive it. `isReminderScheduled` asks the
+  OS whether a reminder is still there.
+  `presentRemindersInForeground` (the root layout's module scope) shows a reminder that arrives
+  with the app open, silently.
+- `ReminderSection.tsx`: Profile's "Daily reminder" card: the switch, the time (Intl's `7:30 AM` /
+  `7:30 a. m.`) opening a sheet of hour and 5-minute chips with Done, and on a denial the reason with
+  an "Open settings" link (`src/ui/OpenSettingsLink.tsx`, `Linking.openSettings`). A time picked
+  while off is only stored.
+- `DailyReminderSync.tsx`, mounted in the signed-in, onboarded tree: a tap on the reminder (the
+  launch tap from `getLastNotificationResponse`, or one while the app runs) navigates to Today and
+  clears the response; an enabled reminder is re-scheduled when the app language changed, or when
+  the OS no longer holds it (an iOS backup restore or an OS purge keeps the kv's "on").
+- Turning off on the way out: `AuthProvider` turns the reminder off for the account whose session
+  ended (any `SIGNED_OUT`, so the next person on the phone never gets it), keeping the time;
+  `forgetAccountOnDevice` refuses the account's kv, then queues `forgetReminder` before removing
+  the keys.
+
+## Voice (`src/voice/`)
+
+"Listen" reads the screen aloud with `expo-speech`, the phone's own text-to-speech, and dictation
+fills the city and Today's occasion. The voice stylist (a conversation with Claude) is a later
+step.
+
+- `speechText.ts`: what is read, as short sentences (a label's " · " becomes a pause):
+  `todaySpeech` (Today's pieces in display order, the weather line when there is weather, and
+  "Occasion: …" when one is picked), `ratingSpeech` ("Score 82 out of 100: Looks good." and each
+  reason the screen shows) and `ideaSpeech` (For you's idea name and its line).
+- `speech.ts`: `pickVoice(voices, locale)` picks the installed voice for the app language: for
+  Spanish es-MX, es-US, then es-419 (the neutral Latin American copy), then any Spanish voice; for
+  English en-US, then any English voice; an enhanced voice wins within a tag, and Android's
+  `es_MX` tags match too. `useSpeaker(text)` keeps one utterance app-wide (a module-level owner
+  and per-utterance token read through `useSyncExternalStore`, so a late `onStopped` from an earlier
+  utterance can't reset the button of the one playing now): another button's Listen stops the
+  current one, a second tap stops it, and leaving the screen (`useIsFocused`), unmounting or new
+  text (Today's "Another") stops it too. `stopSpeaking` stops whatever is reading; dictation calls it
+  before it starts, so the recognizer never transcribes the app's own voice. It is `hidden` when the phone lists voices but none in the app language; an empty
+  list (an engine still starting) keeps the button, and a speak error then alerts "This phone has no
+  voice for this language."
+- `ListenButton.tsx`: the round Listen / Stop button (Volume2 / Square), on Today's card header,
+  the rating's header (once a result is shown) and each For you card.
+
+Dictation uses the community module `expo-speech-recognition` (the phone's own recognizer):
+
+- `dictation.ts`: `recognitionLanguage(locale, deviceTags)` is the device's own regional variant of
+  the app language (`es-CO`), else `es-MX` or `en-US`. `useDictation(onHeard)` hides its mic when
+  `isRecognitionAvailable()` is false; a tap asks for the microphone (and, on iOS, speech
+  recognition) only then, and starts one session with no interim results, not continuous, and
+  `requiresOnDeviceRecognition` on iOS when `supportsOnDeviceRecognition()` (Android's on-device mode
+  needs a downloaded language pack, so it uses the phone's default recognizer). The final
+  transcript goes to `onHeard`; nothing heard (`no-speech`, `speech-timeout`, or an `end` without a
+  result) is `noMatch`, `not-allowed` is `denied`, other errors `failed`. One recognizer serves the
+  app and the city modal sits over Today, so a module-level session names the mic that owns it,
+  behind one set of native listeners kept while any mic is mounted. A mic taking over aborts the
+  other's session, and so does unmounting while listening; an aborted session's own `end` still
+  arrives later, so those are counted and events are ignored until they're through. A second tap
+  calls `stop` (the final result still arrives). A mic unmounted while the permission prompt was
+  open never starts.
+- `occasionFromSpeech.ts`: `occasionFromSpeech(text, language)` lowercases, strips accents and
+  punctuation, and looks for whole-word keywords of that language only ("trabajo", "oficina",
+  "reunión", "office", "home office" → office; "la u" → university; "fiesta", "salir" → going out;
+  "work", "meeting" → office; "party", "going out" → going out; and so on), checked in the order
+  sport, event, office, university, going out, home, so "salir a correr" is sport, "cena formal" an
+  event, "fiesta en casa" going out and "home office" or "oficina en casa" the office. A medical
+  appointment ("cita médica", "doctor appointment") is removed before matching, so it isn't a date.
+  No keyword is null.
+- `MicButton.tsx`: the round mic (Mic / Square while listening). The city modal's field has one
+  ("Dictate the city") beside "Use my location": the transcript replaces the field like typing
+  (coordinates dropped) and a problem shows under it, with "Open settings" when the microphone was
+  denied (Today's note has it too). Today's chip row starts with "Say the
+  occasion": a match picks the chip (stored like a tap) and is announced; no match says "Didn't
+  catch that. Try "work", "party" or "gym"." and leaves the chips as they were.
+
 ## Stats and Diary (`src/stats/`)
 
 All computed on the device. `periods.ts` (local `YYYY-MM-DD` day math anchored in UTC, the period
@@ -281,8 +376,9 @@ compared across them. Each line opens the garment, and the card is hidden with n
   `forgetInterruptedDeletions`.
 - `deletionFlow.ts`: `runDeletion` (only from the user's tap) and `confirmPendingDeletion` (the
   provider's check); one run per user at a time. `DELETION_SETTLE_MS` is 10 minutes.
-- `forgetAccount.ts`: `forgetAccountOnDevice` removes every kv key with the user's id as a
-  dot-separated segment, plus `deviceState`'s entries, after refusing that user's later kv writes.
+- `forgetAccount.ts`: `forgetAccountOnDevice` cancels the daily reminder, then removes every kv key
+  with the user's id as a dot-separated segment, plus `deviceState`'s entries, after refusing that
+  user's later kv writes.
   New per-user kv keys must keep the `<name>.<id>[.<more>]` shape to be cleared and refused;
   `queue.purge.<id>` is the one key it keeps.
 - `deviceFiles.ts`: `removeExports` and `forgetDeviceFiles` (the exports plus expo-image's caches).

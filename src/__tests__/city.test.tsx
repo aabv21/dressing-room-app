@@ -3,10 +3,12 @@
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
+import { Linking } from 'react-native';
 
 import CityScreen from '../app/city';
 import { saveProfile, type Profile } from '../profile/profileRepository';
 import { resetAuth, setAuth } from '../test/authMock';
+import { emitRecognition, hear, recognition } from '../test/dictation';
 
 jest.mock('expo-router', () => ({
   router: { back: jest.fn(), canGoBack: jest.fn(() => true), replace: jest.fn() },
@@ -173,4 +175,95 @@ test('the close button goes back', async () => {
 
   await fireEvent.press(await screen.findByRole('button', { name: 'Close' }));
   expect(router.back).toHaveBeenCalledTimes(1);
+});
+
+describe('dictating the city', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    recognition.isRecognitionAvailable.mockReturnValue(true);
+  });
+
+  test('the mic asks for the microphone, listens on the device in the app language, and fills the field', async () => {
+    setAuth({ profile: profile() });
+    await render(<CityScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Dictate the city' }));
+
+    expect(recognition.requestPermissionsAsync).toHaveBeenCalled();
+    expect(recognition.start).toHaveBeenCalledWith(
+      expect.objectContaining({ lang: 'en-US', interimResults: false, continuous: false }),
+    );
+    expect(screen.getByRole('button', { name: 'Stop listening' })).toBeOnTheScreen();
+
+    await act(() => {
+      hear('Medellín');
+    });
+
+    expect(screen.getByDisplayValue('Medellín')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Dictate the city' })).toBeOnTheScreen();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(mockedSaveProfile).toHaveBeenCalledWith('user-1', { city_name: 'Medellín', city_lat: null, city_lon: null });
+  });
+
+  test('a second tap stops listening', async () => {
+    setAuth({ profile: profile() });
+    await render(<CityScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Dictate the city' }));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Stop listening' }));
+
+    expect(recognition.stop).toHaveBeenCalled();
+  });
+
+  test('a denied microphone explains itself and never starts', async () => {
+    recognition.requestPermissionsAsync.mockResolvedValueOnce({ granted: false, canAskAgain: false, status: 'denied', expires: 'never' });
+    setAuth({ profile: profile() });
+    await render(<CityScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Dictate the city' }));
+
+    expect(
+      await screen.findByText('Microphone access is off for Dressing Room. Turn it on in Settings to dictate.'),
+    ).toBeOnTheScreen();
+    expect(recognition.start).not.toHaveBeenCalled();
+    expect(screen.getByDisplayValue('Madrid')).toBeOnTheScreen();
+
+    const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
+    await fireEvent.press(screen.getByRole('link', { name: 'Open settings' }));
+    expect(openSettings).toHaveBeenCalled();
+  });
+
+  test('nothing heard keeps the field and says so', async () => {
+    setAuth({ profile: profile() });
+    await render(<CityScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Dictate the city' }));
+
+    await act(() => {
+      emitRecognition('error', { error: 'no-speech', message: '' });
+      emitRecognition('end');
+    });
+
+    expect(screen.getByText("Didn't catch that. Try again.")).toBeOnTheScreen();
+    expect(screen.getByDisplayValue('Madrid')).toBeOnTheScreen();
+  });
+
+  test('no mic when the phone has no speech recognition', async () => {
+    recognition.isRecognitionAvailable.mockReturnValue(false);
+    setAuth({ profile: profile() });
+    await render(<CityScreen />);
+
+    await screen.findByDisplayValue('Madrid');
+    expect(screen.queryByRole('button', { name: 'Dictate the city' })).not.toBeOnTheScreen();
+  });
+
+  test('closing the modal while listening aborts the recognizer', async () => {
+    setAuth({ profile: profile() });
+    const view = await render(<CityScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Dictate the city' }));
+
+    await view.unmount();
+
+    expect(recognition.abort).toHaveBeenCalled();
+  });
 });

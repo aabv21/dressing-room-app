@@ -13,9 +13,12 @@ import { saveProfile, type ProfilePatch } from '../profile/profileRepository';
 import { useCurrentCity } from '../profile/useCurrentCity';
 import { announceForAccessibility } from '../ui/a11y';
 import { AnchoredCta } from '../ui/AnchoredCta';
+import { OpenSettingsLink } from '../ui/OpenSettingsLink';
 import { ScreenTitle, useScreenContentInsets } from '../ui/Screen';
 import { TextField } from '../ui/TextField';
 import { colors, fontSizes, gradients, layout, spacing } from '../ui/theme';
+import { useDictation, type DictationProblem } from '../voice/dictation';
+import { MicButton } from '../voice/MicButton';
 
 type Load = { status: 'loading' } | { status: 'error' } | { status: 'ready'; saved: CityPatch };
 
@@ -33,6 +36,12 @@ function close(): void {
     router.replace('/');
   }
 }
+
+const DICTATION_PROBLEM: Record<DictationProblem, MessageKey> = {
+  denied: 'dictate.denied',
+  failed: 'dictate.failed',
+  noMatch: 'dictate.noMatch',
+};
 
 function samePatch(a: CityPatch, b: CityPatch): boolean {
   return a.city_name === b.city_name && a.city_lat === b.city_lat && a.city_lon === b.city_lon;
@@ -72,6 +81,13 @@ export default function CityScreen(): React.JSX.Element {
       mounted.current = false;
     };
   }, []);
+
+  // A dictated city is typed text: it drops the coordinates, like an edit.
+  const dictation = useDictation((text) => {
+    edits.current += 1;
+    setMessage(undefined);
+    setEdited({ name: text, coords: null });
+  });
 
   const locate = useCallback(async () => {
     setMessage(undefined);
@@ -158,23 +174,32 @@ export default function CityScreen(): React.JSX.Element {
           testID="city-name"
           leading={<MapPin size={16} color={colors.accentText} />}
           trailing={
-            <Pressable
-              accessibilityRole="button"
-              // Not while a save is in flight: a location landing then would change the field under it.
-              accessibilityState={{ disabled: locating || saving, busy: locating }}
-              disabled={locating || saving}
-              onPress={() => {
-                void locate();
-              }}
-              style={styles.locationButton}
-              hitSlop={{ left: 8, right: 8 }}
-            >
-              <Text style={styles.locationLabel}>
-                {locating ? t('onboarding.style.locating') : t('onboarding.style.useLocation')}
-              </Text>
-            </Pressable>
+            <View style={styles.trailing}>
+              <MicButton dictation={dictation} label={t('dictate.city')} size={32} />
+              <Pressable
+                accessibilityRole="button"
+                // Not while a save is in flight: a location landing then would change the field under it.
+                accessibilityState={{ disabled: locating || saving, busy: locating }}
+                disabled={locating || saving}
+                onPress={() => {
+                  void locate();
+                }}
+                style={styles.locationButton}
+                hitSlop={{ left: 8, right: 8 }}
+              >
+                <Text style={styles.locationLabel}>
+                  {locating ? t('onboarding.style.locating') : t('onboarding.style.useLocation')}
+                </Text>
+              </Pressable>
+            </View>
           }
         />
+        {dictation.problem === null ? null : (
+          <View accessibilityLiveRegion="polite">
+            <Text style={styles.message}>{t(DICTATION_PROBLEM[dictation.problem])}</Text>
+            {dictation.problem === 'denied' ? <OpenSettingsLink /> : null}
+          </View>
+        )}
         {message === undefined ? null : (
           <Text style={message.error ? styles.error : styles.message} accessibilityLiveRegion="polite">
             {t(message.key)}
@@ -258,6 +283,11 @@ const styles = StyleSheet.create({
   },
   spinner: {
     marginVertical: spacing.lg,
+  },
+  trailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   locationButton: {
     minHeight: layout.minHitTarget,

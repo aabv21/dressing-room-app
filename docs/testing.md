@@ -16,6 +16,15 @@ environment. `jest.setup.ts` mocks:
   `USD`), so i18n-dependent tests don't depend on the host machine's language or region.
 - `react-native-view-shot` — `captureRef` answers a fixed `file://` PNG, since the native capture
   is absent under Jest; a suite that tests a failed capture overrides it.
+- `expo-speech` — an en-US and an es-MX voice, `speak` and `stop` as spies; the Listen suites
+  read `speak`'s options to finish or fail an utterance.
+- `expo-speech-recognition` — recognition available and on-device, the permission granted, and
+  `start`, `stop`, `abort` and `addListener` as spies; `src/test/dictation.ts` types them as plain
+  mocks and emits recognition events (`hear(transcript)` sends a final result, then `end`).
+- `expo-notifications` — permission granted, `scheduleNotificationAsync` answering an id, nothing
+  in `getAllScheduledNotificationsAsync`, no tap
+  response and a listener that does nothing, since the native module is absent under Jest; the
+  reminder suites set these with `jest.mocked`.
 - `expo-sqlite/kv-store` — replaced with an in-memory `Map` behind the same synchronous
   `getItemSync`/`setItemSync`/`removeItemSync`/`getAllKeysSync` API `src/lib/kv.ts` calls, since
   there is no native SQLite module under Jest.
@@ -114,7 +123,8 @@ The Profile tab's Privacy section (data export and account deletion):
   user signing in drops a `deleting` account's kv data and keeps their own marker for their
   session's check; that account signing in again can write its kv data again.
 - `src/account/__tests__/forgetAccount.test.ts` — every kv key under the user's id goes (each day's
-  `today.occasion.<id>.<date>` too, and the saved outfits), with the onboarding status and pending language save; another
+  `today.occasion.<id>.<date>` too, the saved outfits, and the daily reminder's settings after its
+  notification is cancelled), with the onboarding status and pending language save; another
   account's keys, the device's language preference and a `queue.purge.<id>` request stay; the
   user's later writes are refused
   (also the id-less onboarding and language entries), and lifted once that account signs in again.
@@ -134,6 +144,50 @@ The Profile tab's Privacy section (data export and account deletion):
   locally, keeping the queued photos and the data; Sign out is disabled while an export or a
   deletion runs, and a late `reauth` after another account signed in neither signs it out nor
   alerts it.
+- `src/reminder/__tests__/dailyReminder.test.ts` — turning the reminder on: the Android channel
+  before the permission request, iOS provisional counting as allowed, asking only when the system
+  still can, one `DAILY` trigger at the chosen hour and minute on the reminder channel, the copy in
+  English or Spanish with `data.kind`, and the id stored in kv `reminder.<id>`; denied and a
+  scheduling failure store nothing; a re-schedule cancels the stored id first, and two at once never
+  leave two notifications; off cancels and keeps the time; `forgetReminder`;
+  `isReminderResponse` (only a default tap on the reminder). Against a fake of the OS's scheduled
+  list: scheduling also cancels an orphan reminder (never another app notification), off cancels
+  every reminder, and a re-schedule queued during an account deletion, or asked for after it,
+  leaves none scheduled.
+- `src/reminder/__tests__/ReminderSection.test.tsx` — Profile's section: off at 7:30 by default,
+  the switch asks and schedules, a new time from the sheet re-schedules (the old id cancelled), a
+  time picked while off is kept without scheduling, off cancels, denied stays off with the
+  explanation and "Open settings", a scheduling failure says so, the Spanish labels, and a
+  re-schedule that fails elsewhere turns the switch off.
+- `src/reminder/__tests__/DailyReminderSync.test.tsx` — a reminder tap that launched the app or
+  arrives while it runs opens Today and is cleared, another notification's doesn't, the listener is
+  removed on unmount, a language change re-schedules an enabled reminder (never an off one), and
+  an enabled reminder the OS no longer holds is scheduled again on mount (one still there isn't).
+- `src/voice/__tests__/speech.test.ts` — `pickVoice`: Latin American Spanish before Spain, es-MX
+  first, Android's underscore tags, any voice in the language as a fallback, en-US first, an
+  enhanced voice within a tag, and null with no voice in the language.
+- `src/voice/__tests__/speechText.test.ts` — Today's, the rating's and For you's spoken text in
+  English and Spanish, without weather, an occasion, reasons or a line.
+- Listen on the screens, in `today.test.tsx` (the pieces, weather and occasion with the en-US voice;
+  a second tap, the end of the speech, leaving the screen and "Another" stop it; the es-MX voice in
+  Spanish; hidden with voices but none in the language; a speak error alerts), `rate.test.tsx` (the
+  score, label and reasons; none while loading; unmounting stops it) and `for-you.test.tsx` (each
+  idea's text; another idea's Listen takes over; leaving the tab stops it).
+- `src/voice/__tests__/occasionFromSpeech.test.ts` — every occasion from Spanish and English
+  phrases, accents and capitals, the keyword order ("salir a correr", "cena formal", "fiesta en
+  casa", "work out", "home office", "oficina en casa"), "office" and "la u" in Spanish, whole words
+  only ("networking", "classic"), "cita médica" left unmapped, each language's own words, and null
+  for empty or unrelated speech. `dictation.test.ts` — `recognitionLanguage`.
+  `useDictation.test.tsx` — a mic taking over aborts the other's session and that session's late
+  `end` doesn't stop the new one (which gets the result), and a mic unmounted during the permission
+  prompt never starts.
+- Dictation on the screens, in `city.test.tsx` (the mic asks for the microphone, starts on-device
+  in en-US and fills the field, which then saves by name; a second tap stops; denied explains and
+  never starts, with "Open settings"; nothing heard keeps the field and says so; no mic without
+  recognition; closing while listening aborts) and `today.test.tsx` ("a meeting at work" picks
+  Office and stores it, "fiesta" picks Salidas in Spanish with es-MX, unrelated words say they
+  weren't caught, a denied microphone offers "Open settings", dictating stops Listen first, and a
+  late `onStopped` from an earlier utterance doesn't reset the current one).
 - `src/lib/__tests__/e2eLaunch.test.ts` — the Maestro launch check: `-e2e 1` in the user defaults
   is an end-to-end launch (anything else, or no native settings module, isn't), and only then are
   LogBox's toasts hidden.
@@ -152,7 +206,8 @@ Accounts, onboarding and the profile:
   and the shared profile: read at sign-in (no row as `{}`), an error until a retry succeeds (loading
   while it runs), a failed refresh keeping the last good profile, a foreground or reconnect after an
   offline launch reading it again, `replaceProfileLocal` merging a saved patch, and another account
-  or a sign-out dropping it. Screen suites stand it in with
+  or a sign-out dropping it; a session that ends turns off that account's daily reminder, keeping
+  its time. Screen suites stand it in with
   `src/test/authMock.ts`, a store that re-renders on `setAuth`.
 - `src/auth/__tests__/authService.test.ts` — sign-up, sign-in, sign-out (offline falls back to a
   local sign-out), the password-reset request (no account and the email rate limit both answer

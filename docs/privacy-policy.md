@@ -35,6 +35,13 @@ where it is kept, who processes it and how you can export or delete it. Question
 - **What you wear.** The outfits you save or log as worn, with the day, the occasion and the score.
 - **What you don't want suggested.** The outfit combinations you marked "Not for me", so they
   aren't suggested again.
+- **Your voice, only when you tap a mic.** Dictating a city or Today's occasion uses the
+  microphone only while you hold that session (tap to start, tap again or pause to stop); the app
+  never records or keeps the audio. Your phone's own speech recognizer turns it into text: on an
+  iPhone that supports it, entirely on the phone; otherwise Apple's (iPhone) or the phone's speech
+  service, usually Google's (Android), may receive the audio to transcribe it, under their own
+  privacy terms. Only the resulting words reach the app, which uses a dictated city or occasion
+  exactly like a typed city or a tapped occasion.
 - **Usage counts.** How many AI requests of each kind you made each day, to enforce the daily
   limits, and the results of recent AI requests, so repeating one costs nothing.
 
@@ -51,7 +58,9 @@ connections and holds no other key.
 
 Your phone also keeps a copy of your closet, today's outfit suggestions, your saved outfits, the
 combinations you marked "Not for me", your last "For you" ideas and cached photos, so the app works offline. A photo waiting to upload is kept in the app's own
-folder until it is uploaded.
+folder until it is uploaded. If you turn on the daily reminder, its time stays on your phone and
+the phone itself schedules the notification: nothing about it reaches a server or a push service.
+"Listen" reads the screen's text with your phone's own text-to-speech voices.
 
 ## Who processes it
 

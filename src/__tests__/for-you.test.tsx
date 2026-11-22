@@ -2,6 +2,7 @@
 // Rendered directly with auth, focus and the AI client mocked; kv is the in-memory test store.
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { router } from 'expo-router';
+import * as Speech from 'expo-speech';
 import { Alert, Linking } from 'react-native';
 
 import ForYouScreen from '../app/(tabs)/for-you';
@@ -327,4 +328,45 @@ test('one request at a time: regaining focus during a fetch waits for it', async
   resolve();
   expect(await screen.findByText('Blazer · Camel')).toBeOnTheScreen();
   expect(mockedFetch).toHaveBeenCalledTimes(2);
+});
+
+describe("listening to For you's ideas", () => {
+  beforeEach(() => {
+    jest.mocked(Speech.speak).mockClear();
+    jest.mocked(Speech.stop).mockClear();
+  });
+
+  test("each idea's Listen reads its name and line; another idea's Listen takes over", async () => {
+    mockedFetch.mockReturnValue(ok(IDEAS));
+    await render(<ForYouScreen />);
+
+    const listen = await screen.findAllByRole('button', { name: 'Listen' });
+    expect(listen).toHaveLength(2);
+    await fireEvent.press(listen[0] as never);
+    expect(Speech.speak).toHaveBeenLastCalledWith(
+      'Blazer, Camel. A camel blazer dresses up every pair of jeans you own.',
+      expect.objectContaining({ language: 'en-US' }),
+    );
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Listen' }));
+    expect(Speech.stop).toHaveBeenCalled();
+    expect(Speech.speak).toHaveBeenLastCalledWith(
+      "Sneakers, White. Finishes outfits you can't complete today.",
+      expect.anything(),
+    );
+    expect(screen.getAllByRole('button', { name: 'Listen' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Stop' })).toHaveLength(1);
+  });
+
+  test('leaving the tab stops it', async () => {
+    mockedFetch.mockReturnValue(ok(IDEAS));
+    const view = await render(<ForYouScreen />);
+    const [first] = await screen.findAllByRole('button', { name: 'Listen' });
+    await fireEvent.press(first as never);
+
+    mockFocus.focused = false;
+    await view.rerender(<ForYouScreen />);
+
+    expect(Speech.stop).toHaveBeenCalled();
+  });
 });

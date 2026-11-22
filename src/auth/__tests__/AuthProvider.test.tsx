@@ -34,8 +34,11 @@ jest.mock('../../lib/useOnResume', () => ({
   },
 }));
 
+import * as Notifications from 'expo-notifications';
+
 import { I18nProvider, useLocalePreference } from '../../i18n/I18nProvider';
 import { allowUserKeys, kvGet, kvRemove, kvSet } from '../../lib/kv';
+import { readReminder, writeReminder } from '../../reminder/reminderStore';
 import { AuthProvider, useAuth } from '../AuthProvider';
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -871,5 +874,29 @@ describe('the profile, read once for the app', () => {
     });
 
     expect(result.current.profile).toBeNull();
+  });
+});
+
+test("a session that ends turns off the account's daily reminder, keeping its time", async () => {
+  allowUserKeys('user-1');
+  writeReminder('user-1', { enabled: true, hour: 6, minute: 45, notificationId: 'reminder-1', language: 'en' });
+  mockGetProfile.mockResolvedValue({ onboarding_completed_at: '2026-11-01T00:00:00Z' });
+  const { result } = await renderHook(() => useAuth(), { wrapper });
+  await act(() => {
+    authStateCallback?.('SIGNED_IN', { user: { id: 'user-1' } });
+  });
+  await waitFor(() => {
+    expect(result.current.status).toBe('signedIn');
+  });
+
+  await act(() => {
+    authStateCallback?.('SIGNED_OUT', null);
+  });
+
+  await waitFor(() => {
+    expect(jest.mocked(Notifications).cancelScheduledNotificationAsync).toHaveBeenCalledWith('reminder-1');
+  });
+  await waitFor(() => {
+    expect(readReminder('user-1')).toMatchObject({ enabled: false, notificationId: null, hour: 6, minute: 45 });
   });
 });

@@ -5,11 +5,13 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react-n
 import { randomUUID } from 'expo-crypto';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { AppState, type AppStateStatus } from 'react-native';
+import * as Speech from 'expo-speech';
+import { Alert, AppState, Linking, type AppStateStatus } from 'react-native';
 
 import TodayScreen from '../app/(tabs)/index';
+import { I18nProvider } from '../i18n/I18nProvider';
 import type { Garment } from '../closet/garmentRepository';
-import { kvGet, kvRemove } from '../lib/kv';
+import { kvGet, kvRemove, kvSet } from '../lib/kv';
 import { storeLucky } from '../outfits/storedLucky';
 import { fetchLuckyList, type AiOutcome } from '../outfits/aiClient';
 import { logWear } from '../outfits/outfitRepository';
@@ -19,6 +21,7 @@ import { dequeueWear, queuedWears, wearQueueKey } from '../outfits/wearQueue';
 import { CLOSET_REFETCH_DELAY_MS } from '../outfits/useLuckyList';
 import { getProfile, type Profile, type ProfilePatch } from '../profile/profileRepository';
 import type { LuckyOutfit, LuckyResponse, WeatherSummary } from '../outfits/types';
+import { hear, recognition } from '../test/dictation';
 import { garment } from '../test/garmentFixture';
 
 const TOP = '00000000-0000-4000-8000-000000000001';
@@ -1032,5 +1035,223 @@ describe("sharing Today's outfit as an image", () => {
 
     expect(await screen.findByText("Sharing isn't available on this device.")).toBeOnTheScreen();
     expect(Sharing.shareAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("listening to Today's outfit", () => {
+  const SPOKEN = 'Blouse, White. Jeans, Blue. Sneakers, White. Bag, Brown. Sunday, 24 °C, sunny.';
+
+  beforeEach(() => {
+    jest.mocked(Speech.speak).mockClear();
+    jest.mocked(Speech.stop).mockClear();
+    kvRemove('locale-preference');
+  });
+
+  test('Listen reads the pieces, the weather line and the occasion with an English voice', async () => {
+    kvSet(KV_KEY, 'office');
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+
+    expect(Speech.speak).toHaveBeenCalledWith(
+      `${SPOKEN} Occasion: Office.`,
+      expect.objectContaining({ language: 'en-US', voice: 'voice-en-us' }),
+    );
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeOnTheScreen();
+  });
+
+  test('a second tap stops it', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Stop' }));
+
+    expect(Speech.stop).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
+  });
+
+  test('the button resets when the speech ends by itself', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+
+    await act(() => {
+      jest.mocked(Speech.speak).mock.calls[0]?.[1]?.onDone?.();
+    });
+
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
+  });
+
+  test('leaving the screen stops it', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    const view = await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+
+    mockFocus.focused = false;
+    await view.rerender(<TodayScreen />);
+
+    expect(Speech.stop).toHaveBeenCalled();
+  });
+
+  test('"Another" stops the outfit being read', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Another' }));
+
+    expect(Speech.stop).toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
+  });
+
+  test('in Spanish, with a Latin American voice', async () => {
+    kvSet('locale-preference', 'es');
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(
+      <I18nProvider>
+        <TodayScreen />
+      </I18nProvider>,
+    );
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Escuchar' }));
+
+    expect(Speech.speak).toHaveBeenCalledWith(
+      expect.stringContaining('Blusa, Blanco.'),
+      expect.objectContaining({ language: 'es-MX', voice: 'voice-es-mx' }),
+    );
+  });
+
+  test('hidden when the phone lists voices but none in the app language', async () => {
+    jest.mocked(Speech.getAvailableVoicesAsync).mockResolvedValueOnce([
+      { identifier: 'voice-fr', name: 'Thomas', language: 'fr-FR', quality: Speech.VoiceQuality.Default },
+    ]);
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await screen.findByRole('button', { name: 'Share' });
+    expect(screen.queryByRole('button', { name: 'Listen' })).not.toBeOnTheScreen();
+  });
+
+  test('a speech error says so', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+
+    await act(() => {
+      jest.mocked(Speech.speak).mock.calls[0]?.[1]?.onError?.(new Error('no engine'));
+    });
+
+    expect(alert).toHaveBeenCalledWith("This phone has no voice for this language.");
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
+  });
+});
+
+describe('saying the occasion', () => {
+  beforeEach(() => {
+    recognition.start.mockClear();
+    kvRemove('locale-preference');
+  });
+
+  test('"Say the occasion" maps the spoken words to an occasion chip', async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Say the occasion' }));
+    expect(recognition.start).toHaveBeenCalledWith(expect.objectContaining({ lang: 'en-US' }));
+
+    await act(() => {
+      hear('a meeting at work');
+    });
+
+    expect(screen.getByRole('radio', { name: 'Office' })).toBeSelected();
+    expect(kvGet(KV_KEY)).toBe('office');
+  });
+
+  test('in Spanish, "fiesta" picks Going out', async () => {
+    kvSet('locale-preference', 'es');
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(
+      <I18nProvider>
+        <TodayScreen />
+      </I18nProvider>,
+    );
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Decir la ocasión' }));
+    expect(recognition.start).toHaveBeenCalledWith(expect.objectContaining({ lang: 'es-MX' }));
+    await act(() => {
+      hear('me voy de fiesta');
+    });
+
+    expect(screen.getByRole('radio', { name: 'Salidas' })).toBeSelected();
+  });
+
+  test("words that match no occasion say they weren't caught and keep the chips", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Say the occasion' }));
+    await act(() => {
+      hear('banana');
+    });
+
+    expect(screen.getByText('Didn\'t catch that. Try "work", "party" or "gym".')).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'Office' })).not.toBeSelected();
+  });
+});
+
+describe('the voice features together', () => {
+  beforeEach(() => {
+    recognition.start.mockClear();
+    jest.mocked(Speech.speak).mockClear();
+    jest.mocked(Speech.stop).mockClear();
+    kvRemove('locale-preference');
+  });
+
+  test("dictating stops Listen first, so the recognizer doesn't hear the app", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+    jest.mocked(Speech.stop).mockClear();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Say the occasion' }));
+
+    expect(Speech.stop).toHaveBeenCalled();
+    expect(recognition.start).toHaveBeenCalled();
+    expect(jest.mocked(Speech.stop).mock.invocationCallOrder[0]).toBeLessThan(
+      recognition.start.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(screen.getByRole('button', { name: 'Listen' })).toBeOnTheScreen();
+  });
+
+  test("a late stop from an earlier utterance doesn't reset the one playing now", async () => {
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+    await fireEvent.press(await screen.findByRole('button', { name: 'Listen' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Stop' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Listen' }));
+
+    await act(() => {
+      jest.mocked(Speech.speak).mock.calls[0]?.[1]?.onStopped?.();
+    });
+
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeOnTheScreen();
+  });
+
+  test('a denied microphone for the occasion offers Open settings', async () => {
+    recognition.requestPermissionsAsync.mockResolvedValueOnce({ granted: false, canAskAgain: false, status: 'denied', expires: 'never' });
+    const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
+    mockedFetch.mockReturnValue(ok(list()));
+    await render(<TodayScreen />);
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Say the occasion' }));
+
+    expect(
+      await screen.findByText('Microphone access is off for Dressing Room. Turn it on in Settings to dictate.'),
+    ).toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('link', { name: 'Open settings' }));
+    expect(openSettings).toHaveBeenCalled();
   });
 });

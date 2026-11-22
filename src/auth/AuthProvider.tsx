@@ -9,6 +9,7 @@ import { useOnResume } from '../lib/useOnResume';
 import { readStoredSession, startAuthAutoRefresh, supabase } from '../lib/supabase';
 import { getProfile, saveProfile } from '../profile/profileRepository';
 import type { Profile, ProfilePatch } from '../profile/profileRepository';
+import { turnOffReminder } from '../reminder/dailyReminder';
 import {
   cacheOnboarding,
   cachedOnboarding,
@@ -163,6 +164,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
         } catch {
           // Retried at the next sign-out or sign-in.
         }
+        // Whoever uses the phone next mustn't get this account's reminder.
+        if (currentUserIdRef.current !== null) void turnOffReminder(currentUserIdRef.current);
         currentUserIdRef.current = null;
         unconfirmedSessionRef.current = false;
         languageSyncedForRef.current = null;

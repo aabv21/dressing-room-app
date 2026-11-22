@@ -24,6 +24,7 @@ import { LanguageToggle } from '../../ui/LanguageToggle';
 import type { RequestError } from '../../lib/requestResult';
 import { clearDismissed } from '../../outfits/storedDismissed';
 import { countDismissed, restoreDismissed } from '../../outfits/suggestionFeedback';
+import { ReminderSection } from '../../reminder/ReminderSection';
 
 /** How long "Saved" stays on the button after a save. */
 export const SAVED_NOTE_MS = 2000;
@@ -413,6 +414,8 @@ function ProfileEditor({ userId, initial }: { userId: string; initial: ProfilePa
         />
         <SectionHeading>{t('profile.section.style')}</SectionHeading>
         <StyleSection value={draft} onChange={edit} />
+        <SectionHeading>{t('profile.section.reminder')}</SectionHeading>
+        <ReminderSection userId={userId} />
         <LanguageSection onSave={saveLanguage} />
         <SectionHeading>{t('profile.section.household')}</SectionHeading>
         <HouseholdSection />

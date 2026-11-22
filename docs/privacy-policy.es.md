@@ -36,6 +36,14 @@ preguntas van a [hello.aabv21@gmail.com](mailto:hello.aabv21@gmail.com).
   puntaje.
 - **Lo que no quieres que te sugiera.** Las combinaciones de outfit que marcaste con "No es para
   mí", para no sugerirlas de nuevo.
+- **Tu voz, solo cuando tocas un micrófono.** Dictar una ciudad o la ocasión de Hoy usa el
+  micrófono solo durante esa sesión (tocas para empezar y vuelves a tocar o haces una pausa para
+  terminar); la app nunca graba ni guarda el audio. El reconocedor de voz de tu propio teléfono lo
+  convierte en texto: en un iPhone que lo permite, todo dentro del teléfono; si no, el de Apple
+  (iPhone) o el servicio de voz del teléfono, normalmente el de Google (Android), puede recibir el
+  audio para transcribirlo, con sus propias condiciones de privacidad. A la app solo llegan las
+  palabras resultantes, y usa una ciudad o una ocasión dictadas igual que una ciudad escrita o una
+  ocasión tocada.
 - **Conteos de uso.** Cuántas solicitudes de IA de cada tipo hiciste cada día, para aplicar los
   límites diarios, y los resultados de solicitudes recientes, para que repetir una no cueste nada.
 
@@ -53,7 +61,10 @@ cambie. La app se comunica con Supabase por conexiones cifradas y no guarda ning
 Tu teléfono guarda además una copia de tu clóset, las sugerencias de outfit del día, tus outfits
 guardados, las combinaciones que marcaste con "No es para mí", tus últimas ideas de "Para ti" y
 fotos en caché, para que la app funcione sin conexión. Una foto que espera para
-subirse se guarda en la carpeta propia de la app hasta que se sube.
+subirse se guarda en la carpeta propia de la app hasta que se sube. Si activas el recordatorio
+diario, su hora se queda en tu teléfono y el propio teléfono programa la notificación: nada de eso
+llega a un servidor ni a un servicio de notificaciones push. "Escuchar" lee el texto de la
+pantalla con las voces de texto a voz de tu propio teléfono.
 
 ## Quién los procesa
 

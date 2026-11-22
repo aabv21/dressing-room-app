@@ -23,8 +23,14 @@ import type { AiError } from '../../outfits/aiClient';
 import { ActionNotice, UndoNotice } from '../../ui/ActionNotice';
 import type { CtaAction } from '../../ui/AnchoredCta';
 import { ChipGroup } from '../../ui/ChipGroup';
+import { OpenSettingsLink } from '../../ui/OpenSettingsLink';
 import { Screen } from '../../ui/Screen';
 import { useWaitStage } from '../../ui/useWaitStage';
+import { useDictation } from '../../voice/dictation';
+import { ListenButton } from '../../voice/ListenButton';
+import { MicButton } from '../../voice/MicButton';
+import { occasionFromSpeech } from '../../voice/occasionFromSpeech';
+import { todaySpeech } from '../../voice/speechText';
 import { colors, fontSizes, layout, radii, spacing } from '../../ui/theme';
 
 // Room for a message shown above the buttons, so it never covers the card's last row.
@@ -77,7 +83,15 @@ function useProfileCity(): string | null | undefined {
   return name === '' ? null : name;
 }
 
-function CardHeader({ onRate, onShare }: { onRate?: () => void; onShare?: () => void }): React.JSX.Element {
+function CardHeader({
+  onRate,
+  onShare,
+  listenText,
+}: {
+  onRate?: () => void;
+  onShare?: () => void;
+  listenText?: string;
+}): React.JSX.Element {
   const { t } = useI18n();
   return (
     <View style={styles.cardHeader}>
@@ -86,6 +100,7 @@ function CardHeader({ onRate, onShare }: { onRate?: () => void; onShare?: () => 
         <Text style={styles.muted}>{t('today.lucky')}</Text>
       </View>
       <View style={styles.cardActions}>
+        {listenText === undefined ? null : <ListenButton text={listenText} size={CHIP_AI_HEIGHT} />}
         {onShare === undefined ? null : (
           <Pressable
             accessibilityRole="button"
@@ -271,6 +286,20 @@ export default function TodayScreen(): React.JSX.Element {
   // Keyed by outfit: a failed or queued wear's note stays with the outfit it was for.
   const wearLog = useWearLog(lucky.day);
 
+  // "Say the occasion": the words that name no occasion leave the chips as they were.
+  const [occasionMissed, setOccasionMissed] = useState(false);
+  const occasionDictation = useDictation((text) => {
+    const heard = occasionFromSpeech(text, locale);
+    setOccasionMissed(heard === null);
+    if (heard === null) {
+      announceForAccessibility(t('dictate.occasionNoMatch'));
+      return;
+    }
+    wearLog.clearError();
+    setOccasion(heard);
+    announceForAccessibility(t('listen.occasion', { occasion: t(`occasion.${heard}`) }));
+  });
+
   // "Not for me" is open for one outfit at a time; its confirmation outlives the outfit it hid.
   const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
@@ -437,9 +466,18 @@ export default function TodayScreen(): React.JSX.Element {
     const logged = wearLog.isLogged(outfit.garmentIds);
     const { garmentIds } = outfit;
     const feedbackOpen = feedbackFor === outfitIdentity(garmentIds);
+    const listenText = todaySpeech(
+      {
+        pieces: orderPieces(pieces).map((piece) => pieceLabel(piece, t)),
+        weather: formatWeather(lucky.weather, locale, dayDate),
+        occasion: occasion === null ? null : t(`occasion.${occasion}`),
+      },
+      t,
+    );
     body = (
       <View style={styles.card}>
         <CardHeader
+          listenText={listenText}
           onRate={() => {
             router.push({
               pathname: '/rate',
@@ -539,6 +577,7 @@ export default function TodayScreen(): React.JSX.Element {
         style={styles.chipsScroller}
         contentContainerStyle={styles.chipsContent}
       >
+        <MicButton dictation={occasionDictation} label={t('dictate.occasion')} />
         <ChipGroup
           multiple={false}
           wrap={false}
@@ -547,10 +586,24 @@ export default function TodayScreen(): React.JSX.Element {
           selected={occasion === null ? [] : [occasion]}
           onChange={([next]: Occasion[]) => {
             wearLog.clearError();
+            setOccasionMissed(false);
+            occasionDictation.clearProblem();
             setOccasion(next ?? null);
           }}
         />
       </ScrollView>
+      {occasionMissed || occasionDictation.problem !== null ? (
+        <View style={styles.dictationNote} accessibilityLiveRegion="polite">
+          <Text style={styles.muted}>
+            {occasionDictation.problem === 'denied'
+              ? t('dictate.denied')
+              : occasionDictation.problem === 'failed'
+                ? t('dictate.failed')
+                : t('dictate.occasionNoMatch')}
+          </Text>
+          {occasionDictation.problem === 'denied' ? <OpenSettingsLink /> : null}
+        </View>
+      ) : null}
       {lucky.offline ? <OfflineNote /> : null}
       {body}
       {notice === undefined ? null : <View style={{ height: NOTICE_ROOM * noticeRows }} />}
@@ -578,6 +631,8 @@ const styles = StyleSheet.create({
     flexGrow: 0,
   },
   chipsContent: {
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: spacing.md,
     paddingVertical: (layout.minHitTarget - 36) / 2,
   },
@@ -654,6 +709,9 @@ const styles = StyleSheet.create({
   // Wraps beside the icon at a large text size instead of running off the screen.
   offlineText: {
     flexShrink: 1,
+  },
+  dictationNote: {
+    paddingHorizontal: 2,
   },
   waitText: {
     paddingHorizontal: 2,

@@ -1,14 +1,17 @@
 import { forgetAccount } from '../auth/deviceState';
 import { QUEUE_PURGE_PREFIX } from '../closet/upload/queuePurge';
 import { kvKeys, kvRemove, refuseKeys, refuseUserKeys } from '../lib/kv';
+import { forgetReminder } from '../reminder/dailyReminder';
 
 /**
  * Removes a deleted account's `<name>.<id>[.<more>]` kv keys and `deviceState` entries, refusing later
  * writes first so an in-flight request can't restore any. Device-wide settings and `queue.purge.<id>`
- * (removed once the queue provider carried it out) stay.
+ * (removed once the queue provider carried it out) stay. The daily reminder is cancelled from its id
+ * read before the keys go, and refusing the keys first stops a queued re-schedule.
  */
 export function forgetAccountOnDevice(userId: string): void {
   refuseUserKeys(userId);
+  void forgetReminder(userId);
   for (const key of kvKeys()) {
     if (key.split('.').includes(userId) && !key.startsWith(QUEUE_PURGE_PREFIX)) {
       kvRemove(key);
