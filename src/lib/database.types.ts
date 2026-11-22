@@ -161,6 +161,20 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"push_tokens": {
+                  Row: {
+                    "last_review_push_at": string | null,"platform": string,"review_ready": boolean,"token": string,"updated_at": string,"user_id": string,"weekly": boolean
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "last_review_push_at"?: string | null,"platform": string,"review_ready"?: boolean,"token": string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
+                  }
+                  Update: {
+                    "last_review_push_at"?: string | null,"platform"?: string,"review_ready"?: boolean,"token"?: string,"updated_at"?: string,"user_id"?: string,"weekly"?: boolean
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"rating_cache": {
                   Row: {
                     "cache_key": string,"created_at": string,"result": NonNullable<Json>,"user_id": string
@@ -257,7 +271,12 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "consume_quota":
+            "claim_review_push":
+{ Args: { "p_user_id": string }; Returns: {
+              "language": string,"ready": number,"token": string
+            }[]
+                           },
+"consume_quota":
 { Args: { "p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
                            } |
 { Args: { "p_day": string,"p_kind": Database["public"]['Enums']["quota_kind"],"p_limit": number,"p_user_id": string }; Returns: boolean
@@ -277,8 +296,16 @@ isOneToOne: false
 "prune_expired_caches":
 { Args: Record<PropertyKey, never>; Returns: undefined
                            },
+"request_weekly_summary":
+{ Args: Record<PropertyKey, never>; Returns: undefined
+                           },
 "save_outfit":
 { Args: { "p_garment_ids": (string)[],"p_score"?: number }; Returns: string
+                           },
+"weekly_summary_targets":
+{ Args: Record<PropertyKey, never>; Returns: {
+              "language": string,"outfits": number,"token": string,"unused": number,"user_id": string
+            }[]
                            }
           }
           Enums: {

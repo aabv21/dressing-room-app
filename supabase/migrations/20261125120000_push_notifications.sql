@@ -1,0 +1,233 @@
+-- Server push notifications (docs/database.md): `public.push_tokens`, the service-role-only RPCs
+-- `claim_review_push()` and `weekly_summary_targets()`, and the weekly-summary pg_cron job, which
+-- calls the Edge Function through pg_net with a Vault URL and secret like the extraction trigger.
+
+-- public.push_tokens ---------------------------------------------------------------------------
+
+create table public.push_tokens (
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  token text not null,
+  platform text not null,
+  review_ready boolean not null default false,
+  weekly boolean not null default false,
+  -- Server-only: the 60-minute window between "ready to review" pushes.
+  last_review_push_at timestamptz,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, token),
+  constraint push_tokens_platform_check check (platform in ('ios', 'android')),
+  constraint push_tokens_token_check check (token ~ '^(ExponentPushToken|ExpoPushToken)\[.+\]$' and char_length(token) <= 255)
+);
+
+comment on table public.push_tokens is
+  'One opted-in phone''s Expo push token per row, with the two notices it wants. Deleted when both '
+  'are off, on sign-out, and with the account. Never exported (the preferences are).';
+
+-- The server deletes a dead token and finds a shared token's newest owner by the token alone.
+create index push_tokens_token_idx on public.push_tokens (token);
+
+alter table public.push_tokens enable row level security;
+
+create policy "push_tokens_select_own" on public.push_tokens
+  for select
+  to authenticated
+  using (user_id = (select auth.uid()));
+
+create policy "push_tokens_insert_own" on public.push_tokens
+  for insert
+  to authenticated
+  with check (user_id = (select auth.uid()));
+
+create policy "push_tokens_update_own" on public.push_tokens
+  for update
+  to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+create policy "push_tokens_delete_own" on public.push_tokens
+  for delete
+  to authenticated
+  using (user_id = (select auth.uid()));
+
+revoke all on public.push_tokens from anon;
+-- Column grants keep `last_review_push_at` and `updated_at` server-written, so a client can't pick
+-- its registration time to win a shared token. `token` is granted for update too: PostgREST's upsert
+-- sets every column it was sent.
+revoke insert, update, truncate, trigger, references on public.push_tokens from authenticated;
+grant insert (token, platform, review_ready, weekly) on public.push_tokens to authenticated;
+grant update (token, platform, review_ready, weekly) on public.push_tokens to authenticated;
+
+-- `updated_at` is the server's registration time: a shared phone token goes to its newest holder,
+-- the account signed in on that phone now. clock_timestamp(), not now(): two registrations in one
+-- transaction still order. Only a client write moves it, so a server claim doesn't make a row newer.
+-- NOTE: taking over a token needs knowing it and the app never shows one; upgrade: an Edge Function that registers tokens, if one ever leaks.
+create function public.push_tokens_stamp()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at = clock_timestamp();
+  return new;
+end;
+$$;
+
+revoke execute on function public.push_tokens_stamp() from public, anon, authenticated;
+
+create trigger push_tokens_stamp
+  before insert or update of token, platform, review_ready, weekly on public.push_tokens
+  for each row execute function public.push_tokens_stamp();
+
+-- public.claim_review_push() --------------------------------------------------------------------
+
+create function public.claim_review_push(p_user_id uuid)
+returns table (token text, language text, ready integer)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  v_ready integer;
+begin
+  -- A live extraction (pending, unreviewed, under the app's 10-minute timeout) means the batch
+  -- isn't done; an older one already shows in review as failed, so it doesn't hold the notice back.
+  if exists (
+    select 1 from public.garments g
+    where g.user_id = p_user_id and g.status <> 'donated' and g.reviewed_at is null
+      and g.extraction_status = 'pending' and g.created_at > now() - interval '10 minutes'
+  ) then
+    return;
+  end if;
+
+  if not exists (
+    select 1 from public.garments g
+    where g.user_id = p_user_id and g.status <> 'donated' and g.reviewed_at is null and g.extraction_status = 'done'
+  ) then
+    return;
+  end if;
+
+  -- With no live extraction left, every unreviewed active garment is in the review queue.
+  select count(*) into v_ready
+  from public.garments g
+  where g.user_id = p_user_id and g.status <> 'donated' and g.reviewed_at is null;
+
+  -- The update is the claim: a concurrent call waits on the row lock, then sees the new time.
+  return query
+  with claimed as (
+    update public.push_tokens t
+    set last_review_push_at = now()
+    where t.user_id = p_user_id
+      and t.review_ready
+      and (t.last_review_push_at is null or t.last_review_push_at <= now() - interval '60 minutes')
+      and not exists (
+        select 1 from public.push_tokens o
+        where o.token = t.token and o.user_id <> t.user_id and o.updated_at > t.updated_at
+      )
+    returning t.token
+  )
+  select c.token, coalesce(p.language::text, 'en'), v_ready
+  from claimed c
+  left join public.profiles p on p.user_id = p_user_id;
+end;
+$$;
+
+comment on function public.claim_review_push(uuid) is
+  'The "ready to review" check for one user: no live extraction, at least one unreviewed done '
+  'garment, then claims (sets last_review_push_at on) each review_ready token not pushed in 60 '
+  'minutes whose newest holder is this user. Returns those tokens, the profile language and the '
+  'review queue''s size. Service role only.';
+
+revoke execute on function public.claim_review_push(uuid) from public, anon, authenticated;
+grant execute on function public.claim_review_push(uuid) to service_role;
+
+-- public.weekly_summary_targets() ---------------------------------------------------------------
+
+-- "This week" is the 7 UTC days ending today (the job runs on Sunday). "Unused" is Stats' rule:
+-- not donated, added over 182 days ago, never worn or last worn over 182 days ago.
+create function public.weekly_summary_targets()
+returns table (user_id uuid, token text, language text, outfits integer, unused integer)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with today as (select (now() at time zone 'utc')::date as day),
+  targets as (
+    select
+      t.user_id,
+      t.token,
+      coalesce(p.language::text, 'en') as language,
+      (
+        select count(*)::int from public.wears w, today
+        where w.user_id = t.user_id and w.worn_on between today.day - 6 and today.day
+      ) as outfits,
+      (
+        select count(*)::int from public.garments g, today
+        where g.user_id = t.user_id and g.status <> 'donated'
+          and (g.created_at at time zone 'utc')::date < today.day - 182
+          and (g.last_worn_at is null or (g.last_worn_at at time zone 'utc')::date < today.day - 182)
+      ) as unused
+    from public.push_tokens t
+    left join public.profiles p on p.user_id = t.user_id
+    where t.weekly
+      and not exists (
+        select 1 from public.push_tokens o
+        where o.token = t.token and o.user_id <> t.user_id and o.updated_at > t.updated_at
+      )
+  )
+  select user_id, token, language, outfits, unused
+  from targets
+  where outfits > 0 or unused > 0
+  order by user_id, token;
+$$;
+
+comment on function public.weekly_summary_targets() is
+  'One row per weekly token (its newest holder only) with the outfits logged in the last 7 UTC '
+  'days and the active pieces unused for 6 months; users with both at 0 are left out. Service '
+  'role only.';
+
+revoke execute on function public.weekly_summary_targets() from public, anon, authenticated;
+grant execute on function public.weekly_summary_targets() to service_role;
+
+-- The weekly-summary job ------------------------------------------------------------------------
+
+-- Same shape as request_garment_extraction(): the URL and secret come from the Vault (seeded
+-- locally, set by hand on the hosted project), and nothing is sent without them. The warning carries
+-- only the SQLSTATE, so neither the URL nor the secret reaches the logs. pg_net stops waiting after
+-- 30 s; the function carries on.
+create function public.request_weekly_summary()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_url text;
+  v_secret text;
+begin
+  select decrypted_secret into v_url from vault.decrypted_secrets where name = 'weekly_summary_url';
+  select decrypted_secret into v_secret from vault.decrypted_secrets where name = 'weekly_summary_secret';
+  if v_url is null or v_secret is null then
+    return;
+  end if;
+
+  perform net.http_post(
+    url := v_url,
+    body := '{}'::jsonb,
+    headers := jsonb_build_object('content-type', 'application/json', 'x-webhook-secret', v_secret),
+    timeout_milliseconds := 30000
+  );
+exception when others then
+  raise warning 'request_weekly_summary: %', sqlstate;
+end;
+$$;
+
+alter function public.request_weekly_summary() owner to postgres;
+
+comment on function public.request_weekly_summary() is
+  'Posts to the weekly-summary Edge Function with the Vault URL and secret; nothing without them. '
+  'Run by the pg_cron job weekly-summary; no client grants.';
+
+revoke execute on function public.request_weekly_summary() from public, anon, authenticated;
+
+select cron.schedule('weekly-summary', '0 13 * * 0', 'select public.request_weekly_summary()');

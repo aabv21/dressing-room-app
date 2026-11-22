@@ -422,6 +422,8 @@ deno_version = 2
 # reason: rate-outfit and lucky-list never reach the real services locally.
 [edge_runtime.secrets]
 EXTRACT_WEBHOOK_SECRET = "local-only-not-a-secret"
+# Must match the `weekly_summary_secret` Vault secret in seed.sql.
+WEEKLY_SUMMARY_SECRET = "local-only-not-a-secret"
 ANTHROPIC_API_KEY = "local-only-not-a-key"
 ANTHROPIC_BASE_URL = "http://host.docker.internal:54499"
 TYPESAFE_API_KEY = "local-only-not-a-key"

@@ -14,3 +14,11 @@ select vault.create_secret(
   'http://supabase_kong_dressing-room-app:8000/functions/v1/extract-attributes',
   'extract_attributes_url'
 );
+
+-- The weekly-summary pg_cron job (public.request_weekly_summary): must match WEEKLY_SUMMARY_SECRET
+-- in supabase/config.toml, and the URL is Kong's container name as above.
+select vault.create_secret('local-only-not-a-secret', 'weekly_summary_secret');
+select vault.create_secret(
+  'http://supabase_kong_dressing-room-app:8000/functions/v1/weekly-summary',
+  'weekly_summary_url'
+);
