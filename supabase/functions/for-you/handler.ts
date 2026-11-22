@@ -24,6 +24,7 @@ import {
   type RankedIdea,
   searchQuery,
   templateLine,
+  wardrobeOf,
 } from '../_shared/forYou.ts';
 import { callerOf, readJson, reply as replyWith } from '../_shared/http.ts';
 import { garmentFingerprint, type RuleGarment, seasonOf } from '../_shared/outfitRules.ts';
@@ -105,13 +106,6 @@ async function readInput(request: Request): Promise<{ language: Language; date: 
 }
 
 const byId = (a: RuleGarment, b: RuleGarment): number => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-
-/** The wardrobe, not today: laundry and lent garments count as available; only donated ones are out (docs/ai.md#gain). */
-function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
-  return garments
-    .filter((g) => g.status !== 'donated')
-    .map((g) => (g.status === 'available' ? g : { ...g, status: 'available' }));
-}
 
 /** The cache key (docs/ai.md#the-for-you-function, step 3); the season keeps ideas from lagging a week behind. */
 function cacheKey(

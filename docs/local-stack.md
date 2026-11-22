@@ -35,7 +35,9 @@ The stack uses its own port block, 54420–54429 (`supabase/config.toml`):
 | Mock Claude | `54499` on the host |
 
 The Edge Runtime serves every function at `http://127.0.0.1:54421/functions/v1/<name>` and reloads
-on file changes; its logs are in `docker logs supabase_edge_runtime_dressing-room-app`.
+on file changes; its logs are in `docker logs supabase_edge_runtime_dressing-room-app`. A new
+function directory is only found at start: until `pnpm db:stop && pnpm db:start`, it answers 404
+`Function not found`.
 
 ## Auth and email
 
@@ -62,7 +64,7 @@ Those values must never reach the hosted project: `supabase secrets set` run fro
 them too. Hosted secrets are set from an empty directory
 ([`owner-runbook.md`](owner-runbook.md#setting-a-hosted-secret)).
 
-`rate-outfit`, `lucky-list`, `for-you`, `apple-token`, `delete-account` and `export-data` run with
+`rate-outfit`, `lucky-list`, `for-you`, `trip-plan`, `buy-check`, `apple-token`, `delete-account` and `export-data` run with
 `verify_jwt = true`: the anon key passes the gateway but has no user, and the function answers 401.
 
 ## The extraction trigger's Vault secrets
@@ -90,7 +92,7 @@ where a mock on the host answers. Endpoints and hosted defaults are in
 `0.0.0.0`. `respondWith({ status, body })` (with an optional `delayMs`) or `respondWith({ hang: true })`
 sets the reply for every following call; `calls()` counts the calls; `close()` also drops hung
 connections. Replies reuse the recorded fixtures in `supabase/functions/_shared/__tests__/fixtures/`.
-`extraction.int.test.ts` and `outfits.int.test.ts` start it. With no mock running, extraction ends
+`extraction.int.test.ts`, `outfits.int.test.ts` and `buyCheck.int.test.ts` start it. With no mock running, extraction ends
 `failed`. For a manual check in the simulator:
 
 ```bash

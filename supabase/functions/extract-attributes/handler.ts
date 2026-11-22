@@ -3,7 +3,7 @@
 
 import { CLOTHING_TYPES, type ClothingType } from '../_shared/catalog.ts';
 import type { ClaudeEnv, ServiceEnv, WebhookEnv } from '../_shared/env.ts';
-import { buildExtractionRequest, parseExtraction } from '../_shared/extraction.ts';
+import { buildExtractionRequest, EXTRACTION_CLAUDE_TIMEOUT_MS, parseExtraction } from '../_shared/extraction.ts';
 import { isRecord, UUID } from '../_shared/guards.ts';
 import { json, readJson } from '../_shared/http.ts';
 import { downloadObject, photoPath } from '../_shared/photoStore.ts';
@@ -15,8 +15,6 @@ export type ExtractDeps = { env: ExtractEnv; fetch: typeof fetch };
 
 export type ExtractOutcome = 'done' | 'failed' | 'over_quota' | 'skipped';
 
-/** Longer than the outfit functions' Claude calls: a photo request takes longer to answer. */
-export const EXTRACTION_CLAUDE_TIMEOUT_MS = 30_000;
 export const EXTRACTION_DAILY_LIMIT = 100;
 
 /** `updatedAt` is the row's `updated_at` as PostgREST wrote it, matched exactly by the write-back. */

@@ -90,6 +90,7 @@ A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-w
 | `POST /functions/v1/lucky-list` | `aiClient.ts` `fetchLuckyList` | User JWT | `{ date, occasion }` | 200 `LuckyResponse` | 400, 401, 405, 429, 500 |
 | `POST /functions/v1/for-you` | `aiClient.ts` `fetchForYou` | User JWT | `{ language, date? }` | 200 `ForYouResponse` | 400, 401, 405, 429, 500 |
 | `POST /functions/v1/trip-plan` | `aiClient.ts` `planTripRequest` | User JWT | `{ city, start, end, occasion?, language, date }` | 200 `TripResponse` | 400, 401, 404, 405, 429, 500, 503 |
+| `POST /functions/v1/buy-check` | `src/buyCheck/buyCheckClient.ts` `checkPurchase` | User JWT | `{ image, mediaType, date, language }` | 200 `BuyCheckResponse` | 400, 401, 405, 413, 429, 500, 503 |
 | `POST /functions/v1/apple-token` | `src/auth/socialAuth.ts` (fire-and-forget) | User JWT | `{ code }` | 200 `{ outcome }` | 401, 405 |
 | `POST /functions/v1/delete-account` | `src/account/accountClient.ts` `deleteAccount` | User JWT (sent explicitly) | `{}` | 200 `{ outcome: 'deleted' }` | 401, 405, 500 |
 | `POST /functions/v1/export-data` | `accountClient.ts` `exportData` | User JWT | `{}` | 200 `DataExport` | 401, 405, 500 |
@@ -222,6 +223,34 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | 503 | `{ error: 'geocoding_unavailable' }` | `unavailable` | The geocoder failed or timed out (the quota is spent, as for a 404: both come after it) |
 | 200 | the plan | `planned` / `degraded` | Planned; the forecast failed, so every day has no weather |
 | 500 | `{ error: 'internal' }` | `error` | Loading garments or the dismissed outfits, or the quota RPC, failed |
+
+### `buy-check`
+
+"Should I buy it?": a photo of a garment the user is thinking of buying, compared with their closet.
+
+- Request: `POST { "image": "<base64>", "mediaType": "image/webp" | "image/jpeg", "date": "YYYY-MM-DD",
+  "language": "en" | "es" }`. `image` is the photo's bytes in standard base64, at most 1.5 MB decoded
+  (`MAX_IMAGE_BYTES`), starting with the declared type's signature (a WebP's `RIFF…WEBP` header, a
+  JPEG's `FF D8 FF`); the app sends a 784 px WebP. `date` is the app's local day (the quota's day).
+  `language` is validated, but the answer carries no text, so nothing reads it yet.
+- Response: `BuyCheckResponse` (`buy-check/handler.ts`): `{ kind: 'not_garment' }` or `{ kind: 'ok',
+  item, duplicates: { id }[], newOutfits, verdict: 'buy' | 'think' | 'skip' }`. `item` holds the nine
+  sanitized extraction attributes; `duplicates` are the caller's garment ids, closest first, at most
+  3. Nothing is stored: no Storage object, no cache row, no garment.
+- Reads the caller's garments and profile (for the clothing type) with the user's token (8 s each),
+  then the quota, then Claude with the extraction request (30 s). Algorithm and thresholds:
+  [`ai.md`](ai.md#should-i-buy-it).
+
+| Status | Body | Logged | When |
+| --- | --- | --- | --- |
+| 405 / 401 | as in `rate-outfit` | `invalid` | Method, token |
+| 400 | `{ error: 'invalid_input' }` | `invalid` | Malformed body or base64, another media type, bytes that aren't the declared type, no local day, another language |
+| 413 | `{ error: 'image_too_large' }` | `too_large` | Over 1.5 MB decoded |
+| 429 | `{ error: 'over_quota' }` | `over_quota` | 5 checks already today; Claude isn't called |
+| 200 | `{ kind: 'not_garment' }` | `not_garment` | Claude says the photo shows no garment (the quota is spent) |
+| 503 | `{ error: 'analysis_unavailable' }` | `unavailable` / `unreadable` | Claude failed or timed out / refused or answered outside the schema (the quota is spent) |
+| 200 | the comparison | `checked` with the verdict | Compared |
+| 500 | `{ error: 'internal' }` | `error` | Loading garments or the profile, or the quota RPC, failed (no quota spent on a failed read) |
 
 ### `apple-token`
 
@@ -356,7 +385,7 @@ How to run the mocks: [`local-stack.md`](local-stack.md#mocks).
 | 422 | `incomplete` |
 | 429 | `over_quota` |
 | 503 | `unavailable` |
-| Any other HTTP status (400, 401, 500…) or an empty body | `unknown` |
+| Any other HTTP status (400, 401, 413, 500…) or an empty body | `unknown` |
 | `FunctionsFetchError` or `TypeError` (no answer, a timeout) | `network` |
 
 `src/account/accountClient.ts` maps to `network` | `unknown` | `reauth` (a 401 Auth doesn't explain
