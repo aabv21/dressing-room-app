@@ -468,6 +468,10 @@ verify_jwt = true
 [functions.trip-plan]
 verify_jwt = true
 
+# Called by signed-in users with a photo for Claude; reads the closet and the profile with that token.
+[functions.buy-check]
+verify_jwt = true
+
 # Called by signed-in users; removes their photos, revokes Apple, then deletes the auth user (service role).
 [functions.delete-account]
 verify_jwt = true

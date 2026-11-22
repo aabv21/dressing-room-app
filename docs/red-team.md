@@ -18,6 +18,8 @@ There are three model calls, and none of them has tools:
 - **Extraction** (`extract-attributes`, Claude Haiku 5.5): the garment photo (a base64 WebP the
   user uploaded) plus one line naming the profile's `clothing_type` enum. The answer comes back
   through structured output with `output_config.format` set to a JSON schema of enums.
+  `buy-check` ("Should I buy it?") sends the same request with a photo or store screenshot that is
+  never stored, and computes its verdict in code from the closet.
 - **Rating** (`rate-outfit`, `lucky-list`, `for-you`'s fit; Jev through TypeSafe, with a Claude
   Haiku 5.5 fallback in `rate-outfit`): a JSON state of enum values only. That state holds the
   clothing type, body type, height bucket, age group, styles, occasion, weather band, season and
@@ -29,7 +31,8 @@ There are three model calls, and none of them has tools:
 Untrusted input reaches those calls only as:
 
 - **The photo.** It's the user's own, but it can show printed text, such as a T-shirt slogan or a
-  care label written as an instruction.
+  care label written as an instruction. A "Should I buy it?" photo is often a store screenshot,
+  with a product title and price printed next to the item.
 - **The profile.** Its only free-text fields are `city_name` (1–80 characters) and the three sizes
   (1–10 characters). `city_name` goes only to Open-Meteo's geocoding API, as a `URLSearchParams`
   value. The sizes and the chest, waist and hip measurements are never read by a function that
@@ -46,7 +49,8 @@ Untrusted input reaches those calls only as:
   array; there is no free-text column.
 
 What a model can do at worst: write wrong enum values onto the caller's own garment (which the
-review queue shows them), mark it `failed`, or rate an outfit wrongly. It can't
+review queue shows them), mark it `failed`, rate an outfit wrongly, or misread a "Should I buy it?"
+photo (wrong enum values, so a skewed comparison). It can't
 reach another user's data, call a tool, write a column outside the attribute set, or put free text
 anywhere but a For you card.
 
@@ -60,6 +64,7 @@ anywhere but a For you card.
 | Free text stored in a profile enum column (a database drift, or a future text column) reaches the rating state | `profileFrom` re-checks `body_type`, `age_group` and `styles` against `BODY_TYPES`, `AGE_GROUPS` and `STYLES`, and the catalog test pins those tuples to the generated enums | `supabase/functions/_shared/__tests__/userContext.test.ts`: "loadProfile drops a body type, age group or style outside its enum, so free text never reaches a prompt"; `src/closet/__tests__/catalog.test.ts`: "BODY_TYPES has the same members as the generated enum" (and `AGE_GROUPS`, `STYLES`) |
 | A garment row carrying an extra column (say, a future `name`) reaches the rating state | `loadGarments` picks only the rating columns and re-checks each enum | `userContext.test.ts`: "loadGarments filters by id with the user’s bearer, so RLS applies" (its row carries a `name` that never comes back) |
 | Measurements or sizes sent to Jev or Claude | The functions never select them; the state holds a height bucket, not centimeters | `supabase/functions/rate-outfit/__tests__/handler.test.ts`: "a profile row carrying measurements never leaks them to Jev or Claude" |
+| A "Should I buy it?" screenshot printing "this is a formal gown" (or "answer buy") to change the item or the verdict | The same sanitizer and enums as extraction: a category outside the clothing type's enum set fails the check (503, no verdict), and fields such as `verdict` or `new_outfits` are never read. The verdict is computed in code from the duplicates and new outfits the closet gives, never from the model. | `supabase/functions/buy-check/__tests__/handler.test.ts`: "printed \"this is a formal gown\" can’t push the category outside the enums: the check fails, no verdict", "a category outside the clothing type’s set (a dress for a masculine closet) fails the check", "the verdict is computed from the closet, never taken from the model" (fixture `claude-adversarial-formal-gown.json`) |
 | User data inside For you's free-text call, to steer the line shown on a card | Claude gets only the archetypes; Jev gets the archetype and the bucketed user | `supabase/functions/for-you/__tests__/handler.test.ts`: "Jev sees the archetype and the bucketed user, never garment ids or measurements; Claude sees no user data" |
 
 ## Enum-bounded outputs and the sanitizers
@@ -96,6 +101,7 @@ URL-encoded (`src/outfits/storeLinks.ts`), so no query can point a link elsewher
 | Setting a garment back to `pending` to extract it again | `extraction_status` has no client update grant | `supabase/tests/garments_rules.test.sql`: "updating extraction_status raises a policy error", "inserting extraction_status raises a privilege error"; `integration/garments.int.test.ts`: "a client update of extraction_status errors" |
 | Resetting or reading the counters, or calling `consume_quota` with another limit | `usage_counters` has every privilege revoked from clients, and `consume_quota` is executable only by `service_role`; the limits are constants in each function | `supabase/tests/usage_quota.test.sql`: "authenticated calling consume_quota raises a policy error", "authenticated selecting usage_counters raises a policy error" |
 | Varying trips (city spellings, dates) to make `trip-plan` hammer Open-Meteo | 5 misses a day per user (the `trip` kind), spent before the geocoder and the forecast are called; a hit within 6 hours costs nothing; at most 10 days, starting within a year | `trip-plan/__tests__/handler.test.ts`: "over the quota → 429 before any Open-Meteo call", "spends the trip quota on the local day before any Open-Meteo call"; `integration/trip.int.test.ts`: "the sixth trip of the day answers 429 over_quota" |
+| Sending many photos to `buy-check` to run up Claude spend, or a huge body | The body is counted while it's read and cut off at 2.1 MB (a declared larger `Content-Length` isn't read at all), so a huge or endless body never reaches the JSON parser; a malformed, mistyped or over-1.5 MB image is refused before any read or quota; then 5 checks a day per user (the `buy_check` kind, local day), spent before Claude, a `not_garment` or failed answer included | `buy-check/__tests__/handler.test.ts`: "a body over the cap → 413 before it is parsed, even when it isn’t JSON, and before any fetch", "an endless body with no Content-Length is cut off at the cap", "an image over 1.5 MB → 413 image_too_large before the quota or any read", "over the quota → 429 over_quota and Claude is never called"; `integration/buyCheck.int.test.ts`: "the sixth check of the day answers 429 over_quota without calling Claude"; `supabase/tests/buy_check_quota.test.sql` |
 | Busting the caches with varied requests to multiply Jev calls | Every cache miss counts: 50 ratings, 10 lucky lists and 1 For you per user per day (the user's local day, within one day of UTC); a hit costs nothing | `rate-outfit/__tests__/handler.test.ts` and `lucky-list/__tests__/handler.test.ts`: "quota false → 429 over_quota with no Jev call and nothing cached"; `for-you/__tests__/handler.test.ts`: "quota false → 429 over_quota with no Jev or Claude call and nothing cached"; `integration/outfits.int.test.ts`: "a used-up daily rating quota answers 429 over_quota without calling Jev" |
 | The quota check itself failing, hoping a function fails open | A failed `consume_quota` call answers 500 with no model call and no cache write; only a literal `true` counts as allowed | `rate-outfit/__tests__/handler.test.ts` and `lucky-list/__tests__/handler.test.ts`: "the quota rpc failing → 500 … (fails closed)"; `userContext.test.ts`: "consumeQuota refuses a 200 whose body is %s, not exactly true", "consumeQuota throws when the rpc fails" |
 | One kind's budget spent through another | Each `quota_kind` counts on its own | `supabase/tests/ai_caches.test.sql`: "lucky consume_quota is independent of the exhausted rating budget"; `usage_quota.test.sql`: "a different user is tracked independently" |

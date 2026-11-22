@@ -24,6 +24,11 @@ import { isRecord } from './guards.ts';
 
 export const EXTRACTION_MODEL = 'claude-haiku-5-5';
 export const EXTRACTION_MAX_TOKENS = 600;
+/** Longer than the outfit functions' Claude calls: a photo request takes longer to answer. */
+export const EXTRACTION_CLAUDE_TIMEOUT_MS = 30_000;
+/** Stored garment photos are WebP; `buy-check` also takes a JPEG. */
+export const EXTRACTION_MEDIA_TYPES = ['image/webp', 'image/jpeg'] as const;
+export type ExtractionMediaType = (typeof EXTRACTION_MEDIA_TYPES)[number];
 export const MAX_COLORS = 3;
 
 export const FORMALITY_LEVELS = [1, 2, 3, 4, 5] as const;
@@ -106,8 +111,12 @@ function extractionSchema(clothingType: ClothingType): Record<string, unknown> {
   };
 }
 
-/** For one garment photo (a base64 WebP, at most 784 px). */
-export function buildExtractionRequest(imageBase64: string, clothingType: ClothingType): Record<string, unknown> {
+/** For one garment photo (base64, at most 784 px). */
+export function buildExtractionRequest(
+  imageBase64: string,
+  clothingType: ClothingType,
+  mediaType: ExtractionMediaType = 'image/webp',
+): Record<string, unknown> {
   return {
     model: EXTRACTION_MODEL,
     max_tokens: EXTRACTION_MAX_TOKENS,
@@ -118,7 +127,7 @@ export function buildExtractionRequest(imageBase64: string, clothingType: Clothi
       {
         role: 'user',
         content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/webp', data: imageBase64 } },
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
           {
             type: 'text',
             text: `The owner's clothing type is "${clothingType}". Label the item in this photo.`,

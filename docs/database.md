@@ -268,13 +268,15 @@ export" below for how the row is written and used.
 Backs the extraction quota (100 per user per UTC day — `EXTRACTION_DAILY_LIMIT` in
 `supabase/functions/extract-attributes/handler.ts`), the rating quota (50 per user per day), the
 feeling-lucky quota (10 per user per day), the For-you quota (1 per user per day, counting cache
-misses only) and the trip quota (5 per user per day). Those four count the user's local day (see the 4-argument `consume_quota` below), so
+misses only), the trip quota (5 per user per day) and the buy-check quota (5 per user per day,
+`BUY_CHECK_DAILY_LIMIT` in `supabase/functions/buy-check/handler.ts`). Those five count the user's local day (see the 4-argument `consume_quota` below), so
 they reset at the user's midnight wherever they live.
 `(user_id uuid references auth.users on delete cascade, day date, kind quota_kind, count integer
-not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has five
+not null default 0 check (count >= 0))`, primary key `(user_id, day, kind)`. `quota_kind` has six
 values: `extraction` (Plan 3), `rating`/`lucky` (Plan 4, added by `alter type … add value` in
 `20261108120000_outfits_wears_caches.sql`), `for_you` (Plan 5, added the same way in
-`20261109000000_insights_account.sql`) and `trip` (`20261122120000_planner_trips.sql`, the same way — each `add value` is its own statement, and the new value
+`20261109000000_insights_account.sql`), `trip` (`20261122120000_planner_trips.sql`) and `buy_check`
+(`20261123120000_buy_check_quota.sql`), each the same way — each `add value` is its own statement, and the new value
 isn't referenced anywhere else in that migration, so it commits in the same transaction as the rest
 of it; Postgres only forbids using a brand new enum value in the same transaction that added it, not
 adding it). RLS is enabled with **no policies at all** and `revoke all` from
@@ -284,7 +286,7 @@ through `public.consume_quota()`.
 `public.consume_quota()` (both signatures in [`api.md`](api.md#rpcs)) is `security definer` with
 `set search_path = ''`, `execute` revoked from `public`, `anon` and
 `authenticated`, and granted only to `service_role` — only the Edge Functions call it (extraction,
-rating, lucky list, For you and trips), never a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
+rating, lucky list, For you, trips and buy checks), never a client. It returns `false` immediately if `p_limit < 1`; otherwise it upserts the row for
 `(p_user_id, today in UTC, p_kind)`, incrementing `count` only `where count < p_limit`, and returns
 whether a row was actually written (an `on conflict … do update … where …` whose `where` excludes
 the conflicting row makes `returning` produce no row, not a row holding `false` — the function
@@ -293,7 +295,7 @@ either the counter moves up by one and the function returns `true`, or nothing c
 returns `false`.
 
 The 4-argument `consume_quota` (`20261120120000_quota_local_day.sql`) is the same function with the
-day given: rating, the lucky list, For you and `trip-plan` pass the app's local
+day given: rating, the lucky list, For you, `trip-plan` and `buy-check` pass the app's local
 calendar day from the request. It counts on `p_day` when it is within one day of the UTC date (every
 time zone is) and on the UTC day otherwise, so a phone with a wrong date can't open new counters at
 will. NOTE: changing the device date can spread one user's calls over up to 3 day counters in 24 h,

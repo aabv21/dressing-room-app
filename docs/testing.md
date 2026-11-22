@@ -47,7 +47,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   found nothing new committing nothing, polling, late results after sign-out or a user switch, a
   re-sign that lands after the account's deletion leaving no kv copy, foreground and reconnect),
   `GarmentPhoto.test.tsx` (the full photo signed once, and again for a new `photo_version`),
-  `UploadQueueProvider.test.tsx` (when the queue runs, counts, retry/discard, the backoff timer,
+  `UploadQueueProvider.test.tsx` (when the queue runs, counts, `enqueue` answering how many photos
+  it queued, retry/discard, the backoff timer,
   `pause` waiting for the queue and keeping its photos, `clear`, `resume` with and without a run,
   and an unconfirmed deletion marker blocking every run and only verified on mount, foreground and
   reconnect, never deleted and with no Alert; on mount, each other account's `queue.purge.<id>`
@@ -67,7 +68,8 @@ and profile seams mocked by `jest.mock`, and build garment rows with `src/test/g
   starts, a stopped item keeps its stage and attempts and is due at once, and nothing runs until
   `resumeQueue`), `preparePhoto.test.ts` (the resize arguments for portrait, landscape and small
   photos, one decode capped at 784 px with the thumbnail built from it, WebP qualities, the cut-out
-  or the source photo), `cutout.test.ts` (the native module present, missing, or throwing) and
+  or the source photo; `prepareCheckPhoto`'s base64 WebP from the cut-out, nothing moved into
+  uploads and both temporary files deleted, even when the decode fails), `cutout.test.ts` (the native module present, missing, or throwing) and
   `queueSteps.test.ts` (the real steps, the session check, replacements).
 - `src/__tests__/camera.test.tsx` — the burst camera: permissions, the shutter and shot strip, Done,
   the Discard / Keep shooting confirm on Close and on a back gesture, and "Choose from gallery"
@@ -279,6 +281,18 @@ Outfits, Stats and Diary:
   Spanish labels.
 - `src/trips/__tests__/tripClient.test.ts` — `planTripRequest`'s body and error mapping, and
   `isTripResponse` accepting a plan or `too_small` and refusing another shape.
+- `src/__tests__/buy-check.test.tsx` — "Should I buy it?": the privacy line and both photo sources;
+  a gallery photo prepared on the device then sent with the local day and language; the camera
+  asked for first (denied: an alert, no camera); a canceled picker; each verdict's sentence, the
+  item and the count; duplicates opening their garment (a deleted one left out); "Add to my closet"
+  enqueuing the original photo once, and not shown as added when the queue couldn't copy it; the
+  camera shot deleted on "Check another", on leaving and after a failed decode, never a gallery
+  pick; "Check another"; not clothing, the quota (no retry), offline
+  ("Try again" resends without picking again), a photo the device can't decode (never sent); and
+  the Spanish copy.
+- `src/buyCheck/__tests__/buyCheckClient.test.ts` — `checkPurchase`'s body and error mapping (413
+  is `unknown`), and `isBuyCheckResponse` refusing an unknown verdict, count, id, category or color,
+  or more than 3 duplicates.
 - `src/trips/__tests__/tripChecks.test.ts` — `tripKey` (city case and spaces aside), check-offs per
   trip in kv `trip.checks.<id>` following each toggle, only the latest 20 trips kept, and account
   deletion clearing them.
@@ -295,8 +309,8 @@ Outfits, Stats and Diary:
   the confidence line only when low or estimated, the success haptic, the swap (hidden when its target is out of suggestions), Save with its score and its link to the Closet's Saved segment, "I'll wear it" and its Undo, the quota (opening Build) and error states, the staged loading copy, and the ring named in Spanish too. Share: the card with the pieces, score and footer, the captured PNG shared, a failed capture shown in the sheet, no Share while loading, and the Spanish copy.
 - `src/__tests__/for-you.test.tsx` — For you's cards, the stored ideas per language, the too-small,
   quota and offline states, one request at a time, and "Search in stores": the region's stores in a
-  sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, and a browser
-  that won't open.
+  sheet (Colombia's three, the fallback's two), a pick opening its search, Cancel, a browser
+  that won't open, and the header's "Should I buy it?" opening `/buy-check` in both languages.
 - `src/outfits/__tests__/storeLinks.test.ts` — `storeLinksFor`: each region's stores and exact
   URLs, a lower-case or missing region, every query and the `gl` region URL-encoded, and Mercado
   Libre's hyphens.
@@ -404,6 +418,9 @@ installs lazy globals (`fetch`, `structuredClone`, …) that conflict with a `sc
   fails.
 - `scripts/__tests__/mlkit-manifest.test.ts` — `modules/garment-cutout`'s Android manifest replaces
   the merged ML Kit dependencies value, so it must keep every model `expo-camera` declares.
+- `scripts/__tests__/usage-strings.test.ts` — the camera and photo-library usage strings name both
+  uses (the closet and comparing a piece with it) in English and Spanish, and `app.json`'s plugin
+  strings match `locales/en.json`.
 - `scripts/__tests__/perf-fixtures.test.ts` — the 500 fixture specs and file names, a transparent
   SVG, and `perf:serve` refusing paths outside the fixtures folder.
 - `scripts/__tests__/calibration.test.ts` — the Jev calibration: Spearman's ρ on a hand-computed set
@@ -469,7 +486,8 @@ never called. See `docs/ai.md`. To run only this project:
 failure. Jest needs the flag for the ES modules and dynamic `import()` these projects use.
 
 - `supabase/functions/_shared/__tests__/extraction.test.ts` — the Claude request (the model, 600
-  `max_tokens`, the category enum limited to the clothing type, the image block, a system prompt
+  `max_tokens`, the category enum limited to the clothing type, the image block (a JPEG keeps its own
+  media type and the same prompt and schema), the 30 s timeout, a system prompt
   that ignores text in the image) and the response sanitizer: a refusal, `is_garment: false` or
   non-JSON fails; only enum values survive, at most 3 colors, and a dropped value marks its field
   uncertain. The `claude-adversarial-*.json` fixtures pin it against a manipulated model: out-of-enum
@@ -490,6 +508,11 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   rules, one-pieces, outerwear, the cap on a large closet), the ranking (an unsuggested garment
   still owns its archetype but adds no gain), the Jev fit, the Claude
   lines and their template fallbacks, and the store-search query.
+- `supabase/functions/_shared/__tests__/buyCheck.test.ts` — "Should I buy it?"'s comparison:
+  duplicates (same category, an overlapping primary color, a matching known pattern; donated pieces
+  out, laundry, lent and unsuggested ones in; closest first, at most 3), the verdict's thresholds,
+  `pieceGain`'s count for candidate shoes (two tops × two bottoms plus a dress), and the new outfits
+  counted with no season over the wardrobe.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs (the daily forecast's included), the daily forecast's and the place's parsing, weather bands and
   conditions, and the forecast and geocoding parsers.
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
@@ -543,6 +566,15 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   a hit within 6 hours spends nothing, a miss after it, a degraded answer for 1 hour, a miss for
   another city, language, dates, occasion or closet, and the city matched regardless of case and
   spaces.
+- `supabase/functions/buy-check/__tests__/handler.test.ts` — 401/405 before any fetch; every 400
+  (not base64, a PNG, bytes that aren't the declared type, the date, the language) and 413 for a
+  body over 2.1 MB (not JSON, a declared `Content-Length` read no further, an endless stream cut
+  off at the cap) or an image over 1.5 MB, all before any read; the answer with no duplicates and `buy`; the closet and profile read
+  with the caller's token, then the `buy_check` quota (5, the local day), then Claude with the
+  profile's clothing type; duplicates and `skip`; `not_garment`, Claude failures (503) and their
+  spent quota; 429 with no Claude call; 500 when a read or the quota fails; no Storage, cache or other
+  write; logs with outcome words only; and the red-team cases (a "formal gown" category outside the
+  enums, a dress for a masculine closet, a model answer carrying its own verdict).
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
   deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
@@ -618,6 +650,10 @@ Supabase stack:
   `trip_cache` row, a hit for the same trip (city spelled differently) with no quota or forecast
   call, days past the forecast without weather, 404 for an unknown city, and 429 on the sixth trip of
   the day.
+- `buyCheck.int.test.ts` — `buy-check` through the real gateway with the mock Claude: the item
+  compared with the user's closet (a duplicate, the new outfits, `skip`) for one `buy_check` quota;
+  no object in the bucket and no new garment; `not_garment` still spending one; a mistyped image
+  refused for free; and 429 on the sixth check of the day with no Claude call.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
   Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two
   pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`
@@ -708,6 +744,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `saved_trips.test.sql` — `saved_trips`: own rows only, no update, no anon access, the city, the
   10-day, object-snapshot and 64 KiB checks, at most 50 trips per user, the list's index; `trip_cache` is server-only; the `trip`
   quota kind; both cascade on user delete.
+- `buy_check_quota.test.sql` — the `buy_check` quota kind: five checks on a local day, the sixth
+  refused, counted apart from `extraction` and from another user.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
   `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
   on the caller's own garments only, and not writable by anon.

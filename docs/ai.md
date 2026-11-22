@@ -9,7 +9,9 @@ outcome word. The outcome words are `cached`, `rated`, `fallback`, `over_quota`,
 `invalid` and `error` for `rate-outfit`; `cached`, `too_small`, `ranked`, `degraded`, `empty`,
 `over_quota`, `invalid` and `error` for `lucky-list`; the same plus `stale` for `for-you`; and
 `cached`, `too_small`, `planned`, `degraded`, `over_quota`, `not_found`, `unavailable`, `invalid` and
-`error` for `trip-plan`, which calls no model ([Trip packing](#trip-packing)). Each function's table
+`error` for `trip-plan`, which calls no model ([Trip packing](#trip-packing)); and `checked` (with the
+verdict word), `not_garment`, `over_quota`, `unavailable`, `unreadable`, `too_large`, `invalid` and
+`error` for `buy-check` ([Should I buy it?](#should-i-buy-it)). Each function's table
 below says when. Locally, every Claude, Jev and Open-Meteo call goes to a mock on
 the host (`docs/testing.md`'s `integration`).
 
@@ -39,6 +41,8 @@ inserted, so extraction finishes even if the app is closed right after the uploa
   784 px on the longest side), then a text block: `The owner's clothing type is "<type>". Label the
   item in this photo.` The clothing type comes from `profiles.clothing_type`; null means
   `everything`.
+  `buy-check` sends the same request for a photo that's never stored, as `image/jpeg` when the
+  app sends a JPEG ([Should I buy it?](#should-i-buy-it)).
 - `output_config: { format: { type: 'json_schema', schema } }` (structured outputs, GA, no beta
   header).
 - Headers: `x-api-key`, `anthropic-version: 2023-06-01`, `content-type: application/json`.
@@ -685,6 +689,60 @@ and trip plan the same way.
 | `not_found` / `unavailable` | 404 / 503 | The geocoder found nothing / failed |
 | `planned` / `degraded` | 200 | Planned; the forecast failed (every day without weather) |
 | `error` | 500 | Loading garments or dismissed outfits, or the quota RPC, failed |
+
+## Should I buy it?
+
+`buy-check` (`supabase/functions/buy-check/handler.ts`, the comparison in `_shared/buyCheck.ts`) takes a
+photo or screenshot of a garment the user is thinking of buying and answers whether it duplicates
+something they own and how many new outfits it would open. Claude only reads the item; the verdict
+is computed in code. The request and statuses are in [`api.md`](api.md#buy-check).
+
+1. Reads the body through a byte count that stops at 2.1 MB (`MAX_BODY_BYTES`; a declared
+   `Content-Length` over it is refused unread), so an oversized body answers 413 before it's parsed.
+   Then validates the photo: standard base64, at most 1.5 MB decoded, a WebP or a
+   JPEG whose first bytes match the declared type, plus the local day and the language. A refusal
+   here costs nothing.
+2. Reads the caller's garments and profile under RLS (the profile only for the clothing type, which
+   bounds the category enum).
+3. `consume_quota(user, 'buy_check', 5, date)` on the app's local day, before Claude; 429 over it.
+4. The [extraction](#garment-attribute-extraction) request, unchanged (same model, system prompt,
+   schema and 30 s timeout), with the photo's own media type, then `parseExtraction`. `is_garment:
+   false` answers `not_garment`; a refusal, invalid output or a failed call answers 503. Each spends
+   the quota, as extraction's failures do, so the app's "Try again" after a 503 spends another of
+   the day's 5 checks.
+5. Compares the sanitized attributes with the closet:
+   - **Duplicates:** garments not donated (in the laundry, lent or out of suggestions still count:
+     they're owned) of the same category, whose primary color is among the item's colors or the
+     item's primary among theirs, and whose pattern matches when both are known. Closest first: the
+     same primary color, then the same known pattern, then the smaller formality gap, then more
+     shared colors, then the id. At most 3.
+   - **New outfits:** For you's [gain](#gain) for the item as a piece (`pieceGain`, the same code as
+     `archetypeGain`): the complete outfits it makes with the wardrobe's suggestable garments that
+     pass `passesRules` with no occasion and the formality spread, counted up to 5,000. Unlike For
+     you, with no season: a purchase is for the year, not for this month.
+   - **Verdict**, by rule: `skip` when there's a duplicate and at most 5 new outfits
+     (`LOW_NEW_OUTFITS`); `buy` when there's none and at least 10 (`HIGH_NEW_OUTFITS`); `think`
+     otherwise. An empty closet gets `think` with 0.
+
+Nothing is stored or cached (every photo is a new one), and the log line holds the outcome word and
+the verdict, never the photo or Claude's answer. The model can't steer the verdict: its answer only
+passes through the extraction sanitizer's enums, unknown fields are dropped, and the two numbers the
+rule reads come from the closet ([`red-team.md`](red-team.md#prompt-injection-through-photos-and-free-text-fields)).
+
+**Cost.** One extraction call per check: about 784 image tokens for the app's 784 × 784 WebP plus a
+few hundred prompt and schema tokens in, about 400 out (at most 600): roughly **$0.0003 per check**.
+A 1.5 MB JPEG sent around the app is downscaled by the API to its own maximum, about 3,100 image
+tokens, still under $0.0006. At the quota (5 a day) that's at most $0.0015 per user per day, about
+$0.18 a month for 4 users.
+
+| Outcome | Status | When |
+| --- | --- | --- |
+| `invalid` / `too_large` | 400 / 401 / 405 / 413 | Malformed body, no user, another method / over 1.5 MB |
+| `over_quota` | 429 | 5 checks already today |
+| `not_garment` | 200 | Not a garment (quota spent) |
+| `unavailable` / `unreadable` | 503 | Claude failed / refused or answered outside the schema (quota spent) |
+| `checked` | 200 | Compared; the verdict is logged with it |
+| `error` | 500 | Loading garments or the profile, or the quota RPC, failed |
 
 ## For you
 

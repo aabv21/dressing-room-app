@@ -101,11 +101,22 @@ export function ownsArchetype(garments: readonly RuleGarment[], archetype: Pick<
   );
 }
 
+/** The wardrobe the gain looks at (docs/ai.md#gain): every garment not donated, counted as available. */
+export function wardrobeOf(garments: readonly RuleGarment[]): RuleGarment[] {
+  return garments
+    .filter((g) => g.status !== 'donated')
+    .map((g) => (g.status === 'available' ? g : { ...g, status: 'available' }));
+}
+
 /** The archetype's new complete outfits (up to `GAIN_CAP`) and distinct user garments in them (docs/ai.md#gain). */
 export function archetypeGain(archetype: Archetype, garments: readonly RuleGarment[], ctx: { season: Season | null }): Gain {
+  return pieceGain(archetypeGarment(archetype), garments, ctx);
+}
+
+/** `archetypeGain` for any piece the user doesn't own yet, such as `buy-check`'s photographed item. */
+export function pieceGain(piece: RuleGarment, garments: readonly RuleGarment[], ctx: { season: Season | null }): Gain {
   // `passesRules` never reads `today`; it's only there for the lucky list's recent-wear checks.
   const rules: RuleContext = { occasion: null, season: ctx.season, weather: null, today: '' };
-  const piece = archetypeGarment(archetype);
   const combines = (outfit: Outfit): boolean => passesRules(outfit, rules) && formalityCoherent(outfit);
   if (!combines([piece])) return NO_GAIN;
 
@@ -134,7 +145,8 @@ export function archetypeGain(archetype: Archetype, garments: readonly RuleGarme
       if (combines(next)) fill(rest, next);
     }
   };
-  for (const shape of outfitShapes(slotOf(archetype.category))) fill(shape, [piece]);
+  if (piece.category === null) return NO_GAIN;
+  for (const shape of outfitShapes(slotOf(piece.category))) fill(shape, [piece]);
 
   return { newOutfits, combinesWith: combined.size };
 }

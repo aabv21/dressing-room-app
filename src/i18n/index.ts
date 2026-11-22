@@ -86,7 +86,9 @@ export type PluralBase =
   | 'profile.hidden.confirmTitle'
   | 'forYou.outfits'
   | 'trip.days'
-  | 'trip.item';
+  | 'trip.item'
+  | 'buyCheck.verdict.buy'
+  | 'buyCheck.outfits';
 
 /** `{base}.one` for exactly 1, otherwise `{base}.other` — the same en/es rule as `formatWearCount`. */
 export function pluralKey(base: PluralBase, count: number): MessageKey {

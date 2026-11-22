@@ -2,7 +2,7 @@
 // a line (Claude's or a template) and "Search in stores" (the region's stores, in the system browser).
 import { getLocales } from 'expo-localization';
 import { router } from 'expo-router';
-import { RotateCw, Search, Shirt, Sparkles, TriangleAlert, WifiOff } from 'lucide-react-native';
+import { RotateCw, Search, Shirt, ShoppingBag, Sparkles, TriangleAlert, WifiOff } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -136,6 +136,26 @@ function Note({ error }: { error: AiError }): React.JSX.Element {
   );
 }
 
+/** "Should I buy it?": for the shop, so it stays reachable whatever state the ideas are in. */
+function BuyCheckEntry(): React.JSX.Element {
+  const { t } = useI18n();
+  return (
+    <View style={styles.headerRow}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('buyCheck.entry')}
+        onPress={() => {
+          router.push('/buy-check');
+        }}
+        style={({ pressed }) => [styles.entry, pressed ? styles.pressed : null]}
+      >
+        <ShoppingBag size={14} color={colors.accentText} strokeWidth={2.5} />
+        <Text style={styles.searchLabel}>{t('buyCheck.entry')}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function Message({ children }: { children: string }): React.JSX.Element {
   return (
     <Text style={styles.message} accessibilityRole="alert">
@@ -182,7 +202,7 @@ export default function ForYouScreen(): React.JSX.Element {
   }
 
   return (
-    <Screen title={t('screen.forYou')} {...(primary === undefined ? {} : { cta: { primary } })}>
+    <Screen title={t('screen.forYou')} headerAccessory={<BuyCheckEntry />} {...(primary === undefined ? {} : { cta: { primary } })}>
       <Text style={styles.intro}>{t('forYou.intro')}</Text>
       {forYou.failed === null ? null : <Note error={forYou.failed} />}
       {body}
@@ -260,6 +280,22 @@ const styles = StyleSheet.create({
   },
   pressed: {
     backgroundColor: colors.tint,
+  },
+  headerRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  entry: {
+    minHeight: layout.minHitTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm + 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    backgroundColor: colors.surface,
   },
   searchLabel: {
     color: colors.accentText,

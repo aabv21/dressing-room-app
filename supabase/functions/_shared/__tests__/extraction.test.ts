@@ -2,7 +2,7 @@
 // supabase/functions/_shared/__tests__/extraction.test.ts
 import { readFileSync } from 'node:fs';
 
-import { buildExtractionRequest, EXTRACTION_MODEL, parseExtraction } from '../extraction.ts';
+import { buildExtractionRequest, EXTRACTION_CLAUDE_TIMEOUT_MS, EXTRACTION_MODEL, parseExtraction } from '../extraction.ts';
 
 function fixture(name: string): unknown {
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed fixture directory next to this test, not user input.
@@ -316,6 +316,16 @@ describe('buildExtractionRequest', () => {
       source: { type: 'base64', media_type: 'image/webp', data: 'aW1hZ2U=' },
     });
     expect(message?.content[1]).toMatchObject({ type: 'text', text: expect.stringContaining('feminine') as unknown });
+  });
+
+  test('sends a JPEG with its own media type and the same prompt and schema (buy-check)', () => {
+    const jpeg = buildExtractionRequest('aW1hZ2U=', 'everything', 'image/jpeg') as unknown as Body;
+    expect(jpeg.messages[0]?.content[0]?.source?.media_type).toBe('image/jpeg');
+    expect({ ...jpeg, messages: null }).toEqual({ ...build('everything'), messages: null });
+  });
+
+  test('the extraction timeout is 30 s, longer than the outfit functions\' Claude calls', () => {
+    expect(EXTRACTION_CLAUDE_TIMEOUT_MS).toBe(30_000);
   });
 
   test('the system prompt tells the model to ignore text in the image', () => {

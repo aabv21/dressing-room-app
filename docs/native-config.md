@@ -30,7 +30,9 @@ create or edit them by hand. Native behavior lives in `app.json` and its config 
   `expo.locales`) hold `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`,
   `NSLocationWhenInUseUsageDescription`, `NSMicrophoneUsageDescription` and
   `NSSpeechRecognitionUsageDescription` as `{"ios": {...}}`. `ios.infoPlist.CFBundleAllowMixedLocalizations: true`
-  makes iOS pick the translated string instead of the base one.
+  makes iOS pick the translated string instead of the base one. The camera and photo strings name both uses,
+  the closet and comparing a piece with it ("Should I buy it?"); `app.json`'s plugin strings repeat
+  the English ones (`scripts/__tests__/usage-strings.test.ts`).
 - **Verify a change** with `pnpm expo prebuild -p ios --clean` (read `ios/<app>/Info.plist` and
   `ios/<app>/Supporting/<locale>.lproj/InfoPlist.strings`) and `pnpm expo prebuild -p android --clean`
   (look for `android.permission.CAMERA` in `android/app/src/main/AndroidManifest.xml`), then delete
