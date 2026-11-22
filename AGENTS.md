@@ -131,7 +131,7 @@ Docs for agents: `https://docs.expo.dev/llms.txt`
 | [`docs/red-team.md`](docs/red-team.md) | Attacks on the AI calls and the data, their defenses and tests, parked limits |
 | [`docs/owner-runbook.md`](docs/owner-runbook.md) | The owner's steps with statuses, the EAS release config, backups and restore, calibration |
 | [`docs/performance-gate.md`](docs/performance-gate.md) | The on-device scroll-performance protocol |
-| [`docs/privacy-policy.md`](docs/privacy-policy.md), [`.es.md`](docs/privacy-policy.es.md) | The privacy policy, in English and Spanish |
+| [`docs/privacy-policy.md`](docs/privacy-policy.md), [`.es.md`](docs/privacy-policy.es.md) | The privacy policy, in English and Spanish; published copies in `aabv21/dressing-room-privacy` (runbook §8) |
 | [`docs/diagrams/`](docs/diagrams/) | The four archify diagrams (system context, upload pipeline, rating sequence, data model): `*.json` sources, `*.html` pages, `*.svg` exports |
 
 ## Branches and pull requests

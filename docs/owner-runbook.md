@@ -558,10 +558,14 @@ BACKUP_DB_URL="$SUPABASE_DB_URL" SUPABASE_URL="$EXPO_PUBLIC_SUPABASE_URL" \
 
 ## 8. Privacy policy and store forms
 
-**Status: Pending.**
+**Status: In progress.**
 
-- **Pending.** Publish `docs/privacy-policy.md` and `docs/privacy-policy.es.md` on GitHub Pages
-  (the contact address `hello.aabv21@gmail.com` is already in both).
+- **Done (2026-11-22).** Published on GitHub Pages from the public repo
+  [`aabv21/dressing-room-privacy`](https://github.com/aabv21/dressing-room-privacy):
+  <https://aabv21.github.io/dressing-room-privacy/> and
+  <https://aabv21.github.io/dressing-room-privacy/es>. This repo stays the source of truth; after a
+  policy change merges, copy both files there (`index.md`, `es.md`, with the language links
+  pointing at `es` and `./`).
 - **Pending.** Store privacy forms: App Store Connect's privacy policy URL and App Privacy answers,
   and Play Console's Data safety form and policy URL.
 
