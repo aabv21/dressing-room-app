@@ -60,13 +60,14 @@ insert is `on conflict do nothing`.
 | Functions: each Auth call in `delete-account` | 10 s | `AUTH_TIMEOUT_MS`, `delete-account/handler.ts` |
 | Claude: extraction | 30 s | `CLAUDE_TIMEOUT_MS`, `extract-attributes/handler.ts` |
 | Claude: rating fallback and For you lines | 20 s | `CLAUDE_TIMEOUT_MS`, `userContext.ts` (For you's lines also stop 38 s after the request arrived) |
+| Claude: the stylist's calls | what's left of 25 s from the request's arrival; none starts with under 3 s left | `STYLIST_DEADLINE_MS`, `MIN_CALL_MS`, `stylist/handler.ts` |
 | Jev | 10 s | `JEV_TIMEOUT_MS` |
 | Open-Meteo forecast and geocoding | 5 s each | `WEATHER_TIMEOUT_MS` |
 | Apple `/auth/token` and `/auth/revoke` | 10 s | `APPLE_TIMEOUT_MS`, `_shared/apple.ts` |
 | pg_net, trigger → `extract-attributes` | 5 s | the trigger's `timeout_milliseconds`; the function keeps running after pg_net stops waiting |
 
 **Quotas and caches.** Quotas count cache misses only, through `consume_quota`, before any paid
-call (or, for `trip-plan`, any outbound call). Rating, the lucky list, For you and trips count the user's local day sent in the request, accepted
+call (or, for `trip-plan`, any outbound call). Rating, the lucky list, For you, trips, buy checks and the stylist count the user's local day sent in the request, accepted
 when it is within one day of the server's UTC date (else the UTC day); extraction, started by a
 trigger with no client day, counts the UTC day.
 
@@ -77,6 +78,8 @@ trigger with no client day, counts the UTC day.
 | `lucky-list` | 10 (`lucky`) | `lucky_cache`; no age limit, a degraded list 1 hour |
 | `for-you` | 1 (`for_you`) | `for_you_cache`; 7 days, a degraded answer 1 hour; one entry per user |
 | `trip-plan` | 5 (`trip`) | `trip_cache`; 6 hours, a degraded answer 1 hour |
+| `buy-check` | 5 (`buy_check`) | none |
+| `stylist` | 20 messages (`stylist`), one per request whatever its tool rounds | none |
 | any weather read | none | `weather_cache`, shared by place and UTC hour |
 
 A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-work)).
@@ -91,6 +94,7 @@ A daily `pg_cron` job prunes the caches ([Server-started work](#server-started-w
 | `POST /functions/v1/for-you` | `aiClient.ts` `fetchForYou` | User JWT | `{ language, date? }` | 200 `ForYouResponse` | 400, 401, 405, 429, 500 |
 | `POST /functions/v1/trip-plan` | `aiClient.ts` `planTripRequest` | User JWT | `{ city, start, end, occasion?, language, date }` | 200 `TripResponse` | 400, 401, 404, 405, 429, 500, 503 |
 | `POST /functions/v1/buy-check` | `src/buyCheck/buyCheckClient.ts` `checkPurchase` | User JWT | `{ image, mediaType, date, language }` | 200 `BuyCheckResponse` | 400, 401, 405, 413, 429, 500, 503 |
+| `POST /functions/v1/stylist` | `src/stylist/stylistClient.ts` `askStylist` | User JWT | `{ messages, date, language }` | 200 `StylistResponse` | 400, 401, 405, 429, 500, 503 |
 | `POST /functions/v1/apple-token` | `src/auth/socialAuth.ts` (fire-and-forget) | User JWT | `{ code }` | 200 `{ outcome }` | 401, 405 |
 | `POST /functions/v1/delete-account` | `src/account/accountClient.ts` `deleteAccount` | User JWT (sent explicitly) | `{}` | 200 `{ outcome: 'deleted' }` | 401, 405, 500 |
 | `POST /functions/v1/export-data` | `accountClient.ts` `exportData` | User JWT | `{}` | 200 `DataExport` | 401, 405, 500 |
@@ -250,6 +254,32 @@ The write-back filters on `extraction_status=eq.pending`, `reviewed_at=is.null` 
 | 200 | `{ kind: 'not_garment' }` | `not_garment` | Claude says the photo shows no garment (the quota is spent) |
 | 503 | `{ error: 'analysis_unavailable' }` | `unavailable` / `unreadable` | Claude failed or timed out / refused or answered outside the schema (the quota is spent) |
 | 200 | the comparison | `checked` with the verdict | Compared |
+| 500 | `{ error: 'internal' }` | `error` | Loading garments or the profile, or the quota RPC, failed (no quota spent on a failed read) |
+
+### `stylist`
+
+"Ask your stylist": a chat about the caller's own closet, with Claude using server-side tools.
+
+- Request: `POST { "messages": [{ "role": "user" | "assistant", "text": "…" }], "date": "YYYY-MM-DD",
+  "language": "en" | "es" }`. 1–12 turns (`MAX_TURNS`), each 1–500 characters after trimming
+  (`TURN_MAX_CHARS`, counted in code points), 4,000 in all (`TOTAL_MAX_CHARS`); the first and the last
+  turn are the user's (two user turns in a row are fine). The app sends the last turns that fit.
+  `date` is the app's local day (the quota's day); `language` is the reply's.
+- Response: `StylistResponse` (`stylist/handler.ts`): `{ kind: 'ok', reply, outfit?: { garment_ids } }`.
+  `reply` is plain text of at most 500 characters; `outfit` is present when Claude asked for an outfit
+  this turn, and holds only the caller's own available garment ids. Nothing is stored or cached.
+- Reads the caller's garments and profile with the user's token (8 s each), then the quota (once per
+  request), then up to 4 Claude calls (at most 3 tool rounds) within 25 s of the request's arrival;
+  the weather tools read through `weather_cache` like the other functions. Prompt, tools and loop:
+  [`ai.md`](ai.md#ask-your-stylist).
+
+| Status | Body | Logged | When |
+| --- | --- | --- | --- |
+| 405 / 401 | as in `rate-outfit` | `invalid` | Method, token |
+| 400 | `{ error: 'invalid_input' }` | `invalid` | Not JSON, turns outside the limits above, an assistant turn first or last, no local day, another language |
+| 429 | `{ error: 'over_quota' }` | `over_quota` | 20 messages already today; Claude isn't called |
+| 503 | `{ error: 'analysis_unavailable' }` | `unavailable` / `unreadable` | Claude failed or timed out, or the deadline left no time for another call / refused, answered no text, or still asked for a tool on the last call (the quota is spent) |
+| 200 | the reply | `answered` with `rounds` (the tool rounds used, 0–3) | Answered |
 | 500 | `{ error: 'internal' }` | `error` | Loading garments or the profile, or the quota RPC, failed (no quota spent on a failed read) |
 
 ### `apple-token`

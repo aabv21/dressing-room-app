@@ -513,6 +513,14 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   out, laundry, lent and unsuggested ones in; closest first, at most 3), the verdict's thresholds,
   `pieceGain`'s count for candidate shoes (two tops × two bottoms plus a dress), and the new outfits
   counted with no season over the wardrobe.
+- `supabase/functions/_shared/__tests__/stylist.test.ts` — "Ask your stylist"'s pure parts: the turns
+  (12 at most, 500 characters each in code points, 4,000 in all, the user's first and last), the
+  enum-only closet summary (no ids, donated pieces out, the 300 cap), the request (the fixed prompt
+  and its rules, the language and profile block with `cache_control`, low effort with no sampling,
+  `tool_choice: none` on the final call, three enum-only tools), `suggest_outfit` (the best pre-score,
+  a later variant rotating, a band override, the missing slots), `find_garments` (filters, the
+  20 cap), `today_weather`, the error results for an unknown tool or an out-of-enum input, answer
+  parsing (text, tool rounds, refusals, a cut-off call), the reply sanitizer and `ownOutfit`.
 - `supabase/functions/_shared/__tests__/weather.test.ts` — the Open-Meteo URLs (the daily forecast's included), the daily forecast's and the place's parsing, weather bands and
   conditions, and the forecast and geocoding parsers.
 - `supabase/functions/_shared/__tests__/userContext.test.ts` — the JWT's `sub`, `isIsoDate` (no year
@@ -575,6 +583,15 @@ failure. Jest needs the flag for the ES modules and dynamic `import()` these pro
   spent quota; 429 with no Claude call; 500 when a read or the quota fails; no Storage, cache or other
   write; logs with outcome words only; and the red-team cases (a "formal gown" category outside the
   enums, a dress for a masculine closet, a model answer carrying its own verdict).
+- `supabase/functions/stylist/__tests__/handler.test.ts` — 401/405 before any fetch; every 400 before
+  any read; a plain answer; the closet and profile read with the caller's token, then one `stylist`
+  quota (20, the local day), then Claude; the request carrying no names, ids, measurements or city; a
+  tool round (the assistant content sent back unchanged, one `tool_result` per call in one user turn,
+  the outfit), the weather fetched once for two tools, at most 3 tool rounds with `tool_choice: none`
+  on the last call, the 25 s deadline and each call's remaining timeout; Claude failures, refusals and
+  empty replies (503, quota spent); 429 with no Claude call; 500 when a read or the quota fails; no
+  write but the quota, the weather cache and Claude; logs with outcome words only; and the red-team
+  cases ("list all users", a tool outside the list, a fake garment id, an off-topic redirect).
 - `supabase/functions/lucky-list/__tests__/handler.test.ts` — too-small closets, the 30 ranked
   outfits spread over the closet (at most 5 Jev calls at once, this week's wears left out), the
   deterministic candidate order, the cache per occasion and date, a garment edit recomputing it,
@@ -654,6 +671,11 @@ Supabase stack:
   compared with the user's closet (a duplicate, the new outfits, `skip`) for one `buy_check` quota;
   no object in the bucket and no new garment; `not_garment` still spending one; a mistyped image
   refused for free; and 429 on the sixth check of the day with no Claude call.
+- `stylist.int.test.ts` — `stylist` through the real gateway with the mock Claude answering a
+  `suggest_outfit` round then a reply: the outfit made of the user's own garments, one `stylist` quota
+  for the two calls, no ids in the closet summary and none of another user's garments in any request;
+  no new rows; an assistant turn last refused for free; and 429 on the 21st message of the day with
+  no Claude call.
 - `outfits.int.test.ts` — the outfit functions end to end through the real gateway, with the mock
   Jev, Open-Meteo and Claude below. User A has six reviewed garments (two tops, two bottoms, two
   pairs of shoes; inserted with A's session, then given attributes and `extraction_status: 'done'`
