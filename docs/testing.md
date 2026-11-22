@@ -708,6 +708,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
 - `saved_trips.test.sql` — `saved_trips`: own rows only, no update, no anon access, the city, the
   10-day, object-snapshot and 64 KiB checks, at most 50 trips per user, the list's index; `trip_cache` is server-only; the `trip`
   quota kind; both cascade on user delete.
+- `buy_check_quota.test.sql` — the `buy_check` quota kind: five checks on a local day, the sixth
+  refused, counted apart from `extraction` and from another user.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
   `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
   on the caller's own garments only, and not writable by anon.
