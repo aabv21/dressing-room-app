@@ -746,6 +746,8 @@ Run via `pnpm db:test` (`supabase test db`). Each file wraps its assertions in
   quota kind; both cascade on user delete.
 - `buy_check_quota.test.sql` — the `buy_check` quota kind: five checks on a local day, the sixth
   refused, counted apart from `extraction` and from another user.
+- `stylist_quota.test.sql` — the `stylist` quota kind: twenty messages on a local day, the 21st
+  refused, counted apart from `buy_check` and from another user.
 - `garment_price.test.sql` — `garments.price` (`numeric(10,2)`, never negative) and
   `garments.currency` (three capital letters): nullable, set and cleared together, client-writable
   on the caller's own garments only, and not writable by anon.
