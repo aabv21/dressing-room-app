@@ -182,6 +182,10 @@ security definer
 set search_path = ''
 as $$
 begin
+  -- Refuse another user's row before counting, so the limit's error never reveals their count.
+  if (select auth.uid()) is not null and new.user_id <> (select auth.uid()) then
+    raise exception using errcode = '42501', message = 'saved_trips: a row for another user';
+  end if;
   perform pg_advisory_xact_lock(hashtextextended('saved_trips:' || new.user_id::text, 0));
   if (select count(*) from public.saved_trips where user_id = new.user_id) >= 50 then
     raise exception using errcode = '23514', message = 'saved_trips: at most 50 saved trips per user';

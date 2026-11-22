@@ -6,7 +6,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(22);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data)
 values
@@ -110,6 +110,15 @@ select throws_ok(
   '23514',
   'saved_trips: at most 50 saved trips per user',
   'the 51st saved trip is refused'
+);
+
+-- Another user writing a row for A gets the RLS refusal, never the limit's, so A's count stays private.
+select set_config('request.jwt.claims', json_build_object('sub', '22222222-2222-2222-2222-222222222222', 'role', 'authenticated')::text, true);
+select throws_ok(
+  $$ insert into public.saved_trips (user_id, city, start_on, end_on, result) values ('11111111-1111-1111-1111-111111111111', 'Probe', '2026-12-01', '2026-12-02', '{}') $$,
+  '42501',
+  null,
+  'a row for another user is refused before the limit counts their trips'
 );
 
 select set_config('request.jwt.claims', '', true);
